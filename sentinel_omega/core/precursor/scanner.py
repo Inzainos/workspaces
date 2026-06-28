@@ -2,8 +2,9 @@
 Precursor Scanner — Runs all detection functions against live pipeline data.
 
 On each geodynamic cycle, the scanner evaluates atmospheric readings,
-Kp series, seismic catalogs, SO2/air quality, and NOAA space weather
-to detect active precursors across all 11 categories.
+Kp series, seismic catalogs, SO2/air quality, NOAA space weather,
+NHC hurricane data, and financial signals to detect active precursors
+across all 15 categories.
 
 Each detected precursor is returned as a PrecursorDetection with its
 type, source station/region, confidence, and raw values.
@@ -25,6 +26,9 @@ from sentinel_omega.core.precursor.precursor_types import (
     detect_silent_trigger,
     detect_seismic_cluster,
     detect_volcanic_precursor,
+    detect_sprite_rojo,
+    detect_hurricane_proximity,
+    detect_tsunami_potential,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,6 +56,8 @@ class PrecursorScanner:
         alfa1_data: Dict[str, Any],
         beta1_data: Dict[str, Any],
         delta_data: Dict[str, Any],
+        hurricane_data: Optional[Dict[str, Any]] = None,
+        financial_data: Optional[Dict[str, Any]] = None,
     ) -> List[PrecursorDetection]:
         detections: List[PrecursorDetection] = []
 
@@ -76,6 +82,7 @@ class PrecursorScanner:
             kp_mean = float(np.nanmean(kp_series))
 
         detections.extend(self._scan_blue_jets(atmospheric))
+        detections.extend(self._scan_sprites_rojos(atmospheric))
         detections.extend(self._scan_niebla_tule(atmospheric))
         detections.extend(self._scan_silent_trigger(kp_series))
         detections.extend(self._scan_seismic_cluster(seismic_mags))
@@ -83,6 +90,9 @@ class PrecursorScanner:
         detections.extend(self._scan_schumann(schumann_hz, schumann_pct))
         detections.extend(self._scan_tormenta_solar(bz, kp_mean, viento))
         detections.extend(self._scan_perturbacion_geomagnetica(bz, kp_mean))
+        detections.extend(self._scan_tsunami(seismic_mags, delta_data))
+        detections.extend(self._scan_hurricanes(hurricane_data or {}))
+        detections.extend(self._scan_financial_correlation(financial_data or {}))
 
         self.last_detections = detections
         if detections:
@@ -338,5 +348,140 @@ class PrecursorScanner:
             values={
                 "bz_nT": bz,
                 "kp": kp,
+            },
+        )]
+
+    def _scan_sprites_rojos(
+        self, atmospheric: List[Dict[str, Any]]
+    ) -> List[PrecursorDetection]:
+        results = []
+        for reading in atmospheric:
+            weather_id = reading.get("weather_id", 800)
+            temp_c = reading.get("temp_c", 20.0)
+            pressure = reading.get("pressure_hpa", 1013.0)
+            clouds = reading.get("clouds_pct", 0)
+
+            if detect_sprite_rojo(weather_id, temp_c, pressure, clouds):
+                confidence = 0.65
+                if pressure < 1000:
+                    confidence += 0.15
+                if temp_c > 32:
+                    confidence += 0.1
+
+                results.append(PrecursorDetection(
+                    tipo=PrecursorType.SPRITE_ROJO,
+                    display_name=PRECURSOR_DISPLAY_NAMES[PrecursorType.SPRITE_ROJO],
+                    station=reading.get("station", "unknown"),
+                    lat=reading.get("lat"),
+                    lon=reading.get("lon"),
+                    confidence=min(confidence, 0.95),
+                    values={
+                        "weather_id": weather_id,
+                        "temp_c": temp_c,
+                        "pressure_hpa": pressure,
+                        "clouds_pct": clouds,
+                    },
+                ))
+        return results
+
+    def _scan_hurricanes(
+        self, hurricane_data: Dict[str, Any]
+    ) -> List[PrecursorDetection]:
+        cyclones = hurricane_data.get("active_cyclones", [])
+        results = []
+        for cyc in cyclones:
+            category = cyc.get("category", 0)
+            distance = cyc.get("distance_deg", 999)
+
+            if not detect_hurricane_proximity(category, distance):
+                continue
+
+            confidence = 0.6
+            if category >= 3:
+                confidence += 0.2
+            elif category >= 2:
+                confidence += 0.1
+            if distance < 5:
+                confidence += 0.1
+
+            results.append(PrecursorDetection(
+                tipo=PrecursorType.HURACAN,
+                display_name=PRECURSOR_DISPLAY_NAMES[PrecursorType.HURACAN],
+                station=cyc.get("name", "unknown"),
+                lat=cyc.get("lat"),
+                lon=cyc.get("lon"),
+                confidence=min(confidence, 0.95),
+                values={
+                    "category": category,
+                    "max_wind_kt": cyc.get("max_wind_kt", 0),
+                    "pressure_mb": cyc.get("pressure_mb", 1013),
+                    "distance_deg": distance,
+                },
+            ))
+        return results
+
+    def _scan_tsunami(
+        self, seismic_mags: Optional[Any], delta_data: Dict[str, Any]
+    ) -> List[PrecursorDetection]:
+        if seismic_mags is None:
+            return []
+
+        max_mag = float(np.max(seismic_mags)) if len(seismic_mags) > 0 else 0.0
+        depth_km = delta_data.get("max_quake_depth_km", 30.0)
+
+        if not detect_tsunami_potential(max_mag, depth_km):
+            return []
+
+        confidence = 0.7
+        if max_mag >= 8.0:
+            confidence += 0.15
+        if depth_km < 30:
+            confidence += 0.1
+
+        return [PrecursorDetection(
+            tipo=PrecursorType.TSUNAMI,
+            display_name=PRECURSOR_DISPLAY_NAMES[PrecursorType.TSUNAMI],
+            station="regional",
+            lat=None,
+            lon=None,
+            confidence=min(confidence, 0.95),
+            values={
+                "magnitude": max_mag,
+                "depth_km": depth_km,
+            },
+        )]
+
+    def _scan_financial_correlation(
+        self, financial_data: Dict[str, Any]
+    ) -> List[PrecursorDetection]:
+        fear_greed = financial_data.get("fear_greed", 50)
+        vix = financial_data.get("vix", 20.0)
+        btc_change = financial_data.get("btc_change_pct", 0.0)
+        market_signal = financial_data.get("market_signal", "neutral")
+
+        extreme_fear = fear_greed < 20
+        vix_spike = vix > 30
+        btc_crash = btc_change < -10.0
+        bearish = market_signal in ("bearish", "alert")
+
+        active_signals = sum([extreme_fear, vix_spike, btc_crash, bearish])
+        if active_signals < 2:
+            return []
+
+        confidence = 0.5 + (active_signals * 0.1)
+
+        return [PrecursorDetection(
+            tipo=PrecursorType.CORRELACION_FINANCIERA,
+            display_name=PRECURSOR_DISPLAY_NAMES[PrecursorType.CORRELACION_FINANCIERA],
+            station="global",
+            lat=None,
+            lon=None,
+            confidence=min(confidence, 0.95),
+            values={
+                "fear_greed": fear_greed,
+                "vix": vix,
+                "btc_change_pct": btc_change,
+                "market_signal": market_signal,
+                "active_financial_signals": active_signals,
             },
         )]

@@ -28,6 +28,9 @@ from sentinel_omega.core.precursor.precursor_types import (
     detect_blue_jet,
     detect_niebla_tule,
     detect_silent_trigger,
+    detect_sprite_rojo,
+    detect_hurricane_proximity,
+    detect_tsunami_potential,
     detect_seismic_cluster,
     detect_volcanic_precursor,
 )
@@ -421,6 +424,174 @@ class TestVolcanicPrecursor:
         assert detect_volcanic_precursor(so2_mass=150.0, seismic_count=1) is False
 
 
+class TestSpriteRojoDetection:
+
+    def test_severe_storm_hot_low_pressure_cloudy(self):
+        assert detect_sprite_rojo(weather_id=211, temp_c=32.0, pressure_hpa=1000.0, clouds_pct=100) is True
+
+    def test_no_thunderstorm(self):
+        assert detect_sprite_rojo(weather_id=800, temp_c=32.0, pressure_hpa=1000.0, clouds_pct=100) is False
+
+    def test_too_cold(self):
+        assert detect_sprite_rojo(weather_id=211, temp_c=25.0, pressure_hpa=1000.0, clouds_pct=100) is False
+
+    def test_pressure_too_high(self):
+        assert detect_sprite_rojo(weather_id=211, temp_c=32.0, pressure_hpa=1010.0, clouds_pct=100) is False
+
+    def test_not_enough_clouds(self):
+        assert detect_sprite_rojo(weather_id=211, temp_c=32.0, pressure_hpa=1000.0, clouds_pct=50) is False
+
+
+class TestHurricaneDetection:
+
+    def test_cat1_nearby(self):
+        assert detect_hurricane_proximity(category=1, distance_deg=5.0) is True
+
+    def test_tropical_storm_not_hurricane(self):
+        assert detect_hurricane_proximity(category=0, distance_deg=5.0) is False
+
+    def test_too_far(self):
+        assert detect_hurricane_proximity(category=3, distance_deg=15.0) is False
+
+    def test_cat5_in_range(self):
+        assert detect_hurricane_proximity(category=5, distance_deg=2.0) is True
+
+
+class TestTsunamiDetection:
+
+    def test_m7_shallow(self):
+        assert detect_tsunami_potential(magnitude=7.5, depth_km=20.0) is True
+
+    def test_m6_shallow(self):
+        assert detect_tsunami_potential(magnitude=6.8, depth_km=20.0) is False
+
+    def test_m7_deep(self):
+        assert detect_tsunami_potential(magnitude=7.5, depth_km=100.0) is False
+
+
+class TestMuroCincoEventos:
+
+    def _make_detection(self, tipo, confidence=0.8):
+        from sentinel_omega.core.precursor.scanner import PrecursorDetection
+        return PrecursorDetection(
+            tipo=tipo,
+            display_name="test",
+            station="test",
+            lat=None, lon=None,
+            confidence=confidence,
+        )
+
+    def test_no_detections_no_breach(self):
+        from sentinel_omega.core.precursor.muro_cinco_eventos import MuroCincoEventos
+        muro = MuroCincoEventos()
+        result = muro.evaluate([])
+        assert result.walls_active == 0
+        assert result.muro_breach is False
+        assert result.risk_label == "NORMAL"
+
+    def test_single_wall_no_breach(self):
+        from sentinel_omega.core.precursor.muro_cinco_eventos import MuroCincoEventos
+        muro = MuroCincoEventos()
+        detections = [self._make_detection(PrecursorType.TORMENTA_SOLAR)]
+        result = muro.evaluate(detections)
+        assert result.walls_active == 1
+        assert result.muro_breach is False
+        assert result.risk_label == "BAJO"
+
+    def test_two_walls_no_breach(self):
+        from sentinel_omega.core.precursor.muro_cinco_eventos import MuroCincoEventos
+        muro = MuroCincoEventos()
+        detections = [
+            self._make_detection(PrecursorType.TORMENTA_SOLAR),
+            self._make_detection(PrecursorType.BLUE_JET),
+        ]
+        result = muro.evaluate(detections)
+        assert result.walls_active == 2
+        assert result.muro_breach is False
+        assert result.risk_label == "MODERADO"
+
+    def test_three_walls_breach(self):
+        from sentinel_omega.core.precursor.muro_cinco_eventos import MuroCincoEventos
+        muro = MuroCincoEventos()
+        detections = [
+            self._make_detection(PrecursorType.SEISMIC_CLUSTER),
+            self._make_detection(PrecursorType.BLUE_JET),
+            self._make_detection(PrecursorType.TORMENTA_SOLAR),
+        ]
+        result = muro.evaluate(detections)
+        assert result.walls_active == 3
+        assert result.muro_breach is True
+        assert result.risk_label == "ALTO"
+
+    def test_four_walls_critical(self):
+        from sentinel_omega.core.precursor.muro_cinco_eventos import MuroCincoEventos
+        muro = MuroCincoEventos()
+        detections = [
+            self._make_detection(PrecursorType.VOLCANICO),
+            self._make_detection(PrecursorType.SPRITE_ROJO),
+            self._make_detection(PrecursorType.HURACAN),
+            self._make_detection(PrecursorType.SCHUMANN),
+        ]
+        result = muro.evaluate(detections)
+        assert result.walls_active == 4
+        assert result.muro_breach is True
+        assert result.risk_label == "CRÍTICO"
+
+    def test_five_walls_all_active(self):
+        from sentinel_omega.core.precursor.muro_cinco_eventos import MuroCincoEventos
+        muro = MuroCincoEventos()
+        detections = [
+            self._make_detection(PrecursorType.FANTASMA),
+            self._make_detection(PrecursorType.NIEBLA_TULE),
+            self._make_detection(PrecursorType.TSUNAMI),
+            self._make_detection(PrecursorType.SILENT_TRIGGER),
+            self._make_detection(PrecursorType.CORRELACION_FINANCIERA),
+        ]
+        result = muro.evaluate(detections)
+        assert result.walls_active == 5
+        assert result.muro_breach is True
+
+    def test_correlation_score(self):
+        from sentinel_omega.core.precursor.muro_cinco_eventos import MuroCincoEventos
+        muro = MuroCincoEventos()
+        detections = [
+            self._make_detection(PrecursorType.SEISMIC_CLUSTER, confidence=0.9),
+            self._make_detection(PrecursorType.BLUE_JET, confidence=0.7),
+        ]
+        result = muro.evaluate(detections)
+        assert result.correlation_score > 0
+        assert result.correlation_score < 1.0
+
+    def test_same_wall_multiple_precursors(self):
+        from sentinel_omega.core.precursor.muro_cinco_eventos import MuroCincoEventos
+        muro = MuroCincoEventos()
+        detections = [
+            self._make_detection(PrecursorType.TORMENTA_SOLAR, confidence=0.9),
+            self._make_detection(PrecursorType.SCHUMANN, confidence=0.7),
+            self._make_detection(PrecursorType.SILENT_TRIGGER, confidence=0.6),
+        ]
+        result = muro.evaluate(detections)
+        assert result.walls_active == 1
+        solar_wall = [w for w in result.wall_statuses if w.name == "SOLAR/GEOMAGNÉTICO"][0]
+        assert solar_wall.precursor_count == 3
+        assert solar_wall.max_confidence == 0.9
+
+    def test_format_muro_report(self):
+        from sentinel_omega.core.precursor.muro_cinco_eventos import MuroCincoEventos, format_muro_report
+        muro = MuroCincoEventos()
+        detections = [
+            self._make_detection(PrecursorType.VOLCANICO),
+            self._make_detection(PrecursorType.BLUE_JET),
+            self._make_detection(PrecursorType.HURACAN),
+        ]
+        result = muro.evaluate(detections)
+        report = format_muro_report(result)
+        assert "MURO DE LOS 5 EVENTOS" in report
+        assert "GEOFÍSICO" in report
+        assert "ATMOSFÉRICO" in report
+        assert "OCEÁNICO" in report
+
+
 class TestPrecursorScanner:
 
     def _make_scanner(self):
@@ -566,6 +737,116 @@ class TestPrecursorScanner:
         assert PrecursorType.SCHUMANN in types
         assert PrecursorType.BLUE_JET in types
         assert len(detections) >= 3
+
+
+class TestScannerSpriteRojo:
+
+    def _make_scanner(self):
+        from sentinel_omega.core.precursor.scanner import PrecursorScanner
+        return PrecursorScanner()
+
+    def test_sprite_rojo_detected(self):
+        scanner = self._make_scanner()
+        delta = {"atmospheric_readings": [
+            {"station": "guerrero", "lat": 17.55, "lon": -99.50,
+             "temp_c": 33.0, "weather_id": 211, "pressure_hpa": 998.0,
+             "humidity_pct": 70.0, "visibility_m": 5000, "clouds_pct": 95},
+        ]}
+        detections = scanner.scan({}, {}, delta)
+        sprites = [d for d in detections if d.tipo == PrecursorType.SPRITE_ROJO]
+        assert len(sprites) == 1
+        assert sprites[0].station == "guerrero"
+
+    def test_sprite_not_detected_clear_sky(self):
+        scanner = self._make_scanner()
+        delta = {"atmospheric_readings": [
+            {"station": "guerrero", "lat": 17.55, "lon": -99.50,
+             "temp_c": 33.0, "weather_id": 211, "pressure_hpa": 998.0,
+             "humidity_pct": 70.0, "visibility_m": 5000, "clouds_pct": 30},
+        ]}
+        detections = scanner.scan({}, {}, delta)
+        sprites = [d for d in detections if d.tipo == PrecursorType.SPRITE_ROJO]
+        assert len(sprites) == 0
+
+
+class TestScannerHurricane:
+
+    def _make_scanner(self):
+        from sentinel_omega.core.precursor.scanner import PrecursorScanner
+        return PrecursorScanner()
+
+    def test_hurricane_detected(self):
+        scanner = self._make_scanner()
+        hurricane_data = {
+            "active_cyclones": [{
+                "name": "Otis", "category": 5, "lat": 16.0, "lon": -99.0,
+                "max_wind_kt": 165, "pressure_mb": 923, "distance_deg": 3.0,
+            }],
+        }
+        detections = scanner.scan({}, {}, {}, hurricane_data=hurricane_data)
+        hurr = [d for d in detections if d.tipo == PrecursorType.HURACAN]
+        assert len(hurr) == 1
+        assert hurr[0].confidence >= 0.8
+
+    def test_no_hurricane_data(self):
+        scanner = self._make_scanner()
+        detections = scanner.scan({}, {}, {}, hurricane_data={})
+        hurr = [d for d in detections if d.tipo == PrecursorType.HURACAN]
+        assert len(hurr) == 0
+
+
+class TestScannerTsunami:
+
+    def _make_scanner(self):
+        from sentinel_omega.core.precursor.scanner import PrecursorScanner
+        return PrecursorScanner()
+
+    def test_tsunamigenic_quake(self):
+        scanner = self._make_scanner()
+        beta1 = {"seismic_magnitudes": np.array([7.8, 4.5, 5.2, 3.1])}
+        delta = {"max_quake_depth_km": 15.0}
+        detections = scanner.scan({}, beta1, delta)
+        tsunami = [d for d in detections if d.tipo == PrecursorType.TSUNAMI]
+        assert len(tsunami) == 1
+        assert tsunami[0].values["magnitude"] == 7.8
+
+    def test_no_tsunami_m6(self):
+        scanner = self._make_scanner()
+        beta1 = {"seismic_magnitudes": np.array([6.5, 5.2, 3.1])}
+        delta = {"max_quake_depth_km": 15.0}
+        detections = scanner.scan({}, beta1, delta)
+        tsunami = [d for d in detections if d.tipo == PrecursorType.TSUNAMI]
+        assert len(tsunami) == 0
+
+
+class TestScannerFinancialCorrelation:
+
+    def _make_scanner(self):
+        from sentinel_omega.core.precursor.scanner import PrecursorScanner
+        return PrecursorScanner()
+
+    def test_extreme_fear_plus_vix(self):
+        scanner = self._make_scanner()
+        financial = {"fear_greed": 10, "vix": 40.0, "btc_change_pct": -2.0, "market_signal": "neutral"}
+        detections = scanner.scan({}, {}, {}, financial_data=financial)
+        fin = [d for d in detections if d.tipo == PrecursorType.CORRELACION_FINANCIERA]
+        assert len(fin) == 1
+        assert fin[0].values["fear_greed"] == 10
+
+    def test_triple_signal(self):
+        scanner = self._make_scanner()
+        financial = {"fear_greed": 8, "vix": 45.0, "btc_change_pct": -15.0, "market_signal": "bearish"}
+        detections = scanner.scan({}, {}, {}, financial_data=financial)
+        fin = [d for d in detections if d.tipo == PrecursorType.CORRELACION_FINANCIERA]
+        assert len(fin) == 1
+        assert fin[0].values["active_financial_signals"] == 4
+
+    def test_calm_market_no_detection(self):
+        scanner = self._make_scanner()
+        financial = {"fear_greed": 50, "vix": 15.0, "btc_change_pct": 2.0, "market_signal": "bullish"}
+        detections = scanner.scan({}, {}, {}, financial_data=financial)
+        fin = [d for d in detections if d.tipo == PrecursorType.CORRELACION_FINANCIERA]
+        assert len(fin) == 0
 
 
 class TestTelegramPrecursorFormat:

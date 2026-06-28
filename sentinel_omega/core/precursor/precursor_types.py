@@ -23,13 +23,17 @@ class PrecursorType(Enum):
     SILENT_TRIGGER = "SILENT_TRIGGER"
     SEISMIC_CLUSTER = "SEISMIC_CLUSTER"
     BLUE_JET = "BLUE_JET"
+    SPRITE_ROJO = "SPRITE_ROJO"
     NIEBLA_TULE = "NIEBLA_TULE"
     TORMENTA_SOLAR = "TORMENTA_SOLAR"
     PERTURBACION_GEOMAGNETICA = "PERTURBACION_GEOMAGNETICA"
+    HURACAN = "HURACAN"
+    TSUNAMI = "TSUNAMI"
     ML_INFERENCE = "ML_INFERENCE"
     GRB = "GRB"
     VOLCANICO = "VOLCANICO"
     FANTASMA = "FANTASMA"
+    CORRELACION_FINANCIERA = "CORRELACION_FINANCIERA"
 
 
 @dataclass
@@ -75,6 +79,14 @@ PRECURSOR_PROFILES = {
         radius_degrees=8.0,
         variables=("temp_c", "pressure_hpa", "weather_id", "so2"),
     ),
+    PrecursorType.SPRITE_ROJO: PrecursorProfile(
+        tipo=PrecursorType.SPRITE_ROJO,
+        description="Red Sprite — mesospheric discharge above intense thunderstorm (lightning rate > 100/hr)",
+        validation_window_hours=72.0,
+        min_magnitude_usgs=4.5,
+        radius_degrees=10.0,
+        variables=("weather_id", "temp_c", "pressure_hpa", "clouds_pct"),
+    ),
     PrecursorType.NIEBLA_TULE: PrecursorProfile(
         tipo=PrecursorType.NIEBLA_TULE,
         description="Dense fog anomaly — humidity > 90%%, visibility < 1000m",
@@ -98,6 +110,22 @@ PRECURSOR_PROFILES = {
         min_magnitude_usgs=4.5,
         radius_degrees=10.0,
         variables=("bz_nT", "kp", "dst_index"),
+    ),
+    PrecursorType.HURACAN: PrecursorProfile(
+        tipo=PrecursorType.HURACAN,
+        description="Tropical cyclone proximity — NHC active storm within monitoring radius",
+        validation_window_hours=120.0,
+        min_magnitude_usgs=0.0,
+        radius_degrees=15.0,
+        variables=("category", "max_wind_kt", "pressure_mb", "distance_deg"),
+    ),
+    PrecursorType.TSUNAMI: PrecursorProfile(
+        tipo=PrecursorType.TSUNAMI,
+        description="Tsunamigenic potential — M7.0+ shallow undersea earthquake",
+        validation_window_hours=24.0,
+        min_magnitude_usgs=7.0,
+        radius_degrees=20.0,
+        variables=("magnitude", "depth_km", "coast_distance"),
     ),
     PrecursorType.ML_INFERENCE: PrecursorProfile(
         tipo=PrecursorType.ML_INFERENCE,
@@ -131,6 +159,14 @@ PRECURSOR_PROFILES = {
         radius_degrees=5.0,
         variables=("bz_nT", "viento_kms", "schumann_wpc", "pressure_hpa", "kp", "lod_ms"),
     ),
+    PrecursorType.CORRELACION_FINANCIERA: PrecursorProfile(
+        tipo=PrecursorType.CORRELACION_FINANCIERA,
+        description="Financial correlation — crypto/bolsa anomaly coinciding with geophysical precursors",
+        validation_window_hours=72.0,
+        min_magnitude_usgs=0.0,
+        radius_degrees=180.0,
+        variables=("fear_greed", "vix", "btc_change_pct", "market_signal"),
+    ),
 }
 
 
@@ -139,13 +175,17 @@ PRECURSOR_DISPLAY_NAMES = {
     PrecursorType.SILENT_TRIGGER: "Patrón Silent Trigger (Calma)",
     PrecursorType.SEISMIC_CLUSTER: "Enjambre Sísmico Local",
     PrecursorType.BLUE_JET: "Blue Jet (Fuga Ionosférica)",
+    PrecursorType.SPRITE_ROJO: "Sprite Rojo (Descarga Mesosférica)",
     PrecursorType.NIEBLA_TULE: "Niebla Tule (Anomalía)",
     PrecursorType.TORMENTA_SOLAR: "Tormenta Solar",
     PrecursorType.PERTURBACION_GEOMAGNETICA: "Perturbación Geomagnética",
+    PrecursorType.HURACAN: "Huracán / Ciclón Tropical",
+    PrecursorType.TSUNAMI: "Tsunami / Maremoto",
     PrecursorType.ML_INFERENCE: "Inferencia ML",
     PrecursorType.GRB: "Gamma-Ray Burst",
     PrecursorType.VOLCANICO: "Precursor Volcánico",
     PrecursorType.FANTASMA: "Índice Fantasma (V32)",
+    PrecursorType.CORRELACION_FINANCIERA: "Correlación Financiera",
 }
 
 
@@ -174,3 +214,23 @@ def detect_seismic_cluster(event_count_24h: int, threshold: int = 10) -> bool:
 
 def detect_volcanic_precursor(so2_mass: float, seismic_count: int) -> bool:
     return so2_mass > 100.0 and seismic_count >= 3
+
+
+def detect_sprite_rojo(
+    weather_id: int, temp_c: float, pressure_hpa: float, clouds_pct: float = 100.0
+) -> bool:
+    """Red Sprites occur above intense thunderstorms with low pressure and full cloud cover."""
+    is_severe_storm = 200 <= weather_id <= 232
+    return is_severe_storm and temp_c > 28.0 and pressure_hpa < 1005.0 and clouds_pct >= 80
+
+
+def detect_hurricane_proximity(
+    category: int, distance_deg: float, max_distance: float = 10.0
+) -> bool:
+    return category >= 1 and distance_deg <= max_distance
+
+
+def detect_tsunami_potential(
+    magnitude: float, depth_km: float
+) -> bool:
+    return magnitude >= 7.0 and depth_km < 70.0

@@ -23,6 +23,7 @@ from sentinel_omega.infrastructure.api.telegram import (
     format_consensus_alert,
     format_precursor_alert,
 )
+from sentinel_omega.core.precursor.muro_cinco_eventos import format_muro_report
 
 logging.basicConfig(
     level=logging.INFO,
@@ -88,22 +89,59 @@ class SentinelOrchestrator:
 
         return orch
 
+    def _collect_financial_data(self, results: Dict[str, ConsensusResult]) -> Dict:
+        """Extract financial signals from crypto/bolsa consensus for cross-correlation."""
+        financial = {}
+        crypto = results.get("crypto")
+        bolsa = results.get("bolsa")
+
+        if crypto:
+            financial["market_signal"] = crypto.final_signal.value
+            for sig in crypto.agent_signals:
+                if "fear_greed_index" in sig.data:
+                    financial["fear_greed"] = sig.data["fear_greed_index"]
+                if "btc_change_pct" in sig.data:
+                    financial["btc_change_pct"] = sig.data["btc_change_pct"]
+
+        if bolsa:
+            for sig in bolsa.agent_signals:
+                if "vix" in sig.data:
+                    financial["vix"] = sig.data["vix"]
+
+        return financial
+
     def run_cycle(self) -> Dict[str, ConsensusResult]:
         self._status.cycle_count += 1
         logger.info(f"--- Cycle #{self._status.cycle_count} ---")
 
         results = {}
-        for name, layer in self._layers.items():
-            try:
-                if hasattr(layer, 'run'):
+
+        for name in ("crypto", "bolsa"):
+            layer = self._layers.get(name)
+            if layer and hasattr(layer, 'run'):
+                try:
                     consensus = layer.run()
                     results[name] = consensus
                     self._status.last_consensus[name] = consensus
                     self._status.total_signals += 1
                     self._status.layer_statuses[name] = True
+                except Exception as e:
+                    logger.error(f"Layer '{name}' cycle failed: {e}")
+                    self._status.layer_statuses[name] = False
+
+        financial_data = self._collect_financial_data(results)
+
+        geo_layer = self._layers.get("geodynamic")
+        if geo_layer and hasattr(geo_layer, 'run'):
+            try:
+                consensus = geo_layer.run(financial_data=financial_data)
+                results["geodynamic"] = consensus
+                self._status.last_consensus["geodynamic"] = consensus
+                self._status.total_signals += 1
+                self._status.layer_statuses["geodynamic"] = True
             except Exception as e:
-                logger.error(f"Layer '{name}' cycle failed: {e}")
-                self._status.layer_statuses[name] = False
+                logger.error(f"Layer 'geodynamic' cycle failed: {e}")
+                self._status.layer_statuses["geodynamic"] = False
 
         self._cross_layer_analysis(results)
         return results
@@ -154,6 +192,18 @@ class SentinelOrchestrator:
                         f"PRECURSOR DISPATCH: {detection.tipo.value} "
                         f"@ {detection.station} (conf={detection.confidence:.0%})"
                     )
+
+        geo_layer = self._layers.get("geodynamic")
+        if geo_layer and hasattr(geo_layer, "last_muro") and geo_layer.last_muro:
+            muro = geo_layer.last_muro
+            if muro.muro_breach:
+                logger.warning(
+                    f"MURO BREACH: {muro.walls_active}/{muro.total_walls} "
+                    f"walls — {muro.risk_label}"
+                )
+                muro_msg = format_muro_report(muro)
+                send_alert(muro_msg)
+                self._status.alerts_dispatched += 1
 
         if geo and geo.consensus_reached and geo.final_signal == SignalType.ALERT:
             logger.warning("GEODYNAMIC ALERT — check crypto/bolsa for correlated anomalies")

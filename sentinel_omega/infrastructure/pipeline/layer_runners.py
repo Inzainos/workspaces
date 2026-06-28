@@ -17,6 +17,7 @@ from sentinel_omega.core.precursor.risk_calculator import (
 )
 from sentinel_omega.core.precursor.assertivity import AssertivityTracker
 from sentinel_omega.core.precursor.scanner import PrecursorScanner, PrecursorDetection
+from sentinel_omega.core.precursor.muro_cinco_eventos import MuroCincoEventos, MuroResult
 
 from sentinel_omega.layers.geodynamic.alfa1.agent import Alfa1Agent
 from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
@@ -57,8 +58,10 @@ class GeodynamicLayerRunner:
         self._enable_satellite = enable_satellite
         self.assertivity = AssertivityTracker(radius_degrees=5.0, window_days=30)
         self.scanner = PrecursorScanner()
+        self.muro = MuroCincoEventos(min_walls_for_breach=3)
         self.last_risk: Optional[PrecursorRisk] = None
         self.last_detections: List[PrecursorDetection] = []
+        self.last_muro: Optional[MuroResult] = None
 
     def _compute_precursor_risk(
         self,
@@ -99,7 +102,33 @@ class GeodynamicLayerRunner:
         logger.info(f"Precursor risk: fantasma={risk.fantasma:.2f} level={risk.risk_level}")
         return risk
 
-    def run(self) -> ConsensusResult:
+    def _fetch_hurricane_data(self) -> Dict:
+        try:
+            from sentinel_omega.infrastructure.api.noaa_hazards import (
+                fetch_active_hurricanes,
+                compute_hurricane_proximity,
+            )
+            cyclones = fetch_active_hurricanes()
+            if not cyclones:
+                return {}
+            nearby = compute_hurricane_proximity(cyclones, 19.0, -99.0, max_distance_deg=15.0)
+            return {
+                "active_cyclones": [
+                    {
+                        "name": c.name, "category": c.category,
+                        "lat": c.lat, "lon": c.lon,
+                        "max_wind_kt": c.max_wind_kt,
+                        "pressure_mb": c.pressure_mb,
+                        "distance_deg": n["distance_deg"],
+                    }
+                    for c, n in zip(cyclones, nearby)
+                ] if nearby else [],
+            }
+        except Exception as e:
+            logger.warning(f"Hurricane data fetch failed (non-blocking): {e}")
+            return {}
+
+    def run(self, financial_data: Optional[Dict] = None) -> ConsensusResult:
         logger.info("=== Geodynamic Layer Cycle ===")
 
         alfa1_data = self.pipeline.fetch_alfa1_data()
@@ -107,8 +136,17 @@ class GeodynamicLayerRunner:
         delta_data = self.pipeline.fetch_delta_data()
 
         risk = self._compute_precursor_risk(alfa1_data, beta1_data, delta_data)
-        detections = self.scanner.scan(alfa1_data, beta1_data, delta_data)
+
+        hurricane_data = self._fetch_hurricane_data()
+        detections = self.scanner.scan(
+            alfa1_data, beta1_data, delta_data,
+            hurricane_data=hurricane_data,
+            financial_data=financial_data,
+        )
         self.last_detections = detections
+
+        muro_result = self.muro.evaluate(detections)
+        self.last_muro = muro_result
 
         self.alfa1.ingest(alfa1_data)
         self.beta1.ingest(beta1_data)
@@ -138,7 +176,8 @@ class GeodynamicLayerRunner:
         logger.info(
             f"Geodynamic consensus: {consensus.final_signal.value} "
             f"(reached={consensus.consensus_reached}, conf={consensus.confidence:.2f}, "
-            f"fantasma={risk.fantasma:.2f}, precursors={len(detections)})"
+            f"fantasma={risk.fantasma:.2f}, precursors={len(detections)}, "
+            f"muro={muro_result.walls_active}/{muro_result.total_walls})"
         )
         return consensus
 
