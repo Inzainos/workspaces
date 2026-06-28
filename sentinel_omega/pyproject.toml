@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sentinel-omega"
-version = "2.0.0"
-description = "Multi-domain prediction platform based on Shadow Node Theory"
+version = "2.5.0"
+description = "Precursor detection platform for natural events (TITAN V32 lineage)"
 authors = [
     {name = "Elán Zainos Corona", email = "elan.zainos.corona@gmail.com"},
 ]
