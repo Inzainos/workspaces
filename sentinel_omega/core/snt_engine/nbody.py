@@ -9,7 +9,6 @@ Mexican National System (INEGI 2022):
 """
 
 import numpy as np
-from scipy.optimize import curve_fit
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
@@ -43,10 +42,6 @@ class NBodyResult:
 
 class NBodyMatrix:
 
-    @staticmethod
-    def _rank_power_law(rank, a, b):
-        return a * np.power(rank, b)
-
     def analyze(
         self, entities: Dict[str, float], hub_name: str
     ) -> NBodyResult:
@@ -59,16 +54,13 @@ class NBodyMatrix:
         ranks = np.arange(1, len(sorted_entities) + 1, dtype=float)
         values = np.array([v for _, v in sorted_entities])
 
-        try:
-            popt, _ = curve_fit(
-                self._rank_power_law, ranks, values,
-                p0=[values[0], -0.5], maxfev=5000
-            )
-            a, b = popt
-        except RuntimeError:
-            a, b = values[0], -0.5
+        log_ranks = np.log(ranks)
+        log_values = np.log(np.maximum(values, 1e-10))
+        coef = np.polyfit(log_ranks, log_values, 1)
+        b = coef[0]
+        a = np.exp(coef[1])
 
-        predicted = self._rank_power_law(ranks, a, b)
+        predicted = a * np.power(ranks, b)
         ss_res = np.sum((values - predicted) ** 2)
         ss_tot = np.sum((values - np.mean(values)) ** 2)
         r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0

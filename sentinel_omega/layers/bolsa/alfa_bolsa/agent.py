@@ -46,7 +46,7 @@ class AlfaBolsaAgent(BaseAgent):
         t = np.arange(1, len(ratio) + 1, dtype=float)
 
         try:
-            fit = self._snt.fit(t, ratio)
+            fit = self._snt.fit_ratio(t, ratio)
         except (ValueError, RuntimeError):
             return self.emit_signal(SignalType.NEUTRAL, 0.3)
 

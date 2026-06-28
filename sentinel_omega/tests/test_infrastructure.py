@@ -135,7 +135,7 @@ class TestConfig:
 
     def test_default_config(self):
         config = SentinelOmegaConfig()
-        assert config.version == "2.0.0-shadow-node"
+        assert config.version == "2.5.0-shadow-node"
         assert "Elán" in config.author
         assert len(config.layers) == 4
 
@@ -159,8 +159,9 @@ class TestConfig:
 
     def test_snt_config_defaults(self):
         config = SentinelOmegaConfig()
-        assert config.snt.friction_spearman_rho == -0.68
+        assert config.snt.friction_pearson_rho == -0.68
         assert config.snt.roche_threshold == 1.0
+        assert config.snt.equilibrium_band == 0.1
 
     def test_coordinates(self):
         config = SentinelOmegaConfig()
