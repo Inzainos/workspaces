@@ -125,17 +125,43 @@ class TestGeodynamicPipeline:
         assert "lunar_phase" in data
         assert len(data["lunar_phase"]) == 30
 
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_air_quality")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_monitoring_network")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_fear_greed_index")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_earthquakes")
-    def test_delta_data(self, mock_eq, mock_fg):
+    def test_delta_data(self, mock_eq, mock_fg, mock_owm, mock_aq):
         mock_eq.return_value = _mock_eq_df()
         mock_fg.return_value = {"value": 25, "classification": "Extreme Fear"}
+        mock_owm.return_value = []
+        mock_aq.return_value = None
 
         pipe = GeodynamicPipeline()
         data = pipe.fetch_delta_data()
         assert "energetic_nodes" in data
         assert len(data["energetic_nodes"]) > 0
         assert data["psychosocial_index"] == pytest.approx(0.25)
+
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_air_quality")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_monitoring_network")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_fear_greed_index")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_earthquakes")
+    def test_delta_data_with_atmosphere(self, mock_eq, mock_fg, mock_owm, mock_aq):
+        from sentinel_omega.infrastructure.api.openweathermap import AtmosphericReading
+        mock_eq.return_value = _mock_eq_df()
+        mock_fg.return_value = {"value": 50, "classification": "Neutral"}
+        mock_owm.return_value = [
+            AtmosphericReading("tlaxcala", 19.31, -98.24, 1005.0, 18.0, 65.0, 8000, 3.2, 180, 40),
+            AtmosphericReading("oaxaca", 17.07, -96.72, 1012.0, 28.0, 70.0, 10000, 2.1, 200, 30),
+        ]
+        mock_aq.return_value = {"co": 250.0, "so2": 25.0, "no2": 10.0, "pm2_5": 12.0, "pm10": 20.0, "o3": 60.0, "aqi": 2}
+
+        pipe = GeodynamicPipeline()
+        data = pipe.fetch_delta_data()
+        assert "pressure_gradient" in data
+        assert data["pressure_gradient"]["mean_pressure"] < 1013.0
+        assert "low_pressure_stations" in data["pressure_gradient"]
+        assert "air_quality" in data
+        assert data["air_quality"]["so2"] == 25.0
 
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_mag_field")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_solar_wind")
@@ -229,6 +255,8 @@ class TestBolsaPipeline:
 
 class TestLayerRunners:
 
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_air_quality")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_monitoring_network")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.compute_lunar_phase_series")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_lod_series")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_schumann_resonance")
@@ -237,7 +265,7 @@ class TestLayerRunners:
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_kp_index")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_solar_wind")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_mag_field")
-    def test_geodynamic_runner(self, mock_mag, mock_wind, mock_kp, mock_eq, mock_fg, mock_schumann, mock_lod, mock_lunar):
+    def test_geodynamic_runner(self, mock_mag, mock_wind, mock_kp, mock_eq, mock_fg, mock_schumann, mock_lod, mock_lunar, mock_owm, mock_aq):
         mock_mag.return_value = _mock_mag_df()
         mock_wind.return_value = _mock_wind_df()
         mock_kp.return_value = _mock_kp_df()
@@ -249,6 +277,8 @@ class TestLayerRunners:
             "lod_ms": np.random.uniform(0.0, 1.0, 30),
         })
         mock_lunar.return_value = np.linspace(0, 1, 30)
+        mock_owm.return_value = []
+        mock_aq.return_value = None
 
         runner = GeodynamicLayerRunner(enable_satellite=False)
         consensus = runner.run()
@@ -690,3 +720,167 @@ class TestBeta2Agent:
         agent.ingest({})
         signal = agent.analyze()
         assert signal.signal_type == SignalType.NO_SIGNAL
+
+
+# ── OpenWeatherMap ─────────────────────────────────────────────────
+
+
+class TestOpenWeatherMapConnector:
+
+    def test_monitoring_stations_defined(self):
+        from sentinel_omega.infrastructure.api.openweathermap import MONITORING_STATIONS
+        assert "tlaxcala" in MONITORING_STATIONS
+        assert "oaxaca" in MONITORING_STATIONS
+        assert MONITORING_STATIONS["tlaxcala"]["lat"] == 19.31
+
+    def test_atmospheric_reading_dataclass(self):
+        from sentinel_omega.infrastructure.api.openweathermap import AtmosphericReading
+        r = AtmosphericReading("test", 19.0, -99.0, 1012.0, 22.5, 60.0, 10000, 3.5, 180, 30)
+        assert r.station == "test"
+        assert r.pressure_hpa == 1012.0
+        assert r.temp_c == 22.5
+
+    @patch("sentinel_omega.infrastructure.api.openweathermap.requests.get")
+    @patch.dict("os.environ", {"OPENWEATHERMAP_KEY": "test_key"})
+    def test_fetch_weather(self, mock_get):
+        from sentinel_omega.infrastructure.api.openweathermap import fetch_weather
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "main": {"pressure": 1005, "temp": 18.5, "humidity": 72},
+            "wind": {"speed": 4.2, "deg": 225},
+            "clouds": {"all": 50},
+            "visibility": 8000,
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        reading = fetch_weather(19.31, -98.24, "tlaxcala")
+        assert reading is not None
+        assert reading.pressure_hpa == 1005
+        assert reading.temp_c == 18.5
+        assert reading.humidity_pct == 72
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_fetch_weather_no_key(self):
+        from sentinel_omega.infrastructure.api.openweathermap import fetch_weather
+        reading = fetch_weather(19.31, -98.24)
+        assert reading is None
+
+    @patch("sentinel_omega.infrastructure.api.openweathermap.requests.get")
+    @patch.dict("os.environ", {"OPENWEATHERMAP_KEY": "test_key"})
+    def test_fetch_air_quality(self, mock_get):
+        from sentinel_omega.infrastructure.api.openweathermap import fetch_air_quality
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "list": [{
+                "main": {"aqi": 2},
+                "components": {"co": 233.5, "so2": 8.1, "no2": 12.0, "pm2_5": 10.0, "pm10": 18.0, "o3": 55.0},
+            }],
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        aq = fetch_air_quality(19.31, -98.24)
+        assert aq is not None
+        assert aq["co"] == 233.5
+        assert aq["so2"] == 8.1
+        assert aq["aqi"] == 2
+
+    def test_compute_pressure_gradient(self):
+        from sentinel_omega.infrastructure.api.openweathermap import (
+            AtmosphericReading,
+            compute_pressure_gradient,
+        )
+        readings = [
+            AtmosphericReading("a", 19.0, -99.0, 1005.0, 20.0, 60.0, 10000, 3.0, 180, 30),
+            AtmosphericReading("b", 17.0, -97.0, 1015.0, 28.0, 70.0, 10000, 2.0, 200, 20),
+            AtmosphericReading("c", 18.0, -98.0, 1010.0, 24.0, 65.0, 10000, 2.5, 190, 25),
+        ]
+        gradient = compute_pressure_gradient(readings)
+        assert gradient["mean_pressure"] == pytest.approx(1010.0)
+        assert gradient["pressure_spread"] == pytest.approx(10.0)
+        assert "a" in gradient["low_pressure_stations"]
+        assert gradient["station_count"] == 3
+
+
+# ── Telegram ───────────────────────────────────────────────────────
+
+
+class TestTelegramConnector:
+
+    def test_format_geodynamic_alert(self):
+        from sentinel_omega.infrastructure.api.telegram import format_geodynamic_alert
+        msg = format_geodynamic_alert("ALERT", 0.85, "Bz dropped to -12 nT")
+        assert "GEODYNAMIC ALERT" in msg
+        assert "85%" in msg
+        assert "Bz dropped" in msg
+
+    def test_format_consensus_alert(self):
+        from sentinel_omega.infrastructure.api.telegram import format_consensus_alert
+        msg = format_consensus_alert("geodynamic", "ALERT", 0.90, 5)
+        assert "GEODYNAMIC CONSENSUS" in msg
+        assert "90%" in msg
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_send_alert_no_credentials(self):
+        from sentinel_omega.infrastructure.api.telegram import send_alert
+        result = send_alert("Test message")
+        assert result is False
+
+    @patch("sentinel_omega.infrastructure.api.telegram.requests.post")
+    @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "test:token", "TELEGRAM_CHAT_ID": "12345"})
+    def test_send_alert_success(self, mock_post):
+        from sentinel_omega.infrastructure.api.telegram import send_alert
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_post.return_value = mock_resp
+
+        result = send_alert("Test alert")
+        assert result is True
+        mock_post.assert_called_once()
+
+    @patch("sentinel_omega.infrastructure.api.telegram.requests.post")
+    @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "test:token", "TELEGRAM_CHAT_ID": "12345"})
+    def test_send_alert_failure(self, mock_post):
+        from sentinel_omega.infrastructure.api.telegram import send_alert
+        mock_post.side_effect = Exception("Network error")
+        result = send_alert("Test alert")
+        assert result is False
+
+
+# ── Delta Agent (with atmospheric) ─────────────────────────────────
+
+
+class TestDeltaAgentAtmospheric:
+
+    def test_analyze_with_pressure(self):
+        from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
+        agent = DeltaAgent()
+        agent.ingest({
+            "energetic_nodes": {"Region A": 1e8, "Region B": 5e7, "Region C": 3e7},
+            "psychosocial_index": 0.5,
+            "pressure_gradient": {
+                "mean_pressure": 1002.0,
+                "pressure_spread": 15.0,
+                "low_pressure_stations": ["tlaxcala", "guerrero"],
+            },
+            "air_quality": {"so2": 35.0, "co": 200.0},
+        })
+        signal = agent.analyze()
+        assert signal.signal_type in SignalType
+        assert signal.data.get("atmospheric_stress", 0) > 0
+
+    def test_analyze_normal_atmosphere(self):
+        from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
+        agent = DeltaAgent()
+        agent.ingest({
+            "energetic_nodes": {"Region A": 1e6, "Region B": 5e5, "Region C": 3e5},
+            "psychosocial_index": 0.3,
+            "pressure_gradient": {
+                "mean_pressure": 1013.0,
+                "pressure_spread": 3.0,
+                "low_pressure_stations": [],
+            },
+        })
+        signal = agent.analyze()
+        assert signal.data.get("atmospheric_stress", 0) == pytest.approx(0.0)

@@ -27,6 +27,12 @@ from sentinel_omega.infrastructure.api.esa_sentinel import (
     compute_temporal_coverage,
     get_seismic_zone_bboxes,
 )
+from sentinel_omega.infrastructure.api.openweathermap import (
+    fetch_monitoring_network,
+    fetch_air_quality,
+    compute_pressure_gradient,
+    MONITORING_STATIONS,
+)
 from sentinel_omega.infrastructure.api.crypto import (
     fetch_coingecko_dominance,
     fetch_binance_klines,
@@ -167,8 +173,9 @@ class GeodynamicPipeline:
 
     def fetch_delta_data(self) -> Dict[str, Any]:
         """
-        Build energetic node map from seismic geography.
+        Build energetic node map from seismic geography + atmospheric pressure.
         Regional seismic energy → nodes in the N-Body topology.
+        Atmospheric pressure gradient feeds Blue Jets correlation (V32 lineage).
         """
         eq_df = fetch_earthquakes(min_magnitude=4.0, days=30)
         if eq_df is None or len(eq_df) < 3:
@@ -185,11 +192,38 @@ class GeodynamicPipeline:
         fg = fetch_fear_greed_index()
         psi = (fg["value"] / 100.0) if fg else 0.5
 
-        logger.info(f"Delta pipeline: {len(regions)} seismic nodes, PSI={psi:.2f}")
-        return {
+        result: Dict[str, Any] = {
             "energetic_nodes": regions,
             "psychosocial_index": psi,
         }
+
+        try:
+            readings = fetch_monitoring_network(["tlaxcala", "oaxaca", "guerrero", "colima"])
+            if readings:
+                gradient = compute_pressure_gradient(readings)
+                result["pressure_gradient"] = gradient
+                result["atmospheric_readings"] = [
+                    {
+                        "station": r.station,
+                        "pressure_hpa": r.pressure_hpa,
+                        "temp_c": r.temp_c,
+                        "humidity_pct": r.humidity_pct,
+                    }
+                    for r in readings
+                ]
+        except Exception as e:
+            logger.warning(f"Atmospheric data fetch failed: {e}")
+
+        try:
+            tlaxcala = MONITORING_STATIONS["tlaxcala"]
+            aq = fetch_air_quality(tlaxcala["lat"], tlaxcala["lon"])
+            if aq:
+                result["air_quality"] = aq
+        except Exception as e:
+            logger.warning(f"Air quality fetch failed: {e}")
+
+        logger.info(f"Delta pipeline: {len(regions)} seismic nodes, PSI={psi:.2f}")
+        return result
 
 
 class CryptoPipeline:
