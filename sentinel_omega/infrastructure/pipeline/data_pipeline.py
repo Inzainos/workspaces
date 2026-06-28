@@ -21,6 +21,12 @@ from sentinel_omega.infrastructure.api.geophysical import (
     fetch_lod_series,
     compute_lunar_phase_series,
 )
+from sentinel_omega.infrastructure.api.esa_sentinel import (
+    search_sentinel2,
+    search_sentinel1_sar,
+    compute_temporal_coverage,
+    get_seismic_zone_bboxes,
+)
 from sentinel_omega.infrastructure.api.crypto import (
     fetch_coingecko_dominance,
     fetch_binance_klines,
@@ -98,6 +104,66 @@ class GeodynamicPipeline:
         if not result:
             logger.warning("No Kp/seismic data for Beta-1")
         return result
+
+    def fetch_alfa2_data(
+        self,
+        zones: Optional[List[str]] = None,
+        days: int = 30,
+    ) -> Dict[str, Any]:
+        """Fetch Sentinel-2 multispectral coverage for seismic zone monitoring."""
+        all_zones = get_seismic_zone_bboxes()
+        target_zones = zones or ["guerrero_gap", "oaxaca_costa", "chiapas"]
+
+        zone_coverages = {}
+        for zone in target_zones:
+            bbox = all_zones.get(zone)
+            if bbox is None:
+                continue
+            try:
+                cov = compute_temporal_coverage(bbox, days=days)
+                zone_coverages[zone] = cov
+            except Exception as e:
+                logger.warning(f"Satellite coverage failed for {zone}: {e}")
+
+        if not zone_coverages:
+            logger.warning("No satellite coverage data for Alfa-2")
+            return {}
+
+        logger.info(f"Alfa-2 pipeline: {len(zone_coverages)} zones analyzed")
+        return {
+            "zone_coverages": zone_coverages,
+            "thermal_anomaly_count": 0,
+        }
+
+    def fetch_beta2_data(
+        self,
+        zones: Optional[List[str]] = None,
+        days: int = 30,
+    ) -> Dict[str, Any]:
+        """Fetch Sentinel-1 SAR coverage for InSAR deformation monitoring."""
+        all_zones = get_seismic_zone_bboxes()
+        target_zones = zones or ["guerrero_gap", "oaxaca_costa", "chiapas"]
+
+        sar_coverages = {}
+        for zone in target_zones:
+            bbox = all_zones.get(zone)
+            if bbox is None:
+                continue
+            try:
+                cov = compute_temporal_coverage(bbox, days=days)
+                sar_coverages[zone] = cov
+            except Exception as e:
+                logger.warning(f"SAR coverage failed for {zone}: {e}")
+
+        if not sar_coverages:
+            logger.warning("No SAR data for Beta-2")
+            return {}
+
+        logger.info(f"Beta-2 pipeline: {len(sar_coverages)} zones analyzed")
+        return {
+            "sar_coverages": sar_coverages,
+            "deformation_flags": [],
+        }
 
     def fetch_delta_data(self) -> Dict[str, Any]:
         """

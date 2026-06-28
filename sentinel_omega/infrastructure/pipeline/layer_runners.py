@@ -9,7 +9,9 @@ from typing import List
 from sentinel_omega.core.shared.agent_base import AgentSignal, ConsensusResult, SignalType
 
 from sentinel_omega.layers.geodynamic.alfa1.agent import Alfa1Agent
+from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
 from sentinel_omega.layers.geodynamic.beta1.agent import Beta1Agent
+from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
 from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
 from sentinel_omega.layers.geodynamic.padre.agent import GeodynamicPadre
 
@@ -34,22 +36,25 @@ logger = logging.getLogger(__name__)
 
 class GeodynamicLayerRunner:
 
-    def __init__(self):
+    def __init__(self, enable_satellite: bool = True):
         self.pipeline = GeodynamicPipeline()
         self.alfa1 = Alfa1Agent()
+        self.alfa2 = Alfa2Agent() if enable_satellite else None
         self.beta1 = Beta1Agent()
+        self.beta2 = Beta2Agent() if enable_satellite else None
         self.delta = DeltaAgent()
         self.padre = GeodynamicPadre()
+        self._enable_satellite = enable_satellite
 
     def run(self) -> ConsensusResult:
         logger.info("=== Geodynamic Layer Cycle ===")
 
-        alfa_data = self.pipeline.fetch_alfa1_data()
-        beta_data = self.pipeline.fetch_beta1_data()
+        alfa1_data = self.pipeline.fetch_alfa1_data()
+        beta1_data = self.pipeline.fetch_beta1_data()
         delta_data = self.pipeline.fetch_delta_data()
 
-        self.alfa1.ingest(alfa_data)
-        self.beta1.ingest(beta_data)
+        self.alfa1.ingest(alfa1_data)
+        self.beta1.ingest(beta1_data)
         self.delta.ingest(delta_data)
 
         signals: List[AgentSignal] = [
@@ -57,6 +62,17 @@ class GeodynamicLayerRunner:
             self.beta1.analyze(),
             self.delta.analyze(),
         ]
+
+        if self._enable_satellite and self.alfa2 and self.beta2:
+            try:
+                alfa2_data = self.pipeline.fetch_alfa2_data()
+                beta2_data = self.pipeline.fetch_beta2_data()
+                self.alfa2.ingest(alfa2_data)
+                self.beta2.ingest(beta2_data)
+                signals.append(self.alfa2.analyze())
+                signals.append(self.beta2.analyze())
+            except Exception as e:
+                logger.warning(f"Satellite layer failed (non-blocking): {e}")
 
         consensus = self.padre.evaluate_consensus(signals)
         logger.info(

@@ -26,6 +26,7 @@ geodynamic = [
     "ephem>=4.1",
     "opencv-python>=4.7",
     "folium>=0.14",
+    "eodag>=4.0",
 ]
 crypto = [
     "ccxt>=4.0",

@@ -250,7 +250,7 @@ class TestLayerRunners:
         })
         mock_lunar.return_value = np.linspace(0, 1, 30)
 
-        runner = GeodynamicLayerRunner()
+        runner = GeodynamicLayerRunner(enable_satellite=False)
         consensus = runner.run()
         assert consensus is not None
         assert consensus.final_signal in SignalType
@@ -536,3 +536,157 @@ class TestGeophysicalConnector:
         phases = compute_lunar_phase_series(days=10)
         assert len(phases) == 10
         assert all(0.0 <= p <= 1.0 for p in phases)
+
+
+# ── ESA Sentinel / Alfa-2 / Beta-2 ──────────────────────────────
+
+
+class TestESASentinelConnector:
+
+    def test_seismic_zone_bboxes(self):
+        from sentinel_omega.infrastructure.api.esa_sentinel import get_seismic_zone_bboxes
+
+        zones = get_seismic_zone_bboxes()
+        assert "guerrero_gap" in zones
+        assert "oaxaca_costa" in zones
+        bbox = zones["guerrero_gap"]
+        assert len(bbox) == 4
+        assert bbox[0] < bbox[2]  # lon_min < lon_max
+        assert bbox[1] < bbox[3]  # lat_min < lat_max
+
+    def test_satellite_product_dataclass(self):
+        from sentinel_omega.infrastructure.api.esa_sentinel import SatelliteProduct
+
+        p = SatelliteProduct(
+            product_id="test-123",
+            title="S2B_MSIL2A_20260601",
+            platform="S2B",
+            datetime_utc="2026-06-01T16:48:49Z",
+            cloud_cover=9.4,
+            geometry=None,
+            download_link=None,
+        )
+        assert p.platform == "S2B"
+        assert p.cloud_cover == 9.4
+
+
+class TestAlfa2Agent:
+
+    def test_analyze_with_coverage(self):
+        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+
+        agent = Alfa2Agent()
+        agent.ingest({
+            "zone_coverages": {
+                "guerrero_gap": {
+                    "s2_count": 5,
+                    "s1_count": 4,
+                    "total_passes": 9,
+                    "mean_revisit_days": 3.5,
+                    "s2_cloud_covers": [5.0, 12.0, 8.0, 25.0, 45.0],
+                },
+                "oaxaca_costa": {
+                    "s2_count": 3,
+                    "s1_count": 2,
+                    "total_passes": 5,
+                    "mean_revisit_days": 6.0,
+                    "s2_cloud_covers": [10.0, 15.0, 30.0],
+                },
+            },
+            "thermal_anomaly_count": 0,
+        })
+        signal = agent.analyze()
+        assert signal.signal_type in SignalType
+        assert signal.confidence >= 0.0
+
+    def test_analyze_with_anomalies(self):
+        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+
+        agent = Alfa2Agent()
+        agent.ingest({
+            "zone_coverages": {
+                "guerrero_gap": {
+                    "s2_count": 8,
+                    "s1_count": 6,
+                    "total_passes": 14,
+                    "mean_revisit_days": 2.1,
+                    "s2_cloud_covers": [5.0, 8.0, 3.0, 12.0, 7.0, 10.0, 15.0, 4.0],
+                },
+            },
+            "thermal_anomaly_count": 4,
+        })
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.ALERT
+        assert signal.confidence > 0.5
+
+    def test_analyze_no_data(self):
+        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+
+        agent = Alfa2Agent()
+        agent.ingest({})
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.NO_SIGNAL
+
+    def test_health_check(self):
+        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+
+        agent = Alfa2Agent()
+        assert agent.health_check() is False
+        agent.ingest({"zone_coverages": {"test": {"s2_count": 1}}})
+        assert agent.health_check() is True
+
+
+class TestBeta2Agent:
+
+    def test_analyze_with_sar(self):
+        from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
+
+        agent = Beta2Agent()
+        agent.ingest({
+            "sar_coverages": {
+                "guerrero_gap": {
+                    "s1_count": 4,
+                    "mean_revisit_days": 12.0,
+                    "min_revisit_days": 6.0,
+                },
+                "oaxaca_costa": {
+                    "s1_count": 3,
+                    "mean_revisit_days": 10.0,
+                    "min_revisit_days": 5.0,
+                },
+                "chiapas": {
+                    "s1_count": 2,
+                    "mean_revisit_days": 15.0,
+                    "min_revisit_days": 12.0,
+                },
+            },
+            "deformation_flags": [],
+        })
+        signal = agent.analyze()
+        assert signal.signal_type in SignalType
+
+    def test_analyze_with_deformation(self):
+        from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
+
+        agent = Beta2Agent()
+        agent.ingest({
+            "sar_coverages": {
+                "guerrero_gap": {
+                    "s1_count": 5,
+                    "mean_revisit_days": 12.0,
+                    "min_revisit_days": 6.0,
+                },
+            },
+            "deformation_flags": ["guerrero_gap"],
+        })
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.ALERT
+        assert signal.confidence > 0.6
+
+    def test_analyze_no_data(self):
+        from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
+
+        agent = Beta2Agent()
+        agent.ingest({})
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.NO_SIGNAL

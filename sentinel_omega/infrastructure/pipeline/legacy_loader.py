@@ -154,3 +154,94 @@ class LegacyDataLoader:
             "temp": df["temp_max"].values.astype(float),
             "presion": df["presion_atm"].values.astype(float),
         }
+
+    # ── SENTINEL_OMEGA_PRO.db loaders ────────────────────────────────
+
+    def load_fact_sismos(
+        self,
+        min_mag: Optional[float] = None,
+        limit: Optional[int] = None,
+    ) -> pd.DataFrame:
+        """Load seismic events from fact_sismos (424K+ rows)."""
+        conn = self._connect()
+        try:
+            query = "SELECT * FROM fact_sismos"
+            if min_mag is not None:
+                query += f" WHERE mag >= {min_mag}"
+            query += " ORDER BY timestamp_utc"
+            if limit:
+                query += f" LIMIT {limit}"
+            df = pd.read_sql_query(query, conn)
+            logger.info(f"Loaded {len(df)} seismic records")
+            return df
+        finally:
+            conn.close()
+
+    def load_fact_clima_espacial(
+        self,
+        limit: Optional[int] = None,
+    ) -> pd.DataFrame:
+        """Load space weather records from fact_clima_espacial (60K+ rows)."""
+        conn = self._connect()
+        try:
+            query = "SELECT * FROM fact_clima_espacial WHERE timestamp_utc != 'nan'"
+            query += " ORDER BY timestamp_utc"
+            if limit:
+                query += f" LIMIT {limit}"
+            df = pd.read_sql_query(query, conn)
+            if "timestamp_utc" in df.columns:
+                df["timestamp_utc"] = pd.to_datetime(
+                    df["timestamp_utc"], errors="coerce"
+                )
+            logger.info(f"Loaded {len(df)} climate records")
+            return df
+        finally:
+            conn.close()
+
+    def load_backcast_patterns(self) -> pd.DataFrame:
+        """Load precursor patterns from backcast analysis (11K+ rows)."""
+        conn = self._connect()
+        try:
+            df = pd.read_sql_query(
+                "SELECT * FROM backcast_patterns ORDER BY timestamp_hallazgo",
+                conn,
+            )
+            logger.info(f"Loaded {len(df)} backcast patterns")
+            return df
+        finally:
+            conn.close()
+
+    def load_uvg_nodes(self) -> pd.DataFrame:
+        """Load UVG monitoring node definitions (62 nodes)."""
+        conn = self._connect()
+        try:
+            return pd.read_sql_query("SELECT * FROM dim_nodos_uvg", conn)
+        finally:
+            conn.close()
+
+    def load_padre_audit(self) -> pd.DataFrame:
+        """Load Padre model audit trail."""
+        conn = self._connect()
+        try:
+            return pd.read_sql_query(
+                "SELECT * FROM tbl_auditoria_padre ORDER BY timestamp_utc",
+                conn,
+            )
+        finally:
+            conn.close()
+
+    def load_fact_schumann(self) -> pd.DataFrame:
+        """Load Schumann resonance historical measurements (372 rows)."""
+        conn = self._connect()
+        try:
+            df = pd.read_sql_query(
+                "SELECT * FROM fact_schumann ORDER BY timestamp_utc", conn
+            )
+            if "timestamp_utc" in df.columns:
+                df["timestamp_utc"] = pd.to_datetime(
+                    df["timestamp_utc"], errors="coerce"
+                )
+            logger.info(f"Loaded {len(df)} Schumann records")
+            return df
+        finally:
+            conn.close()
