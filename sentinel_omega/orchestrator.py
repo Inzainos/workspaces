@@ -6,6 +6,7 @@ Lottery layer operates independently (SEPARATED).
 Architecture: Shadow Node Theory (R(t) = a·t^b)
 Consensus: Hierarchical — each layer has its own Padre/Árbitro
 Cross-layer: SNT engine provides shared analytical primitives
+Pipeline: Real API connectors → Data Pipeline → Agent ingest() → Consensus
 """
 
 import logging
@@ -29,6 +30,7 @@ class SystemStatus:
     last_consensus: Dict[str, Optional[ConsensusResult]] = field(default_factory=dict)
     uptime_s: float = 0.0
     total_signals: int = 0
+    cycle_count: int = 0
 
 
 class SentinelOrchestrator:
@@ -54,7 +56,32 @@ class SentinelOrchestrator:
         self._status.layer_statuses[name] = True
         logger.info(f"Layer registered: {name}")
 
+    @classmethod
+    def create_with_live_pipelines(cls, config: SentinelOmegaConfig) -> "SentinelOrchestrator":
+        """Factory: creates orchestrator with real API-backed layer runners."""
+        from sentinel_omega.infrastructure.pipeline.layer_runners import (
+            GeodynamicLayerRunner,
+            CryptoLayerRunner,
+            BolsaLayerRunner,
+        )
+
+        orch = cls(config)
+
+        if config.layers.get("geodynamic") and config.layers["geodynamic"].enabled:
+            orch.register_layer("geodynamic", GeodynamicLayerRunner())
+
+        if config.layers.get("crypto") and config.layers["crypto"].enabled:
+            orch.register_layer("crypto", CryptoLayerRunner())
+
+        if config.layers.get("bolsa") and config.layers["bolsa"].enabled:
+            orch.register_layer("bolsa", BolsaLayerRunner())
+
+        return orch
+
     def run_cycle(self) -> Dict[str, ConsensusResult]:
+        self._status.cycle_count += 1
+        logger.info(f"--- Cycle #{self._status.cycle_count} ---")
+
         results = {}
         for name, layer in self._layers.items():
             try:
@@ -63,6 +90,7 @@ class SentinelOrchestrator:
                     results[name] = consensus
                     self._status.last_consensus[name] = consensus
                     self._status.total_signals += 1
+                    self._status.layer_statuses[name] = True
             except Exception as e:
                 logger.error(f"Layer '{name}' cycle failed: {e}")
                 self._status.layer_statuses[name] = False
