@@ -98,17 +98,21 @@ class TestGeodynamicPipeline:
         df = data["omni_dataframe"]
         assert "bz_gsm" in df.columns
 
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_schumann_resonance")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_earthquakes")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_kp_index")
-    def test_beta1_data(self, mock_kp, mock_eq):
+    def test_beta1_data(self, mock_kp, mock_eq, mock_schumann):
         mock_kp.return_value = _mock_kp_df()
         mock_eq.return_value = _mock_eq_df()
+        mock_schumann.return_value = (8.12, 3.5)
 
         pipe = GeodynamicPipeline()
         data = pipe.fetch_beta1_data()
         assert "kp_series" in data
         assert len(data["kp_series"]) == 100
         assert "seismic_magnitudes" in data
+        assert data["schumann_frequency"] == 8.12
+        assert data["schumann_activity"] == 3.5
 
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_fear_greed_index")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_earthquakes")
@@ -214,17 +218,19 @@ class TestBolsaPipeline:
 
 class TestLayerRunners:
 
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_schumann_resonance")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_fear_greed_index")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_earthquakes")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_kp_index")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_solar_wind")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_mag_field")
-    def test_geodynamic_runner(self, mock_mag, mock_wind, mock_kp, mock_eq, mock_fg):
+    def test_geodynamic_runner(self, mock_mag, mock_wind, mock_kp, mock_eq, mock_fg, mock_schumann):
         mock_mag.return_value = _mock_mag_df()
         mock_wind.return_value = _mock_wind_df()
         mock_kp.return_value = _mock_kp_df()
         mock_eq.return_value = _mock_eq_df()
         mock_fg.return_value = {"value": 50, "classification": "Neutral"}
+        mock_schumann.return_value = (7.95, 1.2)
 
         runner = GeodynamicLayerRunner()
         consensus = runner.run()
@@ -395,3 +401,68 @@ class TestLegacyDataLoader:
     def test_missing_db(self):
         with pytest.raises(FileNotFoundError):
             LegacyDataLoader("/nonexistent/path.db")
+
+
+# ── Schumann / Tomsk WPC ─────────────────────────────────────────
+
+
+class TestSchumannConnector:
+
+    @patch("sentinel_omega.infrastructure.api.schumann.requests.get")
+    def test_fetch_spectrogram(self, mock_get):
+        from sentinel_omega.infrastructure.api.schumann import fetch_schumann_spectrogram
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"\xff\xd8\xff\xe0" + b"\x00" * 100
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        path = fetch_schumann_spectrogram()
+        assert path is not None
+        import os
+        assert os.path.exists(path)
+        os.remove(path)
+
+    @patch("sentinel_omega.infrastructure.api.schumann.requests.get")
+    def test_fetch_spectrogram_failure(self, mock_get):
+        from sentinel_omega.infrastructure.api.schumann import fetch_schumann_spectrogram
+
+        mock_get.side_effect = Exception("Network error")
+        path = fetch_schumann_spectrogram()
+        assert path is None
+
+    def test_analyze_missing_image(self):
+        from sentinel_omega.infrastructure.api.schumann import analyze_spectrogram
+
+        hz, pct = analyze_spectrogram("/nonexistent/image.jpg")
+        assert hz == 7.83
+        assert pct == 0.0
+
+    def test_analyze_none_path(self):
+        from sentinel_omega.infrastructure.api.schumann import analyze_spectrogram
+
+        hz, pct = analyze_spectrogram(None)
+        assert hz == 7.83
+        assert pct == 0.0
+
+    @patch("sentinel_omega.infrastructure.api.schumann.fetch_schumann_spectrogram")
+    @patch("sentinel_omega.infrastructure.api.schumann.analyze_spectrogram")
+    def test_full_pipeline(self, mock_analyze, mock_fetch):
+        from sentinel_omega.infrastructure.api.schumann import fetch_schumann_resonance
+
+        mock_fetch.return_value = "/tmp/fake.jpg"
+        mock_analyze.return_value = (8.5, 12.0)
+
+        hz, pct = fetch_schumann_resonance(cleanup=False)
+        assert hz == 8.5
+        assert pct == 12.0
+
+    @patch("sentinel_omega.infrastructure.api.schumann.fetch_schumann_spectrogram")
+    def test_full_pipeline_no_download(self, mock_fetch):
+        from sentinel_omega.infrastructure.api.schumann import fetch_schumann_resonance
+
+        mock_fetch.return_value = None
+        hz, pct = fetch_schumann_resonance()
+        assert hz == 7.83
+        assert pct == 0.0

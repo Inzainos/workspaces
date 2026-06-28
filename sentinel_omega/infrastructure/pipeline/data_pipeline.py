@@ -16,6 +16,7 @@ from sentinel_omega.infrastructure.api.noaa import (
     fetch_mag_field,
 )
 from sentinel_omega.infrastructure.api.usgs import fetch_earthquakes
+from sentinel_omega.infrastructure.api.schumann import fetch_schumann_resonance
 from sentinel_omega.infrastructure.api.crypto import (
     fetch_coingecko_dominance,
     fetch_binance_klines,
@@ -73,6 +74,13 @@ class GeodynamicPipeline:
         eq_df = fetch_earthquakes(min_magnitude=2.5, days=30)
         if eq_df is not None and "magnitude" in eq_df.columns:
             result["seismic_magnitudes"] = eq_df["magnitude"].values.astype(float)
+
+        try:
+            schumann_hz, schumann_pct = fetch_schumann_resonance(cleanup=True)
+            result["schumann_frequency"] = schumann_hz
+            result["schumann_activity"] = schumann_pct
+        except Exception as e:
+            logger.warning(f"Schumann fetch failed: {e}")
 
         if not result:
             logger.warning("No Kp/seismic data for Beta-1")
