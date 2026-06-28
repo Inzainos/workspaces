@@ -1,4 +1,4 @@
-"""Tests for the core SNT engine modules."""
+"""Tests for the core SNT engine modules (v2.5.0 algorithm)."""
 
 import numpy as np
 import pytest
@@ -7,6 +7,7 @@ from sentinel_omega.core.snt_engine.satellization import (
     DominanceRegime,
     SatellizationEngine,
     SatellizationResult,
+    CollapseResult,
 )
 from sentinel_omega.core.snt_engine.friction import (
     FrictionLevel,
@@ -24,55 +25,85 @@ class TestSatellizationEngine:
     def setup_method(self):
         self.engine = SatellizationEngine()
 
-    def test_fit_positive_b_satellization(self):
+    def test_fit_ratio_positive_b_satellization(self):
         t = np.arange(1, 51, dtype=float)
         ratio = 2.0 * np.power(t, 0.4) + np.random.default_rng(42).normal(0, 0.05, len(t))
-        result = self.engine.fit(t, ratio)
-        assert result.regime in (DominanceRegime.SATELLIZATION, DominanceRegime.ROCHE_RADIUS)
+        ratio = np.maximum(ratio, 0.01)
+        result = self.engine.fit_ratio(t, ratio)
+        assert result.regime in (
+            DominanceRegime.SATELLIZATION_ACTIVE,
+            DominanceRegime.SATELLIZATION_GRADUAL,
+            DominanceRegime.ROCHE_RADIUS,
+        )
         assert result.b > 0
         assert result.r_squared > 0.8
         assert result.n_observations == 50
 
-    def test_fit_negative_b_convergence(self):
+    def test_fit_ratio_negative_b_convergence(self):
         t = np.arange(1, 51, dtype=float)
         ratio = 10.0 * np.power(t, -0.3)
-        result = self.engine.fit(t, ratio)
+        result = self.engine.fit_ratio(t, ratio)
         assert result.regime == DominanceRegime.CONVERGENCE
-        assert result.b < -0.05
+        assert result.b < -0.1
 
-    def test_fit_near_zero_b_equilibrium(self):
+    def test_fit_ratio_near_zero_b_equilibrium(self):
         t = np.arange(1, 51, dtype=float)
         ratio = 5.0 * np.power(t, 0.01)
-        result = self.engine.fit(t, ratio)
+        result = self.engine.fit_ratio(t, ratio)
         assert result.regime == DominanceRegime.EQUILIBRIUM
-        assert -0.05 <= result.b <= 0.05
+        assert -0.1 <= result.b <= 0.05
 
-    def test_fit_roche_radius(self):
+    def test_fit_ratio_roche_radius(self):
         t = np.arange(1, 51, dtype=float)
         ratio = 1.0 * np.power(t, 1.5)
-        result = self.engine.fit(t, ratio)
+        result = self.engine.fit_ratio(t, ratio)
         assert result.regime == DominanceRegime.ROCHE_RADIUS
         assert result.b >= 1.0
 
-    def test_fit_insufficient_data(self):
+    def test_fit_ratio_extreme(self):
+        t = np.arange(1, 51, dtype=float)
+        ratio = 0.5 * np.power(t, 2.5)
+        result = self.engine.fit_ratio(t, ratio)
+        assert result.regime == DominanceRegime.EXTREME
+        assert result.b > 2.0
+
+    def test_fit_ratio_insufficient_data(self):
         t = np.array([1.0, 2.0])
         ratio = np.array([1.0, 2.0])
         with pytest.raises(ValueError, match="Insufficient data"):
-            self.engine.fit(t, ratio)
+            self.engine.fit_ratio(t, ratio)
 
-    def test_fit_filters_invalid_values(self):
+    def test_fit_ratio_filters_invalid_values(self):
         t = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
         ratio = np.array([np.nan, 1.0, 1.5, 2.0, 2.5, 3.0])
-        result = self.engine.fit(t, ratio)
+        result = self.engine.fit_ratio(t, ratio)
         assert result.n_observations == 5
 
-    def test_classify_regime_boundaries(self):
+    def test_fit_uses_pearson(self):
+        """Verify we get r_pearson and p_value (not Spearman)."""
+        t = np.arange(1, 51, dtype=float)
+        ratio = 2.0 * np.power(t, 0.5)
+        result = self.engine.fit_ratio(t, ratio)
+        assert hasattr(result, "r_pearson")
+        assert abs(result.r_pearson) > 0.9
+
+    def test_fit_with_dominant_shadow(self):
+        """Test the full fit() method with dominant/shadow arrays."""
+        years = np.arange(2000, 2020, dtype=float)
+        dominant = 100 * np.power(np.arange(1, 21), 0.3)
+        shadow = 50 * np.ones(20)
+        result = self.engine.fit(years, dominant, shadow, trigger_year=2000)
+        assert result.b > 0
+        assert result.n_observations == 20
+
+    def test_classify_regime_v25_boundaries(self):
+        assert self.engine._classify_regime(2.5) == DominanceRegime.EXTREME
         assert self.engine._classify_regime(1.5) == DominanceRegime.ROCHE_RADIUS
-        assert self.engine._classify_regime(1.0) == DominanceRegime.ROCHE_RADIUS
-        assert self.engine._classify_regime(0.5) == DominanceRegime.SATELLIZATION
-        assert self.engine._classify_regime(0.03) == DominanceRegime.EQUILIBRIUM
-        assert self.engine._classify_regime(-0.04) == DominanceRegime.EQUILIBRIUM
-        assert self.engine._classify_regime(-0.1) == DominanceRegime.CONVERGENCE
+        assert self.engine._classify_regime(0.5) == DominanceRegime.SATELLIZATION_ACTIVE
+        assert self.engine._classify_regime(0.1) == DominanceRegime.SATELLIZATION_GRADUAL
+        assert self.engine._classify_regime(0.0) == DominanceRegime.EQUILIBRIUM
+        assert self.engine._classify_regime(-0.05) == DominanceRegime.EQUILIBRIUM
+        assert self.engine._classify_regime(-0.2) == DominanceRegime.CONVERGENCE
 
     def test_detect_leapfrog_true(self):
         b_history = np.concatenate([
@@ -98,9 +129,40 @@ class TestSatellizationEngine:
         assert "mann_whitney_U" in result
         assert "p_value" in result
 
-    def test_power_law_static(self):
-        assert SatellizationEngine.power_law(1.0, 2.0, 3.0) == 2.0
-        assert SatellizationEngine.power_law(2.0, 1.0, 0.0) == 1.0
+
+# ── Collapse (ACO v2.5.0) ───────────────────────────────────────────
+
+
+class TestCollapse:
+
+    def test_regulated_decay(self):
+        tau = np.arange(1, 51, dtype=float)
+        R = 100.0 * np.power(tau, -0.8)
+        result = SatellizationEngine.fit_collapse(tau, R)
+        assert result.delta < 0
+        assert result.r_squared > 0.8
+        assert result.collapse_mode == "regulated_orbital_decay"
+
+    def test_catastrophic_cliff(self):
+        tau = np.arange(1, 51, dtype=float)
+        R = 100.0 * np.exp(-0.3 * tau)
+        result = SatellizationEngine.fit_collapse(tau, R)
+        assert result.exp_k is not None
+        assert result.exp_k < 0
+        assert result.collapse_mode == "catastrophic_cliff"
+
+    def test_insufficient_data(self):
+        tau = np.array([1.0, 2.0])
+        R = np.array([10.0, 5.0])
+        result = SatellizationEngine.fit_collapse(tau, R)
+        assert result.collapse_mode == "insufficient_data"
+
+    def test_cracquelure_decay(self):
+        rng = np.random.default_rng(42)
+        tau = np.arange(1, 51, dtype=float)
+        R = rng.uniform(5, 100, len(tau))
+        result = SatellizationEngine.fit_collapse(tau, R)
+        assert result.collapse_mode in ("cracquelure_decay", "floor_arrested")
 
 
 # ── InstitutionalFrictionCalculator ──────────────────────────────────

@@ -39,8 +39,10 @@ SIGNAL_COLORS = {
 REGIME_COLORS = {
     DominanceRegime.CONVERGENCE: "#00c853",
     DominanceRegime.EQUILIBRIUM: "#ffc107",
-    DominanceRegime.SATELLIZATION: "#ff9100",
+    DominanceRegime.SATELLIZATION_GRADUAL: "#ffab40",
+    DominanceRegime.SATELLIZATION_ACTIVE: "#ff9100",
     DominanceRegime.ROCHE_RADIUS: "#ff1744",
+    DominanceRegime.EXTREME: "#d50000",
     DominanceRegime.LEAPFROG: "#2979ff",
 }
 
@@ -77,7 +79,7 @@ def render_sidebar():
     st.sidebar.subheader("SNT Parameters")
     st.sidebar.markdown(f"**Roche threshold**: b ≥ {cfg.snt.roche_threshold}")
     st.sidebar.markdown(f"**Equilibrium band**: ±{cfg.snt.equilibrium_band}")
-    st.sidebar.markdown(f"**Friction ρ**: {cfg.snt.friction_spearman_rho}")
+    st.sidebar.markdown(f"**Friction ρ (Pearson)**: {cfg.snt.friction_pearson_rho}")
     st.sidebar.markdown(f"**Min data points**: {cfg.snt.min_data_points}")
 
     st.sidebar.divider()
@@ -107,7 +109,7 @@ def generate_demo_satellization():
         ratio = a_true * np.power(t, b_true) + np.abs(noise)
         ratio = np.maximum(ratio, 1e-6)
         try:
-            result = snt.fit(t, ratio)
+            result = snt.fit_ratio(t, ratio)
             results[name] = {"result": result, "t": t, "ratio": ratio}
         except ValueError:
             pass
@@ -236,10 +238,12 @@ def render_satellization_analysis(results: dict):
             text=[f"b={b:.3f}" for b in b_values],
             textposition="outside",
         ))
-        fig.add_hline(y=1.0, line_dash="dash", line_color="red", annotation_text="Roche Radius")
+        fig.add_hline(y=2.0, line_dash="dash", line_color="darkred", annotation_text="Extreme (b>2.0)")
+        fig.add_hline(y=1.0, line_dash="dash", line_color="red", annotation_text="Roche Radius (b>1.0)")
+        fig.add_hline(y=0.3, line_dash="dot", line_color="orange", annotation_text="Active (b>0.3)")
         fig.add_hline(y=0.05, line_dash="dot", line_color="gray")
-        fig.add_hline(y=-0.05, line_dash="dot", line_color="gray")
-        fig.add_hrect(y0=-0.05, y1=0.05, fillcolor="yellow", opacity=0.1,
+        fig.add_hline(y=-0.1, line_dash="dot", line_color="gray")
+        fig.add_hrect(y0=-0.1, y1=0.05, fillcolor="yellow", opacity=0.1,
                       annotation_text="Equilibrium Band")
         fig.update_layout(
             title="Satellization Exponent (b) by Domain",

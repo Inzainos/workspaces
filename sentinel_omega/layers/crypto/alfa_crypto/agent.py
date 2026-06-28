@@ -65,7 +65,7 @@ class AlfaCryptoAgent(BaseAgent):
 
             t = np.arange(1, len(ratio) + 1, dtype=float)
             try:
-                fit = self._snt.fit(t, ratio.values)
+                fit = self._snt.fit_ratio(t, ratio.values)
                 results[pair] = {
                     "b": fit.b,
                     "r_squared": fit.r_squared,
