@@ -277,7 +277,10 @@ Se aplica a:
 ## Estructura del Proyecto
 
 ```
-sentinel_omega/                          # 9,085 líneas de código · 312 tests
+sentinel_omega/                          # ~9,500 líneas de código · 312 tests
+├── launcher.py                          # Launcher — arranca el orquestador en ciclo continuo
+├── shutdown.py                          # Shutdown — detiene gracefully via SIGTERM/SIGKILL
+├── reboot.py                            # Reboot — stop + relaunch
 ├── orchestrator.py                      # Orquestador maestro — ejecuta ciclos
 ├── config/
 │   └── sentinel_config.py               # Configuración central (secrets via os.environ)
@@ -423,16 +426,43 @@ python -m pytest sentinel_omega/tests/ -q
 
 # Dashboard (9 tabs interactivas)
 streamlit run sentinel_omega/infrastructure/dashboard/app.py
-
-# Ciclo completo del orquestador (requiere APIs activas)
-python -c "
-from sentinel_omega.config.sentinel_config import SentinelOmegaConfig
-from sentinel_omega.orchestrator import SentinelOrchestrator
-orch = SentinelOrchestrator.create_with_live_pipelines(SentinelOmegaConfig())
-results = orch.run_cycle()
-print(orch.get_status())
-"
 ```
+
+### Launcher / Shutdown / Reboot
+
+```bash
+# Iniciar el orquestador en ciclo continuo
+python sentinel_omega/launcher.py
+
+# Iniciar con dashboard + sin alertas Telegram (dry run)
+python sentinel_omega/launcher.py --dashboard --dry-run
+
+# Un solo ciclo y salir
+python sentinel_omega/launcher.py --once
+
+# Detener gracefully (SIGTERM → espera 30s)
+python sentinel_omega/shutdown.py
+
+# Detener forzado (SIGKILL si no responde)
+python sentinel_omega/shutdown.py --force
+
+# Reiniciar (stop + relaunch)
+python sentinel_omega/reboot.py
+python sentinel_omega/reboot.py --dashboard --dry-run
+```
+
+| Archivo                     | Propósito                              |
+|-----------------------------|----------------------------------------|
+| `data/sentinel_omega.pid`   | PID del proceso activo                 |
+| `data/sentinel_omega.log`   | Log persistente del orquestador        |
+
+El launcher:
+- Verifica que no haya otra instancia corriendo (via PID file)
+- Inicializa la base de datos y siembra los 125 nodos si está vacía
+- Ejecuta ciclos en loop con el intervalo configurado (default 300s)
+- Maneja SIGTERM/SIGINT para shutdown graceful
+- Persiste cada ciclo en SQLite (precursores cósmicos + ciclos)
+- Opcionalmente lanza el dashboard de Streamlit como proceso hijo
 
 ## Variables de Entorno
 

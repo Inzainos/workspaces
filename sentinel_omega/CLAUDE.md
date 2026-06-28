@@ -46,6 +46,32 @@ python -m pytest sentinel_omega/tests/test_precursor.py -v
 
 **Important**: Always run from `/home/user/workspaces/`, not from inside `sentinel_omega/`.
 
+## Launcher / Shutdown / Reboot
+
+```bash
+# Launch orchestrator (continuous cycle mode)
+python sentinel_omega/launcher.py
+
+# Launch with dashboard + dry run (no Telegram)
+python sentinel_omega/launcher.py --dashboard --dry-run
+
+# Single cycle and exit
+python sentinel_omega/launcher.py --once
+
+# Graceful shutdown (SIGTERM)
+python sentinel_omega/shutdown.py
+
+# Force shutdown (SIGKILL after 30s timeout)
+python sentinel_omega/shutdown.py --force
+
+# Reboot (stop + relaunch)
+python sentinel_omega/reboot.py
+python sentinel_omega/reboot.py --dashboard --dry-run
+```
+
+PID file: `data/sentinel_omega.pid`
+Log file: `data/sentinel_omega.log`
+
 ## Running the dashboard
 
 ```bash
