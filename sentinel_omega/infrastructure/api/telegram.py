@@ -80,3 +80,36 @@ def format_consensus_alert(
         f"Confidence: <code>{confidence:.0%}</code>\n"
         f"Agents: <code>{agents_reporting}</code>\n"
     )
+
+
+def format_precursor_alert(
+    precursor_type: str,
+    display_name: str,
+    value: float,
+    details: str,
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+    lugar: Optional[str] = None,
+) -> str:
+    """Format a precursor detection alert with prediction windows."""
+    from datetime import datetime, timedelta, timezone
+
+    ahora = datetime.now(timezone.utc)
+    location = ""
+    if lugar:
+        location = f"\n<b>Zona:</b> {lugar}"
+    if lat is not None and lon is not None:
+        location += f"\n<b>Coordenadas:</b> {lat:.2f}, {lon:.2f}"
+
+    return (
+        f"<b>SENTINEL OMEGA — ALERTA DE PRECURSOR</b>\n\n"
+        f"<b>Tipo:</b> {display_name}\n"
+        f"<b>Valor:</b> <code>{value:.2f}</code>\n"
+        f"{location}\n\n"
+        f"<b>VENTANAS DE PREDICCIÓN:</b>\n"
+        f"  72h → {(ahora + timedelta(hours=72)).strftime('%d/%m %H:%M')} UTC\n"
+        f"  48h → {(ahora + timedelta(hours=48)).strftime('%d/%m %H:%M')} UTC\n"
+        f"  24h → {(ahora + timedelta(hours=24)).strftime('%d/%m %H:%M')} UTC\n\n"
+        f"{details}\n\n"
+        f"<i>{ahora.strftime('%Y-%m-%d %H:%M:%S')} UTC</i>"
+    )

@@ -1,21 +1,27 @@
 """
 Sentinel Omega — Master Orchestrator
-Coordinates all layers (Geodynamic, Crypto, Bolsa) under SNT framework.
-Lottery layer operates independently (SEPARATED).
+Precursor detection platform for natural events.
+Coordinates geophysical layers and computes TITAN V32 fantasma risk index.
 
-Architecture: Shadow Node Theory (R(t) = a·t^b)
+Architecture: SNT mathematical framework (R(t) = a·t^b)
 Consensus: Hierarchical — each layer has its own Padre/Árbitro
-Cross-layer: SNT engine provides shared analytical primitives
-Pipeline: Real API connectors → Data Pipeline → Agent ingest() → Consensus
+Precursor: TITAN V32 fantasma formula on every geodynamic cycle
+Alerts: Telegram dispatch when precursor risk is elevated
+Pipeline: Real API connectors → Data Pipeline → Agent ingest() → Consensus → Risk
 """
 
 import logging
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 
 from sentinel_omega.config.sentinel_config import SentinelOmegaConfig
 from sentinel_omega.core.shared.agent_base import AgentSignal, ConsensusResult, SignalType
+from sentinel_omega.core.precursor.risk_calculator import PrecursorRisk, format_risk_report
+from sentinel_omega.infrastructure.api.telegram import (
+    send_alert,
+    format_consensus_alert,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,9 +34,11 @@ logger = logging.getLogger(__name__)
 class SystemStatus:
     layer_statuses: Dict[str, bool] = field(default_factory=dict)
     last_consensus: Dict[str, Optional[ConsensusResult]] = field(default_factory=dict)
+    last_precursor_risk: Optional[PrecursorRisk] = None
     uptime_s: float = 0.0
     total_signals: int = 0
     cycle_count: int = 0
+    alerts_dispatched: int = 0
 
 
 class SentinelOrchestrator:
@@ -103,8 +111,31 @@ class SentinelOrchestrator:
         crypto = results.get("crypto")
         bolsa = results.get("bolsa")
 
+        if geo and geo.precursor_risk:
+            risk: PrecursorRisk = geo.precursor_risk
+            self._status.last_precursor_risk = risk
+
+            if risk.is_elevated:
+                logger.warning(
+                    f"PRECURSOR ALERT — fantasma={risk.fantasma:.2f} "
+                    f"level={risk.risk_level}"
+                )
+                alert_msg = format_risk_report(risk)
+                if geo.consensus_reached:
+                    alert_msg += (
+                        f"\n\n<b>Consensus: REACHED</b> "
+                        f"(confidence={geo.confidence:.0%})"
+                    )
+                send_alert(alert_msg)
+                self._status.alerts_dispatched += 1
+
         if geo and geo.consensus_reached and geo.final_signal == SignalType.ALERT:
             logger.warning("GEODYNAMIC ALERT — check crypto/bolsa for correlated anomalies")
+            consensus_msg = format_consensus_alert(
+                "geodynamic", geo.final_signal.value,
+                geo.confidence, len(geo.agent_signals),
+            )
+            send_alert(consensus_msg)
 
             if crypto and crypto.final_signal == SignalType.BEARISH:
                 logger.warning("CROSS-LAYER: Geodynamic alert + crypto bearish — potential systemic event")
