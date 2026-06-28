@@ -98,13 +98,20 @@ class TestGeodynamicPipeline:
         df = data["omni_dataframe"]
         assert "bz_gsm" in df.columns
 
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.compute_lunar_phase_series")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_lod_series")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_schumann_resonance")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_earthquakes")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_kp_index")
-    def test_beta1_data(self, mock_kp, mock_eq, mock_schumann):
+    def test_beta1_data(self, mock_kp, mock_eq, mock_schumann, mock_lod, mock_lunar):
         mock_kp.return_value = _mock_kp_df()
         mock_eq.return_value = _mock_eq_df()
         mock_schumann.return_value = (8.12, 3.5)
+        mock_lod.return_value = pd.DataFrame({
+            "date": pd.date_range("2024-01-01", periods=90, freq="1D"),
+            "lod_ms": np.random.uniform(-0.5, 1.5, 90),
+        })
+        mock_lunar.return_value = np.linspace(0, 1, 30)
 
         pipe = GeodynamicPipeline()
         data = pipe.fetch_beta1_data()
@@ -113,6 +120,10 @@ class TestGeodynamicPipeline:
         assert "seismic_magnitudes" in data
         assert data["schumann_frequency"] == 8.12
         assert data["schumann_activity"] == 3.5
+        assert "lod_ms" in data
+        assert len(data["lod_ms"]) == 90
+        assert "lunar_phase" in data
+        assert len(data["lunar_phase"]) == 30
 
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_fear_greed_index")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_earthquakes")
@@ -218,19 +229,26 @@ class TestBolsaPipeline:
 
 class TestLayerRunners:
 
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.compute_lunar_phase_series")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_lod_series")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_schumann_resonance")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_fear_greed_index")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_earthquakes")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_kp_index")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_solar_wind")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_mag_field")
-    def test_geodynamic_runner(self, mock_mag, mock_wind, mock_kp, mock_eq, mock_fg, mock_schumann):
+    def test_geodynamic_runner(self, mock_mag, mock_wind, mock_kp, mock_eq, mock_fg, mock_schumann, mock_lod, mock_lunar):
         mock_mag.return_value = _mock_mag_df()
         mock_wind.return_value = _mock_wind_df()
         mock_kp.return_value = _mock_kp_df()
         mock_eq.return_value = _mock_eq_df()
         mock_fg.return_value = {"value": 50, "classification": "Neutral"}
         mock_schumann.return_value = (7.95, 1.2)
+        mock_lod.return_value = pd.DataFrame({
+            "date": pd.date_range("2024-01-01", periods=30, freq="1D"),
+            "lod_ms": np.random.uniform(0.0, 1.0, 30),
+        })
+        mock_lunar.return_value = np.linspace(0, 1, 30)
 
         runner = GeodynamicLayerRunner()
         consensus = runner.run()
@@ -466,3 +484,55 @@ class TestSchumannConnector:
         hz, pct = fetch_schumann_resonance()
         assert hz == 7.83
         assert pct == 0.0
+
+
+# ── Geophysical (IERS LOD / Lunar) ───────────────────────────────
+
+
+class TestGeophysicalConnector:
+
+    @patch("sentinel_omega.infrastructure.api.geophysical.requests.get")
+    def test_fetch_lod_series(self, mock_get):
+        from sentinel_omega.infrastructure.api.geophysical import fetch_lod_series
+
+        csv_lines = ["MJD;LOD"]
+        for i in range(30):
+            mjd = 60310.0 + i
+            lod = 0.5 + i * 0.01
+            csv_lines.append(f"{mjd};{lod}")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = "\n".join(csv_lines)
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        df = fetch_lod_series(days=30)
+        assert df is not None
+        assert "lod_ms" in df.columns
+        assert "date" in df.columns
+        assert len(df) == 30
+
+    @patch("sentinel_omega.infrastructure.api.geophysical.requests.get")
+    def test_fetch_lod_failure(self, mock_get):
+        from sentinel_omega.infrastructure.api.geophysical import fetch_lod_series
+
+        mock_get.side_effect = Exception("Network error")
+        df = fetch_lod_series()
+        assert df is None
+
+    def test_compute_lunar_phase(self):
+        from sentinel_omega.infrastructure.api.geophysical import compute_lunar_phase
+
+        result = compute_lunar_phase()
+        assert "phase_fraction" in result
+        assert "illumination_pct" in result
+        assert 0.0 <= result["phase_fraction"] <= 1.0
+        assert 0.0 <= result["illumination_pct"] <= 100.0
+
+    def test_compute_lunar_phase_series(self):
+        from sentinel_omega.infrastructure.api.geophysical import compute_lunar_phase_series
+
+        phases = compute_lunar_phase_series(days=10)
+        assert len(phases) == 10
+        assert all(0.0 <= p <= 1.0 for p in phases)

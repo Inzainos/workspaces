@@ -17,6 +17,10 @@ from sentinel_omega.infrastructure.api.noaa import (
 )
 from sentinel_omega.infrastructure.api.usgs import fetch_earthquakes
 from sentinel_omega.infrastructure.api.schumann import fetch_schumann_resonance
+from sentinel_omega.infrastructure.api.geophysical import (
+    fetch_lod_series,
+    compute_lunar_phase_series,
+)
 from sentinel_omega.infrastructure.api.crypto import (
     fetch_coingecko_dominance,
     fetch_binance_klines,
@@ -81,6 +85,15 @@ class GeodynamicPipeline:
             result["schumann_activity"] = schumann_pct
         except Exception as e:
             logger.warning(f"Schumann fetch failed: {e}")
+
+        lod_df = fetch_lod_series(days=90)
+        if lod_df is not None and len(lod_df) > 0:
+            result["lod_ms"] = lod_df["lod_ms"].values.astype(float)
+
+        try:
+            result["lunar_phase"] = compute_lunar_phase_series(days=30)
+        except Exception as e:
+            logger.warning(f"Lunar phase computation failed: {e}")
 
         if not result:
             logger.warning("No Kp/seismic data for Beta-1")
