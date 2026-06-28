@@ -21,6 +21,7 @@ from sentinel_omega.core.precursor.risk_calculator import PrecursorRisk, format_
 from sentinel_omega.infrastructure.api.telegram import (
     send_alert,
     format_consensus_alert,
+    format_precursor_alert,
 )
 
 logging.basicConfig(
@@ -35,6 +36,7 @@ class SystemStatus:
     layer_statuses: Dict[str, bool] = field(default_factory=dict)
     last_consensus: Dict[str, Optional[ConsensusResult]] = field(default_factory=dict)
     last_precursor_risk: Optional[PrecursorRisk] = None
+    active_precursors: List[str] = field(default_factory=list)
     uptime_s: float = 0.0
     total_signals: int = 0
     cycle_count: int = 0
@@ -128,6 +130,30 @@ class SentinelOrchestrator:
                     )
                 send_alert(alert_msg)
                 self._status.alerts_dispatched += 1
+
+        if geo and getattr(geo, "precursor_detections", None):
+            detections = geo.precursor_detections
+            self._status.active_precursors = [d.tipo.value for d in detections]
+            for detection in detections:
+                if detection.confidence >= 0.7:
+                    details = ", ".join(
+                        f"{k}={v}" for k, v in detection.values.items()
+                    )
+                    alert_msg = format_precursor_alert(
+                        precursor_type=detection.tipo.value,
+                        display_name=detection.display_name,
+                        value=detection.confidence,
+                        details=details,
+                        lat=detection.lat,
+                        lon=detection.lon,
+                        lugar=detection.station,
+                    )
+                    send_alert(alert_msg)
+                    self._status.alerts_dispatched += 1
+                    logger.warning(
+                        f"PRECURSOR DISPATCH: {detection.tipo.value} "
+                        f"@ {detection.station} (conf={detection.confidence:.0%})"
+                    )
 
         if geo and geo.consensus_reached and geo.final_signal == SignalType.ALERT:
             logger.warning("GEODYNAMIC ALERT — check crypto/bolsa for correlated anomalies")

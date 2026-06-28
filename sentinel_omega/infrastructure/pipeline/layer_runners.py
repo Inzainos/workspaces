@@ -16,6 +16,7 @@ from sentinel_omega.core.precursor.risk_calculator import (
     format_risk_report,
 )
 from sentinel_omega.core.precursor.assertivity import AssertivityTracker
+from sentinel_omega.core.precursor.scanner import PrecursorScanner, PrecursorDetection
 
 from sentinel_omega.layers.geodynamic.alfa1.agent import Alfa1Agent
 from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
@@ -55,7 +56,9 @@ class GeodynamicLayerRunner:
         self.padre = GeodynamicPadre()
         self._enable_satellite = enable_satellite
         self.assertivity = AssertivityTracker(radius_degrees=5.0, window_days=30)
+        self.scanner = PrecursorScanner()
         self.last_risk: Optional[PrecursorRisk] = None
+        self.last_detections: List[PrecursorDetection] = []
 
     def _compute_precursor_risk(
         self,
@@ -104,6 +107,8 @@ class GeodynamicLayerRunner:
         delta_data = self.pipeline.fetch_delta_data()
 
         risk = self._compute_precursor_risk(alfa1_data, beta1_data, delta_data)
+        detections = self.scanner.scan(alfa1_data, beta1_data, delta_data)
+        self.last_detections = detections
 
         self.alfa1.ingest(alfa1_data)
         self.beta1.ingest(beta1_data)
@@ -128,11 +133,12 @@ class GeodynamicLayerRunner:
 
         consensus = self.padre.evaluate_consensus(signals)
         consensus.precursor_risk = risk
+        consensus.precursor_detections = detections
 
         logger.info(
             f"Geodynamic consensus: {consensus.final_signal.value} "
             f"(reached={consensus.consensus_reached}, conf={consensus.confidence:.2f}, "
-            f"fantasma={risk.fantasma:.2f})"
+            f"fantasma={risk.fantasma:.2f}, precursors={len(detections)})"
         )
         return consensus
 

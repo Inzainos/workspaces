@@ -421,6 +421,153 @@ class TestVolcanicPrecursor:
         assert detect_volcanic_precursor(so2_mass=150.0, seismic_count=1) is False
 
 
+class TestPrecursorScanner:
+
+    def _make_scanner(self):
+        from sentinel_omega.core.precursor.scanner import PrecursorScanner
+        return PrecursorScanner()
+
+    def test_no_detections_on_calm_data(self):
+        scanner = self._make_scanner()
+        alfa1 = {}
+        beta1 = {"kp_series": np.array([3.0] * 24), "schumann_frequency": 7.83, "schumann_activity": 100.0}
+        delta = {"atmospheric_readings": [
+            {"station": "tlaxcala", "lat": 19.31, "lon": -98.24,
+             "temp_c": 20.0, "weather_id": 800, "pressure_hpa": 1015.0,
+             "humidity_pct": 50.0, "visibility_m": 10000},
+        ], "air_quality": {"so2": 5.0}}
+        detections = scanner.scan(alfa1, beta1, delta)
+        assert len(detections) == 0
+
+    def test_blue_jet_detection(self):
+        scanner = self._make_scanner()
+        delta = {"atmospheric_readings": [
+            {"station": "tlaxcala", "lat": 19.31, "lon": -98.24,
+             "temp_c": 30.0, "weather_id": 211, "pressure_hpa": 1005.0,
+             "humidity_pct": 60.0, "visibility_m": 8000},
+        ]}
+        detections = scanner.scan({}, {}, delta)
+        assert len(detections) == 1
+        assert detections[0].tipo == PrecursorType.BLUE_JET
+        assert detections[0].station == "tlaxcala"
+        assert detections[0].confidence >= 0.7
+
+    def test_niebla_tule_detection(self):
+        scanner = self._make_scanner()
+        delta = {"atmospheric_readings": [
+            {"station": "oaxaca", "lat": 17.07, "lon": -96.72,
+             "temp_c": 15.0, "weather_id": 741, "pressure_hpa": 1012.0,
+             "humidity_pct": 96.0, "visibility_m": 400},
+        ]}
+        detections = scanner.scan({}, {}, delta)
+        assert len(detections) == 1
+        assert detections[0].tipo == PrecursorType.NIEBLA_TULE
+        assert detections[0].values["visibility_m"] == 400
+
+    def test_silent_trigger_detection(self):
+        scanner = self._make_scanner()
+        beta1 = {"kp_series": np.array([0.5] * 24)}
+        detections = scanner.scan({}, beta1, {})
+        assert len(detections) == 1
+        assert detections[0].tipo == PrecursorType.SILENT_TRIGGER
+
+    def test_seismic_cluster_detection(self):
+        scanner = self._make_scanner()
+        beta1 = {"seismic_magnitudes": np.array([4.5, 4.2, 4.8, 4.1, 4.3, 5.0, 4.7, 4.4, 4.6, 4.9, 5.1])}
+        detections = scanner.scan({}, beta1, {})
+        cluster = [d for d in detections if d.tipo == PrecursorType.SEISMIC_CLUSTER]
+        assert len(cluster) == 1
+        assert cluster[0].values["event_count"] >= 10
+
+    def test_volcanic_detection(self):
+        scanner = self._make_scanner()
+        beta1 = {"seismic_magnitudes": np.array([3.5, 3.2, 4.0, 3.8, 3.1])}
+        delta = {
+            "air_quality": {"so2": 250.0},
+            "atmospheric_readings": [
+                {"station": "colima", "lat": 19.24, "lon": -103.72,
+                 "temp_c": 22.0, "weather_id": 800, "pressure_hpa": 1010.0,
+                 "humidity_pct": 60.0, "visibility_m": 5000},
+            ],
+        }
+        detections = scanner.scan({}, beta1, delta)
+        volcanic = [d for d in detections if d.tipo == PrecursorType.VOLCANICO]
+        assert len(volcanic) == 1
+        assert volcanic[0].values["so2_mass"] == 250.0
+
+    def test_schumann_excitation(self):
+        scanner = self._make_scanner()
+        beta1 = {"schumann_frequency": 9.5, "schumann_activity": 250.0}
+        detections = scanner.scan({}, beta1, {})
+        sch = [d for d in detections if d.tipo == PrecursorType.SCHUMANN]
+        assert len(sch) == 1
+        assert sch[0].values["deviation_hz"] > 1.0
+
+    def test_tormenta_solar_detection(self):
+        scanner = self._make_scanner()
+        omni_df = pd.DataFrame({
+            "bz_gsm": [-25.0, -22.0, -28.0],
+            "plasma_speed": [700.0, 680.0, 720.0],
+        })
+        alfa1 = {"omni_dataframe": omni_df}
+        beta1 = {"kp_series": np.array([6.0, 7.0, 5.5, 6.5])}
+        detections = scanner.scan(alfa1, beta1, {})
+        storm = [d for d in detections if d.tipo == PrecursorType.TORMENTA_SOLAR]
+        assert len(storm) == 1
+        assert storm[0].confidence >= 0.7
+
+    def test_perturbacion_geomagnetica_moderate(self):
+        scanner = self._make_scanner()
+        omni_df = pd.DataFrame({
+            "bz_gsm": [-7.0, -6.0, -8.0],
+            "plasma_speed": [400.0, 380.0, 420.0],
+        })
+        alfa1 = {"omni_dataframe": omni_df}
+        beta1 = {"kp_series": np.array([4.0, 3.5, 4.5])}
+        detections = scanner.scan(alfa1, beta1, {})
+        geo = [d for d in detections if d.tipo == PrecursorType.PERTURBACION_GEOMAGNETICA]
+        assert len(geo) == 1
+
+    def test_perturbacion_excluded_when_tormenta(self):
+        """If Bz <= -10 and Kp >= 5, it's a tormenta, not a perturbacion."""
+        scanner = self._make_scanner()
+        omni_df = pd.DataFrame({
+            "bz_gsm": [-15.0, -12.0],
+            "plasma_speed": [600.0, 580.0],
+        })
+        alfa1 = {"omni_dataframe": omni_df}
+        beta1 = {"kp_series": np.array([5.5, 6.0])}
+        detections = scanner.scan(alfa1, beta1, {})
+        geo = [d for d in detections if d.tipo == PrecursorType.PERTURBACION_GEOMAGNETICA]
+        assert len(geo) == 0
+        storm = [d for d in detections if d.tipo == PrecursorType.TORMENTA_SOLAR]
+        assert len(storm) == 1
+
+    def test_multiple_simultaneous_precursors(self):
+        scanner = self._make_scanner()
+        omni_df = pd.DataFrame({
+            "bz_gsm": [-25.0, -22.0],
+            "plasma_speed": [700.0, 680.0],
+        })
+        alfa1 = {"omni_dataframe": omni_df}
+        beta1 = {
+            "kp_series": np.array([6.0, 7.0, 5.5, 6.5]),
+            "schumann_frequency": 9.5,
+            "schumann_activity": 250.0,
+        }
+        delta = {"atmospheric_readings": [
+            {"station": "tlaxcala", "lat": 19.31, "lon": -98.24,
+             "temp_c": 30.0, "weather_id": 211, "pressure_hpa": 1005.0,
+             "humidity_pct": 60.0, "visibility_m": 8000},
+        ]}
+        detections = scanner.scan(alfa1, beta1, delta)
+        types = {d.tipo for d in detections}
+        assert PrecursorType.TORMENTA_SOLAR in types
+        assert PrecursorType.SCHUMANN in types
+        assert PrecursorType.BLUE_JET in types
+        assert len(detections) >= 3
+
+
 class TestTelegramPrecursorFormat:
 
     def test_format_precursor_alert(self):

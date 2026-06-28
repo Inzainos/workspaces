@@ -49,6 +49,7 @@ class ConsensusResult:
     veto_active: bool = False
     veto_reason: str = ""
     precursor_risk: Any = None
+    precursor_detections: Any = None
 
 
 class BaseAgent(ABC):

@@ -47,6 +47,7 @@ class AtmosphericReading:
     wind_speed_ms: float
     wind_deg: float
     clouds_pct: float
+    weather_id: int = 800
 
 
 def _get_api_key() -> Optional[str]:
@@ -81,6 +82,8 @@ def fetch_weather(
         main = data.get("main", {})
         wind = data.get("wind", {})
         clouds = data.get("clouds", {})
+        weather_list = data.get("weather", [])
+        weather_id = weather_list[0].get("id", 800) if weather_list else 800
 
         reading = AtmosphericReading(
             station=station_name,
@@ -93,6 +96,7 @@ def fetch_weather(
             wind_speed_ms=wind.get("speed", 0.0),
             wind_deg=wind.get("deg", 0.0),
             clouds_pct=clouds.get("all", 0),
+            weather_id=weather_id,
         )
         logger.info(
             f"OWM {station_name}: {reading.pressure_hpa}hPa, "

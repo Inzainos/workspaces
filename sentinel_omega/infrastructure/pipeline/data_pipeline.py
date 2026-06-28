@@ -205,9 +205,13 @@ class GeodynamicPipeline:
                 result["atmospheric_readings"] = [
                     {
                         "station": r.station,
+                        "lat": r.lat,
+                        "lon": r.lon,
                         "pressure_hpa": r.pressure_hpa,
                         "temp_c": r.temp_c,
                         "humidity_pct": r.humidity_pct,
+                        "visibility_m": r.visibility_m,
+                        "weather_id": r.weather_id,
                     }
                     for r in readings
                 ]
