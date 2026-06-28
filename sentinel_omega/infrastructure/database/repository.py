@@ -350,6 +350,158 @@ class SentinelRepository:
             result.append(d)
         return result
 
+    def get_muro_all(self, limit: int = 100) -> List[Dict]:
+        rows = self._execute(
+            "SELECT * FROM TBL_MURO_EVENTOS ORDER BY timestamp DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(zip(self._col_names("TBL_MURO_EVENTOS"), r))
+            d["active_types"] = json.loads(d.pop("active_types_json", "[]"))
+            result.append(d)
+        return result
+
+    # ── Analytics ─────────────────────────────────────────────────
+
+    def fantasma_component_breakdown(self, limit: int = 50) -> List[Dict]:
+        rows = self._execute(
+            """SELECT timestamp, bz_nT, viento_km_s, schumann_hz,
+                      schumann_activity, kp, lod_ms, presion_hpa,
+                      fase_lunar, protones, fantasma, nivel_riesgo
+               FROM TBL_PRECURSORES_COSMICOS
+               ORDER BY timestamp DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        cols = ["timestamp", "bz_nT", "viento_km_s", "schumann_hz",
+                "schumann_activity", "kp", "lod_ms", "presion_hpa",
+                "fase_lunar", "protones", "fantasma", "nivel_riesgo"]
+        return [dict(zip(cols, r)) for r in rows]
+
+    def risk_distribution(self) -> Dict[str, int]:
+        rows = self._execute(
+            """SELECT nivel_riesgo, COUNT(*) as cnt
+               FROM TBL_PRECURSORES_COSMICOS
+               GROUP BY nivel_riesgo"""
+        ).fetchall()
+        return {r[0]: r[1] for r in rows}
+
+    def precursor_type_frequency(self) -> Dict[str, int]:
+        rows = self._execute(
+            """SELECT tipo, COUNT(*) as cnt
+               FROM TBL_DETECCIONES
+               GROUP BY tipo ORDER BY cnt DESC"""
+        ).fetchall()
+        return {r[0]: r[1] for r in rows}
+
+    def precursor_confidence_stats(self) -> Dict[str, Dict[str, float]]:
+        rows = self._execute(
+            """SELECT tipo, AVG(confidence), MIN(confidence), MAX(confidence), COUNT(*)
+               FROM TBL_DETECCIONES
+               GROUP BY tipo"""
+        ).fetchall()
+        return {
+            r[0]: {"avg": r[1], "min": r[2], "max": r[3], "count": r[4]}
+            for r in rows
+        }
+
+    def wall_activation_history(self, limit: int = 100) -> List[Dict]:
+        rows = self._execute(
+            """SELECT timestamp, wall_geofisico, wall_atmosferico,
+                      wall_oceanico, wall_solar, wall_financiero,
+                      walls_active, correlation_score, muro_breach
+               FROM TBL_MURO_EVENTOS
+               ORDER BY timestamp DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        cols = ["timestamp", "wall_geofisico", "wall_atmosferico",
+                "wall_oceanico", "wall_solar", "wall_financiero",
+                "walls_active", "correlation_score", "muro_breach"]
+        return [dict(zip(cols, r)) for r in rows]
+
+    def seismic_magnitude_distribution(self, bins: int = 20) -> List[Dict]:
+        rows = self._execute(
+            """SELECT CAST(magnitude * 2 AS INT) / 2.0 AS mag_bin,
+                      COUNT(*) as cnt
+               FROM TBL_HISTORICO_SISMICO
+               GROUP BY mag_bin ORDER BY mag_bin"""
+        ).fetchall()
+        return [{"magnitude": r[0], "count": r[1]} for r in rows]
+
+    def seismic_by_region(self, min_magnitude: float = 4.0, limit: int = 20) -> List[Dict]:
+        rows = self._execute(
+            """SELECT region, COUNT(*) as cnt, AVG(magnitude) as avg_mag,
+                      MAX(magnitude) as max_mag
+               FROM TBL_HISTORICO_SISMICO
+               WHERE magnitude >= ? AND region != ''
+               GROUP BY region ORDER BY cnt DESC LIMIT ?""",
+            (min_magnitude, limit),
+        ).fetchall()
+        return [
+            {"region": r[0], "count": r[1], "avg_magnitude": r[2], "max_magnitude": r[3]}
+            for r in rows
+        ]
+
+    def seismic_depth_vs_magnitude(self, limit: int = 500) -> List[Dict]:
+        rows = self._execute(
+            """SELECT depth_km, magnitude, lat, lon, region
+               FROM TBL_HISTORICO_SISMICO
+               WHERE magnitude >= 4.0
+               ORDER BY timestamp DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [
+            {"depth_km": r[0], "magnitude": r[1], "lat": r[2], "lon": r[3], "region": r[4]}
+            for r in rows
+        ]
+
+    def node_saturation_ranking(self, limit: int = 25) -> List[Dict]:
+        rows = self._execute(
+            """SELECT node_id, nombre, tipo, saturacion, energia_acumulada,
+                      conductividad_telurica, region
+               FROM TBL_NODOS_TOPOLOGIA
+               WHERE saturacion > 0
+               ORDER BY saturacion DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [
+            {"node_id": r[0], "nombre": r[1], "tipo": r[2], "saturacion": r[3],
+             "energia": r[4], "conductividad": r[5], "region": r[6]}
+            for r in rows
+        ]
+
+    def cycle_alert_rate(self) -> Dict[str, Any]:
+        total = self._execute("SELECT COUNT(*) FROM TBL_CICLOS").fetchone()[0]
+        alerts = self._execute(
+            "SELECT COUNT(*) FROM TBL_CICLOS WHERE geo_signal = 'alert'"
+        ).fetchone()[0]
+        breaches = self._execute(
+            "SELECT COUNT(*) FROM TBL_CICLOS WHERE muro_breach = 1"
+        ).fetchone()[0]
+        avg_fantasma = self._execute(
+            "SELECT AVG(fantasma) FROM TBL_CICLOS"
+        ).fetchone()[0]
+        return {
+            "total_cycles": total,
+            "alert_cycles": alerts,
+            "breach_cycles": breaches,
+            "alert_rate": alerts / max(total, 1),
+            "breach_rate": breaches / max(total, 1),
+            "avg_fantasma": avg_fantasma or 0.0,
+        }
+
+    def schumann_trend(self, limit: int = 100) -> List[Dict]:
+        rows = self._execute(
+            """SELECT timestamp, schumann_hz, schumann_activity
+               FROM TBL_PRECURSORES_COSMICOS
+               ORDER BY timestamp DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [
+            {"timestamp": r[0], "schumann_hz": r[1], "schumann_activity": r[2]}
+            for r in rows
+        ]
+
     # ── Helpers ───────────────────────────────────────────────────
 
     def _col_names(self, table: str) -> List[str]:

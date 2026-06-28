@@ -221,6 +221,84 @@ def render_precursor_risk():
         )
         st.plotly_chart(fig, use_container_width=True)
 
+    _render_fantasma_waterfall(repo)
+    _render_risk_distribution(repo)
+
+
+def _render_fantasma_waterfall(repo: SentinelRepository):
+    breakdown = repo.fantasma_component_breakdown(limit=1)
+    if not breakdown:
+        return
+
+    st.markdown("---")
+    st.markdown("**Descomposición del Fantasma (Waterfall)**")
+
+    r = breakdown[0]
+    bz_c = abs(r["bz_nT"]) ** 2
+    wind_c = r["viento_km_s"] * 0.02
+    sch_c = (r["schumann_activity"] / 100.0) * 1.5
+    pressure_mod = 0.0
+    if r["presion_hpa"] < 1008.0:
+        pressure_mod = min(3.0, (1008.0 - r["presion_hpa"]) / 5.0)
+    kp_mod_factor = 1.0
+    if r["kp"] >= 5.0:
+        base = bz_c + wind_c + sch_c + pressure_mod
+        kp_mod_factor = 1.0 + (r["kp"] - 5.0) * 0.1
+        kp_effect = base * (kp_mod_factor - 1.0)
+    else:
+        kp_effect = 0.0
+    lod_mod = 0.0
+    if abs(r["lod_ms"]) > 0.5:
+        lod_mod = min(2.0, abs(r["lod_ms"]) * 0.5)
+
+    labels = ["Bz²", "Viento", "Schumann", "Presión", "Kp Storm", "LOD", "Total"]
+    values = [bz_c, wind_c, sch_c, pressure_mod, kp_effect, lod_mod, r["fantasma"]]
+    measures = ["relative", "relative", "relative", "relative", "relative", "relative", "total"]
+    colors = ["#2979ff", "#00c853", "#d500f9", "#ff9100", "#ff1744", "#ffc107", RISK_COLORS.get(r["nivel_riesgo"], "#757575")]
+
+    fig = go.Figure(go.Waterfall(
+        x=labels, y=values,
+        measure=measures,
+        textposition="outside",
+        text=[f"{v:.2f}" for v in values],
+        connector=dict(line=dict(color="#555")),
+        increasing=dict(marker=dict(color="#2979ff")),
+        decreasing=dict(marker=dict(color="#ff1744")),
+        totals=dict(marker=dict(color=colors[-1])),
+    ))
+    fig.update_layout(
+        title="Contribución de Cada Componente al Fantasma",
+        yaxis_title="Puntos",
+        height=350, template="plotly_dark",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_risk_distribution(repo: SentinelRepository):
+    dist = repo.risk_distribution()
+    if not dist:
+        return
+
+    st.markdown("---")
+    st.markdown("**Distribución de Niveles de Riesgo**")
+
+    levels = ["LOW", "MODERATE", "HIGH", "CRITICAL"]
+    values = [dist.get(l, 0) for l in levels]
+    colors = [RISK_COLORS.get(l, "#757575") for l in levels]
+
+    fig = go.Figure(go.Pie(
+        labels=levels,
+        values=values,
+        hole=0.5,
+        marker=dict(colors=colors),
+        textinfo="label+percent+value",
+    ))
+    fig.update_layout(
+        title="Distribución Histórica de Riesgo",
+        height=350, template="plotly_dark",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
 
 def _render_fantasma_demo():
     st.markdown("**Demo: Composición del Fantasma**")
@@ -378,6 +456,54 @@ def render_muro():
     )
     st.plotly_chart(fig, use_container_width=True)
 
+    _render_wall_activation_timeline(repo)
+
+
+def _render_wall_activation_timeline(repo: SentinelRepository):
+    history = repo.wall_activation_history(limit=100)
+    if not history:
+        return
+
+    st.markdown("---")
+    st.markdown("**Timeline de Activación por Muro**")
+
+    df = pd.DataFrame(history)
+    df["time"] = pd.to_datetime(df["timestamp"], unit="s")
+
+    wall_cols = {
+        "wall_geofisico": ("GEOFÍSICO", "#ff1744"),
+        "wall_atmosferico": ("ATMOSFÉRICO", "#2979ff"),
+        "wall_oceanico": ("OCEÁNICO", "#00c853"),
+        "wall_solar": ("SOLAR", "#ffc107"),
+        "wall_financiero": ("FINANCIERO", "#d500f9"),
+    }
+
+    fig = go.Figure()
+    for col, (name, color) in wall_cols.items():
+        fig.add_trace(go.Scatter(
+            x=df["time"], y=df[col],
+            mode="lines", name=name,
+            line=dict(color=color, width=2),
+            stackgroup="walls",
+            fillcolor=color.replace(")", ",0.15)").replace("rgb", "rgba") if "rgb" in color else None,
+        ))
+
+    fig.add_trace(go.Scatter(
+        x=df["time"], y=df["walls_active"],
+        mode="lines+markers", name="Total Activos",
+        line=dict(color="white", width=2, dash="dot"),
+        yaxis="y2",
+    ))
+
+    fig.update_layout(
+        yaxis=dict(title="Muros Activos (apilados)", range=[0, 5.5]),
+        yaxis2=dict(title="Total", overlaying="y", side="right", range=[0, 5.5]),
+        height=400, template="plotly_dark",
+        title="Evolución Temporal de los 5 Muros",
+        hovermode="x unified",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
 
 # ══════════════════════════════════════════════════════════════════════
 # TAB 3: Precursor Scanner
@@ -439,6 +565,77 @@ def render_scanner():
             height=350, template="plotly_dark",
         )
         st.plotly_chart(fig, use_container_width=True)
+
+    _render_precursor_confidence_stats(repo)
+
+
+def _render_precursor_confidence_stats(repo: SentinelRepository):
+    stats = repo.precursor_confidence_stats()
+    if not stats:
+        return
+
+    st.markdown("---")
+    st.markdown("**Estadísticas de Confianza por Tipo de Precursor**")
+
+    types = list(stats.keys())
+    display_names = []
+    for t in types:
+        try:
+            pt = PrecursorType(t)
+            display_names.append(PRECURSOR_DISPLAY_NAMES.get(pt, t))
+        except ValueError:
+            display_names.append(t)
+
+    avgs = [stats[t]["avg"] for t in types]
+    mins = [stats[t]["min"] for t in types]
+    maxs = [stats[t]["max"] for t in types]
+    counts = [stats[t]["count"] for t in types]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=display_names, y=avgs,
+        name="Promedio",
+        marker_color="#2979ff",
+        error_y=dict(
+            type="data",
+            symmetric=False,
+            array=[m - a for m, a in zip(maxs, avgs)],
+            arrayminus=[a - mn for a, mn in zip(avgs, mins)],
+            color="#aaa",
+        ),
+        text=[f"n={c}" for c in counts],
+        textposition="outside",
+    ))
+    fig.update_layout(
+        title="Confianza por Tipo (avg con rango min-max)",
+        yaxis_title="Confidence",
+        yaxis_range=[0, 1.1],
+        height=400, template="plotly_dark",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    freq = repo.precursor_type_frequency()
+    if freq:
+        st.markdown("**Frecuencia Acumulada de Detecciones**")
+        freq_names = []
+        for t in freq:
+            try:
+                pt = PrecursorType(t)
+                freq_names.append(PRECURSOR_DISPLAY_NAMES.get(pt, t))
+            except ValueError:
+                freq_names.append(t)
+        fig2 = go.Figure(go.Bar(
+            x=list(freq.values()),
+            y=freq_names,
+            orientation="h",
+            marker_color="#d500f9",
+        ))
+        fig2.update_layout(
+            xaxis_title="Detecciones",
+            height=max(250, len(freq) * 30),
+            template="plotly_dark",
+        )
+        st.plotly_chart(fig2, use_container_width=True)
 
 
 def _render_precursor_types_reference():
@@ -551,6 +748,80 @@ def render_topology():
         })
     st.dataframe(pd.DataFrame(table_data), use_container_width=True, hide_index=True)
 
+    _render_node_saturation(repo)
+
+
+def _render_node_saturation(repo: SentinelRepository):
+    ranking = repo.node_saturation_ranking(limit=25)
+    if not ranking:
+        return
+
+    st.markdown("---")
+    st.markdown("**Ranking de Saturación de Nodos**")
+
+    tipo_colors = {"real": "#00c853", "ghost": "#ff9100", "geobattery": "#2979ff"}
+
+    df = pd.DataFrame(ranking)
+    colors = [tipo_colors.get(r["tipo"], "#757575") for r in ranking]
+
+    fig = go.Figure(go.Bar(
+        x=df["saturacion"],
+        y=[f"{r['nombre']} ({r['tipo']})" for r in ranking],
+        orientation="h",
+        marker_color=colors,
+        text=[f"{s:.0%}" for s in df["saturacion"]],
+        textposition="outside",
+    ))
+    fig.add_vline(x=1.0, line_dash="dash", line_color="#ff1744", annotation_text="Saturación Máxima")
+    fig.update_layout(
+        xaxis_title="Saturación",
+        xaxis_range=[0, 1.15],
+        height=max(350, len(ranking) * 28),
+        template="plotly_dark",
+        title="Top 25 Nodos por Saturación",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        fig2 = go.Figure(go.Scatter(
+            x=df["conductividad"],
+            y=df["energia"],
+            mode="markers",
+            marker=dict(
+                size=df["saturacion"] * 30 + 5,
+                color=colors,
+                opacity=0.8,
+                line=dict(width=1, color="white"),
+            ),
+            text=[f"{r['nombre']}<br>Sat: {r['saturacion']:.0%}" for r in ranking],
+            hoverinfo="text",
+        ))
+        fig2.update_layout(
+            title="Conductividad vs Energía",
+            xaxis_title="Conductividad Telúrica",
+            yaxis_title="Energía Acumulada",
+            height=350, template="plotly_dark",
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+    with c2:
+        tipo_sat = df.groupby("tipo")["saturacion"].mean()
+        fig3 = go.Figure(go.Bar(
+            x=tipo_sat.index,
+            y=tipo_sat.values,
+            marker_color=[tipo_colors.get(t, "#757575") for t in tipo_sat.index],
+            text=[f"{v:.1%}" for v in tipo_sat.values],
+            textposition="outside",
+        ))
+        fig3.update_layout(
+            title="Saturación Promedio por Tipo de Nodo",
+            yaxis_title="Saturación Promedio",
+            yaxis_range=[0, 1.15],
+            height=350, template="plotly_dark",
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+
 
 # ══════════════════════════════════════════════════════════════════════
 # TAB 5: Histórico Sísmico
@@ -624,6 +895,87 @@ def render_sismico():
             df[["time", "magnitude", "depth_km", "region", "lat", "lon", "source"]].head(50),
             use_container_width=True, hide_index=True,
         )
+
+    _render_seismic_analytics(repo)
+
+
+def _render_seismic_analytics(repo: SentinelRepository):
+    depth_mag = repo.seismic_depth_vs_magnitude(limit=500)
+    by_region = repo.seismic_by_region(min_magnitude=4.0, limit=20)
+
+    if depth_mag:
+        st.markdown("---")
+        st.markdown("**Profundidad vs Magnitud**")
+        df = pd.DataFrame(depth_mag)
+
+        fig = go.Figure(go.Scatter(
+            x=df["magnitude"],
+            y=df["depth_km"],
+            mode="markers",
+            marker=dict(
+                size=df["magnitude"] * 2.5,
+                color=df["depth_km"],
+                colorscale="Viridis",
+                showscale=True,
+                colorbar=dict(title="Prof (km)"),
+                opacity=0.7,
+                line=dict(width=0.5, color="white"),
+            ),
+            text=[f"M{r['magnitude']:.1f} @ {r['depth_km']:.0f}km<br>{r['region']}" for r in depth_mag],
+            hoverinfo="text",
+        ))
+        fig.update_layout(
+            title="Scatter: Profundidad vs Magnitud (M4.0+)",
+            xaxis_title="Magnitud",
+            yaxis_title="Profundidad (km)",
+            yaxis_autorange="reversed",
+            height=450, template="plotly_dark",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    if by_region:
+        st.markdown("---")
+        st.markdown("**Actividad Sísmica por Región (M4.0+)**")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            fig = go.Figure(go.Bar(
+                x=[r["count"] for r in by_region],
+                y=[r["region"][:40] for r in by_region],
+                orientation="h",
+                marker_color="#ff9100",
+                text=[f"n={r['count']}" for r in by_region],
+                textposition="outside",
+            ))
+            fig.update_layout(
+                title="Eventos por Región",
+                xaxis_title="Eventos",
+                height=max(350, len(by_region) * 28),
+                template="plotly_dark",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        with c2:
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(
+                x=[r["region"][:20] for r in by_region[:10]],
+                y=[r["avg_magnitude"] for r in by_region[:10]],
+                name="Promedio",
+                marker_color="#2979ff",
+            ))
+            fig2.add_trace(go.Bar(
+                x=[r["region"][:20] for r in by_region[:10]],
+                y=[r["max_magnitude"] for r in by_region[:10]],
+                name="Máxima",
+                marker_color="#ff1744",
+            ))
+            fig2.update_layout(
+                title="Magnitud Promedio y Máxima (Top 10)",
+                yaxis_title="Magnitud",
+                barmode="group",
+                height=400, template="plotly_dark",
+            )
+            st.plotly_chart(fig2, use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -844,6 +1196,175 @@ def render_cycle_history():
     available = [c for c in display_cols if c in df.columns]
     st.dataframe(df[available].head(50), use_container_width=True, hide_index=True)
 
+    _render_cycle_alert_rate(repo)
+
+
+def _render_cycle_alert_rate(repo: SentinelRepository):
+    stats = repo.cycle_alert_rate()
+    if stats["total_cycles"] == 0:
+        return
+
+    st.markdown("---")
+    st.markdown("**Estadísticas de Alertas**")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Ciclos", stats["total_cycles"])
+    c2.metric("Alert Rate", f"{stats['alert_rate']:.1%}")
+    c3.metric("Breach Rate", f"{stats['breach_rate']:.1%}")
+    c4.metric("Fantasma Promedio", f"{stats['avg_fantasma']:.2f}")
+
+    c1b, c2b = st.columns(2)
+    with c1b:
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=stats["alert_rate"] * 100,
+            title={"text": "Alert Rate (%)"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "#ff9100"},
+                "steps": [
+                    {"range": [0, 10], "color": "#e8f5e9"},
+                    {"range": [10, 30], "color": "#fff9c4"},
+                    {"range": [30, 60], "color": "#ffe0b2"},
+                    {"range": [60, 100], "color": "#ffcdd2"},
+                ],
+            },
+        ))
+        fig.update_layout(height=250, template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
+
+    with c2b:
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=stats["breach_rate"] * 100,
+            title={"text": "Muro Breach Rate (%)"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "#ff1744"},
+                "steps": [
+                    {"range": [0, 5], "color": "#e8f5e9"},
+                    {"range": [5, 15], "color": "#fff9c4"},
+                    {"range": [15, 30], "color": "#ffe0b2"},
+                    {"range": [30, 100], "color": "#ffcdd2"},
+                ],
+            },
+        ))
+        fig.update_layout(height=250, template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# TAB 9: Schumann Monitor
+# ══════════════════════════════════════════════════════════════════════
+
+def render_schumann_monitor():
+    st.subheader("Monitor Schumann — Frecuencia y Coherencia")
+
+    repo = get_repo()
+    trend = repo.schumann_trend(limit=100)
+
+    if not trend:
+        st.info("No hay datos de Schumann registrados. Se poblarán al ejecutar ciclos del orquestador.")
+        _render_schumann_reference()
+        return
+
+    df = pd.DataFrame(trend)
+    df["time"] = pd.to_datetime(df["timestamp"], unit="s")
+
+    latest = trend[0]
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Frecuencia Schumann", f"{latest['schumann_hz']:.2f} Hz")
+    col2.metric("Actividad WPC", f"{latest['schumann_activity']:.0f}%")
+    deviation = latest["schumann_hz"] - 7.83
+    col3.metric("Desviación de 7.83 Hz", f"{deviation:+.3f} Hz")
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        subplot_titles=["Frecuencia Schumann (Hz)", "Actividad WPC (%)"],
+        shared_xaxes=True,
+    )
+
+    fig.add_trace(go.Scatter(
+        x=df["time"], y=df["schumann_hz"],
+        mode="lines+markers", name="Schumann Hz",
+        line=dict(color="#d500f9", width=2),
+    ), row=1, col=1)
+    fig.add_hline(y=7.83, line_dash="dash", line_color="#ffc107",
+                  annotation_text="Fundamental (7.83 Hz)", row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df["time"], y=df["schumann_activity"],
+        mode="lines", name="Actividad %",
+        line=dict(color="#2979ff", width=2),
+        fill="tozeroy",
+        fillcolor="rgba(41,121,255,0.15)",
+    ), row=2, col=1)
+
+    fig.update_layout(height=500, template="plotly_dark", hovermode="x unified")
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("**Distribución de Frecuencia Schumann**")
+    c1, c2 = st.columns(2)
+
+    with c1:
+        fig2 = go.Figure(go.Histogram(
+            x=df["schumann_hz"],
+            nbinsx=30,
+            marker_color="#d500f9",
+        ))
+        fig2.add_vline(x=7.83, line_dash="dash", line_color="#ffc107", annotation_text="7.83 Hz")
+        fig2.update_layout(
+            title="Histograma de Frecuencia",
+            xaxis_title="Hz",
+            yaxis_title="Observaciones",
+            height=300, template="plotly_dark",
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+    with c2:
+        fig3 = go.Figure(go.Scatter(
+            x=df["schumann_hz"],
+            y=df["schumann_activity"],
+            mode="markers",
+            marker=dict(
+                size=8,
+                color=df["schumann_activity"],
+                colorscale="Magma",
+                showscale=True,
+                colorbar=dict(title="WPC %"),
+            ),
+            text=[f"{row['schumann_hz']:.2f} Hz / {row['schumann_activity']:.0f}%" for _, row in df.iterrows()],
+            hoverinfo="text",
+        ))
+        fig3.update_layout(
+            title="Frecuencia vs Actividad",
+            xaxis_title="Schumann Hz",
+            yaxis_title="Actividad WPC (%)",
+            height=300, template="plotly_dark",
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+
+    _render_schumann_reference()
+
+
+def _render_schumann_reference():
+    st.markdown("---")
+    st.markdown("**Referencia: Armónicos de Schumann**")
+    harmonics = [
+        {"Armónico": "Fundamental", "Frecuencia (Hz)": 7.83, "Descripción": "Resonancia base Tierra-Ionosfera"},
+        {"Armónico": "2do", "Frecuencia (Hz)": 14.3, "Descripción": "Primer sobretono"},
+        {"Armónico": "3ro", "Frecuencia (Hz)": 20.8, "Descripción": "Segundo sobretono"},
+        {"Armónico": "4to", "Frecuencia (Hz)": 27.3, "Descripción": "Tercer sobretono"},
+        {"Armónico": "5to", "Frecuencia (Hz)": 33.8, "Descripción": "Cuarto sobretono"},
+    ]
+    st.dataframe(pd.DataFrame(harmonics), use_container_width=True, hide_index=True)
+    st.caption(
+        "Beta-1 aplica un filtro armónico: bins FFT sub-armónicos se retienen, "
+        "el resto se atenúa al 10%. Coherencia armónica > 0.3 con excitación activa "
+        "produce señal WATCH."
+    )
+
 
 # ══════════════════════════════════════════════════════════════════════
 # Main App
@@ -872,6 +1393,7 @@ def main():
         "🔍 Scanner",
         "🗺️ Topología",
         "📊 Sísmico",
+        "🌐 Schumann",
         "📡 Layer Signals",
         "📐 SNT Analysis",
         "📋 Ciclos",
@@ -893,14 +1415,17 @@ def main():
         render_sismico()
 
     with tabs[5]:
+        render_schumann_monitor()
+
+    with tabs[6]:
         signals = generate_demo_signals()
         render_layer_signals(signals)
 
-    with tabs[6]:
+    with tabs[7]:
         snt_results = generate_demo_satellization()
         render_satellization_analysis(snt_results)
 
-    with tabs[7]:
+    with tabs[8]:
         render_cycle_history()
 
 
