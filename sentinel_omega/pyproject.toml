@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sentinel-omega"
 version = "2.5.0"
-description = "Precursor detection platform for natural events (TITAN V32 lineage)"
+description = "Precursor detection platform for natural events — 15-type scanner, 5-wall cross-correlation, 125-node topology, Schumann harmonic filter (TITAN V32/V46/V53 lineage)"
 authors = [
     {name = "Elán Zainos Corona", email = "elan.zainos.corona@gmail.com"},
 ]

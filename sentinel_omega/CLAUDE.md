@@ -1,7 +1,7 @@
 # Sentinel Omega
 
 Precursor detection platform for natural events.
-Author: Elán Zainos Corona (Fractal Core Research)
+Author: Elan Zainos Corona (Fractal Core Research)
 
 ## What this project does
 
@@ -31,7 +31,8 @@ Orchestrator
 
 - **Fantasma**: `(abs(bz)^2) + (viento*0.02) + (sch_wpc*1.5)` + pressure/Kp/LOD modifiers
 - **Risk levels**: LOW (<5), MODERATE (5-15), HIGH (15-30), CRITICAL (>=30)
-- **Asymmetric loss**: Miss penalty = 10×, False alarm = 1×
+- **Asymmetric loss**: Miss penalty = 10x, False alarm = 1x
+- **Schumann coherence**: Ratio of resonant-bin energy to total energy. > 0.3 with excitation = WATCH signal
 
 ## Running tests
 
@@ -58,7 +59,9 @@ sentinel_omega/
 ├── orchestrator.py              # Master orchestrator — runs cycles
 ├── config/sentinel_config.py    # Central config (secrets via os.environ)
 ├── core/
-│   ├── shared/agent_base.py     # BaseAgent, PadreAgent, SignalType, ConsensusResult
+│   ├── shared/
+│   │   ├── agent_base.py        # BaseAgent, PadreAgent, SignalType, ConsensusResult
+│   │   └── data_pipeline.py     # Pipeline base class
 │   ├── precursor/
 │   │   ├── risk_calculator.py   # TITAN V32 fantasma formula
 │   │   ├── scanner.py           # 15-type precursor scanner
@@ -74,9 +77,9 @@ sentinel_omega/
 │   ├── api/                     # NOAA, USGS, Schumann, ESA, OWM, Crypto, Bolsa, Telegram
 │   ├── pipeline/                # Data pipelines + layer runners
 │   ├── database/                # SQLite schema, repository, 125-node seed
-│   └── dashboard/               # Streamlit + Plotly dashboard
+│   └── dashboard/               # Streamlit + Plotly dashboard (9 tabs)
 ├── data/                        # SQLite databases
-└── tests/                       # 312 tests
+└── tests/                       # 312 tests (7 test files)
 ```
 
 ## Security rules
@@ -106,16 +109,17 @@ Tables in `data/SENTINEL_OMEGA_PRO.db`:
 - `TBL_DETECCIONES` — Precursor detection log
 - `TBL_CICLOS` — Orchestrator cycle history
 - `TBL_MURO_EVENTOS` — Muro breach history
+- Trigger: `trg_nodo_saturacion` caps saturacion at 1.0
 
 ## Muro de los 5 Eventos
 
 Five walls of cross-correlation. Breach when >= 3 walls active:
 
-1. **GEOFÍSICO**: Seismic Cluster, Volcánico, Fantasma
-2. **ATMOSFÉRICO**: Blue Jet, Sprite Rojo, Niebla Tule
-3. **OCEÁNICO**: Tsunami, Huracán
-4. **SOLAR/GEOMAGNÉTICO**: Tormenta Solar, Perturbación, Schumann, Silent Trigger, GRB
-5. **FINANCIERO/SOCIAL**: Correlación Financiera
+1. **GEOFISICO**: Seismic Cluster, Volcanico, Fantasma
+2. **ATMOSFERICO**: Blue Jet, Sprite Rojo, Niebla Tule
+3. **OCEANICO**: Tsunami, Huracan
+4. **SOLAR/GEOMAGNETICO**: Tormenta Solar, Perturbacion, Schumann, Silent Trigger, GRB
+5. **FINANCIERO/SOCIAL**: Correlacion Financiera
 
 ## Orchestrator cycle order
 
@@ -125,6 +129,18 @@ Five walls of cross-correlation. Breach when >= 3 walls active:
 4. Scanner evaluates 15 precursor types
 5. Muro evaluates 5-wall correlation
 6. Alerts dispatched via Telegram
+
+## Dashboard tabs
+
+1. Precursor Risk — Fantasma gauge + waterfall + risk distribution
+2. Muro 5 Eventos — Wall status cards + radar + activation timeline
+3. Scanner — Detection table + type frequency + confidence stats
+4. Topologia — World map 125 nodes + saturation ranking
+5. Sismico — Seismic map + depth vs magnitude + region charts
+6. Schumann — Frequency trend + activity + Hz vs WPC scatter
+7. Layer Signals — Agent consensus per layer
+8. SNT Analysis — Satellization exponent + power law fits
+9. Ciclos — Timeline + alert/breach rate gauges
 
 ## Branch
 
