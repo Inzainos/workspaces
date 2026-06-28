@@ -351,3 +351,106 @@ class TestNBodyMatrix:
         result = self.nbody.analyze(entities, hub_name="hub")
         assert len(result.nodes) == 2
         assert result.power_law_b < 0
+
+
+# ── Corpus Verification ────────────────────────────────────────────────
+
+
+class TestSNTCorpus:
+
+    def setup_method(self):
+        self.engine = SatellizationEngine()
+
+    def test_corpus_loads(self):
+        from sentinel_omega.core.snt_engine.corpus import SNT_CORPUS
+        assert len(SNT_CORPUS) == 57
+
+    def test_corpus_domains(self):
+        from sentinel_omega.core.snt_engine.corpus import get_cases_by_domain
+        assert len(get_cases_by_domain("A")) == 16
+        assert len(get_cases_by_domain("B")) == 17
+        assert len(get_cases_by_domain("C")) == 15
+        assert len(get_cases_by_domain("D")) == 9
+
+    def test_corpus_trigger_types(self):
+        from sentinel_omega.core.snt_engine.corpus import get_cases_by_trigger_type
+        assert len(get_cases_by_trigger_type("abrupto")) == 23
+        assert len(get_cases_by_trigger_type("gradual")) == 21
+        assert len(get_cases_by_trigger_type("hibrido")) == 13
+
+    def test_all_cases_have_sufficient_data(self):
+        from sentinel_omega.core.snt_engine.corpus import SNT_CORPUS
+        for name, case in SNT_CORPUS.items():
+            assert len(case.years) >= 3, f"{name} has < 3 data points"
+            assert len(case.years) == len(case.shadow) == len(case.dominant), \
+                f"{name} has mismatched array lengths"
+
+    def test_all_cases_fittable(self):
+        from sentinel_omega.core.snt_engine.corpus import SNT_CORPUS
+        failures = []
+        for name, case in SNT_CORPUS.items():
+            try:
+                result = self.engine.fit(
+                    np.array(case.years, dtype=float),
+                    np.array(case.dominant, dtype=float),
+                    np.array(case.shadow, dtype=float),
+                    trigger_year=float(case.trigger_year),
+                )
+                assert np.isfinite(result.b), f"{name}: b is not finite"
+                assert np.isfinite(result.r_squared), f"{name}: R² is not finite"
+            except Exception as e:
+                failures.append(f"{name}: {e}")
+        assert failures == [], f"Fitting failures:\n" + "\n".join(failures)
+
+    def test_brujas_amberes_fittable(self):
+        from sentinel_omega.core.snt_engine.corpus import SNT_CORPUS
+        case = SNT_CORPUS["A01_Brujas_Amberes"]
+        result = self.engine.fit(
+            np.array(case.years, dtype=float),
+            np.array(case.dominant, dtype=float),
+            np.array(case.shadow, dtype=float),
+            trigger_year=float(case.trigger_year),
+        )
+        assert np.isfinite(result.b)
+        assert result.n_observations == 6
+
+    def test_toledo_madrid_satellization(self):
+        from sentinel_omega.core.snt_engine.corpus import SNT_CORPUS
+        case = SNT_CORPUS["A02_Toledo_Madrid"]
+        result = self.engine.fit(
+            np.array(case.years, dtype=float),
+            np.array(case.dominant, dtype=float),
+            np.array(case.shadow, dtype=float),
+            trigger_year=float(case.trigger_year),
+        )
+        assert result.b > 0.0, "Toledo→Madrid should show satellization"
+
+    def test_tlaxcala_cdmx_satellization(self):
+        from sentinel_omega.core.snt_engine.corpus import SNT_CORPUS
+        case = SNT_CORPUS["C01_Tlaxcala_CDMX"]
+        result = self.engine.fit(
+            np.array(case.years, dtype=float),
+            np.array(case.dominant, dtype=float),
+            np.array(case.shadow, dtype=float),
+            trigger_year=float(case.trigger_year),
+        )
+        assert result.b > 0.0, "Tlaxcala→CDMX should show satellization"
+
+    def test_abrupto_vs_gradual_b_distribution(self):
+        from sentinel_omega.core.snt_engine.corpus import SNT_CORPUS
+        abrupto_b = []
+        gradual_b = []
+        for name, case in SNT_CORPUS.items():
+            result = self.engine.fit(
+                np.array(case.years, dtype=float),
+                np.array(case.dominant, dtype=float),
+                np.array(case.shadow, dtype=float),
+                trigger_year=float(case.trigger_year),
+            )
+            if case.trigger_type == "abrupto":
+                abrupto_b.append(result.b)
+            elif case.trigger_type == "gradual":
+                gradual_b.append(result.b)
+        assert len(abrupto_b) > 0 and len(gradual_b) > 0
+        assert np.mean(abrupto_b) > np.mean(gradual_b) * 0.5, \
+            "Abrupt triggers should produce comparable or higher b values"
