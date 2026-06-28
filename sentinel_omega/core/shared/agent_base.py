@@ -18,6 +18,7 @@ class SignalType(Enum):
     BULLISH = "bullish"
     BEARISH = "bearish"
     NEUTRAL = "neutral"
+    WATCH = "watch"
     ALERT = "alert"
     NO_SIGNAL = "no_signal"
 

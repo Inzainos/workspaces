@@ -1,0 +1,360 @@
+"""
+Sentinel Omega — Data Repository
+
+CRUD operations for all tables. Thread-safe via per-call connections.
+All timestamps are Unix epoch floats (time.time()).
+"""
+
+import json
+import logging
+import sqlite3
+import time
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from sentinel_omega.infrastructure.database.schema import get_connection
+
+logger = logging.getLogger(__name__)
+
+
+class SentinelRepository:
+
+    def __init__(self, db_path: Optional[str] = None):
+        self._db_path = db_path
+        self._conn = get_connection(db_path)
+
+    def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
+        return self._conn.execute(sql, params)
+
+    def _executemany(self, sql: str, params_list: List[tuple]) -> None:
+        self._conn.executemany(sql, params_list)
+        self._conn.commit()
+
+    # ── Precursores Cósmicos ──────────────────────────────────────
+
+    def insert_precursor_cosmico(
+        self,
+        bz: float = 0.0,
+        viento: float = 0.0,
+        protones: float = 0.0,
+        kp: float = 0.0,
+        lod_ms: float = 0.0,
+        schumann_hz: float = 7.83,
+        schumann_activity: float = 0.0,
+        fase_lunar: float = 0.0,
+        presion_hpa: float = 1013.0,
+        fantasma: float = 0.0,
+        nivel_riesgo: str = "LOW",
+        timestamp: Optional[float] = None,
+    ) -> int:
+        ts = timestamp or time.time()
+        cur = self._execute(
+            """INSERT INTO TBL_PRECURSORES_COSMICOS
+            (timestamp, bz_nT, viento_km_s, protones, kp, lod_ms,
+             schumann_hz, schumann_activity, fase_lunar,
+             presion_hpa, fantasma, nivel_riesgo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (ts, bz, viento, protones, kp, lod_ms,
+             schumann_hz, schumann_activity, fase_lunar,
+             presion_hpa, fantasma, nivel_riesgo),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def get_precursores_cosmicos(
+        self, limit: int = 100, min_riesgo: Optional[str] = None
+    ) -> List[Dict]:
+        if min_riesgo:
+            rows = self._execute(
+                """SELECT * FROM TBL_PRECURSORES_COSMICOS
+                WHERE nivel_riesgo = ? ORDER BY timestamp DESC LIMIT ?""",
+                (min_riesgo, limit),
+            ).fetchall()
+        else:
+            rows = self._execute(
+                "SELECT * FROM TBL_PRECURSORES_COSMICOS ORDER BY timestamp DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(zip(self._col_names("TBL_PRECURSORES_COSMICOS"), r)) for r in rows]
+
+    # ── Nodos Topología ───────────────────────────────────────────
+
+    def upsert_nodo(
+        self,
+        node_id: int,
+        nombre: str,
+        lat: float,
+        lon: float,
+        tipo: str = "real",
+        conductividad: float = 0.0,
+        energia: float = 0.0,
+        saturacion: float = 0.0,
+        region: str = "",
+    ) -> None:
+        self._execute(
+            """INSERT OR REPLACE INTO TBL_NODOS_TOPOLOGIA
+            (node_id, nombre, lat, lon, tipo, conductividad_telurica,
+             energia_acumulada, saturacion, region, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+            (node_id, nombre, lat, lon, tipo, conductividad,
+             energia, saturacion, region),
+        )
+        self._conn.commit()
+
+    def bulk_upsert_nodos(self, nodos: List[Dict]) -> int:
+        self._executemany(
+            """INSERT OR REPLACE INTO TBL_NODOS_TOPOLOGIA
+            (node_id, nombre, lat, lon, tipo, conductividad_telurica,
+             energia_acumulada, saturacion, region, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+            [
+                (n["node_id"], n["nombre"], n["lat"], n["lon"],
+                 n.get("tipo", "real"), n.get("conductividad", 0.0),
+                 n.get("energia", 0.0), n.get("saturacion", 0.0),
+                 n.get("region", ""))
+                for n in nodos
+            ],
+        )
+        return len(nodos)
+
+    def get_nodos(self, tipo: Optional[str] = None) -> List[Dict]:
+        if tipo:
+            rows = self._execute(
+                "SELECT * FROM TBL_NODOS_TOPOLOGIA WHERE tipo = ? ORDER BY node_id",
+                (tipo,),
+            ).fetchall()
+        else:
+            rows = self._execute(
+                "SELECT * FROM TBL_NODOS_TOPOLOGIA ORDER BY node_id"
+            ).fetchall()
+        return [dict(zip(self._col_names("TBL_NODOS_TOPOLOGIA"), r)) for r in rows]
+
+    def update_nodo_energy(self, node_id: int, energia: float, saturacion: float) -> None:
+        self._execute(
+            """UPDATE TBL_NODOS_TOPOLOGIA
+            SET energia_acumulada = ?, saturacion = ?, updated_at = datetime('now')
+            WHERE node_id = ?""",
+            (energia, saturacion, node_id),
+        )
+        self._conn.commit()
+
+    # ── Histórico Sísmico ─────────────────────────────────────────
+
+    def insert_sismo(
+        self,
+        event_id: str,
+        timestamp: float,
+        lat: float,
+        lon: float,
+        magnitude: float,
+        depth_km: float = 0.0,
+        mag_type: str = "",
+        region: str = "",
+        source: str = "USGS",
+    ) -> None:
+        self._execute(
+            """INSERT OR IGNORE INTO TBL_HISTORICO_SISMICO
+            (event_id, timestamp, lat, lon, depth_km, magnitude,
+             mag_type, region, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (event_id, timestamp, lat, lon, depth_km, magnitude,
+             mag_type, region, source),
+        )
+        self._conn.commit()
+
+    def bulk_insert_sismos(self, sismos: List[Dict]) -> int:
+        before = self._execute(
+            "SELECT COUNT(*) FROM TBL_HISTORICO_SISMICO"
+        ).fetchone()[0]
+        self._executemany(
+            """INSERT OR IGNORE INTO TBL_HISTORICO_SISMICO
+            (event_id, timestamp, lat, lon, depth_km, magnitude,
+             mag_type, region, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (s["event_id"], s["timestamp"], s["lat"], s["lon"],
+                 s.get("depth_km", 0.0), s["magnitude"],
+                 s.get("mag_type", ""), s.get("region", ""),
+                 s.get("source", "USGS"))
+                for s in sismos
+            ],
+        )
+        after = self._execute(
+            "SELECT COUNT(*) FROM TBL_HISTORICO_SISMICO"
+        ).fetchone()[0]
+        return after - before
+
+    def get_sismos(
+        self,
+        min_magnitude: float = 0.0,
+        limit: int = 1000,
+        region: Optional[str] = None,
+    ) -> List[Dict]:
+        if region:
+            rows = self._execute(
+                """SELECT * FROM TBL_HISTORICO_SISMICO
+                WHERE magnitude >= ? AND region LIKE ?
+                ORDER BY timestamp DESC LIMIT ?""",
+                (min_magnitude, f"%{region}%", limit),
+            ).fetchall()
+        else:
+            rows = self._execute(
+                """SELECT * FROM TBL_HISTORICO_SISMICO
+                WHERE magnitude >= ? ORDER BY timestamp DESC LIMIT ?""",
+                (min_magnitude, limit),
+            ).fetchall()
+        return [dict(zip(self._col_names("TBL_HISTORICO_SISMICO"), r)) for r in rows]
+
+    def count_sismos(self, min_magnitude: float = 0.0) -> int:
+        return self._execute(
+            "SELECT COUNT(*) FROM TBL_HISTORICO_SISMICO WHERE magnitude >= ?",
+            (min_magnitude,),
+        ).fetchone()[0]
+
+    # ── Detecciones ───────────────────────────────────────────────
+
+    def insert_deteccion(
+        self,
+        tipo: str,
+        display_name: str,
+        confidence: float,
+        station: str = "",
+        lat: Optional[float] = None,
+        lon: Optional[float] = None,
+        values: Optional[Dict] = None,
+        wall_name: str = "",
+        cycle_id: Optional[int] = None,
+        timestamp: Optional[float] = None,
+    ) -> int:
+        ts = timestamp or time.time()
+        cur = self._execute(
+            """INSERT INTO TBL_DETECCIONES
+            (timestamp, cycle_id, tipo, display_name, station, lat, lon,
+             confidence, values_json, wall_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (ts, cycle_id, tipo, display_name, station, lat, lon,
+             confidence, json.dumps(values or {}), wall_name),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def get_detecciones(
+        self, limit: int = 100, tipo: Optional[str] = None
+    ) -> List[Dict]:
+        if tipo:
+            rows = self._execute(
+                """SELECT * FROM TBL_DETECCIONES
+                WHERE tipo = ? ORDER BY timestamp DESC LIMIT ?""",
+                (tipo, limit),
+            ).fetchall()
+        else:
+            rows = self._execute(
+                "SELECT * FROM TBL_DETECCIONES ORDER BY timestamp DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(zip(self._col_names("TBL_DETECCIONES"), r))
+            d["values"] = json.loads(d.pop("values_json", "{}"))
+            result.append(d)
+        return result
+
+    # ── Ciclos ────────────────────────────────────────────────────
+
+    def insert_ciclo(
+        self,
+        geo_signal: str = "no_signal",
+        geo_confidence: float = 0.0,
+        geo_consensus: bool = False,
+        crypto_signal: str = "no_signal",
+        crypto_confidence: float = 0.0,
+        bolsa_signal: str = "no_signal",
+        bolsa_confidence: float = 0.0,
+        fantasma: float = 0.0,
+        nivel_riesgo: str = "LOW",
+        precursors_count: int = 0,
+        muro_walls_active: int = 0,
+        muro_breach: bool = False,
+        alerts_dispatched: int = 0,
+        timestamp: Optional[float] = None,
+    ) -> int:
+        ts = timestamp or time.time()
+        cur = self._execute(
+            """INSERT INTO TBL_CICLOS
+            (timestamp, geo_signal, geo_confidence, geo_consensus,
+             crypto_signal, crypto_confidence,
+             bolsa_signal, bolsa_confidence,
+             fantasma, nivel_riesgo, precursors_count,
+             muro_walls_active, muro_breach, alerts_dispatched)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (ts, geo_signal, geo_confidence, int(geo_consensus),
+             crypto_signal, crypto_confidence,
+             bolsa_signal, bolsa_confidence,
+             fantasma, nivel_riesgo, precursors_count,
+             muro_walls_active, int(muro_breach), alerts_dispatched),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def get_ciclos(self, limit: int = 50) -> List[Dict]:
+        rows = self._execute(
+            "SELECT * FROM TBL_CICLOS ORDER BY timestamp DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(zip(self._col_names("TBL_CICLOS"), r)) for r in rows]
+
+    # ── Muro de los 5 Eventos ────────────────────────────────────
+
+    def insert_muro_evento(
+        self,
+        walls_active: int,
+        correlation_score: float,
+        muro_breach: bool,
+        risk_label: str,
+        wall_states: Dict[str, bool],
+        active_types: List[str],
+        cycle_id: Optional[int] = None,
+        timestamp: Optional[float] = None,
+    ) -> int:
+        ts = timestamp or time.time()
+        cur = self._execute(
+            """INSERT INTO TBL_MURO_EVENTOS
+            (timestamp, cycle_id, walls_active, correlation_score,
+             muro_breach, risk_label,
+             wall_geofisico, wall_atmosferico, wall_oceanico,
+             wall_solar, wall_financiero, active_types_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (ts, cycle_id, walls_active, correlation_score,
+             int(muro_breach), risk_label,
+             int(wall_states.get("GEOFÍSICO", False)),
+             int(wall_states.get("ATMOSFÉRICO", False)),
+             int(wall_states.get("OCEÁNICO", False)),
+             int(wall_states.get("SOLAR/GEOMAGNÉTICO", False)),
+             int(wall_states.get("FINANCIERO/SOCIAL", False)),
+             json.dumps(active_types)),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def get_muro_breaches(self, limit: int = 50) -> List[Dict]:
+        rows = self._execute(
+            """SELECT * FROM TBL_MURO_EVENTOS
+            WHERE muro_breach = 1 ORDER BY timestamp DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(zip(self._col_names("TBL_MURO_EVENTOS"), r))
+            d["active_types"] = json.loads(d.pop("active_types_json", "[]"))
+            result.append(d)
+        return result
+
+    # ── Helpers ───────────────────────────────────────────────────
+
+    def _col_names(self, table: str) -> List[str]:
+        cur = self._execute(f"PRAGMA table_info({table})")
+        return [row[1] for row in cur.fetchall()]
+
+    def close(self) -> None:
+        self._conn.close()
