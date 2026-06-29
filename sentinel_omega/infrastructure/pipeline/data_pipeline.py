@@ -1,6 +1,13 @@
 """
 Data Pipeline — fetches from real APIs and formats for agent ingest().
-Each pipeline class maps API responses to the exact dict shape each agent expects.
+Single pipeline: all 6 agents are part of one geodynamic system.
+
+Agent data mapping:
+  - Alfa-1: NOAA OMNI (Bz, solar wind) — 30yr
+  - Alfa-2: ESA Sentinel-2 satellite — 16yr
+  - Beta-1: Kp, seismic, Schumann, LOD, lunar — 30yr
+  - Beta-2: Atmospheric chemistry (pressure, SO2, air quality) — 16yr
+  - Delta: Financial cross-correlation (crypto, bolsa, Fear & Greed, VIX) — 10yr
 """
 
 import logging
@@ -50,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 
 class GeodynamicPipeline:
-    """Fetches NOAA + USGS data and formats for geodynamic agents."""
+    """Single pipeline for all 6 agents in the Sentinel Omega system."""
 
     def fetch_alfa1_data(self) -> Dict[str, Any]:
         """Build OMNI-like DataFrame for Alfa-1 from NOAA real-time data."""
@@ -80,7 +87,7 @@ class GeodynamicPipeline:
         return {"omni_dataframe": omni_df.reset_index(names=["time_tag"])}
 
     def fetch_beta1_data(self) -> Dict[str, Any]:
-        """Fetch Kp series and seismic data for Beta-1 FFT analysis."""
+        """Fetch Kp series, seismic, Schumann, LOD, lunar for Beta-1."""
         result: Dict[str, Any] = {}
 
         kp_df = fetch_kp_index()
@@ -141,64 +148,14 @@ class GeodynamicPipeline:
             "thermal_anomaly_count": 0,
         }
 
-    def fetch_beta2_data(
-        self,
-        zones: Optional[List[str]] = None,
-        days: int = 30,
-    ) -> Dict[str, Any]:
-        """Fetch Sentinel-1 SAR coverage for InSAR deformation monitoring."""
-        all_zones = get_seismic_zone_bboxes()
-        target_zones = zones or ["guerrero_gap", "oaxaca_costa", "chiapas"]
-
-        sar_coverages = {}
-        for zone in target_zones:
-            bbox = all_zones.get(zone)
-            if bbox is None:
-                continue
-            try:
-                cov = compute_temporal_coverage(bbox, days=days)
-                sar_coverages[zone] = cov
-            except Exception as e:
-                logger.warning(f"SAR coverage failed for {zone}: {e}")
-
-        if not sar_coverages:
-            logger.warning("No SAR data for Beta-2")
-            return {}
-
-        logger.info(f"Beta-2 pipeline: {len(sar_coverages)} zones analyzed")
-        return {
-            "sar_coverages": sar_coverages,
-            "deformation_flags": [],
-        }
-
-    def fetch_delta_data(self) -> Dict[str, Any]:
-        """
-        Build energetic node map from seismic geography + atmospheric pressure.
-        Regional seismic energy → nodes in the N-Body topology.
-        Atmospheric pressure gradient feeds Blue Jets correlation (V32 lineage).
-        """
-        eq_df = fetch_earthquakes(min_magnitude=4.0, days=30)
-        if eq_df is None or len(eq_df) < 3:
-            return {}
-
-        regions: Dict[str, float] = {}
-        for _, row in eq_df.iterrows():
-            place = str(row.get("place", "Unknown"))
-            region = place.split(",")[-1].strip() if "," in place else place
-            mag = float(row.get("magnitude", 0))
-            energy = 10 ** (1.5 * mag)
-            regions[region] = regions.get(region, 0) + energy
-
-        fg = fetch_fear_greed_index()
-        psi = (fg["value"] / 100.0) if fg else 0.5
-
-        result: Dict[str, Any] = {
-            "energetic_nodes": regions,
-            "psychosocial_index": psi,
-        }
+    def fetch_beta2_data(self) -> Dict[str, Any]:
+        """Fetch atmospheric chemistry data for Beta-2 (pressure, SO2, air quality)."""
+        result: Dict[str, Any] = {}
 
         try:
-            readings = fetch_monitoring_network(["tlaxcala", "oaxaca", "guerrero", "colima"])
+            readings = fetch_monitoring_network(
+                ["tlaxcala", "oaxaca", "guerrero", "colima"]
+            )
             if readings:
                 gradient = compute_pressure_gradient(readings)
                 result["pressure_gradient"] = gradient
@@ -226,119 +183,42 @@ class GeodynamicPipeline:
         except Exception as e:
             logger.warning(f"Air quality fetch failed: {e}")
 
-        logger.info(f"Delta pipeline: {len(regions)} seismic nodes, PSI={psi:.2f}")
+        if not result:
+            logger.warning("No atmospheric data for Beta-2")
         return result
 
+    def fetch_delta_data(self) -> Dict[str, Any]:
+        """
+        Fetch financial + sentiment data for Delta.
+        Crypto (Fear & Greed, BTC dominance), Bolsa (VIX, sectors, yield spread).
+        """
+        result: Dict[str, Any] = {}
 
-class CryptoPipeline:
-    """Fetches crypto market data and formats for crypto agents."""
-
-    TRACKED_PAIRS = {
-        "BTCUSDT": "btc_usdt",
-        "ETHUSDT": "eth_usdt",
-        "SOLUSDT": "sol_usdt",
-        "BNBUSDT": "bnb_usdt",
-        "XRPUSDT": "xrp_usdt",
-        "ADAUSDT": "ada_usdt",
-        "AVAXUSDT": "avax_usdt",
-        "DOTUSDT": "dot_usdt",
-    }
-
-    def fetch_alfa_data(self, days: int = 90) -> Dict[str, Any]:
-        """Build multi-pair price DataFrame and dominance data for Alfa-Crypto."""
-        frames = {}
-        for symbol, col_name in self.TRACKED_PAIRS.items():
-            df = fetch_binance_klines(symbol, limit=days)
-            if df is not None and "close" in df.columns:
-                frames[col_name] = df.set_index("timestamp")["close"]
-
-        if not frames:
-            logger.warning("No Binance data for Alfa-Crypto")
-            return {}
-
-        price_df = pd.DataFrame(frames)
-        price_df = price_df.sort_index().ffill()
+        fg = fetch_fear_greed_index()
+        result["fear_greed"] = fg["value"] if fg else 50.0
 
         dominance = fetch_coingecko_dominance()
-        btc_mcap = 0.0
-        total_mcap = 1.0
         if dominance:
-            btc_pct = dominance.get("btc", 50.0) / 100.0
-            total_mcap = 1e12
-            btc_mcap = total_mcap * btc_pct
+            result["btc_dominance"] = dominance.get("btc", 50.0) / 100.0
 
-        logger.info(f"Alfa-Crypto pipeline: {len(price_df)} days, {len(frames)} pairs")
-        return {
-            "price_dataframe": price_df.reset_index(),
-            "btc_market_cap": btc_mcap,
-            "total_market_cap": total_mcap,
-        }
+        crypto_ratios: Dict[str, float] = {}
+        for symbol in ("ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"):
+            df = fetch_binance_klines(symbol, limit=30)
+            btc_df = fetch_binance_klines("BTCUSDT", limit=30)
+            if df is not None and btc_df is not None:
+                if "close" in df.columns and "close" in btc_df.columns:
+                    ratio = float(df["close"].iloc[-1]) / max(float(btc_df["close"].iloc[-1]), 1)
+                    crypto_ratios[symbol.replace("USDT", "")] = ratio
+        if crypto_ratios:
+            result["crypto_ratios"] = crypto_ratios
 
-    def fetch_beta_data(self) -> Dict[str, Any]:
-        """Fetch volume series and on-chain proxies for Beta-Crypto."""
-        btc_df = fetch_binance_klines("BTCUSDT", interval="1h", limit=168)
-
-        result: Dict[str, Any] = {}
-        if btc_df is not None and "volume" in btc_df.columns:
-            result["volume_series"] = btc_df["volume"].values.astype(float)
-
-        result["whale_transaction_ratio"] = 0.15
-        result["funding_rate"] = 0.0
-        result["regulatory_score"] = 0.3
-        result["exchange_barriers"] = 0.1
-        result["market_maturity"] = 0.4
-
-        return result
-
-    def fetch_delta_data(self) -> Dict[str, Any]:
-        """Fetch Fear & Greed and social sentiment for Delta-Crypto."""
-        fg = fetch_fear_greed_index()
-        return {
-            "fear_greed_index": fg["value"] if fg else 50.0,
-            "social_volume": 0.0,
-            "influencer_reach": {},
-        }
-
-
-class BolsaPipeline:
-    """Fetches stock market data and formats for bolsa agents."""
-
-    def fetch_alfa_data(
-        self,
-        symbol: str = "AAPL",
-        index_symbol: str = "SPY",
-        days: int = 365,
-    ) -> Dict[str, Any]:
-        """Fetch stock OHLCV and index OHLCV for Alfa-Bolsa SNT ratio analysis."""
-        stock_df = fetch_yahoo_quote(symbol, days=days)
-        index_df = fetch_yahoo_quote(index_symbol, days=days)
-
-        if stock_df is None or index_df is None:
-            logger.warning(f"Missing Yahoo data for {symbol}/{index_symbol}")
-            return {}
-
-        logger.info(f"Alfa-Bolsa: {symbol}={len(stock_df)} rows, {index_symbol}={len(index_df)} rows")
-        return {
-            "stock_ohlcv": stock_df,
-            "index_ohlcv": index_df,
-        }
-
-    def fetch_beta_data(self) -> Dict[str, Any]:
-        """Fetch macro indicators for Beta-Bolsa fundamental analysis."""
-        spread = fetch_yield_spread()
-
-        return {
-            "interest_rate": 0.0525,
-            "yield_spread_10y_2y": spread if spread is not None else 0.5,
-            "pe_ratio": 22.0,
-        }
-
-    def fetch_delta_data(self) -> Dict[str, Any]:
-        """Fetch VIX and sector ETF market caps for Delta-Bolsa N-Body."""
         vix_df = fetch_vix()
-        vix_val = 20.0
         if vix_df is not None and "close" in vix_df.columns:
-            vix_val = float(vix_df["close"].iloc[-1])
+            result["vix"] = float(vix_df["close"].iloc[-1])
+
+        spread = fetch_yield_spread()
+        if spread is not None:
+            result["yield_spread"] = spread
 
         sector_dfs = fetch_sector_etfs(days=30)
         sector_caps: Dict[str, float] = {}
@@ -347,9 +227,13 @@ class BolsaPipeline:
                 last_close = float(df["close"].iloc[-1])
                 avg_vol = float(df["volume"].mean())
                 sector_caps[etf] = last_close * avg_vol
+        if sector_caps:
+            result["sector_market_caps"] = sector_caps
 
-        logger.info(f"Delta-Bolsa: VIX={vix_val:.1f}, {len(sector_caps)} sectors")
-        return {
-            "vix": vix_val,
-            "sector_market_caps": sector_caps,
-        }
+        logger.info(
+            f"Delta pipeline: FGI={result.get('fear_greed', '?')}, "
+            f"VIX={result.get('vix', '?')}, "
+            f"{len(crypto_ratios)} crypto ratios, "
+            f"{len(sector_caps)} sectors"
+        )
+        return result

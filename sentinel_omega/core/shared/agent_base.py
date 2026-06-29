@@ -49,6 +49,7 @@ class ConsensusResult:
     agent_signals: List[AgentSignal] = field(default_factory=list)
     veto_active: bool = False
     veto_reason: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
     precursor_risk: Any = None
     precursor_detections: Any = None
 

@@ -92,8 +92,6 @@ class SentinelOmegaConfig:
 
     layers: Dict[str, LayerConfig] = field(default_factory=lambda: {
         "geodynamic": LayerConfig(refresh_interval_s=300),
-        "crypto": LayerConfig(refresh_interval_s=60),
-        "bolsa": LayerConfig(refresh_interval_s=900),
         "lottery": LayerConfig(enabled=False),
     })
 

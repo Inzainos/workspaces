@@ -9,23 +9,37 @@ Sentinel Omega detects **precursors of natural events** (earthquakes, volcanic a
 
 The system is the successor to the TITAN V32/V46/V53 bot family.
 
-## Architecture
+## Architecture — 6 Agents, Single System
 
 ```
-Orchestrator
-├── Crypto Layer    → Alfa/Beta/Delta/Padre → Consensus
-├── Bolsa Layer     → Alfa/Beta/Delta/Padre → Consensus
-└── Geodynamic Layer
-    ├── Alfa-1 (NOAA OMNI Bz/Solar Wind)
-    ├── Alfa-2 (ESA Sentinel-2 Satellite)
-    ├── Beta-1 (Kp FFT + Schumann Harmonic Filter)
-    ├── Beta-2 (Sentinel-1 SAR InSAR)
-    ├── Delta  (N-Body Topology + Atmospheric)
-    └── Padre  (Asymmetric Loss Consensus)
+Orchestrator → GeodynamicLayerRunner → 6 Agents → Padre Consensus
+│
+├── Alfa-1 (Geodynamic: Bz, solar wind, seismic) — 30yr training
+│       ↑ validates
+├── Alfa-2 (Satellite: ESA Sentinel) — 16yr training
+│
+├── Beta-1 (Schumann/cymatics/energy released) — 30yr training  ← HEARTBEAT
+│       ↑ validates
+├── Beta-2 (Air chemistry/atmospheric) — 16yr training
+│
+├── Delta  (Crypto + Bolsa + humor de la tierra) — 10yr training
+│
+└── Padre  (Hierarchical cross-family validator)
         ├── TITAN V32 Fantasma Risk Index
         ├── Precursor Scanner (15 types)
         └── Muro de los 5 Eventos
 ```
+
+**Hierarchy**: #2 agents → report to #1 → Padre cross-validates across families.
+**Schumann is the heartbeat**: Everything correlates against Schumann resonance (Beta-1).
+If Schumann is perturbed alongside any other signal = precursor detected.
+
+**Families**:
+- `space_weather`: Alfa-1, Alfa-2
+- `schumann_cymatics`: Beta-1, Beta-2
+- `financial_sentiment`: Delta
+
+**Consensus requires**: >= 2 families active + >= 2 alerts + schumann_correlation > 0.3
 
 ## Key formulas
 
@@ -82,7 +96,7 @@ streamlit run sentinel_omega/infrastructure/dashboard/app.py
 
 ```
 sentinel_omega/
-├── orchestrator.py              # Master orchestrator — runs cycles
+├── orchestrator.py              # Master orchestrator — single runner cycle
 ├── config/sentinel_config.py    # Central config (secrets via os.environ)
 ├── core/
 │   ├── shared/
@@ -96,16 +110,14 @@ sentinel_omega/
 │   │   └── assertivity.py       # V46 prediction tracking
 │   └── snt_engine/              # SNT math framework (satellization, friction, ASI, N-Body)
 ├── layers/
-│   ├── geodynamic/              # Alfa-1, Alfa-2, Beta-1, Beta-2, Delta, Padre
-│   ├── crypto/                  # Alfa, Beta, Delta, Padre
-│   └── bolsa/                   # Alfa, Beta, Delta, Padre
+│   └── geodynamic/              # All 6 agents: alfa1, alfa2, beta1, beta2, delta, padre
 ├── infrastructure/
 │   ├── api/                     # NOAA, USGS, Schumann, ESA, OWM, Crypto, Bolsa, Telegram
-│   ├── pipeline/                # Data pipelines + layer runners
+│   ├── pipeline/                # GeodynamicPipeline + GeodynamicLayerRunner
 │   ├── database/                # SQLite schema, repository, 125-node seed
 │   └── dashboard/               # Streamlit + Plotly dashboard (9 tabs)
 ├── data/                        # SQLite databases
-└── tests/                       # 312 tests (7 test files)
+└── tests/                       # 301 tests (7 test files)
 ```
 
 ## Security rules
@@ -149,12 +161,14 @@ Five walls of cross-correlation. Breach when >= 3 walls active:
 
 ## Orchestrator cycle order
 
-1. Crypto + Bolsa layers run first
-2. Financial data extracted (fear_greed, VIX, BTC change)
-3. Geodynamic layer runs with financial cross-correlation
+1. GeodynamicPipeline fetches data for all agents (alfa1, beta1, beta2, delta, alfa2)
+2. Precursor risk computed (TITAN V32 fantasma)
+3. Hurricane data fetched (non-blocking)
 4. Scanner evaluates 15 precursor types
 5. Muro evaluates 5-wall correlation
-6. Alerts dispatched via Telegram
+6. All agents ingest + analyze → signals
+7. Padre evaluates consensus (hierarchical + Schumann correlation)
+8. Alerts dispatched via Telegram
 
 ## Dashboard tabs
 

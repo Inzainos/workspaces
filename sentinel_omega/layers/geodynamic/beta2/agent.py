@@ -1,12 +1,11 @@
 """
-Beta-2 Agent — SAR Interferometric Deformation Analysis
-Source: ESA Sentinel-1 SAR GRD via EODAG (Copernicus Data Space)
-Variables: SAR temporal baseline, interferometric pair availability, deformation proxy
-Method: Temporal pair density analysis for InSAR-ready monitoring
-Role: Cortical deformation detection via SAR coherence proxy
+Beta-2 Agent — Atmospheric Chemistry & Weather Anomaly Detection
+Sources: OpenWeatherMap (pressure, temp, humidity, SO2, air quality)
+Variables: Pressure gradient, SO2 levels, air quality index, fog/visibility
+Training window: 16 years (satellite-era atmospheric records)
+Reports to: Beta-1 (who validates against 30-year history)
 """
 
-import numpy as np
 from typing import Any, Dict, List, Optional
 
 from sentinel_omega.core.shared.agent_base import BaseAgent, AgentSignal, SignalType
@@ -14,84 +13,113 @@ from sentinel_omega.core.shared.agent_base import BaseAgent, AgentSignal, Signal
 
 class Beta2Agent(BaseAgent):
 
-    IDEAL_BASELINE_DAYS = 12
-    MIN_PAIRS_FOR_INSAR = 2
+    LOW_PRESSURE_THRESHOLD = 1008.0
+    HIGH_SO2_THRESHOLD = 20.0
+    FOG_VISIBILITY_THRESHOLD = 1000
+    TRAINING_YEARS = 16
 
     def __init__(self):
         super().__init__(name="beta2", layer="geodynamic")
-        self._sar_coverages: Dict[str, Dict[str, Any]] = {}
-        self._deformation_flags: List[str] = []
+        self._pressure_gradient: Optional[Dict[str, Any]] = None
+        self._air_quality: Optional[Dict[str, float]] = None
+        self._atmospheric_readings: List[Dict[str, Any]] = []
 
     def ingest(self, data: Dict[str, Any]) -> None:
-        self._sar_coverages = data.get("sar_coverages", {})
-        self._deformation_flags = data.get("deformation_flags", [])
-        self.logger.info(
-            f"Ingested SAR data for {len(self._sar_coverages)} zones, "
-            f"{len(self._deformation_flags)} deformation flags"
-        )
+        self._pressure_gradient = data.get("pressure_gradient")
+        self._air_quality = data.get("air_quality")
+        self._atmospheric_readings = data.get("atmospheric_readings", [])
+        n_stations = len(self._atmospheric_readings)
+        self.logger.info(f"Beta-2 ingested: {n_stations} stations, AQ={'yes' if self._air_quality else 'no'}")
+
+    def _pressure_stress(self) -> float:
+        if not self._pressure_gradient:
+            return 0.0
+        stress = 0.0
+        mean_p = self._pressure_gradient.get("mean_pressure", 1013.0)
+        if mean_p < self.LOW_PRESSURE_THRESHOLD:
+            stress += (self.LOW_PRESSURE_THRESHOLD - mean_p) / 20.0
+        spread = self._pressure_gradient.get("pressure_spread", 0.0)
+        if spread > 10.0:
+            stress += spread / 50.0
+        return min(1.0, stress)
+
+    def _chemical_stress(self) -> float:
+        if not self._air_quality:
+            return 0.0
+        stress = 0.0
+        so2 = self._air_quality.get("so2", 0.0)
+        if so2 > self.HIGH_SO2_THRESHOLD:
+            stress += min(0.4, so2 / 100.0)
+        pm25 = self._air_quality.get("pm2_5", 0.0)
+        if pm25 > 35.0:
+            stress += min(0.2, pm25 / 200.0)
+        co = self._air_quality.get("co", 0.0)
+        if co > 400.0:
+            stress += min(0.2, co / 2000.0)
+        return min(1.0, stress)
+
+    def _fog_anomaly(self) -> bool:
+        for reading in self._atmospheric_readings:
+            vis = reading.get("visibility_m", 10000)
+            if vis < self.FOG_VISIBILITY_THRESHOLD:
+                return True
+        return False
 
     def analyze(self) -> AgentSignal:
-        if not self._sar_coverages:
+        if not self._pressure_gradient and not self._air_quality:
             return self.emit_signal(
                 SignalType.NO_SIGNAL, 0.0,
-                reasoning="No SAR coverage data available",
+                reasoning="No atmospheric data available",
             )
 
-        zone_analyses = {}
-        for zone, cov in self._sar_coverages.items():
-            s1_count = cov.get("s1_count", 0)
-            mean_revisit = cov.get("mean_revisit_days", 0.0)
-            min_revisit = cov.get("min_revisit_days", 0.0)
+        pressure_score = self._pressure_stress()
+        chemical_score = self._chemical_stress()
+        fog_detected = self._fog_anomaly()
 
-            insar_ready = s1_count >= self.MIN_PAIRS_FOR_INSAR
-            baseline_quality = max(0, 1.0 - abs(mean_revisit - self.IDEAL_BASELINE_DAYS) / self.IDEAL_BASELINE_DAYS) if mean_revisit > 0 else 0.0
+        combined = pressure_score * 0.4 + chemical_score * 0.4
+        if fog_detected:
+            combined += 0.2
 
-            zone_analyses[zone] = {
-                "s1_count": s1_count,
-                "insar_ready": insar_ready,
-                "baseline_quality": baseline_quality,
-                "mean_revisit_days": mean_revisit,
-            }
+        signal_data = {
+            "pressure_stress": pressure_score,
+            "chemical_stress": chemical_score,
+            "fog_detected": fog_detected,
+            "combined_atmospheric": combined,
+        }
 
-        insar_ready_zones = [z for z, a in zone_analyses.items() if a["insar_ready"]]
-        avg_quality = np.mean([a["baseline_quality"] for a in zone_analyses.values()])
+        if self._pressure_gradient:
+            signal_data["mean_pressure"] = self._pressure_gradient.get("mean_pressure", 1013.0)
+        if self._air_quality:
+            signal_data["so2"] = self._air_quality.get("so2", 0.0)
+            signal_data["aqi"] = self._air_quality.get("aqi", 0)
 
-        if self._deformation_flags:
-            flagged_zones = set(self._deformation_flags) & set(insar_ready_zones)
-            if flagged_zones:
-                return self.emit_signal(
-                    SignalType.ALERT,
-                    min(0.65 + len(flagged_zones) * 0.1, 0.95),
-                    data={
-                        "zone_analyses": zone_analyses,
-                        "deformation_flags": self._deformation_flags,
-                        "flagged_insar_zones": list(flagged_zones),
-                    },
-                    reasoning=(
-                        f"Deformation flags in {len(flagged_zones)} InSAR-ready zones: "
-                        f"{', '.join(flagged_zones)}"
-                    ),
-                )
-
-        if avg_quality > 0.7 and len(insar_ready_zones) > 2:
+        if combined > 0.6:
+            reasons = []
+            if pressure_score > 0.3:
+                reasons.append(f"pressure anomaly ({pressure_score:.2f})")
+            if chemical_score > 0.3:
+                reasons.append(f"chemical anomaly ({chemical_score:.2f})")
+            if fog_detected:
+                reasons.append("fog/low visibility")
             return self.emit_signal(
-                SignalType.NEUTRAL, 0.3,
-                data={
-                    "zone_analyses": zone_analyses,
-                    "insar_ready_zones": insar_ready_zones,
-                    "avg_quality": float(avg_quality),
-                },
-                reasoning=(
-                    f"Good SAR coverage: {len(insar_ready_zones)} zones InSAR-ready, "
-                    f"quality={avg_quality:.2f}"
-                ),
+                SignalType.ALERT,
+                min(0.6 + combined * 0.3, 0.95),
+                data=signal_data,
+                reasoning=f"Atmospheric stress: {', '.join(reasons)}",
             )
-        else:
+
+        if combined > 0.3:
             return self.emit_signal(
-                SignalType.NEUTRAL, 0.15,
-                data={"avg_quality": float(avg_quality)},
-                reasoning=f"Limited SAR coverage (quality={avg_quality:.2f})",
+                SignalType.WATCH, 0.4 + combined * 0.2,
+                data=signal_data,
+                reasoning=f"Moderate atmospheric anomaly (score={combined:.2f})",
             )
+
+        return self.emit_signal(
+            SignalType.NEUTRAL, 0.2,
+            data=signal_data,
+            reasoning="Atmosphere within normal bounds",
+        )
 
     def health_check(self) -> bool:
-        return len(self._sar_coverages) > 0
+        return self._pressure_gradient is not None or self._air_quality is not None

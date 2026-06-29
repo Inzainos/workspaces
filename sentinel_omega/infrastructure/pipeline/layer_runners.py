@@ -1,9 +1,12 @@
 """
-Layer Runners — orchestrate fetch → ingest → analyze → consensus per domain.
-Each runner owns its agents and padre, calls the pipeline, and returns ConsensusResult.
+Layer Runner — orchestrates fetch → ingest → analyze → consensus for all 6 agents.
+Single runner: Alfa-1, Alfa-2, Beta-1, Beta-2, Delta, Padre.
 
-Geodynamic runner also computes TITAN V32 precursor risk (fantasma) from
-the agent signals and atmospheric data collected during each cycle.
+Hierarchical validation:
+  1. All agents fetch and analyze independently
+  2. #2 agents report to #1 agents for validation
+  3. Padre cross-validates across families
+  4. Everything correlates against Schumann (Beta-1)
 """
 
 import logging
@@ -26,21 +29,7 @@ from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
 from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
 from sentinel_omega.layers.geodynamic.padre.agent import GeodynamicPadre
 
-from sentinel_omega.layers.crypto.alfa_crypto.agent import AlfaCryptoAgent
-from sentinel_omega.layers.crypto.beta_crypto.agent import BetaCryptoAgent
-from sentinel_omega.layers.crypto.delta_crypto.agent import DeltaCryptoAgent
-from sentinel_omega.layers.crypto.padre_crypto.agent import CryptoPadre
-
-from sentinel_omega.layers.bolsa.alfa_bolsa.agent import AlfaBolsaAgent
-from sentinel_omega.layers.bolsa.beta_bolsa.agent import BetaBolsaAgent
-from sentinel_omega.layers.bolsa.delta_bolsa.agent import DeltaBolsaAgent
-from sentinel_omega.layers.bolsa.padre_bolsa.agent import BolsaPadre
-
-from sentinel_omega.infrastructure.pipeline.data_pipeline import (
-    GeodynamicPipeline,
-    CryptoPipeline,
-    BolsaPipeline,
-)
+from sentinel_omega.infrastructure.pipeline.data_pipeline import GeodynamicPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +41,7 @@ class GeodynamicLayerRunner:
         self.alfa1 = Alfa1Agent()
         self.alfa2 = Alfa2Agent() if enable_satellite else None
         self.beta1 = Beta1Agent()
-        self.beta2 = Beta2Agent() if enable_satellite else None
+        self.beta2 = Beta2Agent()
         self.delta = DeltaAgent()
         self.padre = GeodynamicPadre()
         self._enable_satellite = enable_satellite
@@ -67,7 +56,7 @@ class GeodynamicLayerRunner:
         self,
         alfa1_data: Dict,
         beta1_data: Dict,
-        delta_data: Dict,
+        beta2_data: Dict,
     ) -> PrecursorRisk:
         """Compute TITAN V32 fantasma from raw pipeline data."""
         import numpy as np
@@ -90,7 +79,7 @@ class GeodynamicLayerRunner:
         lod_ms = float(np.nanmean(lod_series)) if lod_series is not None and len(lod_series) > 0 else 0.0
 
         pressure_hpa = 1013.0
-        pg = delta_data.get("pressure_gradient")
+        pg = beta2_data.get("pressure_gradient")
         if pg:
             pressure_hpa = pg.get("mean_pressure", 1013.0)
 
@@ -129,19 +118,20 @@ class GeodynamicLayerRunner:
             return {}
 
     def run(self, financial_data: Optional[Dict] = None) -> ConsensusResult:
-        logger.info("=== Geodynamic Layer Cycle ===")
+        logger.info("=== Sentinel Omega Cycle ===")
 
         alfa1_data = self.pipeline.fetch_alfa1_data()
         beta1_data = self.pipeline.fetch_beta1_data()
+        beta2_data = self.pipeline.fetch_beta2_data()
         delta_data = self.pipeline.fetch_delta_data()
 
-        risk = self._compute_precursor_risk(alfa1_data, beta1_data, delta_data)
+        risk = self._compute_precursor_risk(alfa1_data, beta1_data, beta2_data)
 
         hurricane_data = self._fetch_hurricane_data()
         detections = self.scanner.scan(
-            alfa1_data, beta1_data, delta_data,
+            alfa1_data, beta1_data, beta2_data,
             hurricane_data=hurricane_data,
-            financial_data=financial_data,
+            financial_data=delta_data,
         )
         self.last_detections = detections
 
@@ -150,22 +140,21 @@ class GeodynamicLayerRunner:
 
         self.alfa1.ingest(alfa1_data)
         self.beta1.ingest(beta1_data)
+        self.beta2.ingest(beta2_data)
         self.delta.ingest(delta_data)
 
         signals: List[AgentSignal] = [
             self.alfa1.analyze(),
             self.beta1.analyze(),
+            self.beta2.analyze(),
             self.delta.analyze(),
         ]
 
-        if self._enable_satellite and self.alfa2 and self.beta2:
+        if self._enable_satellite and self.alfa2:
             try:
                 alfa2_data = self.pipeline.fetch_alfa2_data()
-                beta2_data = self.pipeline.fetch_beta2_data()
                 self.alfa2.ingest(alfa2_data)
-                self.beta2.ingest(beta2_data)
                 signals.append(self.alfa2.analyze())
-                signals.append(self.beta2.analyze())
             except Exception as e:
                 logger.warning(f"Satellite layer failed (non-blocking): {e}")
 
@@ -174,83 +163,9 @@ class GeodynamicLayerRunner:
         consensus.precursor_detections = detections
 
         logger.info(
-            f"Geodynamic consensus: {consensus.final_signal.value} "
+            f"Consensus: {consensus.final_signal.value} "
             f"(reached={consensus.consensus_reached}, conf={consensus.confidence:.2f}, "
             f"fantasma={risk.fantasma:.2f}, precursors={len(detections)}, "
             f"muro={muro_result.walls_active}/{muro_result.total_walls})"
-        )
-        return consensus
-
-
-class CryptoLayerRunner:
-
-    def __init__(self, days: int = 90):
-        self.pipeline = CryptoPipeline()
-        self.alfa = AlfaCryptoAgent()
-        self.beta = BetaCryptoAgent()
-        self.delta = DeltaCryptoAgent()
-        self.padre = CryptoPadre()
-        self._days = days
-
-    def run(self) -> ConsensusResult:
-        logger.info("=== Crypto Layer Cycle ===")
-
-        alfa_data = self.pipeline.fetch_alfa_data(days=self._days)
-        beta_data = self.pipeline.fetch_beta_data()
-        delta_data = self.pipeline.fetch_delta_data()
-
-        self.alfa.ingest(alfa_data)
-        self.beta.ingest(beta_data)
-        self.delta.ingest(delta_data)
-
-        signals: List[AgentSignal] = [
-            self.alfa.analyze(),
-            self.beta.analyze(),
-            self.delta.analyze(),
-        ]
-
-        consensus = self.padre.evaluate_consensus(signals)
-        logger.info(
-            f"Crypto consensus: {consensus.final_signal.value} "
-            f"(reached={consensus.consensus_reached}, conf={consensus.confidence:.2f})"
-        )
-        return consensus
-
-
-class BolsaLayerRunner:
-
-    def __init__(self, symbol: str = "AAPL", index_symbol: str = "SPY"):
-        self.pipeline = BolsaPipeline()
-        self.alfa = AlfaBolsaAgent()
-        self.beta = BetaBolsaAgent()
-        self.delta = DeltaBolsaAgent()
-        self.padre = BolsaPadre()
-        self._symbol = symbol
-        self._index_symbol = index_symbol
-
-    def run(self) -> ConsensusResult:
-        logger.info(f"=== Bolsa Layer Cycle ({self._symbol}) ===")
-
-        alfa_data = self.pipeline.fetch_alfa_data(
-            symbol=self._symbol,
-            index_symbol=self._index_symbol,
-        )
-        beta_data = self.pipeline.fetch_beta_data()
-        delta_data = self.pipeline.fetch_delta_data()
-
-        self.alfa.ingest(alfa_data)
-        self.beta.ingest(beta_data)
-        self.delta.ingest(delta_data)
-
-        signals: List[AgentSignal] = [
-            self.alfa.analyze(),
-            self.beta.analyze(),
-            self.delta.analyze(),
-        ]
-
-        consensus = self.padre.evaluate_consensus(signals)
-        logger.info(
-            f"Bolsa consensus: {consensus.final_signal.value} "
-            f"(reached={consensus.consensus_reached}, conf={consensus.confidence:.2f})"
         )
         return consensus
