@@ -1,8 +1,8 @@
 """
-Beta-Bolsa Agent — Fundamental & Macro Cycle Analysis
+Beta-Bolsa Agent — Fundamental & Macro Analysis
 Sources: Financial statements, Fed/Banxico rates, yield curves
-Variables: P/E, EPS, debt/equity, GDP growth, interest rates
-Method: FFT on macro cycles + fundamental scoring
+Variables: P/E, interest rates, yield spread, GDP growth
+Method: Fundamental scoring + institutional friction
 
 SNT Application:
   - Central banks = macro Hubs, national economies = Shadow Nodes
@@ -10,8 +10,7 @@ SNT Application:
   - Yield curve inversion = friction collapse signal
 """
 
-import numpy as np
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from sentinel_omega.core.shared.agent_base import BaseAgent, AgentSignal, SignalType
 from sentinel_omega.core.snt_engine import InstitutionalFrictionCalculator
@@ -19,18 +18,14 @@ from sentinel_omega.core.snt_engine import InstitutionalFrictionCalculator
 
 class BetaBolsaAgent(BaseAgent):
 
-    FFT_WINDOW = 252  # ~1 year of trading days
-
     def __init__(self):
         super().__init__(name="beta_bolsa", layer="bolsa")
         self._friction_calc = InstitutionalFrictionCalculator()
-        self._gdp_series: Optional[np.ndarray] = None
         self._interest_rate: float = 0.0
         self._yield_spread: float = 0.0
         self._pe_ratio: float = 0.0
 
     def ingest(self, data: Dict[str, Any]) -> None:
-        self._gdp_series = data.get("gdp_growth_series")
         self._interest_rate = data.get("interest_rate", 0.0)
         self._yield_spread = data.get("yield_spread_10y_2y", 0.0)
         self._pe_ratio = data.get("pe_ratio", 0.0)

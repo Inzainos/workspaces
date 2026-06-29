@@ -15,14 +15,13 @@ import numpy as np
 from typing import Any, Dict, List, Optional
 
 from sentinel_omega.core.shared.agent_base import BaseAgent, AgentSignal, SignalType
-from sentinel_omega.core.snt_engine import AtomicSovereigntyIndex, NBodyMatrix
+from sentinel_omega.core.snt_engine import NBodyMatrix
 
 
 class DeltaCryptoAgent(BaseAgent):
 
     def __init__(self):
         super().__init__(name="delta_crypto", layer="crypto")
-        self._asi = AtomicSovereigntyIndex()
         self._nbody = NBodyMatrix()
         self._fear_greed: float = 50.0
         self._social_volume: float = 0.0

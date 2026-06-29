@@ -5,6 +5,7 @@ Authenticated APIs use environment variables.
 
 Modules:
   - noaa: NOAA SWPC (Kp, GOES X-ray, solar wind, magnetometer)
+  - noaa_hazards: Active hurricanes, historical tsunamis, tsunamigenic quake detection
   - usgs: USGS earthquake catalog
   - schumann: Tomsk Observatory Schumann resonance (WPC vision)
   - geophysical: IERS LOD, lunar ephemeris
