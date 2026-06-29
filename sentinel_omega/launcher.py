@@ -133,6 +133,12 @@ def run(args):
         seed_topology(repo)
         logger.info("Topology seeded.")
 
+    if args.backcast:
+        from sentinel_omega.infrastructure.pipeline.backcast import run_backcast
+        logger.info("Running historical backcast (one-time)...")
+        run_backcast(str(db_path))
+        logger.info("Backcast complete.")
+
     dashboard_proc = None
     if args.dashboard:
         dashboard_proc = _launch_dashboard()
@@ -246,6 +252,10 @@ def parse_args():
     parser.add_argument(
         "--dry-run", action="store_true",
         help="Disable Telegram alerts (dry run mode)",
+    )
+    parser.add_argument(
+        "--backcast", action="store_true",
+        help="Run historical backcast (1994-2025) before starting cycles",
     )
     return parser.parse_args()
 

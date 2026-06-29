@@ -17,7 +17,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 -- ─── Precursores Cósmicos ──────────────────────────────────────────
@@ -123,13 +123,10 @@ CREATE TABLE IF NOT EXISTS TBL_CICLOS (
     geo_signal          TEXT    DEFAULT 'no_signal',
     geo_confidence      REAL    DEFAULT 0.0,
     geo_consensus       INTEGER DEFAULT 0,
-    crypto_signal       TEXT    DEFAULT 'no_signal',
-    crypto_confidence   REAL    DEFAULT 0.0,
-    bolsa_signal        TEXT    DEFAULT 'no_signal',
-    bolsa_confidence    REAL    DEFAULT 0.0,
     fantasma            REAL    DEFAULT 0.0,
     nivel_riesgo        TEXT    DEFAULT 'LOW',
     precursors_count    INTEGER DEFAULT 0,
+    precursor_types     TEXT    DEFAULT '[]',
     muro_walls_active   INTEGER DEFAULT 0,
     muro_breach         INTEGER DEFAULT 0,
     alerts_dispatched   INTEGER DEFAULT 0,
@@ -163,6 +160,65 @@ CREATE INDEX IF NOT EXISTS idx_muro_ts
     ON TBL_MURO_EVENTOS(timestamp);
 CREATE INDEX IF NOT EXISTS idx_muro_breach
     ON TBL_MURO_EVENTOS(muro_breach);
+
+-- ─── Historical Backcast Tables (6H resolution) ──────────────────
+CREATE TABLE IF NOT EXISTS tbl_clima_espacial_raw (
+    timestamp_6h    TEXT PRIMARY KEY,
+    bz_promedio     REAL,
+    bz_derivada     REAL,
+    bz_min          REAL,
+    bz_max          REAL,
+    viento_solar_avg REAL,
+    viento_solar_max REAL,
+    kp_max          REAL,
+    kp_promedio     REAL,
+    proton_flux_10mev REAL
+);
+
+CREATE TABLE IF NOT EXISTS tbl_astronomia_cinematica (
+    timestamp_6h        TEXT PRIMARY KEY,
+    lod_ms              REAL DEFAULT 0.0,
+    fase_lunar_pct      REAL DEFAULT 0.0,
+    distancia_lunar_km  REAL DEFAULT 384400.0,
+    es_sicigia          INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS tbl_historico_sismico_raw (
+    timestamp_6h    TEXT NOT NULL,
+    id_nodo         INTEGER NOT NULL,
+    sismo_count     INTEGER DEFAULT 0,
+    sismo_max_mag   REAL DEFAULT 0.0,
+    PRIMARY KEY (timestamp_6h, id_nodo)
+);
+
+CREATE TABLE IF NOT EXISTS tbl_psique_financiera (
+    timestamp_6h    TEXT PRIMARY KEY,
+    btc_precio_usd  REAL,
+    volatilidad_24h REAL DEFAULT 0.0
+);
+
+CREATE TABLE IF NOT EXISTS tbl_enjambre_telemetria (
+    timestamp_6h    TEXT NOT NULL,
+    id_nodo         INTEGER NOT NULL,
+    schumann_hz     REAL DEFAULT 7.83,
+    PRIMARY KEY (timestamp_6h, id_nodo)
+);
+
+CREATE TABLE IF NOT EXISTS tbl_nodo_estado_dinamico (
+    timestamp_6h            TEXT NOT NULL,
+    id_nodo                 INTEGER NOT NULL,
+    carga_tension_actual    REAL DEFAULT 0.0,
+    PRIMARY KEY (timestamp_6h, id_nodo)
+);
+
+CREATE TRIGGER IF NOT EXISTS trg_procesar_saturacion
+    AFTER UPDATE OF carga_tension_actual ON tbl_nodo_estado_dinamico
+    WHEN NEW.carga_tension_actual > 1.0
+BEGIN
+    UPDATE tbl_nodo_estado_dinamico
+    SET carga_tension_actual = 1.0
+    WHERE timestamp_6h = NEW.timestamp_6h AND id_nodo = NEW.id_nodo;
+END;
 
 -- ─── Schema Version ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS TBL_SCHEMA_VERSION (

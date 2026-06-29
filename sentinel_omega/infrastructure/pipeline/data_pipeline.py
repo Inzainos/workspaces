@@ -8,9 +8,14 @@ Agent data mapping:
   - Beta-1: Kp, seismic, Schumann, LOD, lunar — 30yr
   - Beta-2: Atmospheric chemistry (pressure, SO2, air quality) — 16yr
   - Delta: Financial cross-correlation (crypto, bolsa, Fear & Greed, VIX) — 10yr
+
+LOCF Protocol:
+  When an API call fails, the pipeline uses Last Observation Carried Forward
+  from the previous successful fetch. Never generates synthetic data.
 """
 
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -57,7 +62,31 @@ logger = logging.getLogger(__name__)
 
 
 class GeodynamicPipeline:
-    """Single pipeline for all 6 agents in the Sentinel Omega system."""
+    """Single pipeline for all 6 agents in the Sentinel Omega system.
+
+    Implements LOCF (Last Observation Carried Forward):
+    Each fetch method stores its last successful result. If the next API call
+    fails, the cached result is returned instead of empty data. This ensures
+    agents always have real data to work with, even during API outages.
+    """
+
+    def __init__(self):
+        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_ts: Dict[str, float] = {}
+
+    def _locf_get(self, key: str) -> Dict[str, Any]:
+        """Return last cached value for a given pipeline stage."""
+        cached = self._cache.get(key)
+        if cached:
+            age_s = time.time() - self._cache_ts.get(key, 0)
+            logger.info(f"LOCF active for {key} (age={age_s:.0f}s)")
+        return cached or {}
+
+    def _locf_set(self, key: str, data: Dict[str, Any]):
+        """Store successful fetch result for LOCF fallback."""
+        if data:
+            self._cache[key] = data
+            self._cache_ts[key] = time.time()
 
     def fetch_alfa1_data(self) -> Dict[str, Any]:
         """Build OMNI-like DataFrame for Alfa-1 from NOAA real-time data."""
@@ -65,8 +94,8 @@ class GeodynamicPipeline:
         wind_df = fetch_solar_wind()
 
         if mag_df is None and wind_df is None:
-            logger.warning("No NOAA data available for Alfa-1")
-            return {}
+            logger.warning("No NOAA data available for Alfa-1 — activating LOCF")
+            return self._locf_get("alfa1")
 
         frames = []
         if mag_df is not None:
@@ -79,12 +108,14 @@ class GeodynamicPipeline:
             frames.append(wind_df)
 
         if not frames:
-            return {}
+            return self._locf_get("alfa1")
 
         omni_df = pd.concat(frames, axis=1)
         omni_df = omni_df.sort_index().ffill().dropna(how="all")
         logger.info(f"Alfa-1 pipeline: {len(omni_df)} records, {list(omni_df.columns)}")
-        return {"omni_dataframe": omni_df.reset_index(names=["time_tag"])}
+        result = {"omni_dataframe": omni_df.reset_index(names=["time_tag"])}
+        self._locf_set("alfa1", result)
+        return result
 
     def fetch_beta1_data(self) -> Dict[str, Any]:
         """Fetch Kp series, seismic, Schumann, LOD, lunar for Beta-1."""
@@ -115,7 +146,9 @@ class GeodynamicPipeline:
             logger.warning(f"Lunar phase computation failed: {e}")
 
         if not result:
-            logger.warning("No Kp/seismic data for Beta-1")
+            logger.warning("No Kp/seismic data for Beta-1 — activating LOCF")
+            return self._locf_get("beta1")
+        self._locf_set("beta1", result)
         return result
 
     def fetch_alfa2_data(
@@ -139,14 +172,16 @@ class GeodynamicPipeline:
                 logger.warning(f"Satellite coverage failed for {zone}: {e}")
 
         if not zone_coverages:
-            logger.warning("No satellite coverage data for Alfa-2")
-            return {}
+            logger.warning("No satellite coverage data for Alfa-2 — activating LOCF")
+            return self._locf_get("alfa2")
 
         logger.info(f"Alfa-2 pipeline: {len(zone_coverages)} zones analyzed")
-        return {
+        result = {
             "zone_coverages": zone_coverages,
             "thermal_anomaly_count": 0,
         }
+        self._locf_set("alfa2", result)
+        return result
 
     def fetch_beta2_data(self) -> Dict[str, Any]:
         """Fetch atmospheric chemistry data for Beta-2 (pressure, SO2, air quality)."""
@@ -184,7 +219,9 @@ class GeodynamicPipeline:
             logger.warning(f"Air quality fetch failed: {e}")
 
         if not result:
-            logger.warning("No atmospheric data for Beta-2")
+            logger.warning("No atmospheric data for Beta-2 — activating LOCF")
+            return self._locf_get("beta2")
+        self._locf_set("beta2", result)
         return result
 
     def fetch_delta_data(self) -> Dict[str, Any]:
@@ -230,10 +267,16 @@ class GeodynamicPipeline:
         if sector_caps:
             result["sector_market_caps"] = sector_caps
 
+        if not result or result.get("fear_greed") == 50.0 and "vix" not in result:
+            cached = self._locf_get("delta")
+            if cached:
+                return cached
+
         logger.info(
             f"Delta pipeline: FGI={result.get('fear_greed', '?')}, "
             f"VIX={result.get('vix', '?')}, "
             f"{len(crypto_ratios)} crypto ratios, "
             f"{len(sector_caps)} sectors"
         )
+        self._locf_set("delta", result)
         return result

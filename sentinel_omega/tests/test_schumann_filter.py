@@ -459,9 +459,9 @@ class TestCiclos:
     def test_insert_cycle(self, repo):
         cycle_id = repo.insert_ciclo(
             geo_signal="alert", geo_confidence=0.85, geo_consensus=True,
-            crypto_signal="bearish", crypto_confidence=0.7,
             fantasma=22.5, nivel_riesgo="HIGH",
-            precursors_count=3, muro_walls_active=3, muro_breach=True,
+            precursors_count=3, precursor_types=["FANTASMA", "SISMICO", "SOLAR"],
+            muro_walls_active=3, muro_breach=True,
         )
         assert cycle_id >= 1
         cycles = repo.get_ciclos(limit=1)
