@@ -33,8 +33,8 @@ class TestTelegramBot:
     def test_dry_run_no_token(self):
         bot = SentinelTelegramBot(token="", chat_id="")
         msg = TelegramMessage(
-            layer="crypto", signal_type="BULLISH", confidence=0.85,
-            summary="BTC altcoin convergence detected"
+            layer="geodynamic", signal_type="ALERT", confidence=0.85,
+            summary="Precursor correlation detected"
         )
         assert bot.send_alert(msg) is True
 
@@ -48,9 +48,7 @@ class TestTelegramBot:
 
     def test_layer_emojis_mapping(self):
         assert SentinelTelegramBot.LAYER_EMOJIS["geodynamic"] == "🌍"
-        assert SentinelTelegramBot.LAYER_EMOJIS["crypto"] == "₿"
-        assert SentinelTelegramBot.LAYER_EMOJIS["bolsa"] == "📈"
-        assert SentinelTelegramBot.LAYER_EMOJIS["lottery"] == "🎰"
+        assert SentinelTelegramBot.LAYER_EMOJIS["system"] == "⚙️"
 
     def test_unknown_layer_gets_default_emoji(self):
         bot = SentinelTelegramBot(token="", chat_id="")
@@ -62,7 +60,7 @@ class TestTelegramBot:
 
     def test_send_heartbeat(self):
         bot = SentinelTelegramBot(token="", chat_id="")
-        status = {"geodynamic": True, "crypto": True, "bolsa": False}
+        status = {"geodynamic": True}
         assert bot.send_heartbeat(status) is True
 
     @patch("requests.post")
@@ -73,7 +71,7 @@ class TestTelegramBot:
 
         bot = SentinelTelegramBot(token="test_token", chat_id="12345")
         msg = TelegramMessage(
-            layer="crypto", signal_type="BULLISH", confidence=0.7,
+            layer="geodynamic", signal_type="ALERT", confidence=0.7,
             summary="Test alert"
         )
         assert bot.send_alert(msg) is True
@@ -85,7 +83,7 @@ class TestTelegramBot:
     @patch("requests.post", side_effect=ConnectionError("Network error"))
     def test_send_failure_returns_false(self, mock_post):
         bot = SentinelTelegramBot(token="token", chat_id="123")
-        msg = TelegramMessage(layer="crypto", signal_type="TEST", confidence=0.5, summary="fail")
+        msg = TelegramMessage(layer="geodynamic", signal_type="TEST", confidence=0.5, summary="fail")
         assert bot.send_alert(msg) is False
 
 

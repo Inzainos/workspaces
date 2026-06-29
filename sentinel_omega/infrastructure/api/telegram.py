@@ -1,10 +1,8 @@
 """
 Telegram Bot API connector — Alert dispatch for Sentinel Omega.
 
-Sends real-time alerts when geodynamic/crypto/bolsa agents detect
-anomalies above threshold. Used by Padre agents and the orchestrator.
-
-Legacy lineage: TITAN V46 COMMANDER had enviar_telegram() for Bz < -10 alerts.
+Sends real-time alerts when agents detect anomalies above threshold.
+Used by the Padre agent and the orchestrator.
 
 Requires: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID environment variables.
 """

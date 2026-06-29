@@ -1,13 +1,13 @@
 """
 Data Pipeline — fetches from real APIs and formats for agent ingest().
-Single pipeline: all 6 agents are part of one geodynamic system.
+Single pipeline: all 6 agents are part of one system.
 
 Agent data mapping:
   - Alfa-1: NOAA OMNI (Bz, solar wind) — 30yr
   - Alfa-2: ESA Sentinel-2 satellite — 16yr
   - Beta-1: Kp, seismic, Schumann, LOD, lunar — 30yr
   - Beta-2: Atmospheric chemistry (pressure, SO2, air quality) — 16yr
-  - Delta: Financial cross-correlation (crypto, bolsa, Fear & Greed, VIX) — 10yr
+  - Delta: Financial cross-correlation (Fear & Greed, VIX, BTC dominance) — 10yr
 
 LOCF Protocol:
   When an API call fails, the pipeline uses Last Observation Carried Forward

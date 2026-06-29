@@ -32,7 +32,7 @@ class APIConfig:
     omni_nasa_url: str = "https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/"
     tomsk_schumann_url: str = "http://sosrff.tsu.ru/"
 
-    # Crypto
+    # Financial data (used by Delta agent)
     coingecko_url: str = "https://api.coingecko.com/api/v3/"
     binance_url: str = "https://api.binance.com/api/v3/"
     yahoo_finance_url: str = "https://query1.finance.yahoo.com/v8/finance/chart/"
@@ -40,7 +40,6 @@ class APIConfig:
     bitso_secret: str = field(default_factory=lambda: os.environ.get("BITSO_API_SECRET", ""))
     coingecko_api_key: str = field(default_factory=lambda: os.environ.get("COINGECKO_API_KEY", ""))
 
-    # Stock Market
     alpha_vantage_key: str = field(default_factory=lambda: os.environ.get("ALPHA_VANTAGE_KEY", ""))
 
     # Weather

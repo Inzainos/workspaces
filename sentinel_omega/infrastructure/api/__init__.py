@@ -12,6 +12,6 @@ Modules:
   - esa_sentinel: ESA Copernicus Sentinel satellite data (EODAG)
   - openweathermap: Atmospheric pressure, temperature, humidity, air quality
   - telegram: Alert dispatch via Telegram Bot API
-  - crypto: Binance, CoinGecko, Fear & Greed
-  - bolsa: Yahoo Finance, VIX, sector ETFs, yield spread
+  - crypto: Binance, CoinGecko, Fear & Greed (used by Delta agent)
+  - bolsa: Yahoo Finance, VIX, sector ETFs, yield spread (used by Delta agent)
 """

@@ -123,7 +123,7 @@ def render_sidebar():
     st.sidebar.subheader("Active Layers")
     active = {k: v for k, v in cfg.layers.items() if v.enabled}
     for name, layer_cfg in active.items():
-        emoji = {"geodynamic": "🌍", "crypto": "₿", "bolsa": "📈"}.get(name, "⚡")
+        emoji = {"geodynamic": "🌍"}.get(name, "⚡")
         st.sidebar.markdown(f"{emoji} **{name.upper()}** — {layer_cfg.refresh_interval_s}s")
 
     st.sidebar.divider()
@@ -988,26 +988,12 @@ def generate_demo_signals():
         "geodynamic": {
             "agents": {
                 "Alfa-1 (Bz/OMNI)": {"signal": "NEUTRAL", "confidence": 0.3, "bz_mean": round(rng.normal(-2, 3), 1)},
+                "Alfa-2 (Satellite)": {"signal": "NEUTRAL", "confidence": 0.3},
                 "Beta-1 (Kp/FFT+Schumann)": {"signal": "NEUTRAL", "confidence": 0.3, "dominant_period_h": round(rng.uniform(6, 48), 1), "schumann_coherence": round(rng.uniform(0, 0.5), 2)},
-                "Delta (Topology)": {"signal": "NEUTRAL", "confidence": 0.3, "power_law_b": round(rng.normal(-0.5, 0.2), 3)},
+                "Beta-2 (Atmospheric)": {"signal": "NEUTRAL", "confidence": 0.3},
+                "Delta (Financial)": {"signal": "NEUTRAL", "confidence": 0.3, "fear_greed": round(rng.uniform(20, 80), 0)},
             },
             "padre": {"consensus": False, "signal": "NO_SIGNAL", "confidence": 0.0},
-        },
-        "crypto": {
-            "agents": {
-                "Alfa-Crypto (SNT)": {"signal": rng.choice(["BULLISH", "BEARISH", "NEUTRAL"]), "confidence": round(rng.uniform(0.3, 0.8), 2)},
-                "Beta-Crypto (On-Chain)": {"signal": rng.choice(["BULLISH", "BEARISH", "NEUTRAL"]), "confidence": round(rng.uniform(0.3, 0.8), 2)},
-                "Delta-Crypto (Sentiment)": {"signal": rng.choice(["BULLISH", "NEUTRAL"]), "confidence": round(rng.uniform(0.3, 0.7), 2)},
-            },
-            "padre": {"consensus": False, "signal": "NEUTRAL", "confidence": 0.2},
-        },
-        "bolsa": {
-            "agents": {
-                "Alfa-Bolsa (Technical)": {"signal": rng.choice(["BULLISH", "BEARISH", "NEUTRAL"]), "confidence": round(rng.uniform(0.3, 0.75), 2)},
-                "Beta-Bolsa (Macro)": {"signal": rng.choice(["BEARISH", "NEUTRAL"]), "confidence": round(rng.uniform(0.3, 0.7), 2)},
-                "Delta-Bolsa (Regime)": {"signal": "NEUTRAL", "confidence": 0.3, "vix": round(rng.uniform(12, 35), 1)},
-            },
-            "padre": {"consensus": False, "signal": "NEUTRAL", "confidence": 0.2},
         },
     }
     return layers
@@ -1016,7 +1002,7 @@ def generate_demo_signals():
 def render_layer_signals(signals: dict):
     st.subheader("Layer Consensus Status")
     cols = st.columns(len(signals))
-    emojis = {"geodynamic": "🌍", "crypto": "₿", "bolsa": "📈"}
+    emojis = {"geodynamic": "🌍"}
 
     for i, (layer_name, layer_data) in enumerate(signals.items()):
         with cols[i]:
