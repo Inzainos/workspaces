@@ -276,7 +276,6 @@ class SentinelRepository:
         alerts_dispatched: int = 0,
         timestamp: Optional[float] = None,
     ) -> int:
-        import json
         ts = timestamp or time.time()
         types_json = json.dumps(precursor_types or [])
         cur = self._execute(

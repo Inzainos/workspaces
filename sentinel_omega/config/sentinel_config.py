@@ -11,8 +11,6 @@ from typing import Dict
 @dataclass
 class DatabaseConfig:
     geodynamic_db: str = "data/SENTINEL_OMEGA_PRO.db"
-    crypto_db: str = "data/sentinel_crypto.db"
-    bolsa_db: str = "data/sentinel_bolsa.db"
     lottery_db: str = "data/TITAN_MEMORY.db"
 
 

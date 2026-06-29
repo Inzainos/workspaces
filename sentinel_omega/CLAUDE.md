@@ -101,7 +101,8 @@ sentinel_omega/
 ├── core/
 │   ├── shared/
 │   │   ├── agent_base.py        # BaseAgent, PadreAgent, SignalType, ConsensusResult
-│   │   └── data_pipeline.py     # Pipeline base class
+│   │   ├── data_pipeline.py     # Pipeline base class
+│   │   └── geometria_uvg.py     # Static UVG-125 Becker-Hagens matrix in RAM
 │   ├── precursor/
 │   │   ├── risk_calculator.py   # TITAN V32 fantasma formula
 │   │   ├── scanner.py           # 15-type precursor scanner
@@ -113,7 +114,7 @@ sentinel_omega/
 │   └── geodynamic/              # All 6 agents: alfa1, alfa2, beta1, beta2, delta, padre
 ├── infrastructure/
 │   ├── api/                     # NOAA, USGS, Schumann, ESA, OWM, Crypto, Bolsa, Telegram
-│   ├── pipeline/                # GeodynamicPipeline + GeodynamicLayerRunner
+│   ├── pipeline/                # GeodynamicPipeline + GeodynamicLayerRunner + backcast
 │   ├── database/                # SQLite schema, repository, 125-node seed
 │   └── dashboard/               # Streamlit + Plotly dashboard (9 tabs)
 ├── data/                        # SQLite databases
@@ -140,14 +141,23 @@ ALPHA_VANTAGE_KEY     — Stock market data
 
 ## Database (SQLite)
 
-Tables in `data/SENTINEL_OMEGA_PRO.db`:
+Operational tables in `data/SENTINEL_OMEGA_PRO.db`:
 - `TBL_PRECURSORES_COSMICOS` — Bz, viento, protones, Kp, LOD, Schumann, fase lunar, fantasma
 - `TBL_NODOS_TOPOLOGIA` — 125 nodes (50 real + 50 ghost + 25 geobattery)
 - `TBL_HISTORICO_SISMICO` — USGS seismic catalog
 - `TBL_DETECCIONES` — Precursor detection log
 - `TBL_CICLOS` — Orchestrator cycle history
 - `TBL_MURO_EVENTOS` — Muro breach history
-- Trigger: `trg_nodo_saturacion` caps saturacion at 1.0
+
+Backcast tables (1H resolution, 1994-2025):
+- `tbl_clima_espacial_raw` — NASA OMNI2 (Bz, solar wind, Kp, proton flux)
+- `tbl_astronomia_cinematica` — LOD, lunar phase, lunar distance, syzygy
+- `tbl_historico_sismico_raw` — USGS seismic mapped to UVG-125 nodes
+- `tbl_psique_financiera` — BTC price, volatility (2014+)
+- `tbl_enjambre_telemetria` — Schumann resonance per node
+- `tbl_nodo_estado_dinamico` — Node charge/tension (capped at 1.0)
+
+Triggers: `trg_nodo_saturacion` + `trg_procesar_saturacion` cap saturation at 1.0
 
 ## Muro de los 5 Eventos
 
