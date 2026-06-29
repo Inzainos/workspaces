@@ -13,7 +13,7 @@ Sources:
 Protocol:
   - ZERO synthetic data. Missing data = NULL.
   - LOCF (ffill) only from existing real records, never from generators.
-  - 6-hour resolution (timestamp_6h) grid for all variables.
+  - 1-hour resolution grid for all variables.
   - Single atomic transaction per year.
 """
 
@@ -41,11 +41,11 @@ logger = logging.getLogger(__name__)
 
 YEAR_INI = 1994
 YEAR_END = 2025
-MIN_ROWS_COMPLETE = 40000
+MIN_ROWS_COMPLETE = 250000
 
 BACKCAST_SCHEMA = """
 CREATE TABLE IF NOT EXISTS tbl_clima_espacial_raw (
-    timestamp_6h    TEXT PRIMARY KEY,
+    timestamp_blk    TEXT PRIMARY KEY,
     bz_promedio     REAL,
     bz_derivada     REAL,
     bz_min          REAL,
@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS tbl_clima_espacial_raw (
 );
 
 CREATE TABLE IF NOT EXISTS tbl_astronomia_cinematica (
-    timestamp_6h        TEXT PRIMARY KEY,
+    timestamp_blk        TEXT PRIMARY KEY,
     lod_ms              REAL DEFAULT 0.0,
     fase_lunar_pct      REAL DEFAULT 0.0,
     distancia_lunar_km  REAL DEFAULT 384400.0,
@@ -66,31 +66,31 @@ CREATE TABLE IF NOT EXISTS tbl_astronomia_cinematica (
 );
 
 CREATE TABLE IF NOT EXISTS tbl_historico_sismico_raw (
-    timestamp_6h    TEXT NOT NULL,
+    timestamp_blk    TEXT NOT NULL,
     id_nodo         INTEGER NOT NULL,
     sismo_count     INTEGER DEFAULT 0,
     sismo_max_mag   REAL DEFAULT 0.0,
-    PRIMARY KEY (timestamp_6h, id_nodo)
+    PRIMARY KEY (timestamp_blk, id_nodo)
 );
 
 CREATE TABLE IF NOT EXISTS tbl_psique_financiera (
-    timestamp_6h    TEXT PRIMARY KEY,
+    timestamp_blk    TEXT PRIMARY KEY,
     btc_precio_usd  REAL,
     volatilidad_24h REAL DEFAULT 0.0
 );
 
 CREATE TABLE IF NOT EXISTS tbl_enjambre_telemetria (
-    timestamp_6h    TEXT NOT NULL,
+    timestamp_blk    TEXT NOT NULL,
     id_nodo         INTEGER NOT NULL,
     schumann_hz     REAL DEFAULT 7.83,
-    PRIMARY KEY (timestamp_6h, id_nodo)
+    PRIMARY KEY (timestamp_blk, id_nodo)
 );
 
 CREATE TABLE IF NOT EXISTS tbl_nodo_estado_dinamico (
-    timestamp_6h            TEXT NOT NULL,
+    timestamp_blk            TEXT NOT NULL,
     id_nodo                 INTEGER NOT NULL,
     carga_tension_actual    REAL DEFAULT 0.0,
-    PRIMARY KEY (timestamp_6h, id_nodo)
+    PRIMARY KEY (timestamp_blk, id_nodo)
 );
 
 CREATE TRIGGER IF NOT EXISTS trg_procesar_saturacion
@@ -99,7 +99,7 @@ CREATE TRIGGER IF NOT EXISTS trg_procesar_saturacion
 BEGIN
     UPDATE tbl_nodo_estado_dinamico
     SET carga_tension_actual = 1.0
-    WHERE timestamp_6h = NEW.timestamp_6h AND id_nodo = NEW.id_nodo;
+    WHERE timestamp_blk = NEW.timestamp_blk AND id_nodo = NEW.id_nodo;
 END;
 """
 
@@ -114,7 +114,7 @@ def _init_backcast_tables(conn: sqlite3.Connection):
 
 
 def verificar_ejecucion_previa(conn: sqlite3.Connection) -> bool:
-    """Check if historical data already loaded (>40k 6H blocks = complete)."""
+    """Check if historical data already loaded (>250k 1H blocks = complete)."""
     try:
         cursor = conn.execute(
             "SELECT COUNT(*) FROM tbl_clima_espacial_raw"
@@ -233,21 +233,21 @@ def ejecutar_bloque_anual(
     df_schumann: pd.DataFrame,
     df_btc: pd.DataFrame,
 ):
-    """Transform and persist one year of data at 6H resolution."""
+    """Transform and persist one year of data at 1H resolution."""
     logger.info(f"  Transforming year {year}...")
 
     base_tiempo = pd.date_range(
         start=f"{year}-01-01 00:00",
         end=f"{year}-12-31 18:00",
-        freq="6h",
+        freq="1h",
     )
     master_df = pd.DataFrame({"fecha": base_tiempo})
-    master_df["timestamp_6h"] = master_df["fecha"].dt.strftime("%Y-%m-%d %H:%M")
+    master_df["timestamp_blk"] = master_df["fecha"].dt.strftime("%Y-%m-%d %H:%M")
 
     if not df_omni.empty:
         df_omni = df_omni.copy()
         df_omni = df_omni.set_index("fecha").sort_index()
-        agg_omni = df_omni.resample("6h").agg(
+        agg_omni = df_omni.resample("1h").agg(
             bz_promedio=("bz_promed", "mean"),
             bz_min=("bz_promed", "min"),
             bz_max=("bz_promed", "max"),
@@ -278,12 +278,12 @@ def ejecutar_bloque_anual(
         for _, row in master_df.iterrows():
             cursor.execute(
                 """INSERT OR IGNORE INTO tbl_clima_espacial_raw
-                   (timestamp_6h, bz_promedio, bz_derivada, bz_min, bz_max,
+                   (timestamp_blk, bz_promedio, bz_derivada, bz_min, bz_max,
                     viento_solar_avg, viento_solar_max, kp_max, kp_promedio,
                     proton_flux_10mev)
                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (
-                    row["timestamp_6h"],
+                    row["timestamp_blk"],
                     _safe_float(row.get("bz_promedio")),
                     _safe_float(row.get("bz_derivada")),
                     _safe_float(row.get("bz_min")),
@@ -298,63 +298,63 @@ def ejecutar_bloque_anual(
 
         cursor.execute(
             """INSERT OR IGNORE INTO tbl_astronomia_cinematica
-               (timestamp_6h) VALUES (?)""",
-            (master_df["timestamp_6h"].iloc[0],),
+               (timestamp_blk) VALUES (?)""",
+            (master_df["timestamp_blk"].iloc[0],),
         )
         for _, row in master_df.iterrows():
             cursor.execute(
                 """INSERT OR IGNORE INTO tbl_astronomia_cinematica
-                   (timestamp_6h) VALUES (?)""",
-                (row["timestamp_6h"],),
+                   (timestamp_blk) VALUES (?)""",
+                (row["timestamp_blk"],),
             )
 
         if not df_sismos.empty:
             df_sismos = df_sismos.copy()
-            df_sismos["timestamp_6h"] = df_sismos["time"].dt.floor("6h").dt.strftime(
+            df_sismos["timestamp_blk"] = df_sismos["time"].dt.floor("1h").dt.strftime(
                 "%Y-%m-%d %H:%M"
             )
             for _, row in df_sismos.iterrows():
                 nodo = nodo_mas_cercano(row["latitude"], row["longitude"])
                 cursor.execute(
                     """INSERT INTO tbl_historico_sismico_raw
-                       (timestamp_6h, id_nodo, sismo_count, sismo_max_mag)
+                       (timestamp_blk, id_nodo, sismo_count, sismo_max_mag)
                        VALUES (?, ?, 1, ?)
-                       ON CONFLICT(timestamp_6h, id_nodo) DO UPDATE SET
+                       ON CONFLICT(timestamp_blk, id_nodo) DO UPDATE SET
                        sismo_count = sismo_count + 1,
                        sismo_max_mag = MAX(sismo_max_mag, excluded.sismo_max_mag)""",
-                    (row["timestamp_6h"], nodo["id"], float(row["mag"])),
+                    (row["timestamp_blk"], nodo["id"], float(row["mag"])),
                 )
 
         if year >= 2014 and not df_btc.empty:
             df_btc = df_btc.copy()
-            df_btc["timestamp_6h"] = df_btc["fecha"].dt.floor("6h").dt.strftime(
+            df_btc["timestamp_blk"] = df_btc["fecha"].dt.floor("1h").dt.strftime(
                 "%Y-%m-%d %H:%M"
             )
-            agg_btc = df_btc.groupby("timestamp_6h")["precio"].mean().reset_index()
+            agg_btc = df_btc.groupby("timestamp_blk")["precio"].mean().reset_index()
             for _, row in agg_btc.iterrows():
                 cursor.execute(
                     """INSERT OR IGNORE INTO tbl_psique_financiera
-                       (timestamp_6h, btc_precio_usd)
+                       (timestamp_blk, btc_precio_usd)
                        VALUES (?, ?)""",
-                    (row["timestamp_6h"], float(row["precio"])),
+                    (row["timestamp_blk"], float(row["precio"])),
                 )
 
         if year >= 2014 and not df_schumann.empty:
             df_schumann = df_schumann.copy()
-            df_schumann["timestamp_6h"] = (
-                df_schumann["timestamp"].dt.floor("6h").dt.strftime("%Y-%m-%d %H:%M")
+            df_schumann["timestamp_blk"] = (
+                df_schumann["timestamp"].dt.floor("1h").dt.strftime("%Y-%m-%d %H:%M")
             )
             agg_sch = (
-                df_schumann.groupby("timestamp_6h")["frecuencia_fundamental_hz"]
+                df_schumann.groupby("timestamp_blk")["frecuencia_fundamental_hz"]
                 .mean()
                 .reset_index()
             )
             for _, row in agg_sch.iterrows():
                 cursor.execute(
                     """INSERT OR IGNORE INTO tbl_enjambre_telemetria
-                       (timestamp_6h, id_nodo, schumann_hz)
+                       (timestamp_blk, id_nodo, schumann_hz)
                        VALUES (?, 0, ?)""",
-                    (row["timestamp_6h"], float(row["frecuencia_fundamental_hz"])),
+                    (row["timestamp_blk"], float(row["frecuencia_fundamental_hz"])),
                 )
 
         conn.commit()

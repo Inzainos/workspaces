@@ -161,9 +161,9 @@ CREATE INDEX IF NOT EXISTS idx_muro_ts
 CREATE INDEX IF NOT EXISTS idx_muro_breach
     ON TBL_MURO_EVENTOS(muro_breach);
 
--- ─── Historical Backcast Tables (6H resolution) ──────────────────
+-- ─── Historical Backcast Tables (1H resolution) ──────────────────
 CREATE TABLE IF NOT EXISTS tbl_clima_espacial_raw (
-    timestamp_6h    TEXT PRIMARY KEY,
+    timestamp_blk    TEXT PRIMARY KEY,
     bz_promedio     REAL,
     bz_derivada     REAL,
     bz_min          REAL,
@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS tbl_clima_espacial_raw (
 );
 
 CREATE TABLE IF NOT EXISTS tbl_astronomia_cinematica (
-    timestamp_6h        TEXT PRIMARY KEY,
+    timestamp_blk        TEXT PRIMARY KEY,
     lod_ms              REAL DEFAULT 0.0,
     fase_lunar_pct      REAL DEFAULT 0.0,
     distancia_lunar_km  REAL DEFAULT 384400.0,
@@ -184,31 +184,31 @@ CREATE TABLE IF NOT EXISTS tbl_astronomia_cinematica (
 );
 
 CREATE TABLE IF NOT EXISTS tbl_historico_sismico_raw (
-    timestamp_6h    TEXT NOT NULL,
+    timestamp_blk    TEXT NOT NULL,
     id_nodo         INTEGER NOT NULL,
     sismo_count     INTEGER DEFAULT 0,
     sismo_max_mag   REAL DEFAULT 0.0,
-    PRIMARY KEY (timestamp_6h, id_nodo)
+    PRIMARY KEY (timestamp_blk, id_nodo)
 );
 
 CREATE TABLE IF NOT EXISTS tbl_psique_financiera (
-    timestamp_6h    TEXT PRIMARY KEY,
+    timestamp_blk    TEXT PRIMARY KEY,
     btc_precio_usd  REAL,
     volatilidad_24h REAL DEFAULT 0.0
 );
 
 CREATE TABLE IF NOT EXISTS tbl_enjambre_telemetria (
-    timestamp_6h    TEXT NOT NULL,
+    timestamp_blk    TEXT NOT NULL,
     id_nodo         INTEGER NOT NULL,
     schumann_hz     REAL DEFAULT 7.83,
-    PRIMARY KEY (timestamp_6h, id_nodo)
+    PRIMARY KEY (timestamp_blk, id_nodo)
 );
 
 CREATE TABLE IF NOT EXISTS tbl_nodo_estado_dinamico (
-    timestamp_6h            TEXT NOT NULL,
+    timestamp_blk            TEXT NOT NULL,
     id_nodo                 INTEGER NOT NULL,
     carga_tension_actual    REAL DEFAULT 0.0,
-    PRIMARY KEY (timestamp_6h, id_nodo)
+    PRIMARY KEY (timestamp_blk, id_nodo)
 );
 
 CREATE TRIGGER IF NOT EXISTS trg_procesar_saturacion
@@ -217,7 +217,7 @@ CREATE TRIGGER IF NOT EXISTS trg_procesar_saturacion
 BEGIN
     UPDATE tbl_nodo_estado_dinamico
     SET carga_tension_actual = 1.0
-    WHERE timestamp_6h = NEW.timestamp_6h AND id_nodo = NEW.id_nodo;
+    WHERE timestamp_blk = NEW.timestamp_blk AND id_nodo = NEW.id_nodo;
 END;
 
 -- ─── Schema Version ───────────────────────────────────────────────
