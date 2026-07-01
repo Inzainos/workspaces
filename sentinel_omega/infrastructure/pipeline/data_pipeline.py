@@ -42,6 +42,7 @@ from sentinel_omega.infrastructure.api.esa_sentinel import (
 from sentinel_omega.infrastructure.api.openweathermap import (
     fetch_monitoring_network,
     fetch_air_quality,
+    fetch_reference_baseline,
     compute_pressure_gradient,
     MONITORING_STATIONS,
 )
@@ -219,6 +220,13 @@ class GeodynamicPipeline:
                 result["air_quality"] = aq
         except Exception as e:
             logger.warning(f"Air quality fetch failed: {e}")
+
+        try:
+            baseline = fetch_reference_baseline()
+            if baseline:
+                result["degassing_baseline"] = baseline
+        except Exception as e:
+            logger.warning(f"Reference baseline fetch failed: {e}")
 
         if not result:
             logger.warning("No atmospheric data for Beta-2 — activating LOCF")

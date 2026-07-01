@@ -34,6 +34,19 @@ MONITORING_STATIONS: Dict[str, Dict[str, float]] = {
     "puebla": {"lat": 19.04, "lon": -98.21},
 }
 
+# Reference stations in remote, unpopulated zones (open ocean, desert, polar).
+# Human industrial/traffic emissions are effectively zero here, so any measured
+# SO2/CO is natural background or true tectonic/volcanic outgassing. Used to
+# learn the "clean baseline" — the signature of what natural degassing looks
+# like against zero human noise, so populated-zone readings can be corrected.
+REFERENCE_STATIONS: Dict[str, Dict[str, float]] = {
+    "pacifico_nemo": {"lat": -48.87, "lon": -123.39},   # Point Nemo — most remote ocean point
+    "atlantico_sur": {"lat": -30.0, "lon": -15.0},      # mid South Atlantic
+    "indico_sur": {"lat": -40.0, "lon": 80.0},          # mid South Indian Ocean
+    "atacama": {"lat": -24.5, "lon": -69.25},           # driest desert, minimal industry
+    "antartida": {"lat": -75.0, "lon": 0.0},            # polar clean-air baseline
+}
+
 
 @dataclass
 class AtmosphericReading:
@@ -145,6 +158,38 @@ def fetch_air_quality(
     except Exception as e:
         logger.error(f"OWM air quality fetch failed: {e}")
         return None
+
+
+def fetch_reference_baseline() -> Optional[Dict[str, float]]:
+    """
+    Learn the natural degassing signature from remote, unpopulated zones.
+
+    Averages air-quality gases across ocean/desert/polar reference stations
+    where human emissions are ~zero. The result is the "clean background" —
+    what the atmosphere looks like with only natural degassing present.
+    Populated-zone readings are then compared against this to isolate the
+    true tectonic/volcanic outgassing from urban pollution noise.
+    """
+    samples: List[Dict[str, float]] = []
+    for name, coords in REFERENCE_STATIONS.items():
+        aq = fetch_air_quality(coords["lat"], coords["lon"])
+        if aq:
+            samples.append(aq)
+
+    if not samples:
+        return None
+
+    gases = ("co", "so2", "no2", "pm2_5", "pm10", "o3")
+    baseline = {
+        g: round(sum(s.get(g, 0.0) for s in samples) / len(samples), 3)
+        for g in gases
+    }
+    baseline["station_count"] = len(samples)
+    logger.info(
+        f"Reference baseline (natural degassing): "
+        f"SO2={baseline['so2']}, CO={baseline['co']} from {len(samples)} clean zones"
+    )
+    return baseline
 
 
 def fetch_monitoring_network(
