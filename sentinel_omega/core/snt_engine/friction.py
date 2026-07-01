@@ -2,7 +2,7 @@
 Institutional Friction Calculator
 Core SNT finding: ρ = -0.68 (friction vs b), p = 2.5e-97, n=714
 
-Friction-free domains: b ≈ +0.95 (epidemics, gravity)
+Friction-free domains: b ≈ +0.95 (gravity, free markets)
 High-friction domains: b ≈ +0.09 (sovereign countries, predator-prey)
 """
 
@@ -33,7 +33,6 @@ class FrictionProfile:
 class InstitutionalFrictionCalculator:
 
     DOMAIN_BASELINES = {
-        "epidemic": FrictionLevel.ZERO,
         "gravity": FrictionLevel.ZERO,
         "digital_platform": FrictionLevel.LOW,
         "crypto": FrictionLevel.LOW,
