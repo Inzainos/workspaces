@@ -20,6 +20,12 @@ import sys
 import time
 from pathlib import Path
 
+# Ensure the workspace root is importable when run as a script
+# (python sentinel_omega/launcher.py), not just as a module.
+_WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
+if str(_WORKSPACE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_WORKSPACE_ROOT))
+
 PIDFILE = Path(__file__).parent / "data" / "sentinel_omega.pid"
 LOGFILE = Path(__file__).parent / "data" / "sentinel_omega.log"
 
@@ -205,8 +211,8 @@ def _log_cycle_summary(status, results, repo, config):
 
         try:
             repo.insert_precursor_cosmico(
-                bz_nT=risk.components.get("bz_nT", 0),
-                viento_km_s=risk.components.get("wind_kms", 0),
+                bz=risk.components.get("bz_nT", 0),
+                viento=risk.components.get("wind_kms", 0),
                 protones=0.0,
                 kp=risk.components.get("kp", 0),
                 lod_ms=risk.components.get("lod_ms", 0),
@@ -220,21 +226,59 @@ def _log_cycle_summary(status, results, repo, config):
         except Exception as e:
             logger.warning(f"Failed to persist cycle data: {e}")
 
+        muro = status.last_muro
+        walls_active = muro.walls_active if muro else 0
+        muro_breach = muro.muro_breach if muro else False
+
         geo = results.get("geodynamic")
         if geo:
             try:
-                repo.insert_ciclo(
+                cycle_id = repo.insert_ciclo(
                     geo_signal=geo.final_signal.value,
                     geo_confidence=geo.confidence,
+                    geo_consensus=geo.consensus_reached,
                     fantasma=risk.fantasma,
                     nivel_riesgo=risk.risk_level,
                     precursors_count=len(status.active_precursors),
                     precursor_types=status.active_precursors,
-                    muro_walls_active=0,
-                    muro_breach=False,
+                    muro_walls_active=walls_active,
+                    muro_breach=muro_breach,
+                    alerts_dispatched=status.alerts_dispatched,
                 )
             except Exception as e:
                 logger.warning(f"Failed to persist cycle record: {e}")
+                cycle_id = None
+
+            if muro:
+                try:
+                    wall_states = {ws.name: ws.active for ws in muro.wall_statuses}
+                    repo.insert_muro_evento(
+                        walls_active=muro.walls_active,
+                        correlation_score=muro.correlation_score,
+                        muro_breach=muro.muro_breach,
+                        risk_label=muro.risk_label,
+                        wall_states=wall_states,
+                        active_types=muro.active_precursor_types,
+                        cycle_id=cycle_id,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to persist muro record: {e}")
+
+            detections = getattr(geo, "precursor_detections", None) or []
+            for det in detections:
+                try:
+                    repo.insert_deteccion(
+                        tipo=det.tipo.value,
+                        display_name=det.display_name,
+                        confidence=det.confidence,
+                        station=det.station,
+                        lat=det.lat,
+                        lon=det.lon,
+                        values=det.values,
+                        cycle_id=cycle_id,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to persist detection: {e}")
 
 
 def parse_args():

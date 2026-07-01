@@ -45,12 +45,8 @@ class APIConfig:
     # Weather
     openweathermap_key: str = field(default_factory=lambda: os.environ.get("OPENWEATHERMAP_KEY", ""))
 
-    # Biology (public APIs, no keys)
-    cov_spectrum_url: str = "https://lapis.cov-spectrum.org/open/v2/"
-
     # Astronomy (public APIs)
     noaa_goes_xray_url: str = "https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json"
-    nasa_ztf_url: str = "https://irsa.ipac.caltech.edu/cgi-bin/ZTF/nph_light_curves"
 
 
 @dataclass

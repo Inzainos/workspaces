@@ -228,6 +228,34 @@ CREATE TABLE IF NOT EXISTS TBL_SCHEMA_VERSION (
 """
 
 
+# Columns expected per operational table. Used to migrate older databases
+# created before a column was added (CREATE TABLE IF NOT EXISTS never alters
+# an existing table, so new columns must be added explicitly).
+EXPECTED_COLUMNS = {
+    "TBL_CICLOS": {
+        "precursor_types": "TEXT DEFAULT '[]'",
+    },
+}
+
+
+def _migrate_add_missing_columns(conn: sqlite3.Connection) -> None:
+    """Add any columns missing from existing tables (forward-only migration)."""
+    for table, columns in EXPECTED_COLUMNS.items():
+        try:
+            existing_cols = {
+                row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+        except sqlite3.OperationalError:
+            continue  # table doesn't exist yet; executescript will create it
+        if not existing_cols:
+            continue
+        for col_name, col_def in columns.items():
+            if col_name not in existing_cols:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+                logger.info(f"Migration: added {table}.{col_name}")
+    conn.commit()
+
+
 def init_database(db_path: str) -> sqlite3.Connection:
     """Initialize database with full schema. Idempotent (IF NOT EXISTS)."""
     path = Path(db_path)
@@ -238,6 +266,7 @@ def init_database(db_path: str) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
 
     conn.executescript(SCHEMA_SQL)
+    _migrate_add_missing_columns(conn)
 
     existing = conn.execute(
         "SELECT version FROM TBL_SCHEMA_VERSION ORDER BY version DESC LIMIT 1"

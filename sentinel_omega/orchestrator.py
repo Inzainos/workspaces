@@ -38,6 +38,7 @@ class SystemStatus:
     is_online: bool = False
     last_consensus: Optional[ConsensusResult] = None
     last_precursor_risk: Optional[PrecursorRisk] = None
+    last_muro: Optional[Any] = None
     active_precursors: List[str] = field(default_factory=list)
     uptime_s: float = 0.0
     total_signals: int = 0
@@ -137,6 +138,7 @@ class SentinelOrchestrator:
 
         if self._runner and hasattr(self._runner, "last_muro") and self._runner.last_muro:
             muro = self._runner.last_muro
+            self._status.last_muro = muro
             if muro.muro_breach:
                 logger.warning(
                     f"MURO BREACH: {muro.walls_active}/{muro.total_walls} "

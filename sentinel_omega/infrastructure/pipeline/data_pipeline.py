@@ -100,11 +100,13 @@ class GeodynamicPipeline:
         frames = []
         if mag_df is not None:
             mag_df = mag_df.set_index("time_tag")
+            mag_df = mag_df[~mag_df.index.duplicated(keep="last")]
             frames.append(mag_df)
         if wind_df is not None:
             wind_df = wind_df.rename(columns={
                 "proton_speed": "plasma_speed",
             }).set_index("time_tag")
+            wind_df = wind_df[~wind_df.index.duplicated(keep="last")]
             frames.append(wind_df)
 
         if not frames:
