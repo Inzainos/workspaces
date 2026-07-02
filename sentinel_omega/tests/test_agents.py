@@ -159,8 +159,8 @@ class TestHierarchicalValidation:
     def test_training_years(self):
         assert GeodynamicPadre.AGENT_TRAINING_YEARS["alfa1"] == 30
         assert GeodynamicPadre.AGENT_TRAINING_YEARS["beta1"] == 30
-        assert GeodynamicPadre.AGENT_TRAINING_YEARS["alfa2"] == 16
-        assert GeodynamicPadre.AGENT_TRAINING_YEARS["beta2"] == 16
+        assert GeodynamicPadre.AGENT_TRAINING_YEARS["alfa2"] == 14
+        assert GeodynamicPadre.AGENT_TRAINING_YEARS["beta2"] == 14
         assert GeodynamicPadre.AGENT_TRAINING_YEARS["delta"] == 10
 
 

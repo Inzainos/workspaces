@@ -16,11 +16,11 @@ Orchestrator → GeodynamicLayerRunner → 6 Agents → Padre Consensus
 │
 ├── Alfa-1 (Geodynamic: Bz, solar wind, seismic) — 30yr training
 │       ↑ validates
-├── Alfa-2 (Satellite: ESA Sentinel) — 16yr training
+├── Alfa-2 (Satellite: ESA Sentinel) — 14yr training
 │
 ├── Beta-1 (Schumann/cymatics/energy released) — 30yr training  ← HEARTBEAT
 │       ↑ validates
-├── Beta-2 (Air chemistry/atmospheric) — 16yr training
+├── Beta-2 (Air chemistry/atmospheric) — 14yr training
 │
 ├── Delta  (Crypto + Bolsa + humor de la tierra) — 10yr training
 │

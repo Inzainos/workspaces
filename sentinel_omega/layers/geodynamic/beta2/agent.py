@@ -2,7 +2,7 @@
 Beta-2 Agent — Atmospheric Chemistry & Degassing Anomaly Detection
 Sources: OpenWeatherMap (pressure, SO2/CO/NO2 gases, air quality)
 Variables: Pressure gradient, tectonic degassing signature, fog/visibility
-Training window: 16 years (satellite-era atmospheric records)
+Training window: 14 years (Sentinel satellite era, 2014+)
 Reports to: Beta-1 (who validates against 30-year history)
 
 The precursor here is DEGASSING (gases venting from the ground before an event),
@@ -21,7 +21,7 @@ class Beta2Agent(BaseAgent):
     LOW_PRESSURE_THRESHOLD = 1008.0
     HIGH_SO2_THRESHOLD = 20.0
     FOG_VISIBILITY_THRESHOLD = 1000
-    TRAINING_YEARS = 16
+    TRAINING_YEARS = 14
 
     MARINE_THERMAL_THRESHOLD_C = 29.0
     NODE_SO2_EXCESS_ALERT = 50.0

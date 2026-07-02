@@ -114,11 +114,11 @@ Orchestrator -> GeodynamicLayerRunner -> 6 Agentes -> Consenso del Padre
 |
 +-- Alfa-1 (Geodinámico: Bz, viento solar, sísmico) — 30 años entrenamiento
 |       ^ valida
-+-- Alfa-2 (Satélite: ESA Sentinel) — 16 años
++-- Alfa-2 (Satélite: ESA Sentinel) — 14 años
 |
 +-- Beta-1 (Schumann / cimática / energía liberada) — 30 años  <- LATIDO
 |       ^ valida
-+-- Beta-2 (Química atmosférica) — 16 años
++-- Beta-2 (Química atmosférica) — 14 años
 |
 +-- Delta  (Financiero: crypto + bolsa + humor de la tierra) — 10 años
 |

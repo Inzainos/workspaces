@@ -4,9 +4,9 @@ Single pipeline: all 6 agents are part of one system.
 
 Agent data mapping:
   - Alfa-1: NOAA OMNI (Bz, solar wind) — 30yr
-  - Alfa-2: ESA Sentinel-2 satellite — 16yr
+  - Alfa-2: ESA Sentinel-2 satellite — 14yr
   - Beta-1: Kp, seismic, Schumann, LOD, lunar — 30yr
-  - Beta-2: Atmospheric chemistry (pressure, SO2, air quality) — 16yr
+  - Beta-2: Atmospheric chemistry (pressure, SO2, air quality) — 14yr
   - Delta: Financial cross-correlation (Fear & Greed, VIX, BTC dominance) — 10yr
 
 LOCF Protocol:
