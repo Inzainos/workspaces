@@ -262,10 +262,11 @@ class TestEntrenamiento:
         _seed_backcast(conn, n_eventos=6)
         entrenar_reconocimiento(path)
         stats = backtest_disciplinario(path)
-        # All signatures recognized -> reinforcement above 1.0 for every bot
+        # All signatures recognized -> credibility intact at baseline
+        # (recognition repairs, it does not inflate)
         assert stats["fallos"] == 0
         for bot, peso in stats["pesos"].items():
-            assert peso > 1.0
+            assert peso == pytest.approx(1.0)
 
 
 # ── Pesos disciplinarios (castigo hijo x1, Padre x2) ─────────────────
@@ -317,13 +318,36 @@ class TestPesos:
             peso = castigar(conn, "beta1")
         assert peso == pytest.approx(0.3)
 
-    def test_refuerzo_bounded_above(self, db):
+    def test_refuerzo_normal_caps_at_baseline(self, db):
         conn, _ = db
         from sentinel_omega.core.juez.pesos import reforzar
         peso = 1.0
         for _ in range(50):
             peso = reforzar(conn, "beta1")
+        # doing your job repairs credibility but never exceeds baseline
+        assert peso == pytest.approx(1.0)
+
+    def test_refuerzo_recovers_after_castigo(self, db):
+        conn, _ = db
+        from sentinel_omega.core.juez.pesos import castigar, reforzar
+        castigar(conn, "beta1")  # 0.95
+        peso = reforzar(conn, "beta1")
+        assert 0.95 < peso <= 1.0
+
+    def test_atencion_puede_superar_baseline(self, db):
+        conn, _ = db
+        from sentinel_omega.core.juez.pesos import reforzar, PESO_MAX
+        peso = 1.0
+        for _ in range(50):
+            peso = reforzar(conn, "beta1", hasta=PESO_MAX)
         assert peso == pytest.approx(1.5)
+
+    def test_refuerzo_normal_no_baja_peso_ganado(self, db):
+        conn, _ = db
+        from sentinel_omega.core.juez.pesos import reforzar, PESO_MAX
+        reforzar(conn, "beta1", hasta=PESO_MAX)  # 1.02 (above baseline)
+        peso = reforzar(conn, "beta1")  # normal reinforcement
+        assert peso == pytest.approx(1.02)  # never lowered back to 1.0
 
     def test_padre_applies_pesos_in_consensus(self):
         import time as _time

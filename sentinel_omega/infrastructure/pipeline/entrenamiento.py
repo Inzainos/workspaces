@@ -138,7 +138,9 @@ def backtest_disciplinario(db_path: str) -> Dict:
 
     import json as _json
     from sentinel_omega.core.firmas.signature_engine import similitud
-    from sentinel_omega.core.juez.pesos import castigar, reforzar, cargar_pesos
+    from sentinel_omega.core.juez.pesos import (
+        PESO_MAX, castigar, reforzar, cargar_pesos,
+    )
 
     # evento_ref -> {bot: reconoció} — needed for attention redistribution
     resultados_por_evento: Dict[str, Dict[str, bool]] = {}
@@ -218,7 +220,7 @@ def backtest_disciplinario(db_path: str) -> Dict:
         if resultados.get("padre") is False:
             for bot, reconocio in resultados.items():
                 if bot != "padre" and reconocio:
-                    reforzar(conn, bot)
+                    reforzar(conn, bot, hasta=PESO_MAX)
                     stats["atencion_redistribuida"] += 1
                     logger.info(
                         f"ATENCIÓN REDISTRIBUIDA: {bot} vio {ref} que el "
