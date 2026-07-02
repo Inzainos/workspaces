@@ -364,10 +364,28 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         if features:
             matches = memoria.match_estado_actual(features)
             for m in matches[:3]:
+                # Referente de anticipación: cuánto suele tardar en
+                # presentarse este tipo de evento tras verse la firma.
+                ventana = ""
+                try:
+                    lag = conn.execute(
+                        "SELECT lag_promedio_h, lag_max_h FROM "
+                        "tbl_lag_anticipacion WHERE event_class = ?",
+                        (m["event_class"],),
+                    ).fetchone()
+                    if lag:
+                        m["ventana_tipica_dias"] = round(lag[0] / 24, 1)
+                        ventana = (
+                            f" — ventana típica ~{lag[0]/24:.0f} días "
+                            f"(hasta {lag[1]/24:.0f}d)"
+                        )
+                except Exception:
+                    pass
                 logger.warning(
                     f"FIRMA MATCH: estado actual se parece {m['similitud']:.0%} "
                     f"a la firma que precedió {m['event_class']} "
                     f"(nodo {m['id_nodo']}, vista {m['recurrencia']} veces)"
+                    f"{ventana}"
                 )
 
         juez.registrar_prediccion(
