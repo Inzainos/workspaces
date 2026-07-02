@@ -256,3 +256,93 @@ class TestEntrenamiento:
     def test_extraer_features_none_without_data(self, db):
         conn, _ = db
         assert extraer_features_ventana(conn, "2015-01-01 00:00", 45) is None
+
+    def test_fase2_reinforces_weights(self, db):
+        conn, path = db
+        _seed_backcast(conn, n_eventos=6)
+        entrenar_reconocimiento(path)
+        stats = backtest_disciplinario(path)
+        # All signatures recognized -> reinforcement above 1.0 for every bot
+        assert stats["fallos"] == 0
+        for bot, peso in stats["pesos"].items():
+            assert peso > 1.0
+
+
+# ── Pesos disciplinarios (castigo hijo x1, Padre x2) ─────────────────
+
+
+class TestPesos:
+
+    def test_castigo_hijo_vs_padre(self, db):
+        conn, _ = db
+        from sentinel_omega.core.juez.pesos import castigar, cargar_pesos
+        castigar(conn, "beta1", es_padre=False)
+        castigar(conn, "padre", es_padre=True)
+        pesos = cargar_pesos(conn)
+        assert pesos["beta1"] == pytest.approx(0.95)
+        assert pesos["padre"] == pytest.approx(0.90)  # double decay
+
+    def test_peso_bounded_below(self, db):
+        conn, _ = db
+        from sentinel_omega.core.juez.pesos import castigar
+        peso = 1.0
+        for _ in range(50):
+            peso = castigar(conn, "beta1")
+        assert peso == pytest.approx(0.3)
+
+    def test_refuerzo_bounded_above(self, db):
+        conn, _ = db
+        from sentinel_omega.core.juez.pesos import reforzar
+        peso = 1.0
+        for _ in range(50):
+            peso = reforzar(conn, "beta1")
+        assert peso == pytest.approx(1.5)
+
+    def test_padre_applies_pesos_in_consensus(self):
+        import time as _time
+        from sentinel_omega.layers.geodynamic.padre.agent import GeodynamicPadre
+        from sentinel_omega.core.shared.agent_base import AgentSignal, SignalType
+
+        def sig(name, stype, conf):
+            return AgentSignal(agent_name=name, signal_type=stype,
+                               confidence=conf, timestamp=_time.time())
+
+        signals = [
+            sig("alfa1", SignalType.ALERT, 0.9),
+            sig("beta1", SignalType.ALERT, 0.9),
+            sig("delta", SignalType.ALERT, 0.8),
+        ]
+
+        padre_neutral = GeodynamicPadre()
+        res_neutral = padre_neutral.evaluate_consensus(signals)
+
+        padre_castigado = GeodynamicPadre()
+        padre_castigado.set_pesos({"alfa1": 0.5, "beta1": 0.5, "delta": 0.5})
+        res_castigado = padre_castigado.evaluate_consensus(signals)
+
+        # Punished bots' ALERTs demote to WATCH (peso < 0.6) — the same
+        # signals no longer produce a full ALERT consensus.
+        assert res_neutral.final_signal == SignalType.ALERT
+        assert res_castigado.final_signal != SignalType.ALERT
+
+    def test_peso_alto_no_demotion(self):
+        import time as _time
+        from sentinel_omega.layers.geodynamic.padre.agent import GeodynamicPadre
+        from sentinel_omega.core.shared.agent_base import AgentSignal, SignalType
+
+        def sig(name, stype, conf):
+            return AgentSignal(agent_name=name, signal_type=stype,
+                               confidence=conf, timestamp=_time.time())
+
+        signals = [
+            sig("alfa1", SignalType.ALERT, 0.9),
+            sig("beta1", SignalType.ALERT, 0.9),
+            sig("delta", SignalType.ALERT, 0.8),
+        ]
+        padre = GeodynamicPadre()
+        padre.set_pesos({"alfa1": 0.9, "beta1": 0.9, "delta": 0.9})
+        res = padre.evaluate_consensus(signals)
+        # Weights above the demotion threshold scale confidence but do NOT
+        # demote the ALERT — consensus still escalates.
+        assert res.final_signal == SignalType.ALERT
+        assert res.consensus_reached is True

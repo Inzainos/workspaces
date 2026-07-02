@@ -74,6 +74,7 @@ class Juez:
         verdad: str = "",
         ahora: Optional[float] = None,
         firma_conocida: bool = False,
+        multiplicador: float = 1.0,
     ) -> List[Dict[str, Any]]:
         """Resolve every PENDIENTE prediction whose window has expired.
 
@@ -106,7 +107,7 @@ class Juez:
                     else SEVERIDAD_FALLO_BASE
                 )
                 reincid = self.reincidencia(bot)
-                severidad = base * (1.0 + 0.25 * reincid)
+                severidad = base * (1.0 + 0.25 * reincid) * multiplicador
             else:
                 resultado, severidad = "ACIERTO", 0.0  # calm predicted, calm held
 

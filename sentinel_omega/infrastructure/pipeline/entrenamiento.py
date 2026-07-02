@@ -106,7 +106,17 @@ def entrenar_reconocimiento(db_path: str, max_eventos: Optional[int] = None) -> 
 
 
 def backtest_disciplinario(db_path: str) -> Dict:
-    """Fase 2 — re-present consolidated signatures; Juez punishes misses."""
+    """Fase 2 — el Padre castiga.
+
+    Re-presents the member events of every consolidated signature:
+      - Bot fails to recognize enforceable knowledge -> castigo hijo (x1):
+        its credibility weight drops and the Juez records the FALLO.
+      - The Padre's own meta-signature fails -> castigo Padre (x2): double
+        weight decay and double Juez severity (base_geo protocol).
+      - Recognition earns mild weight reinforcement.
+    The adjusted weights persist in TBL_PESOS_BOTS and the Padre uses them
+    to weigh each bot's vote in live consensus.
+    """
     conn = sqlite3.connect(db_path)
     memoria = FirmaMemoria(conn)
     juez = Juez(conn)
@@ -116,12 +126,17 @@ def backtest_disciplinario(db_path: str) -> Dict:
         f"=== FASE 2 DISCIPLINA: {len(consolidadas)} firmas consolidadas ==="
     )
 
-    stats = {"firmas_evaluadas": 0, "reconocidas": 0, "fallos": 0}
+    stats = {"firmas_evaluadas": 0, "reconocidas": 0, "fallos": 0,
+             "castigos_hijo": 0, "castigos_padre": 0}
 
     import json as _json
     from sentinel_omega.core.firmas.signature_engine import similitud
+    from sentinel_omega.core.juez.pesos import castigar, reforzar, cargar_pesos
 
     for firma in consolidadas:
+        bot = firma["bot_name"]
+        es_padre = bot == "padre"
+
         row = conn.execute(
             "SELECT eventos_json FROM TBL_FIRMAS WHERE firma_id = ?",
             (firma["firma_id"],),
@@ -139,7 +154,7 @@ def backtest_disciplinario(db_path: str) -> Dict:
             if features is None:
                 continue
 
-            keys = BOT_FEATURES.get(firma["bot_name"])
+            keys = BOT_FEATURES.get(bot)
             sub = (
                 features if keys is None
                 else {k: v for k, v in features.items() if k in keys}
@@ -149,10 +164,17 @@ def backtest_disciplinario(db_path: str) -> Dict:
 
             if sim >= SIMILARITY_ALERT:
                 stats["reconocidas"] += 1
+                reforzar(conn, bot)
             else:
                 stats["fallos"] += 1
-                pid = juez.registrar_prediccion(
-                    bot_name=firma["bot_name"],
+                castigar(conn, bot, es_padre=es_padre)
+                if es_padre:
+                    stats["castigos_padre"] += 1
+                else:
+                    stats["castigos_hijo"] += 1
+
+                juez.registrar_prediccion(
+                    bot_name=bot,
                     prediccion="no_signal",
                     confianza=0.0,
                     ventana_h=0,
@@ -167,9 +189,11 @@ def backtest_disciplinario(db_path: str) -> Dict:
                     evento_ocurrido=True,
                     verdad=ref,
                     firma_conocida=True,
+                    multiplicador=2.0 if es_padre else 1.0,
                 )
 
     stats["auditoria"] = juez.resumen_por_bot()
+    stats["pesos"] = cargar_pesos(conn)
     logger.info(f"Fase 2 completa: {stats}")
     conn.close()
     return stats

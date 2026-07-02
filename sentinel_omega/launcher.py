@@ -158,6 +158,15 @@ def run(args):
     logger.info("Creating orchestrator with live pipelines...")
     orch = SentinelOrchestrator.create_with_live_pipelines(config)
 
+    try:
+        from sentinel_omega.core.juez.pesos import cargar_pesos
+        pesos = cargar_pesos(repo._conn)
+        if pesos and orch._runner is not None:
+            orch._runner.padre.set_pesos(pesos)
+            logger.info(f"Pesos disciplinarios cargados: {pesos}")
+    except Exception as e:
+        logger.warning(f"Could not load bot weights: {e}")
+
     cycle_interval = config.layers.get("geodynamic", config.layers["geodynamic"]).refresh_interval_s
     logger.info(f"Cycle interval: {cycle_interval}s")
     logger.info("Sentinel Omega ONLINE.")

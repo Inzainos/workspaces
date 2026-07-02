@@ -17,7 +17,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA_SQL = """
 -- ─── Precursores Cósmicos ──────────────────────────────────────────
@@ -265,6 +265,17 @@ CREATE TABLE IF NOT EXISTS TBL_JUEZ_AUDITORIA (
 CREATE INDEX IF NOT EXISTS idx_juez_bot ON TBL_JUEZ_AUDITORIA(bot_name);
 CREATE INDEX IF NOT EXISTS idx_juez_resultado ON TBL_JUEZ_AUDITORIA(resultado);
 CREATE INDEX IF NOT EXISTS idx_juez_ts ON TBL_JUEZ_AUDITORIA(timestamp);
+
+-- ─── Pesos de credibilidad por bot (ajustados por el castigo) ─────
+-- El Padre pondera cada bot en el consenso con su peso. La Fase 2 del
+-- entrenamiento castiga (hijo x1, Padre x2) o refuerza estos pesos.
+CREATE TABLE IF NOT EXISTS TBL_PESOS_BOTS (
+    bot_name        TEXT    PRIMARY KEY,
+    peso            REAL    DEFAULT 1.0,
+    aciertos        INTEGER DEFAULT 0,
+    fallos          INTEGER DEFAULT 0,
+    updated_at      TEXT    DEFAULT (datetime('now'))
+);
 
 -- ─── Schema Version ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS TBL_SCHEMA_VERSION (

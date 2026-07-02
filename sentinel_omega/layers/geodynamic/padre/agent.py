@@ -48,10 +48,51 @@ class GeodynamicPadre(PadreAgent):
     JUNIOR_AGENTS = {"alfa2", "beta2"}
     SENIOR_FOR_JUNIOR = {"alfa2": "alfa1", "beta2": "beta1"}
 
+    # Below this credibility weight, a bot's ALERT is demoted to WATCH:
+    # the Padre no longer trusts it enough to escalate on its word alone.
+    PESO_DEMOTION_THRESHOLD = 0.6
+
     def __init__(self):
         super().__init__(name="padre_geo", domain="geodynamic")
         self.miss_penalty = 10.0
         self.false_alarm_penalty = 1.0
+        # Per-bot credibility weights, adjusted by disciplinary training
+        # (castigo hijo x1 / Padre x2). Empty dict = everyone at 1.0.
+        self.pesos_bots: Dict[str, float] = {}
+
+    def set_pesos(self, pesos: Dict[str, float]) -> None:
+        self.pesos_bots = dict(pesos or {})
+
+    def _aplicar_pesos(
+        self, validated: Dict[str, AgentSignal]
+    ) -> Dict[str, AgentSignal]:
+        """Weigh each bot's vote by its disciplinary credibility."""
+        if not self.pesos_bots:
+            return validated
+
+        weighted: Dict[str, AgentSignal] = {}
+        for name, sig in validated.items():
+            peso = self.pesos_bots.get(name, 1.0)
+            if peso == 1.0:
+                weighted[name] = sig
+                continue
+
+            signal_type = sig.signal_type
+            if (
+                peso < self.PESO_DEMOTION_THRESHOLD
+                and signal_type == SignalType.ALERT
+            ):
+                signal_type = SignalType.WATCH
+
+            weighted[name] = AgentSignal(
+                agent_name=sig.agent_name,
+                signal_type=signal_type,
+                confidence=min(sig.confidence * peso, 0.95),
+                timestamp=sig.timestamp,
+                data={**sig.data, "peso_bot": peso},
+                reasoning=sig.reasoning,
+            )
+        return weighted
 
     def _validate_junior_with_senior(
         self, signals: List[AgentSignal]
@@ -159,6 +200,7 @@ class GeodynamicPadre(PadreAgent):
             )
 
         validated = self._validate_junior_with_senior(signals)
+        validated = self._aplicar_pesos(validated)
         family_status = self._cross_family_check(validated)
         schumann_corr = self._schumann_correlation(validated)
 
