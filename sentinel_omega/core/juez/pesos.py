@@ -16,8 +16,9 @@ from typing import Dict
 logger = logging.getLogger(__name__)
 
 PESO_DEFAULT = 1.0
+PESO_BASELINE = 1.0        # normal reinforcement only RECOVERS up to here
 PESO_MIN = 0.3
-PESO_MAX = 1.5
+PESO_MAX = 1.5             # only attention redistribution can push above 1.0
 
 CASTIGO_HIJO = 0.95        # x1 — multiplicative decay per failure
 CASTIGO_PADRE = 0.90       # x2 — the Padre pays double
@@ -33,12 +34,22 @@ def cargar_pesos(conn: sqlite3.Connection) -> Dict[str, float]:
         return {}
 
 
-def _ajustar(conn: sqlite3.Connection, bot: str, factor: float, es_fallo: bool) -> float:
+def _ajustar(
+    conn: sqlite3.Connection,
+    bot: str,
+    factor: float,
+    es_fallo: bool,
+    techo: float = PESO_MAX,
+) -> float:
     row = conn.execute(
         "SELECT peso FROM TBL_PESOS_BOTS WHERE bot_name = ?", (bot,)
     ).fetchone()
     peso_actual = row[0] if row else PESO_DEFAULT
     nuevo = max(PESO_MIN, min(PESO_MAX, peso_actual * factor))
+    if not es_fallo:
+        # Reinforcement respects its ceiling and never LOWERS a weight that
+        # is already above it (e.g. earned via attention redistribution).
+        nuevo = min(nuevo, max(techo, peso_actual))
 
     conn.execute(
         "INSERT INTO TBL_PESOS_BOTS (bot_name, peso, aciertos, fallos) "
@@ -77,6 +88,16 @@ def castigar(
     return nuevo
 
 
-def reforzar(conn: sqlite3.Connection, bot: str) -> float:
-    """Mild reinforcement when the bot recognizes a known signature."""
-    return _ajustar(conn, bot, REFUERZO, es_fallo=False)
+def reforzar(
+    conn: sqlite3.Connection,
+    bot: str,
+    hasta: float = PESO_BASELINE,
+) -> float:
+    """Mild reinforcement when the bot recognizes a known signature.
+
+    Normal recognition only RECOVERS credibility up to the baseline (1.0) —
+    doing your job doesn't earn extra weight, it just repairs punishment.
+    Attention redistribution (the bot saw what the Padre missed) may pass
+    hasta=PESO_MAX to reward above baseline.
+    """
+    return _ajustar(conn, bot, REFUERZO, es_fallo=False, techo=hasta)

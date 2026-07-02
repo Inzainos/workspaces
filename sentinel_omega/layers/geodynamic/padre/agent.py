@@ -5,8 +5,8 @@ VETO power: no alert without cross-family validation.
 
 Hierarchy:
   - Padre punishes Alfa-1 and Beta-1 (30-year trained agents)
-  - Alfa-1 validates Alfa-2 (16 years → validated against 30-year history)
-  - Beta-1 validates Beta-2 (16 years → validated against 30-year history)
+  - Alfa-1 validates Alfa-2 (14 years → validated against 30-year history)
+  - Beta-1 validates Beta-2 (14 years → validated against 30-year history)
   - Delta provides financial cross-correlation (10 years)
 
 Schumann correlation:
@@ -32,7 +32,7 @@ class GeodynamicPadre(PadreAgent):
 
     AGENT_TRAINING_YEARS = {
         "alfa1": 30, "beta1": 30,
-        "alfa2": 16, "beta2": 16,
+        "alfa2": 14, "beta2": 14,
         "delta": 10,
     }
 

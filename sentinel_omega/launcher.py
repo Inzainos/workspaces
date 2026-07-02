@@ -140,9 +140,14 @@ def run(args):
         logger.info("Topology seeded.")
 
     if args.backcast:
-        from sentinel_omega.infrastructure.pipeline.backcast import run_backcast
+        from sentinel_omega.infrastructure.pipeline.backcast import (
+            run_backcast,
+            run_backfill_secundario,
+        )
         logger.info("Running historical backcast (one-time)...")
         run_backcast(str(db_path))
+        logger.info("Running secondary backfill (volcanic SO2 + BTC)...")
+        run_backfill_secundario(str(db_path))
         logger.info("Backcast complete.")
 
     if args.entrenar:
@@ -336,6 +341,11 @@ def _build_live_features(runner) -> dict:
     if lunar is not None and len(lunar) > 0:
         features["fase_lunar"] = float(lunar[-1])
 
+    delta = cache.get("delta") or {}
+    for key in ("btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h"):
+        if key in delta:
+            features[key] = float(delta[key])
+
     return features
 
 
@@ -354,18 +364,63 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         if features:
             matches = memoria.match_estado_actual(features)
             for m in matches[:3]:
+                # Referente de anticipación: cuánto suele tardar en
+                # presentarse este tipo de evento tras verse la firma.
+                ventana = ""
+                try:
+                    # Preferir el lag propio de ESTA firma; si no lo tiene,
+                    # caer al promedio de su clase de evento.
+                    lag_firma = conn.execute(
+                        "SELECT lag_promedio_h, lag_n FROM TBL_FIRMAS "
+                        "WHERE firma_id = ? AND lag_promedio_h IS NOT NULL",
+                        (m["firma_id"],),
+                    ).fetchone()
+                    if lag_firma:
+                        m["ventana_tipica_dias"] = round(lag_firma[0] / 24, 1)
+                        ventana = (
+                            f" — ESTA firma suele presentarse en "
+                            f"~{lag_firma[0]/24:.0f} días (n={lag_firma[1]})"
+                        )
+                    else:
+                        lag = conn.execute(
+                            "SELECT lag_promedio_h, lag_max_h FROM "
+                            "tbl_lag_anticipacion WHERE event_class = ?",
+                            (m["event_class"],),
+                        ).fetchone()
+                        if lag:
+                            m["ventana_tipica_dias"] = round(lag[0] / 24, 1)
+                            ventana = (
+                                f" — ventana típica ~{lag[0]/24:.0f} días "
+                                f"(hasta {lag[1]/24:.0f}d)"
+                            )
+                except Exception:
+                    pass
                 logger.warning(
                     f"FIRMA MATCH: estado actual se parece {m['similitud']:.0%} "
                     f"a la firma que precedió {m['event_class']} "
                     f"(nodo {m['id_nodo']}, vista {m['recurrencia']} veces)"
+                    f"{ventana}"
                 )
+
+        # Muro de Lags: ¿varias firmas convergen en las mismas fechas?
+        muro_lags = {}
+        try:
+            from sentinel_omega.core.precursor.muro_lags import (
+                evaluar_muro_lags,
+                format_muro_lags,
+            )
+            muro_lags = evaluar_muro_lags(matches)
+            if muro_lags.get("activo"):
+                logger.warning(format_muro_lags(muro_lags))
+        except Exception as e:
+            logger.warning(f"Muro de lags failed (non-blocking): {e}")
 
         juez.registrar_prediccion(
             bot_name="padre",
             prediccion=geo.final_signal.value,
             confianza=geo.confidence,
             ventana_h=72,
-            detalles={"firma_matches": matches[:5]},
+            detalles={"firma_matches": matches[:5], "muro_lags": muro_lags},
         )
 
         # Resolve predictions whose 72h window closed, against USGS truth.

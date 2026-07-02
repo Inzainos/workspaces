@@ -4,9 +4,9 @@ Single pipeline: all 6 agents are part of one system.
 
 Agent data mapping:
   - Alfa-1: NOAA OMNI (Bz, solar wind) — 30yr
-  - Alfa-2: ESA Sentinel-2 satellite — 16yr
+  - Alfa-2: ESA Sentinel-2 satellite — 14yr
   - Beta-1: Kp, seismic, Schumann, LOD, lunar — 30yr
-  - Beta-2: Atmospheric chemistry (pressure, SO2, air quality) — 16yr
+  - Beta-2: Atmospheric chemistry (pressure, SO2, air quality) — 14yr
   - Delta: Financial cross-correlation (Fear & Greed, VIX, BTC dominance) — 10yr
 
 LOCF Protocol:
@@ -307,6 +307,20 @@ class GeodynamicPipeline:
         vix_df = fetch_vix()
         if vix_df is not None and "close" in vix_df.columns:
             result["vix"] = float(vix_df["close"].iloc[-1])
+
+        # BTC volatility window (Yahoo, no key) — same units as Delta's
+        # trained firma features, so live states can match trained memory.
+        btc_df = fetch_yahoo_quote("BTC-USD", days=15)
+        if btc_df is not None and "close" in btc_df.columns and len(btc_df) >= 3:
+            closes = btc_df["close"].dropna()
+            vol = (closes.pct_change().abs() * 100).dropna()
+            if len(vol) > 0 and float(closes.iloc[0]):
+                result["btc_volatilidad"] = float(vol.mean())
+                result["btc_vol_max"] = float(vol.max())
+                result["btc_ret_win"] = float(
+                    (closes.iloc[-1] - closes.iloc[0]) / closes.iloc[0] * 100
+                )
+                result["btc_vol_72h"] = float(vol.tail(3).mean())
 
         spread = fetch_yield_spread()
         if spread is not None:

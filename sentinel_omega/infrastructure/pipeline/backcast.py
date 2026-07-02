@@ -225,6 +225,132 @@ def extraer_psique_financiera(year: int) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def extraer_desgasificacion_volcanica() -> pd.DataFrame:
+    """Fetch NASA MSVOLSO2L4 — multi-satellite volcanic SO2 database (1978+).
+
+    One flat TSV covering every satellite-measured volcanic degassing event:
+    volcano, lat/lon, date, eruption type, VEI, SO2 mass (kt). This is the
+    historical spine for Beta-2 (degassing signatures).
+    """
+    base = "https://so2.gsfc.nasa.gov"
+    headers = {"User-Agent": "Mozilla/5.0 (SentinelOmega research)"}
+    logger.info("  Fetching NASA MSVOLSO2L4 volcanic SO2 database...")
+    try:
+        page = requests.get(f"{base}/measures.html", headers=headers, timeout=30)
+        page.raise_for_status()
+        import re
+        links = re.findall(r'href="(/eruptions/MSVOLSO2L4_\d+\.txt)"', page.text)
+        if not links:
+            return pd.DataFrame()
+        latest = sorted(links)[-1]
+
+        r = requests.get(f"{base}{latest}", headers=headers, timeout=60)
+        r.raise_for_status()
+        df = pd.read_csv(
+            StringIO(r.text), sep="\t", engine="python", on_bad_lines="skip"
+        )
+        df.columns = [c.strip() for c in df.columns]
+        df = df.loc[:, [c for c in df.columns if c]]  # drop trailing-tab cols
+        df = df.rename(columns={"so2(kt)": "so2_kt"})
+        df = df.dropna(subset=["lat", "lon", "yyyy", "mm", "dd"])
+        df["fecha"] = pd.to_datetime(
+            dict(year=df["yyyy"], month=df["mm"], day=df["dd"]),
+            errors="coerce",
+        )
+        df = df.dropna(subset=["fecha"])
+        logger.info(f"  MSVOLSO2L4: {len(df)} degassing events ({latest})")
+        return df[["volcano", "lat", "lon", "fecha", "type", "vei", "so2_kt"]]
+    except Exception as e:
+        logger.error(f"MSVOLSO2L4 fetch failed: {e}")
+        return pd.DataFrame()
+
+
+def extraer_btc_yahoo(year_ini: int = 2014, year_end: int = YEAR_END) -> pd.DataFrame:
+    """Fetch daily BTC-USD history from Yahoo Finance (public, no key).
+
+    Replaces the CoinGecko historical endpoint (which now requires a paid
+    key). Computes volatilidad_24h as abs daily % change.
+    """
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/BTC-USD"
+    params = {
+        "period1": int(datetime(year_ini, 1, 1).timestamp()),
+        "period2": int(datetime(year_end, 12, 31, 23, 59).timestamp()),
+        "interval": "1d",
+    }
+    headers = {"User-Agent": "Mozilla/5.0 (SentinelOmega research)"}
+    logger.info(f"  Fetching Yahoo BTC-USD daily: {year_ini}-{year_end}")
+    try:
+        r = requests.get(url, params=params, headers=headers, timeout=60)
+        r.raise_for_status()
+        data = r.json()["chart"]["result"][0]
+        ts = data["timestamp"]
+        closes = data["indicators"]["quote"][0]["close"]
+        df = pd.DataFrame({"fecha": pd.to_datetime(ts, unit="s"), "precio": closes})
+        df = df.dropna(subset=["precio"])
+        df["volatilidad_24h"] = (df["precio"].pct_change().abs() * 100).fillna(0.0)
+        logger.info(f"  Yahoo BTC: {len(df)} daily records")
+        return df
+    except Exception as e:
+        logger.error(f"Yahoo BTC fetch failed: {e}")
+        return pd.DataFrame()
+
+
+def run_backfill_secundario(db_path: Optional[str] = None):
+    """Backfill Beta-2 (volcanic SO2) and Delta (BTC) historical tables.
+
+    Idempotent (INSERT OR IGNORE). Run after the main backcast.
+    """
+    if db_path is None:
+        db_path = _get_db_path()
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA journal_mode=WAL")
+    _init_backcast_tables(conn)
+    conn.executescript(
+        """CREATE TABLE IF NOT EXISTS tbl_desgasificacion_raw (
+            timestamp_blk TEXT NOT NULL,
+            id_nodo INTEGER NOT NULL,
+            volcan TEXT NOT NULL DEFAULT '',
+            tipo_erupcion TEXT DEFAULT '',
+            vei REAL,
+            so2_kt REAL DEFAULT 0.0,
+            PRIMARY KEY (timestamp_blk, id_nodo, volcan)
+        );"""
+    )
+
+    df_so2 = extraer_desgasificacion_volcanica()
+    n_so2 = 0
+    for _, row in df_so2.iterrows():
+        nodo = nodo_mas_cercano(float(row["lat"]), float(row["lon"]))
+        blk = row["fecha"].strftime("%Y-%m-%d %H:%M")
+        vei = _safe_float(row.get("vei"))
+        conn.execute(
+            "INSERT OR IGNORE INTO tbl_desgasificacion_raw "
+            "(timestamp_blk, id_nodo, volcan, tipo_erupcion, vei, so2_kt) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (blk, nodo["id"], str(row["volcano"]), str(row.get("type", "")),
+             vei if vei is not None and vei >= 0 else None,
+             _safe_float(row.get("so2_kt")) or 0.0),
+        )
+        n_so2 += 1
+    conn.commit()
+    logger.info(f"Backfill desgasificación: {n_so2} eventos insertados")
+
+    df_btc = extraer_btc_yahoo()
+    n_btc = 0
+    for _, row in df_btc.iterrows():
+        blk = row["fecha"].strftime("%Y-%m-%d %H:%M")
+        conn.execute(
+            "INSERT OR IGNORE INTO tbl_psique_financiera "
+            "(timestamp_blk, btc_precio_usd, volatilidad_24h) VALUES (?, ?, ?)",
+            (blk, float(row["precio"]), float(row["volatilidad_24h"])),
+        )
+        n_btc += 1
+    conn.commit()
+    logger.info(f"Backfill BTC: {n_btc} días insertados")
+    conn.close()
+    return {"so2_eventos": n_so2, "btc_dias": n_btc}
+
+
 def ejecutar_bloque_anual(
     conn: sqlite3.Connection,
     year: int,
