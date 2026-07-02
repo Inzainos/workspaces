@@ -1,4 +1,4 @@
-"""Tests for data pipeline, layer runners, and legacy data loader."""
+"""Tests for data pipeline, layer runner, and legacy data loader."""
 
 import sqlite3
 import tempfile
@@ -8,16 +8,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sentinel_omega.infrastructure.pipeline.data_pipeline import (
-    GeodynamicPipeline,
-    CryptoPipeline,
-    BolsaPipeline,
-)
-from sentinel_omega.infrastructure.pipeline.layer_runners import (
-    GeodynamicLayerRunner,
-    CryptoLayerRunner,
-    BolsaLayerRunner,
-)
+from sentinel_omega.infrastructure.pipeline.data_pipeline import GeodynamicPipeline
+from sentinel_omega.infrastructure.pipeline.layer_runners import GeodynamicLayerRunner
 from sentinel_omega.infrastructure.pipeline.legacy_loader import LegacyDataLoader
 from sentinel_omega.core.shared.agent_base import SignalType
 
@@ -127,28 +119,8 @@ class TestGeodynamicPipeline:
 
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_air_quality")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_monitoring_network")
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_fear_greed_index")
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_earthquakes")
-    def test_delta_data(self, mock_eq, mock_fg, mock_owm, mock_aq):
-        mock_eq.return_value = _mock_eq_df()
-        mock_fg.return_value = {"value": 25, "classification": "Extreme Fear"}
-        mock_owm.return_value = []
-        mock_aq.return_value = None
-
-        pipe = GeodynamicPipeline()
-        data = pipe.fetch_delta_data()
-        assert "energetic_nodes" in data
-        assert len(data["energetic_nodes"]) > 0
-        assert data["psychosocial_index"] == pytest.approx(0.25)
-
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_air_quality")
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_monitoring_network")
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_fear_greed_index")
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_earthquakes")
-    def test_delta_data_with_atmosphere(self, mock_eq, mock_fg, mock_owm, mock_aq):
+    def test_beta2_data(self, mock_owm, mock_aq):
         from sentinel_omega.infrastructure.api.openweathermap import AtmosphericReading
-        mock_eq.return_value = _mock_eq_df()
-        mock_fg.return_value = {"value": 50, "classification": "Neutral"}
         mock_owm.return_value = [
             AtmosphericReading("tlaxcala", 19.31, -98.24, 1005.0, 18.0, 65.0, 8000, 3.2, 180, 40),
             AtmosphericReading("oaxaca", 17.07, -96.72, 1012.0, 28.0, 70.0, 10000, 2.1, 200, 30),
@@ -156,12 +128,38 @@ class TestGeodynamicPipeline:
         mock_aq.return_value = {"co": 250.0, "so2": 25.0, "no2": 10.0, "pm2_5": 12.0, "pm10": 20.0, "o3": 60.0, "aqi": 2}
 
         pipe = GeodynamicPipeline()
-        data = pipe.fetch_delta_data()
+        data = pipe.fetch_beta2_data()
         assert "pressure_gradient" in data
         assert data["pressure_gradient"]["mean_pressure"] < 1013.0
-        assert "low_pressure_stations" in data["pressure_gradient"]
         assert "air_quality" in data
         assert data["air_quality"]["so2"] == 25.0
+        assert "atmospheric_readings" in data
+        assert len(data["atmospheric_readings"]) == 2
+
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_sector_etfs")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_vix")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_yield_spread")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_binance_klines")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_coingecko_dominance")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_fear_greed_index")
+    def test_delta_data(self, mock_fg, mock_dom, mock_klines, mock_spread, mock_vix, mock_sectors):
+        mock_fg.return_value = {"value": 25, "classification": "Extreme Fear"}
+        mock_dom.return_value = {"btc": 54.0, "eth": 17.0}
+        mock_klines.return_value = _mock_binance_df()
+        mock_spread.return_value = 1.5
+        mock_vix.return_value = pd.DataFrame({"close": [22.0], "volume": [1e6]})
+        mock_sectors.return_value = {
+            "XLK": pd.DataFrame({"close": [200.0], "volume": [5e6]}),
+            "XLF": pd.DataFrame({"close": [40.0], "volume": [8e6]}),
+        }
+
+        pipe = GeodynamicPipeline()
+        data = pipe.fetch_delta_data()
+        assert data["fear_greed"] == 25.0
+        assert data["btc_dominance"] == pytest.approx(0.54)
+        assert data["vix"] == pytest.approx(22.0)
+        assert data["yield_spread"] == 1.5
+        assert len(data["sector_market_caps"]) == 2
 
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_mag_field")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_solar_wind")
@@ -174,87 +172,16 @@ class TestGeodynamicPipeline:
         assert data == {}
 
 
-# ── Crypto Pipeline ────────────────────────────────────────────────
+# ── Layer Runner ──────────────────────────────────────────────────
 
 
-class TestCryptoPipeline:
-
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_coingecko_dominance")
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_binance_klines")
-    def test_alfa_data(self, mock_klines, mock_dom):
-        mock_klines.return_value = _mock_binance_df()
-        mock_dom.return_value = {"btc": 54.0, "eth": 17.0}
-
-        pipe = CryptoPipeline()
-        data = pipe.fetch_alfa_data(days=90)
-        assert "price_dataframe" in data
-        assert "btc_market_cap" in data
-        assert data["btc_market_cap"] > 0
-
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_binance_klines")
-    def test_beta_data(self, mock_klines):
-        mock_klines.return_value = _mock_binance_df()
-
-        pipe = CryptoPipeline()
-        data = pipe.fetch_beta_data()
-        assert "volume_series" in data
-        assert "whale_transaction_ratio" in data
-
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_fear_greed_index")
-    def test_delta_data(self, mock_fg):
-        mock_fg.return_value = {"value": 75, "classification": "Greed"}
-
-        pipe = CryptoPipeline()
-        data = pipe.fetch_delta_data()
-        assert data["fear_greed_index"] == 75
-
-
-# ── Bolsa Pipeline ─────────────────────────────────────────────────
-
-
-class TestBolsaPipeline:
-
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_yahoo_quote")
-    def test_alfa_data(self, mock_yahoo):
-        mock_yahoo.return_value = _mock_yahoo_df()
-
-        pipe = BolsaPipeline()
-        data = pipe.fetch_alfa_data("AAPL", "SPY")
-        assert "stock_ohlcv" in data
-        assert "index_ohlcv" in data
-
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_yield_spread")
-    def test_beta_data(self, mock_spread):
-        mock_spread.return_value = 1.5
-
-        pipe = BolsaPipeline()
-        data = pipe.fetch_beta_data()
-        assert data["yield_spread_10y_2y"] == 1.5
-        assert data["interest_rate"] > 0
+class TestLayerRunner:
 
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_sector_etfs")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_vix")
-    def test_delta_data(self, mock_vix, mock_sectors):
-        mock_vix.return_value = pd.DataFrame({
-            "close": [18.5, 19.0, 20.0],
-            "volume": [1e6, 1.1e6, 1.2e6],
-        })
-        mock_sectors.return_value = {
-            "XLK": pd.DataFrame({"close": [200.0], "volume": [5e6]}),
-            "XLF": pd.DataFrame({"close": [40.0], "volume": [8e6]}),
-        }
-
-        pipe = BolsaPipeline()
-        data = pipe.fetch_delta_data()
-        assert data["vix"] == pytest.approx(20.0)
-        assert len(data["sector_market_caps"]) == 2
-
-
-# ── Layer Runners ──────────────────────────────────────────────────
-
-
-class TestLayerRunners:
-
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_yield_spread")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_binance_klines")
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_coingecko_dominance")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_air_quality")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_monitoring_network")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.compute_lunar_phase_series")
@@ -265,7 +192,11 @@ class TestLayerRunners:
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_kp_index")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_solar_wind")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_mag_field")
-    def test_geodynamic_runner(self, mock_mag, mock_wind, mock_kp, mock_eq, mock_fg, mock_schumann, mock_lod, mock_lunar, mock_owm, mock_aq):
+    def test_geodynamic_runner(
+        self, mock_mag, mock_wind, mock_kp, mock_eq, mock_fg,
+        mock_schumann, mock_lod, mock_lunar, mock_owm, mock_aq,
+        mock_dom, mock_klines, mock_spread, mock_vix, mock_sectors,
+    ):
         mock_mag.return_value = _mock_mag_df()
         mock_wind.return_value = _mock_wind_df()
         mock_kp.return_value = _mock_kp_df()
@@ -279,42 +210,15 @@ class TestLayerRunners:
         mock_lunar.return_value = np.linspace(0, 1, 30)
         mock_owm.return_value = []
         mock_aq.return_value = None
-
-        runner = GeodynamicLayerRunner(enable_satellite=False)
-        consensus = runner.run()
-        assert consensus is not None
-        assert consensus.final_signal in SignalType
-
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_fear_greed_index")
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_coingecko_dominance")
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_binance_klines")
-    def test_crypto_runner(self, mock_klines, mock_dom, mock_fg):
-        mock_klines.return_value = _mock_binance_df()
         mock_dom.return_value = {"btc": 54.0}
-        mock_fg.return_value = {"value": 30, "classification": "Fear"}
-
-        runner = CryptoLayerRunner(days=90)
-        consensus = runner.run()
-        assert consensus is not None
-        assert consensus.final_signal in SignalType
-
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_sector_etfs")
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_vix")
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_yield_spread")
-    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_yahoo_quote")
-    def test_bolsa_runner(self, mock_yahoo, mock_spread, mock_vix, mock_sectors):
-        mock_yahoo.return_value = _mock_yahoo_df()
+        mock_klines.return_value = _mock_binance_df()
         mock_spread.return_value = 0.8
-        mock_vix.return_value = pd.DataFrame({
-            "close": [22.0], "volume": [1e6],
-        })
+        mock_vix.return_value = pd.DataFrame({"close": [18.0], "volume": [1e6]})
         mock_sectors.return_value = {
             "XLK": pd.DataFrame({"close": [200.0], "volume": [5e6]}),
-            "XLF": pd.DataFrame({"close": [40.0], "volume": [8e6]}),
-            "XLE": pd.DataFrame({"close": [80.0], "volume": [3e6]}),
         }
 
-        runner = BolsaLayerRunner(symbol="AAPL", index_symbol="SPY")
+        runner = GeodynamicLayerRunner(enable_satellite=False)
         consensus = runner.run()
         assert consensus is not None
         assert consensus.final_signal in SignalType
@@ -568,7 +472,7 @@ class TestGeophysicalConnector:
         assert all(0.0 <= p <= 1.0 for p in phases)
 
 
-# ── ESA Sentinel / Alfa-2 / Beta-2 ──────────────────────────────
+# ── ESA Sentinel / Alfa-2 ─────────────────────────────────────────
 
 
 class TestESASentinelConnector:
@@ -581,8 +485,8 @@ class TestESASentinelConnector:
         assert "oaxaca_costa" in zones
         bbox = zones["guerrero_gap"]
         assert len(bbox) == 4
-        assert bbox[0] < bbox[2]  # lon_min < lon_max
-        assert bbox[1] < bbox[3]  # lat_min < lat_max
+        assert bbox[0] < bbox[2]
+        assert bbox[1] < bbox[3]
 
     def test_satellite_product_dataclass(self):
         from sentinel_omega.infrastructure.api.esa_sentinel import SatelliteProduct
@@ -609,16 +513,12 @@ class TestAlfa2Agent:
         agent.ingest({
             "zone_coverages": {
                 "guerrero_gap": {
-                    "s2_count": 5,
-                    "s1_count": 4,
-                    "total_passes": 9,
+                    "s2_count": 5, "s1_count": 4, "total_passes": 9,
                     "mean_revisit_days": 3.5,
                     "s2_cloud_covers": [5.0, 12.0, 8.0, 25.0, 45.0],
                 },
                 "oaxaca_costa": {
-                    "s2_count": 3,
-                    "s1_count": 2,
-                    "total_passes": 5,
+                    "s2_count": 3, "s1_count": 2, "total_passes": 5,
                     "mean_revisit_days": 6.0,
                     "s2_cloud_covers": [10.0, 15.0, 30.0],
                 },
@@ -636,9 +536,7 @@ class TestAlfa2Agent:
         agent.ingest({
             "zone_coverages": {
                 "guerrero_gap": {
-                    "s2_count": 8,
-                    "s1_count": 6,
-                    "total_passes": 14,
+                    "s2_count": 8, "s1_count": 6, "total_passes": 14,
                     "mean_revisit_days": 2.1,
                     "s2_cloud_covers": [5.0, 8.0, 3.0, 12.0, 7.0, 10.0, 15.0, 4.0],
                 },
@@ -664,62 +562,6 @@ class TestAlfa2Agent:
         assert agent.health_check() is False
         agent.ingest({"zone_coverages": {"test": {"s2_count": 1}}})
         assert agent.health_check() is True
-
-
-class TestBeta2Agent:
-
-    def test_analyze_with_sar(self):
-        from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
-
-        agent = Beta2Agent()
-        agent.ingest({
-            "sar_coverages": {
-                "guerrero_gap": {
-                    "s1_count": 4,
-                    "mean_revisit_days": 12.0,
-                    "min_revisit_days": 6.0,
-                },
-                "oaxaca_costa": {
-                    "s1_count": 3,
-                    "mean_revisit_days": 10.0,
-                    "min_revisit_days": 5.0,
-                },
-                "chiapas": {
-                    "s1_count": 2,
-                    "mean_revisit_days": 15.0,
-                    "min_revisit_days": 12.0,
-                },
-            },
-            "deformation_flags": [],
-        })
-        signal = agent.analyze()
-        assert signal.signal_type in SignalType
-
-    def test_analyze_with_deformation(self):
-        from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
-
-        agent = Beta2Agent()
-        agent.ingest({
-            "sar_coverages": {
-                "guerrero_gap": {
-                    "s1_count": 5,
-                    "mean_revisit_days": 12.0,
-                    "min_revisit_days": 6.0,
-                },
-            },
-            "deformation_flags": ["guerrero_gap"],
-        })
-        signal = agent.analyze()
-        assert signal.signal_type == SignalType.ALERT
-        assert signal.confidence > 0.6
-
-    def test_analyze_no_data(self):
-        from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
-
-        agent = Beta2Agent()
-        agent.ingest({})
-        signal = agent.analyze()
-        assert signal.signal_type == SignalType.NO_SIGNAL
 
 
 # ── OpenWeatherMap ─────────────────────────────────────────────────
@@ -846,41 +688,3 @@ class TestTelegramConnector:
         mock_post.side_effect = Exception("Network error")
         result = send_alert("Test alert")
         assert result is False
-
-
-# ── Delta Agent (with atmospheric) ─────────────────────────────────
-
-
-class TestDeltaAgentAtmospheric:
-
-    def test_analyze_with_pressure(self):
-        from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
-        agent = DeltaAgent()
-        agent.ingest({
-            "energetic_nodes": {"Region A": 1e8, "Region B": 5e7, "Region C": 3e7},
-            "psychosocial_index": 0.5,
-            "pressure_gradient": {
-                "mean_pressure": 1002.0,
-                "pressure_spread": 15.0,
-                "low_pressure_stations": ["tlaxcala", "guerrero"],
-            },
-            "air_quality": {"so2": 35.0, "co": 200.0},
-        })
-        signal = agent.analyze()
-        assert signal.signal_type in SignalType
-        assert signal.data.get("atmospheric_stress", 0) > 0
-
-    def test_analyze_normal_atmosphere(self):
-        from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
-        agent = DeltaAgent()
-        agent.ingest({
-            "energetic_nodes": {"Region A": 1e6, "Region B": 5e5, "Region C": 3e5},
-            "psychosocial_index": 0.3,
-            "pressure_gradient": {
-                "mean_pressure": 1013.0,
-                "pressure_spread": 3.0,
-                "low_pressure_stations": [],
-            },
-        })
-        signal = agent.analyze()
-        assert signal.data.get("atmospheric_stress", 0) == pytest.approx(0.0)

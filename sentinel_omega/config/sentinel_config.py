@@ -11,8 +11,6 @@ from typing import Dict
 @dataclass
 class DatabaseConfig:
     geodynamic_db: str = "data/SENTINEL_OMEGA_PRO.db"
-    crypto_db: str = "data/sentinel_crypto.db"
-    bolsa_db: str = "data/sentinel_bolsa.db"
     lottery_db: str = "data/TITAN_MEMORY.db"
 
 
@@ -34,7 +32,7 @@ class APIConfig:
     omni_nasa_url: str = "https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/"
     tomsk_schumann_url: str = "http://sosrff.tsu.ru/"
 
-    # Crypto
+    # Financial data (used by Delta agent)
     coingecko_url: str = "https://api.coingecko.com/api/v3/"
     binance_url: str = "https://api.binance.com/api/v3/"
     yahoo_finance_url: str = "https://query1.finance.yahoo.com/v8/finance/chart/"
@@ -42,18 +40,13 @@ class APIConfig:
     bitso_secret: str = field(default_factory=lambda: os.environ.get("BITSO_API_SECRET", ""))
     coingecko_api_key: str = field(default_factory=lambda: os.environ.get("COINGECKO_API_KEY", ""))
 
-    # Stock Market
     alpha_vantage_key: str = field(default_factory=lambda: os.environ.get("ALPHA_VANTAGE_KEY", ""))
 
     # Weather
     openweathermap_key: str = field(default_factory=lambda: os.environ.get("OPENWEATHERMAP_KEY", ""))
 
-    # Biology (public APIs, no keys)
-    cov_spectrum_url: str = "https://lapis.cov-spectrum.org/open/v2/"
-
     # Astronomy (public APIs)
     noaa_goes_xray_url: str = "https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json"
-    nasa_ztf_url: str = "https://irsa.ipac.caltech.edu/cgi-bin/ZTF/nph_light_curves"
 
 
 @dataclass
@@ -92,8 +85,6 @@ class SentinelOmegaConfig:
 
     layers: Dict[str, LayerConfig] = field(default_factory=lambda: {
         "geodynamic": LayerConfig(refresh_interval_s=300),
-        "crypto": LayerConfig(refresh_interval_s=60),
-        "bolsa": LayerConfig(refresh_interval_s=900),
         "lottery": LayerConfig(enabled=False),
     })
 

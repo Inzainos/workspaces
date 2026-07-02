@@ -1,4 +1,4 @@
-"""Tests for agent base, consensus, and layer agents."""
+"""Tests for agent base, consensus, hierarchical validation, and agents."""
 
 import time
 import numpy as np
@@ -14,8 +14,6 @@ from sentinel_omega.core.shared.agent_base import (
     SignalType,
 )
 from sentinel_omega.layers.geodynamic.padre.agent import GeodynamicPadre
-from sentinel_omega.layers.crypto.padre_crypto.agent import CryptoPadre
-from sentinel_omega.layers.crypto.alfa_crypto.agent import AlfaCryptoAgent
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -92,13 +90,6 @@ class TestPadreAsymmetricLoss:
         assert padre.asymmetric_loss(True, True) == 0.0
         assert padre.asymmetric_loss(False, False) == 0.0
 
-    def test_crypto_asymmetric_loss_inverted(self):
-        padre = CryptoPadre()
-        miss_loss = padre.asymmetric_loss(predicted=False, actual=True)
-        false_alarm_loss = padre.asymmetric_loss(predicted=True, actual=False)
-        assert miss_loss == 3.0
-        assert false_alarm_loss == 5.0
-
 
 # ── PadreAgent (Veto Check) ──────────────────────────────────────────
 
@@ -133,6 +124,46 @@ class TestVetoCheck:
         assert padre.veto_check(signals) is True
 
 
+# ── Hierarchical Validation (Junior → Senior) ────────────────────────
+
+
+class TestHierarchicalValidation:
+
+    def setup_method(self):
+        self.padre = GeodynamicPadre()
+
+    def test_junior_confirmed_by_senior(self):
+        signals = [
+            _signal("alfa1", SignalType.ALERT, 0.8),
+            _signal("alfa2", SignalType.ALERT, 0.7),
+            _signal("beta1", SignalType.NEUTRAL, 0.3),
+            _signal("beta2", SignalType.NEUTRAL, 0.2),
+            _signal("delta", SignalType.NEUTRAL, 0.3),
+        ]
+        validated = self.padre._validate_junior_with_senior(signals)
+        assert validated["alfa2"].data.get("senior_confirmed") is True
+        assert validated["alfa2"].confidence > 0.7
+
+    def test_junior_unconfirmed_by_senior(self):
+        signals = [
+            _signal("alfa1", SignalType.NEUTRAL, 0.3),
+            _signal("alfa2", SignalType.ALERT, 0.8),
+            _signal("beta1", SignalType.NEUTRAL, 0.3),
+            _signal("delta", SignalType.NEUTRAL, 0.3),
+        ]
+        validated = self.padre._validate_junior_with_senior(signals)
+        assert validated["alfa2"].data.get("senior_confirmed") is False
+        assert validated["alfa2"].confidence < 0.8
+        assert validated["alfa2"].signal_type == SignalType.WATCH
+
+    def test_training_years(self):
+        assert GeodynamicPadre.AGENT_TRAINING_YEARS["alfa1"] == 30
+        assert GeodynamicPadre.AGENT_TRAINING_YEARS["beta1"] == 30
+        assert GeodynamicPadre.AGENT_TRAINING_YEARS["alfa2"] == 16
+        assert GeodynamicPadre.AGENT_TRAINING_YEARS["beta2"] == 16
+        assert GeodynamicPadre.AGENT_TRAINING_YEARS["delta"] == 10
+
+
 # ── GeodynamicPadre Consensus ────────────────────────────────────────
 
 
@@ -143,135 +174,172 @@ class TestGeodynamicPadreConsensus:
 
     def test_full_consensus_alert(self):
         signals = [
-            _signal("alfa1", SignalType.ALERT),
-            _signal("beta1", SignalType.ALERT),
-            _signal("alfa2", SignalType.ALERT),
-            _signal("beta2", SignalType.ALERT),
-            _signal("delta", SignalType.ALERT),
+            _signal("alfa1", SignalType.ALERT, 0.8),
+            _signal("beta1", SignalType.ALERT, 0.7),
+            _signal("alfa2", SignalType.ALERT, 0.6),
+            _signal("beta2", SignalType.ALERT, 0.6),
+            _signal("delta", SignalType.ALERT, 0.5),
         ]
         result = self.padre.evaluate_consensus(signals)
         assert result.consensus_reached is True
         assert result.final_signal == SignalType.ALERT
         assert result.confidence > 0
 
-    def test_missing_layer_veto(self):
-        signals = [
-            _signal("alfa1", SignalType.ALERT),
-            _signal("beta1", SignalType.ALERT),
-        ]
-        result = self.padre.evaluate_consensus(signals)
-        assert result.consensus_reached is False
-        assert result.veto_active is True
-        assert "Missing" in result.veto_reason
-
-    def test_no_consensus_mixed_signals(self):
-        signals = [
-            _signal("alfa1", SignalType.ALERT),
-            _signal("beta1", SignalType.NEUTRAL),
-            _signal("alfa2", SignalType.ALERT),
-            _signal("beta2", SignalType.NEUTRAL),
-            _signal("delta", SignalType.NEUTRAL),
-        ]
-        result = self.padre.evaluate_consensus(signals)
-        assert result.consensus_reached is False
-
-
-# ── CryptoPadre Consensus ───────────────────────────────────────────
-
-
-class TestCryptoPadreConsensus:
-
-    def setup_method(self):
-        self.padre = CryptoPadre()
-
-    def test_bullish_consensus(self):
-        signals = [
-            _signal("alfa_crypto", SignalType.BULLISH, 0.7),
-            _signal("beta_crypto", SignalType.BULLISH, 0.8),
-            _signal("delta_crypto", SignalType.NEUTRAL, 0.5),
-        ]
-        result = self.padre.evaluate_consensus(signals)
-        assert result.consensus_reached is True
-        assert result.final_signal == SignalType.BULLISH
-
-    def test_bearish_consensus(self):
-        signals = [
-            _signal("alfa_crypto", SignalType.BEARISH, 0.7),
-            _signal("beta_crypto", SignalType.BEARISH, 0.8),
-            _signal("delta_crypto", SignalType.BEARISH, 0.9),
-        ]
-        result = self.padre.evaluate_consensus(signals)
-        assert result.consensus_reached is True
-        assert result.final_signal == SignalType.BEARISH
-
-    def test_insufficient_layers_veto(self):
-        signals = [_signal("alfa_crypto", SignalType.BULLISH)]
-        result = self.padre.evaluate_consensus(signals)
+    def test_no_signals_veto(self):
+        result = self.padre.evaluate_consensus([])
         assert result.consensus_reached is False
         assert result.veto_active is True
 
-    def test_conflicting_signals_no_consensus(self):
+    def test_single_family_no_consensus(self):
         signals = [
-            _signal("alfa_crypto", SignalType.BULLISH),
-            _signal("beta_crypto", SignalType.BEARISH),
-            _signal("delta_crypto", SignalType.NEUTRAL),
+            _signal("alfa1", SignalType.ALERT, 0.9),
+            _signal("alfa2", SignalType.ALERT, 0.8),
+            _signal("beta1", SignalType.NEUTRAL, 0.3),
+            _signal("beta2", SignalType.NEUTRAL, 0.2),
+            _signal("delta", SignalType.NEUTRAL, 0.3),
         ]
         result = self.padre.evaluate_consensus(signals)
-        assert result.consensus_reached is False
+        assert result.final_signal != SignalType.ALERT or not result.consensus_reached
 
-    def test_position_size_on_consensus(self):
+    def test_cross_family_alert(self):
         signals = [
-            _signal("alfa_crypto", SignalType.BULLISH, 0.8),
-            _signal("beta_crypto", SignalType.BULLISH, 0.8),
-            _signal("delta_crypto", SignalType.BULLISH, 0.8),
+            _signal("alfa1", SignalType.ALERT, 0.85),
+            _signal("beta1", SignalType.ALERT, 0.8),
+            _signal("alfa2", SignalType.NEUTRAL, 0.3),
+            _signal("beta2", SignalType.NEUTRAL, 0.3),
+            _signal("delta", SignalType.NEUTRAL, 0.3),
         ]
         result = self.padre.evaluate_consensus(signals)
-        size = self.padre.position_size(result, portfolio_value=100000)
-        assert size == pytest.approx(100000 * 0.05 * 0.8, abs=1)
+        assert result.consensus_reached is True
+        assert result.final_signal in (SignalType.ALERT, SignalType.WATCH)
 
-    def test_position_size_no_consensus(self):
-        result = ConsensusResult(
-            consensus_reached=False, final_signal=SignalType.NEUTRAL,
-            confidence=0.5, agent_signals=[],
+    def test_schumann_correlation_boost(self):
+        signals_with_schumann = [
+            _signal("alfa1", SignalType.ALERT, 0.8),
+            _signal("beta1", SignalType.ALERT, 0.9),
+            _signal("delta", SignalType.ALERT, 0.6),
+        ]
+        result = self.padre.evaluate_consensus(signals_with_schumann)
+        schumann_corr = self.padre._schumann_correlation(
+            self.padre._validate_junior_with_senior(signals_with_schumann)
         )
-        assert self.padre.position_size(result, 100000) == 0.0
+        assert schumann_corr > 0
+
+    def test_no_consensus_all_neutral(self):
+        signals = [
+            _signal("alfa1", SignalType.NEUTRAL, 0.3),
+            _signal("beta1", SignalType.NEUTRAL, 0.3),
+            _signal("delta", SignalType.NEUTRAL, 0.3),
+        ]
+        result = self.padre.evaluate_consensus(signals)
+        assert result.consensus_reached is False
 
 
-# ── AlfaCryptoAgent ──────────────────────────────────────────────────
+# ── Beta-2 Agent (Atmospheric Chemistry) ─────────────────────────────
 
 
-class TestAlfaCryptoAgent:
+class TestBeta2AgentAtmospheric:
 
-    def setup_method(self):
-        self.agent = AlfaCryptoAgent()
+    def test_analyze_with_pressure_anomaly(self):
+        from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
+        agent = Beta2Agent()
+        agent.ingest({
+            "pressure_gradient": {
+                "mean_pressure": 1002.0,
+                "pressure_spread": 15.0,
+                "low_pressure_stations": ["tlaxcala", "guerrero"],
+            },
+            "air_quality": {"so2": 35.0, "co": 200.0, "pm2_5": 10.0},
+        })
+        signal = agent.analyze()
+        assert signal.signal_type in (SignalType.ALERT, SignalType.WATCH)
+        assert signal.data.get("pressure_stress", 0) > 0
 
-    def test_no_signal_without_data(self):
-        signal = self.agent.analyze()
+    def test_analyze_normal_atmosphere(self):
+        from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
+        agent = Beta2Agent()
+        agent.ingest({
+            "pressure_gradient": {
+                "mean_pressure": 1013.0,
+                "pressure_spread": 3.0,
+                "low_pressure_stations": [],
+            },
+            "air_quality": {"so2": 5.0, "co": 100.0, "pm2_5": 8.0},
+        })
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.NEUTRAL
+
+    def test_analyze_fog_detection(self):
+        from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
+        agent = Beta2Agent()
+        agent.ingest({
+            "pressure_gradient": {"mean_pressure": 1005.0, "pressure_spread": 8.0},
+            "atmospheric_readings": [
+                {"station": "tlaxcala", "visibility_m": 500},
+            ],
+        })
+        signal = agent.analyze()
+        assert signal.data.get("fog_detected") is True
+
+    def test_analyze_no_data(self):
+        from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
+        agent = Beta2Agent()
+        agent.ingest({})
+        signal = agent.analyze()
         assert signal.signal_type == SignalType.NO_SIGNAL
 
-    def test_health_check_no_data(self):
-        assert self.agent.health_check() is False
+    def test_health_check(self):
+        from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
+        agent = Beta2Agent()
+        assert agent.health_check() is False
+        agent.ingest({"pressure_gradient": {"mean_pressure": 1013.0}})
+        assert agent.health_check() is True
 
-    def test_ingest_sets_dominance(self):
-        self.agent.ingest({
-            "btc_market_cap": 500_000_000,
-            "total_market_cap": 1_000_000_000,
+
+# ── Delta Agent (Financial Cross-Correlation) ─────────────────────────
+
+
+class TestDeltaAgentFinancial:
+
+    def test_analyze_extreme_fear(self):
+        from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
+        agent = DeltaAgent()
+        agent.ingest({
+            "fear_greed": 10.0,
+            "vix": 45.0,
+            "btc_dominance": 0.65,
+            "yield_spread": -0.5,
         })
-        assert self.agent._dominance_ratios["btc"] == pytest.approx(0.5)
+        signal = agent.analyze()
+        assert signal.signal_type in (SignalType.ALERT, SignalType.WATCH)
+        assert signal.data["market_fear_score"] > 0.5
 
-    def test_analyze_with_price_data(self):
-        rng = np.random.default_rng(42)
-        n = 50
-        df = pd.DataFrame({
-            "btc_usdt": 50000 + rng.normal(0, 100, n),
-            "eth_usdt": 3000 + rng.normal(0, 50, n),
+    def test_analyze_normal_markets(self):
+        from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
+        agent = DeltaAgent()
+        agent.ingest({
+            "fear_greed": 50.0,
+            "vix": 18.0,
+            "btc_dominance": 0.52,
+            "yield_spread": 1.0,
         })
-        self.agent.ingest({"price_dataframe": df})
-        signal = self.agent.analyze()
-        assert signal.signal_type in (
-            SignalType.BULLISH, SignalType.BEARISH, SignalType.NEUTRAL
-        )
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.NEUTRAL
 
-    def test_tracked_pairs_count(self):
-        assert len(AlfaCryptoAgent.TRACKED_PAIRS) == 8
-        assert "BTC/USDT" in AlfaCryptoAgent.TRACKED_PAIRS
+    def test_analyze_with_crypto_topology(self):
+        from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
+        agent = DeltaAgent()
+        agent.ingest({
+            "fear_greed": 15.0,
+            "vix": 38.0,
+            "crypto_ratios": {"ETH": 0.05, "SOL": 0.002, "BNB": 0.01, "XRP": 0.001},
+        })
+        signal = agent.analyze()
+        assert signal.signal_type in SignalType
+
+    def test_health_check(self):
+        from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
+        agent = DeltaAgent()
+        assert agent.health_check() is False
+        agent.ingest({"fear_greed": 30.0})
+        assert agent.health_check() is True

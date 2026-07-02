@@ -23,9 +23,7 @@ class SentinelTelegramBot:
 
     LAYER_EMOJIS = {
         "geodynamic": "🌍",
-        "crypto": "₿",
-        "bolsa": "📈",
-        "lottery": "🎰",
+        "system": "⚙️",
     }
 
     def __init__(self, token: str, chat_id: str):

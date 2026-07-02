@@ -174,7 +174,7 @@ class TestFrictionCalculator:
         self.calc = InstitutionalFrictionCalculator()
 
     def test_zero_friction(self):
-        profile = self.calc.calculate(0.0, 0.0, 0.0, "epidemic")
+        profile = self.calc.calculate(0.0, 0.0, 0.0, "gravity")
         assert profile.level == FrictionLevel.ZERO
         assert profile.score == 0.0
 
@@ -207,14 +207,14 @@ class TestFrictionCalculator:
         assert profile.score == pytest.approx(0.25, abs=1e-6)
 
     def test_expected_b_values(self):
-        profile_zero = self.calc.calculate(0.0, 0.0, 0.0, "epidemic")
+        profile_zero = self.calc.calculate(0.0, 0.0, 0.0, "gravity")
         assert self.calc.expected_b(profile_zero) == 0.95
 
         profile_max = self.calc.calculate(1.0, 1.0, 1.0, "geodynamic")
         assert self.calc.expected_b(profile_max) == 0.02
 
     def test_anomaly_score(self):
-        profile = self.calc.calculate(0.0, 0.0, 0.0, "epidemic")
+        profile = self.calc.calculate(0.0, 0.0, 0.0, "gravity")
         score = self.calc.anomaly_score(0.95, profile)
         assert score == pytest.approx(0.0, abs=1e-6)
 

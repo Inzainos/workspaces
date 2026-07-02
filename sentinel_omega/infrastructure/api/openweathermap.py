@@ -34,6 +34,39 @@ MONITORING_STATIONS: Dict[str, Dict[str, float]] = {
     "puebla": {"lat": 19.04, "lon": -98.21},
 }
 
+# Global event nodes — key volcanic, tectonic, and marine points of the grid.
+# Volcano/tectonic nodes are scanned for degassing (CO/SO2); marine nodes for
+# thermal anomalies (the marine "variable fantasma": anomalous sea-surface
+# heating linked to ionization/energy discharge, per the V601 lineage).
+GLOBAL_EVENT_NODES: Dict[str, Dict[str, Any]] = {
+    "popocatepetl": {"lat": 19.02, "lon": -98.62, "tipo": "VOLCAN"},
+    "yellowstone": {"lat": 44.42, "lon": -110.58, "tipo": "VOLCAN"},
+    "fuji": {"lat": 35.36, "lon": 138.72, "tipo": "TECTONICO"},
+    "andes_chile": {"lat": -33.44, "lon": -70.66, "tipo": "TECTONICO"},
+    "san_andres": {"lat": 34.05, "lon": -118.24, "tipo": "TECTONICO"},
+    "guerrero_gap": {"lat": 16.85, "lon": -99.90, "tipo": "TECTONICO"},
+    "islandia_rift": {"lat": 64.96, "lon": -19.02, "tipo": "TECTONICO"},
+    "bermudas": {"lat": 25.00, "lon": -71.00, "tipo": "MARINO"},
+    "hawaii_hotspot": {"lat": 19.89, "lon": -155.58, "tipo": "MARINO"},
+    "fosa_japon": {"lat": 36.00, "lon": 142.00, "tipo": "MARINO"},
+}
+
+# Marine surface temp above this (deg C) counts as a thermal anomaly candidate.
+MARINE_THERMAL_THRESHOLD_C = 29.0
+
+# Reference stations in remote, unpopulated zones (open ocean, desert, polar).
+# Human industrial/traffic emissions are effectively zero here, so any measured
+# SO2/CO is natural background or true tectonic/volcanic outgassing. Used to
+# learn the "clean baseline" — the signature of what natural degassing looks
+# like against zero human noise, so populated-zone readings can be corrected.
+REFERENCE_STATIONS: Dict[str, Dict[str, float]] = {
+    "pacifico_nemo": {"lat": -48.87, "lon": -123.39},   # Point Nemo — most remote ocean point
+    "atlantico_sur": {"lat": -30.0, "lon": -15.0},      # mid South Atlantic
+    "indico_sur": {"lat": -40.0, "lon": 80.0},          # mid South Indian Ocean
+    "atacama": {"lat": -24.5, "lon": -69.25},           # driest desert, minimal industry
+    "antartida": {"lat": -75.0, "lon": 0.0},            # polar clean-air baseline
+}
+
 
 @dataclass
 class AtmosphericReading:
@@ -145,6 +178,80 @@ def fetch_air_quality(
     except Exception as e:
         logger.error(f"OWM air quality fetch failed: {e}")
         return None
+
+
+def fetch_reference_baseline() -> Optional[Dict[str, float]]:
+    """
+    Learn the natural degassing signature from remote, unpopulated zones.
+
+    Averages air-quality gases across ocean/desert/polar reference stations
+    where human emissions are ~zero. The result is the "clean background" —
+    what the atmosphere looks like with only natural degassing present.
+    Populated-zone readings are then compared against this to isolate the
+    true tectonic/volcanic outgassing from urban pollution noise.
+    """
+    samples: List[Dict[str, float]] = []
+    for name, coords in REFERENCE_STATIONS.items():
+        aq = fetch_air_quality(coords["lat"], coords["lon"])
+        if aq:
+            samples.append(aq)
+
+    if not samples:
+        return None
+
+    gases = ("co", "so2", "no2", "pm2_5", "pm10", "o3")
+    baseline = {
+        g: round(sum(s.get(g, 0.0) for s in samples) / len(samples), 3)
+        for g in gases
+    }
+    baseline["station_count"] = len(samples)
+    logger.info(
+        f"Reference baseline (natural degassing): "
+        f"SO2={baseline['so2']}, CO={baseline['co']} from {len(samples)} clean zones"
+    )
+    return baseline
+
+
+def scan_global_nodes(
+    nodes: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Scan the global event nodes for degassing and marine thermal anomalies.
+
+    For each node fetches gases (CO/SO2/NO2) and surface temperature.
+    Volcano/tectonic nodes carry the degassing reading; marine nodes carry
+    the sea-surface temperature for thermal-anomaly analysis in Beta-2.
+    """
+    target = nodes or list(GLOBAL_EVENT_NODES.keys())
+    results: List[Dict[str, Any]] = []
+
+    for name in target:
+        cfg = GLOBAL_EVENT_NODES.get(name)
+        if cfg is None:
+            continue
+
+        entry: Dict[str, Any] = {
+            "node": name,
+            "lat": cfg["lat"],
+            "lon": cfg["lon"],
+            "tipo": cfg["tipo"],
+        }
+
+        aq = fetch_air_quality(cfg["lat"], cfg["lon"])
+        if aq:
+            entry["so2"] = aq.get("so2", 0.0)
+            entry["co"] = aq.get("co", 0.0)
+            entry["no2"] = aq.get("no2", 0.0)
+
+        reading = fetch_weather(cfg["lat"], cfg["lon"], station_name=name)
+        if reading:
+            entry["temp_c"] = reading.temp_c
+            entry["pressure_hpa"] = reading.pressure_hpa
+
+        if "so2" in entry or "temp_c" in entry:
+            results.append(entry)
+
+    logger.info(f"Global node scan: {len(results)}/{len(target)} nodes responding")
+    return results
 
 
 def fetch_monitoring_network(

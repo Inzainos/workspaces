@@ -13,7 +13,7 @@ Sentinel Omega monitorea en tiempo real datos geofísicos, atmosféricos, solare
 
 El sistema busca resolver un problema fundamental: **detectar señales precursoras de eventos naturales con suficiente anticipación para permitir alertas tempranas**. A diferencia de los sistemas de alerta sísmica convencionales que solo reaccionan después del evento, Sentinel Omega monitorea correlaciones multi-dominio (geofísico, atmosférico, solar, oceánico y financiero) para identificar patrones que históricamente preceden a eventos de gran magnitud.
 
-La plataforma integra datos de 10+ fuentes públicas en tiempo real y aplica un framework de consenso jerárquico donde agentes especializados votan con pérdida asimétrica: el costo de no detectar un evento (miss) se penaliza 10× más que una falsa alarma.
+La plataforma integra datos de 10+ fuentes públicas en tiempo real y aplica un framework de consenso jerárquico donde agentes especializados votan con pérdida asimétrica: el costo de no detectar un evento (miss) se penaliza 10x más que una falsa alarma.
 
 ---
 
@@ -24,21 +24,21 @@ La plataforma integra datos de 10+ fuentes públicas en tiempo real y aplica un 
 El índice Fantasma es una función compuesta que correlaciona variables solares, geomagnéticas y atmosféricas para producir un score de riesgo precursor:
 
 ```
-fantasma = (abs(Bz)²) + (viento × 0.02) + (Schumann_WPC × 1.5)
+fantasma = (abs(Bz)^2) + (viento x 0.02) + (Schumann_WPC x 1.5)
 
 Modificadores post-core:
-  + Presión atmosférica (< 1008 hPa → hasta +3.0)
-  × Kp storm (≥ 5 → hasta ×1.5)
-  + LOD anomaly (> 0.5 ms → hasta +2.0)
+  + Presión atmosférica (< 1008 hPa -> hasta +3.0)
+  x Kp storm (>= 5 -> hasta x1.5)
+  + LOD anomaly (> 0.5 ms -> hasta +2.0)
 ```
 
-**Hallazgo**: La componente cuadrática del Bz (campo magnético interplanetario norte-sur) es el predictor más fuerte. Valores de Bz < -10 nT generan contribuciones Bz² > 100 puntos, disparando directamente el umbral CRITICAL. Esto se alinea con la observación empírica de que perturbaciones geomagnéticas severas (Bz fuertemente negativo) preceden actividad sísmica inusual en ventanas de 48-96 horas.
+**Hallazgo**: La componente cuadrática del Bz (campo magnético interplanetario norte-sur) es el predictor más fuerte. Valores de Bz < -10 nT generan contribuciones Bz^2 > 100 puntos, disparando directamente el umbral CRITICAL. Esto se alinea con la observación empírica de que perturbaciones geomagnéticas severas (Bz fuertemente negativo) preceden actividad sísmica inusual en ventanas de 48-96 horas.
 
 | Nivel    | Rango   | Interpretación                                   |
 |----------|---------|--------------------------------------------------|
 | LOW      | < 5     | Actividad de fondo normal                        |
-| MODERATE | 5 – 15  | Señales elevadas, monitoreo activo               |
-| HIGH     | 15 – 30 | Precursores múltiples, alerta preventiva         |
+| MODERATE | 5 - 15  | Señales elevadas, monitoreo activo               |
+| HIGH     | 15 - 30 | Precursores múltiples, alerta preventiva         |
 | CRITICAL | >= 30   | Correlación multi-dominio, alerta inmediata      |
 
 ### 2. Filtro Fourier-Schumann (Innovación Beta-1)
@@ -74,30 +74,32 @@ La innovación central es que ningún precursor individual es confiable — es l
 
 ### 5. Topología de 125 Nodos con Saturación
 
-El sistema modela la Tierra con 125 nodos de monitoreo:
+El sistema modela la Tierra completa con una malla de 125 nodos de monitoreo basada en la geometría UVG Becker-Hagens:
 
 | Tipo        | Cantidad | Descripción                                    |
 |-------------|----------|------------------------------------------------|
-| Real        | 50       | Zonas sísmicas reales (México + Ring of Fire)  |
+| Real        | 50       | Zonas sísmicas reales (Ring of Fire global)    |
 | Ghost       | 50       | Nodos fantasma inferidos de gaps sísmicos      |
 | Geobattery  | 25       | Zonas de acumulación electroquímica            |
 
 **Hallazgo**: Los nodos "ghost" — posiciones inferidas donde no hay monitoreo pero la topología sugiere acumulación de estrés — han mostrado ser zonas de riesgo subestimado por redes sísmicas convencionales. Los nodos "geobattery" modelan zonas donde corrientes telúricas y diferencias de potencial electroquímico en el subsuelo pueden actuar como acumuladores de energía. La saturación de un nodo (capped a 1.0 por trigger SQL) indica zona de máximo estrés acumulado.
 
+La matriz estática UVG-125 se carga en RAM al importar (`geometria_uvg.py`) y permite mapear cada sismo global al nodo más cercano. Tlaxcala (19.31, -98.24) es el nodo de observación (id=0); los otros 125 cubren el planeta.
+
 ### 6. Pérdida Asimétrica en Consenso Jerárquico
 
-Cada capa (Geodynamic, Crypto, Bolsa) tiene su propio árbitro (Padre) que usa pérdida asimétrica:
+El Padre usa pérdida asimétrica en el consenso:
 
 ```
-Costo de miss   = 10 × peso_base
-Costo de falsa  =  1 × peso_base
+Costo de miss   = 10 x peso_base
+Costo de falsa  =  1 x peso_base
 ```
 
 **Innovación**: El sistema prefiere sobre-alertar a sub-alertar. Un 10% de falsas alarmas es aceptable si el sistema captura el 95% de eventos reales. Esto invierte la lógica de la mayoría de sistemas de alerta que optimizan para minimizar falsas alarmas.
 
 ### 7. Validación de Asertividad (V46 Lineage)
 
-El tracker de asertividad compara predicciones contra eventos reales del catálogo USGS usando distancia euclidiana dentro de un radio de 5°:
+El tracker de asertividad compara predicciones contra eventos reales del catálogo USGS usando distancia euclidiana dentro de un radio de 5 grados:
 
 - **Hit rate**: Predicciones confirmadas por eventos M>=4.5
 - **Miss rate**: Eventos que no fueron predichos
@@ -105,72 +107,59 @@ El tracker de asertividad compara predicciones contra eventos reales del catálo
 
 ---
 
-## Arquitectura
+## Arquitectura — 6 Agentes, Sistema Único
 
 ```
-                    ┌─────────────────────────────────────┐
-                    │        MASTER ORCHESTRATOR           │
-                    │   Ciclo: Crypto → Bolsa → Geo       │
-                    │   Pipeline: API → Agents → Risk     │
-                    └──────────────┬──────────────────────┘
-                                   │
-           ┌───────────────────────┼───────────────────────┐
-           │                       │                       │
-    ┌──────▼──────┐        ┌──────▼──────┐        ┌───────▼───────┐
-    │   CRYPTO    │        │    BOLSA    │        │  GEODYNAMIC   │
-    │ Alfa/Beta/  │        │ Alfa/Beta/  │        │ Alfa-1/Alfa-2 │
-    │ Delta/Padre │        │ Delta/Padre │        │ Beta-1/Beta-2 │
-    └──────┬──────┘        └──────┬──────┘        │ Delta/Padre   │
-           │                       │              └───────┬───────┘
-           └───────────┬───────────┘                      │
-                       │                                  │
-              Financial Data ────────────────────► Precursor
-              (fear_greed, VIX,                    Scanner (15 tipos)
-               BTC change)                               │
-                                              ┌───────────┴──────────┐
-                                              │                      │
-                                        Fantasma V32          Muro de los
-                                        Risk Index           5 Eventos
-                                              │                      │
-                                              └──────────┬───────────┘
-                                                         │
-                                                  ┌──────▼──────┐
-                                                  │  TELEGRAM   │
-                                                  │   Alerts    │
-                                                  └──────┬──────┘
-                                                         │
-                                                  ┌──────▼──────┐
-                                                  │  SQLite DB  │
-                                                  │ 6 Tablas    │
-                                                  └──────┬──────┘
-                                                         │
-                                                  ┌──────▼──────┐
-                                                  │  DASHBOARD  │
-                                                  │ 9 Tabs      │
-                                                  │ Streamlit   │
-                                                  └─────────────┘
+Orchestrator -> GeodynamicLayerRunner -> 6 Agentes -> Consenso del Padre
+|
++-- Alfa-1 (Geodinámico: Bz, viento solar, sísmico) — 30 años entrenamiento
+|       ^ valida
++-- Alfa-2 (Satélite: ESA Sentinel) — 16 años
+|
++-- Beta-1 (Schumann / cimática / energía liberada) — 30 años  <- LATIDO
+|       ^ valida
++-- Beta-2 (Química atmosférica) — 16 años
+|
++-- Delta  (Financiero: crypto + bolsa + humor de la tierra) — 10 años
+|
++-- Padre  (Validador jerárquico cruzado entre familias)
+        +-- Índice de Riesgo Fantasma TITAN V32
+        +-- Scanner de Precursores (15 tipos)
+        +-- Muro de los 5 Eventos
 ```
 
-### Consenso Jerárquico por Capa
+**Jerarquía**: Los agentes #2 reportan al #1 -> el Padre valida entre familias.
+**Schumann es el latido**: Todo se correlaciona contra la resonancia Schumann (Beta-1).
+Si Schumann está perturbado junto con cualquier otra señal = precursor detectado.
 
-```
-                Alfa (Datos Primarios)
-                    │
-                Beta (Análisis Espectral / On-Chain / Macro)
-                    │
-                Delta (Topología N-Body / Sentimiento / Régimen)
-                    │
-                Padre (Árbitro Supremo)
-                    └── Consenso con pérdida asimétrica (miss=10×, false alarm=1×)
-```
+**Familias**:
+- `space_weather`: Alfa-1, Alfa-2
+- `schumann_cymatics`: Beta-1, Beta-2
+- `financial_sentiment`: Delta
 
-**Geodynamic Layer** (6 agentes):
-- **Alfa-1**: NOAA OMNI — Bz, viento solar, protones, campo magnético
-- **Alfa-2**: ESA Sentinel-2 — Análisis multispectral satelital
-- **Beta-1**: FFT de Kp con filtro armónico Schumann (7.83 Hz + armónicos)
-- **Beta-2**: Sentinel-1 SAR — Interferometría de apertura sintética (InSAR)
-- **Delta**: Topología N-Body de 125 nodos + datos atmosféricos
-- **Padre**: Consenso asimétrico + Fantasma + Scanner + Muro
+**El consenso requiere**: >= 2 familias activas + >= 2 alertas + correlación_schumann > 0.3
+
+### Ciclo del Orquestador
+
+1. **GeodynamicPipeline** obtiene datos para todos los agentes (alfa1, beta1, beta2, delta, alfa2)
+2. **Fantasma V32** calcula el riesgo precursor de las señales crudas
+3. **Datos de huracán** se obtienen (non-blocking)
+4. **Scanner** evalúa los 15 tipos de precursor contra los datos del ciclo
+5. **Muro de los 5 Eventos** evalúa la correlación de 5 dominios
+6. Todos los agentes ingestan + analizan -> señales
+7. **Padre** evalúa el consenso (jerárquico + correlación Schumann)
+8. Las alertas se despachan vía Telegram + registro en SQLite
+
+### Señales del Sistema
+
+| Señal     | Significado                           | Uso                     |
+|-----------|---------------------------------------|-------------------------|
+| BULLISH   | Tendencia alcista (mercados)          | Delta (financiero)      |
+| BEARISH   | Tendencia bajista (mercados)          | Delta (financiero)      |
+| NEUTRAL   | Sin tendencia clara                   | Todos los agentes       |
+| WATCH     | Excitación coherente, monitorear      | Beta-1 (Schumann)       |
+| ALERT     | Precursor confirmado, alertar         | Geodinámico             |
+| NO_SIGNAL | Sin datos o sin análisis              | Todos los agentes       |
 
 ---
 
@@ -184,12 +173,12 @@ El tracker de asertividad compara predicciones contra eventos reales del catálo
 | 4  | Blue Jet                 | Atmosférico         | 72h     | humidity, temp, pressure, weather_id  |
 | 5  | Sprite Rojo              | Atmosférico         | 72h     | humidity, pressure, weather_id (211)  |
 | 6  | Niebla Tule              | Atmosférico         | 72h     | humidity, temp, visibility, wind      |
-| 7  | Tormenta Solar           | Solar/Geomagnético  | 96h     | xray_flux (>= 1e-5 W/m² = M-class)  |
+| 7  | Tormenta Solar           | Solar/Geomagnético  | 96h     | xray_flux (>= 1e-5 W/m2 = M-class)   |
 | 8  | Perturbación Geomag.     | Solar/Geomagnético  | 96h     | kp_mean (>= 5.0 = storm level)       |
 | 9  | Huracán                  | Oceánico            | 120h    | distance_km, category                 |
 | 10 | Tsunami                  | Oceánico            | 24h     | magnitude, depth (>= 7.0, < 70km)    |
 | 11 | Inferencia ML            | —                   | 48h     | onnx_model_output                     |
-| 12 | Gamma-Ray Burst          | Solar/Geomagnético  | 168h    | xray_flux (>= 1e-4 W/m²)            |
+| 12 | Gamma-Ray Burst          | Solar/Geomagnético  | 168h    | xray_flux (>= 1e-4 W/m2)            |
 | 13 | Precursor Volcánico      | Geofísico           | 72h     | so2_index, seismic_coupling           |
 | 14 | Índice Fantasma          | Geofísico           | 72h     | fantasma composite score              |
 | 15 | Correlación Financiera   | Financiero/Social   | 72h     | fear_greed, vix, btc_change           |
@@ -201,7 +190,7 @@ El tracker de asertividad compara predicciones contra eventos reales del catálo
 Sentinel Omega utiliza la **Shadow Node Theory** exclusivamente como framework matemático — no como propósito del sistema. El modelo de ley de potencia describe relaciones de dominancia/subordinación en sistemas complejos:
 
 ```
-R(t) = a · t^b
+R(t) = a * t^b
 ```
 
 | Régimen              | Exponente b | Interpretación                             |
@@ -215,12 +204,14 @@ R(t) = a · t^b
 
 Se aplica a:
 - Ratios de dominancia financiera (BTC/ETH, SPY/QQQ)
-- Intensidad geomagnética (Kp trends)
+- Intensidad geomagnética (tendencias de Kp)
 - Gradientes de nodos topológicos
 
 ---
 
 ## Base de Datos (SQLite)
+
+### Tablas Operacionales
 
 6 tablas en `SENTINEL_OMEGA_PRO.db` con modo WAL y foreign keys:
 
@@ -233,9 +224,29 @@ Se aplica a:
 | TBL_CICLOS               | Por ciclo   | Historial de ciclos: señal, consenso, riesgo, muro     |
 | TBL_MURO_EVENTOS         | Por breach  | Breaches del Muro con correlación y muros activos      |
 
-**Trigger de saturación**: `trg_nodo_saturacion` — Cap automático de saturación a 1.0 en cada UPDATE de nodos.
+### Tablas de Aprendizaje y Auditoría
 
-**12 queries analíticas**: Descomposición del fantasma, distribución de riesgo, frecuencia por tipo, estadísticas de confianza, timeline de muros, magnitud sísmica, sismicidad por región, profundidad vs magnitud, ranking de saturación, tasa de alertas, tendencia Schumann, historial completo del Muro.
+| Tabla                | Propósito                                                        |
+|----------------------|-------------------------------------------------------------------|
+| TBL_FIRMAS           | Memoria de patrones por bot. Estado: nueva → observada → recurrente → consolidada (por recurrencia). Solo las consolidadas son conocimiento exigible. |
+| TBL_JUEZ_AUDITORIA   | Ledger disciplinario del Juez: ACIERTO / FALLO / FALSO_POSITIVO con severidad asimétrica (omitir firma conocida = 20 base, omisión = 10, falsa alarma = 1) escalada por reincidencia. |
+
+**Entrenamiento en dos fases** (`--entrenar`): Fase 1 (reconocimiento, sin castigo) extrae la ventana de 14 días previa a cada evento M5+ del backcast y la registra como firma por bot sobre su dominio de variables; la recurrencia promueve firmas. Fase 2 (disciplina) re-presenta las firmas consolidadas y el Juez castiga si el sistema ya no las reconoce. En operación, cada ciclo compara el estado vivo contra las firmas consolidadas ("el estado actual se parece 87% al que precedió el M7 del nodo 45").
+
+### Tablas de Backcast Histórico (resolución 1H, 1994-2025)
+
+| Tabla                      | Clave Primaria          | Propósito                                    |
+|----------------------------|-------------------------|----------------------------------------------|
+| tbl_clima_espacial_raw     | timestamp_blk           | NASA OMNI2: Bz, viento solar, Kp, protones  |
+| tbl_astronomia_cinematica  | timestamp_blk           | LOD, fase lunar, distancia lunar, sicigia    |
+| tbl_historico_sismico_raw  | (timestamp_blk, id_nodo)| Sismos USGS mapeados a nodos UVG-125        |
+| tbl_psique_financiera      | timestamp_blk           | BTC precio, volatilidad (2014+)              |
+| tbl_enjambre_telemetria    | (timestamp_blk, id_nodo)| Resonancia Schumann por nodo                 |
+| tbl_nodo_estado_dinamico   | (timestamp_blk, id_nodo)| Carga/tensión por nodo (cap 1.0 vía trigger) |
+
+**Protocolo de backcast**: CERO datos sintéticos. Faltante = NULL. LOCF solo desde registros reales.
+
+**Triggers**: `trg_nodo_saturacion` y `trg_procesar_saturacion` — cap automático de saturación/carga a 1.0.
 
 ---
 
@@ -263,60 +274,58 @@ Se aplica a:
 |------------------|-------------------------------------------|-----------|----------------------|
 | NOAA SWPC        | Bz, viento solar, Kp, GOES X-ray, protones | Público   | Alfa-1, Scanner      |
 | USGS FDSN        | Catálogo sísmico mundial                   | Público   | Scanner, Asertividad |
+| NASA OMNI2       | Bz, viento solar, Kp históricos (backcast) | Público   | Backcast             |
 | Tomsk SRF        | Resonancia Schumann (7.83 Hz)              | Público   | Beta-1, Scanner      |
 | IERS             | Length-of-Day (LOD)                        | Público   | Fantasma             |
 | ESA Copernicus   | Sentinel-1 SAR, Sentinel-2 multispectral   | Público   | Alfa-2, Beta-2       |
-| OpenWeatherMap   | Presión, temp, humedad, weather_id          | API Key   | Delta, Scanner       |
+| OpenWeatherMap   | Presión, temp, humedad, weather_id          | API Key   | Beta-2, Scanner      |
 | NOAA NHC         | Ciclones tropicales activos                 | Público   | Scanner (huracanes)  |
-| CoinGecko        | Dominancia BTC, market caps                 | Público   | Crypto Layer         |
-| Binance          | OHLCV crypto                               | Público   | Crypto Layer         |
-| Yahoo Finance    | OHLCV acciones, VIX, ETFs                  | Público   | Bolsa Layer          |
+| CoinGecko        | Dominancia BTC, market caps                 | Público   | Delta                |
+| Yahoo Finance    | OHLCV acciones, VIX, ETFs                  | Público   | Delta                |
 
 ---
 
 ## Estructura del Proyecto
 
 ```
-sentinel_omega/                          # 9,085 líneas de código · 312 tests
+sentinel_omega/
+├── launcher.py                          # Launcher — arranca el orquestador en ciclo continuo
+├── shutdown.py                          # Shutdown — detiene gracefully vía SIGTERM/SIGKILL
+├── reboot.py                            # Reboot — stop + relaunch
 ├── orchestrator.py                      # Orquestador maestro — ejecuta ciclos
 ├── config/
-│   └── sentinel_config.py               # Configuración central (secrets via os.environ)
+│   └── sentinel_config.py               # Configuración central (secrets vía os.environ)
 │
 ├── core/
 │   ├── shared/
 │   │   ├── agent_base.py                # BaseAgent, PadreAgent, SignalType, ConsensusResult
-│   │   └── data_pipeline.py             # Pipeline base para ingesta de datos
+│   │   ├── data_pipeline.py             # Pipeline base para ingesta de datos
+│   │   └── geometria_uvg.py             # Matriz UVG-125 Becker-Hagens estática en RAM
 │   ├── precursor/
 │   │   ├── risk_calculator.py           # Fórmula Fantasma TITAN V32
 │   │   ├── scanner.py                   # Scanner de 15 tipos de precursor
 │   │   ├── muro_cinco_eventos.py        # Motor de correlación cruzada 5 muros
 │   │   ├── precursor_types.py           # Registro de tipos + funciones de detección
 │   │   └── assertivity.py              # Tracking de asertividad V46
+│   ├── firmas/
+│   │   └── signature_engine.py          # Memoria de patrones por bot (nueva→consolidada)
+│   ├── juez/
+│   │   └── juez.py                      # Auditor frío separado del Padre (ACIERTO/FALLO/FP)
 │   └── snt_engine/
-│       ├── satellization.py             # R(t) = a·t^b — fits y regímenes
+│       ├── satellization.py             # R(t) = a*t^b — fits y regímenes
 │       ├── friction.py                  # Calculador de fricción institucional
 │       ├── asi.py                       # Índice de Soberanía Atómica
 │       ├── nbody.py                     # Procesador N-Body multi-entidad
-│       └── corpus.py                    # Corpus de observaciones empíricas
+│       └── corpus.py                    # Corpus de observaciones empíricas (satelización)
 │
 ├── layers/
-│   ├── geodynamic/                      # 6 agentes geofísicos
-│   │   ├── alfa1/agent.py               # NOAA OMNI: Bz, viento solar
-│   │   ├── alfa2/agent.py               # ESA Sentinel-2 multispectral
-│   │   ├── beta1/agent.py               # Kp FFT + filtro Schumann
-│   │   ├── beta2/agent.py               # Sentinel-1 SAR InSAR
-│   │   ├── delta/agent.py               # Topología N-Body + atmosférico
-│   │   └── padre/agent.py               # Consenso asimétrico geodynamic
-│   ├── crypto/                          # 4 agentes crypto
-│   │   ├── alfa_crypto/agent.py         # SNT satellization
-│   │   ├── beta_crypto/agent.py         # On-chain analysis
-│   │   ├── delta_crypto/agent.py        # Sentiment
-│   │   └── padre_crypto/agent.py        # Consenso crypto
-│   └── bolsa/                           # 4 agentes bursátiles
-│       ├── alfa_bolsa/agent.py          # Technical analysis
-│       ├── beta_bolsa/agent.py          # Macro analysis
-│       ├── delta_bolsa/agent.py         # Régimen de mercado
-│       └── padre_bolsa/agent.py         # Consenso bolsa
+│   └── geodynamic/                      # Los 6 agentes del sistema único
+│       ├── alfa1/agent.py               # NOAA OMNI: Bz, viento solar
+│       ├── alfa2/agent.py               # ESA Sentinel-2 multispectral
+│       ├── beta1/agent.py               # Kp FFT + filtro Schumann
+│       ├── beta2/agent.py               # Sentinel-1 SAR InSAR / química atmosférica
+│       ├── delta/agent.py               # Correlación financiera + atmosférico
+│       └── padre/agent.py               # Consenso asimétrico + Fantasma + Scanner + Muro
 │
 ├── infrastructure/
 │   ├── api/                             # 10 conectores de API
@@ -327,80 +336,42 @@ sentinel_omega/                          # 9,085 líneas de código · 312 tests
 │   │   ├── openweathermap.py            # OpenWeatherMap (atmosférico)
 │   │   ├── noaa_hazards.py              # NOAA NHC (ciclones tropicales)
 │   │   ├── geophysical.py               # IERS LOD
-│   │   ├── crypto.py                    # CoinGecko + Binance + Bitso
-│   │   ├── bolsa.py                     # Yahoo Finance + Alpha Vantage
+│   │   ├── crypto.py                    # CoinGecko + Binance + Bitso (Delta)
+│   │   ├── bolsa.py                     # Yahoo Finance + Alpha Vantage (Delta)
 │   │   └── telegram.py                  # Telegram Bot API
 │   ├── pipeline/
-│   │   ├── data_pipeline.py             # Pipeline maestro de datos
-│   │   ├── layer_runners.py             # Runners por capa
+│   │   ├── data_pipeline.py             # Pipeline maestro con LOCF
+│   │   ├── layer_runners.py             # GeodynamicLayerRunner (6 agentes)
+│   │   ├── backcast.py                  # Carga histórica one-time (1994-2025, 1H)
 │   │   └── legacy_loader.py             # Cargador de datos TITAN legacy
 │   ├── database/
-│   │   ├── schema.py                    # Schema SQLite + WAL + triggers
+│   │   ├── schema.py                    # Schema SQLite + WAL + triggers + backcast + migración
 │   │   ├── repository.py                # CRUD + 12 queries analíticas
-│   │   └── seed_nodos.py                # 125 nodos semilla (México + Ring of Fire)
+│   │   └── seed_nodos.py                # 125 nodos semilla (malla global)
 │   ├── dashboard/
-│   │   └── app.py                       # Dashboard Streamlit (9 tabs, 1433 líneas)
+│   │   └── app.py                       # Dashboard Streamlit (9 tabs)
 │   └── telegram/
 │       └── bot.py                       # Bot Telegram para alertas
 │
-├── tests/                               # 312 tests
+├── tests/                               # 301 tests
 │   ├── test_snt_engine.py               # Tests SNT (satellization, friction, ASI, N-Body)
-│   ├── test_agents.py                   # Tests de agentes (14 agentes)
+│   ├── test_agents.py                   # Tests de agentes (6 agentes)
 │   ├── test_precursor.py                # Tests precursor (fantasma, scanner, muro, assertivity)
-│   ├── test_schumann_filter.py          # Tests Schumann filter + DB schema (46 tests)
+│   ├── test_schumann_filter.py          # Tests Schumann filter + DB schema
 │   ├── test_api_connectors.py           # Tests de conectores API
 │   ├── test_pipeline.py                 # Tests de pipeline + layer runners
 │   └── test_infrastructure.py           # Tests de infraestructura (config, DB, telegram)
 │
 └── data/                                # Bases de datos SQLite
-    └── SENTINEL_OMEGA_PRO.db            # DB principal (6 tablas)
+    └── SENTINEL_OMEGA_PRO.db            # DB principal (6 tablas operacionales + 6 backcast)
 ```
-
----
-
-## Funcionalidad Detallada
-
-### Ciclo del Orquestador
-
-1. **Crypto Layer** ejecuta primero → Alfa analiza satelización SNT, Beta analiza on-chain, Delta evalúa sentimiento → Padre genera consenso
-2. **Bolsa Layer** ejecuta → Alfa analiza técnico, Beta analiza macro, Delta clasifica régimen → Padre genera consenso
-3. **Datos financieros extraídos**: `fear_greed`, `VIX`, `BTC change` se pasan como correlación cruzada
-4. **Geodynamic Layer** ejecuta con correlación financiera:
-   - Alfa-1 ingiere datos NOAA OMNI (Bz, viento solar, protones)
-   - Alfa-2 procesa imágenes Sentinel-2 (NDVI, clasificación espectral)
-   - Beta-1 computa FFT de serie Kp + aplica filtro armónico Schumann
-   - Beta-2 analiza SAR InSAR (deformación terrestre)
-   - Delta evalúa topología N-Body de 125 nodos + datos atmosféricos
-   - Padre genera consenso con pérdida asimétrica
-5. **Fantasma V32** se calcula de las señales agregadas
-6. **Scanner** evalúa los 15 tipos de precursor contra datos del ciclo
-7. **Muro de los 5 Eventos** evalúa correlación de 5 dominios
-8. Si hay alertas: despacho via Telegram + registro en SQLite
-
-### Señales del Sistema
-
-| Señal     | Significado                           | Uso                     |
-|-----------|---------------------------------------|-------------------------|
-| BULLISH   | Tendencia alcista (mercados)          | Crypto, Bolsa           |
-| BEARISH   | Tendencia bajista (mercados)          | Crypto, Bolsa           |
-| NEUTRAL   | Sin tendencia clara                   | Todas las capas         |
-| WATCH     | Excitación coherente, monitorear      | Geodynamic (Schumann)   |
-| ALERT     | Precursor confirmado, alertar         | Geodynamic              |
-| NO_SIGNAL | Sin datos o sin análisis              | Todas las capas         |
 
 ---
 
 ## Instalación
 
 ```bash
-# Clonar e instalar con todas las dependencias
 pip install -e ".[all]"
-
-# Solo módulo geodynamic
-pip install -e ".[geodynamic]"
-
-# Solo crypto
-pip install -e ".[crypto]"
 ```
 
 ### Dependencias Principales
@@ -418,21 +389,55 @@ plotly>=5.15         # Visualizaciones
 ## Ejecución
 
 ```bash
-# Tests (312 tests, ejecutar desde /home/user/workspaces/)
+# Tests (301 tests, ejecutar desde /home/user/workspaces/)
 python -m pytest sentinel_omega/tests/ -q
 
 # Dashboard (9 tabs interactivas)
 streamlit run sentinel_omega/infrastructure/dashboard/app.py
-
-# Ciclo completo del orquestador (requiere APIs activas)
-python -c "
-from sentinel_omega.config.sentinel_config import SentinelOmegaConfig
-from sentinel_omega.orchestrator import SentinelOrchestrator
-orch = SentinelOrchestrator.create_with_live_pipelines(SentinelOmegaConfig())
-results = orch.run_cycle()
-print(orch.get_status())
-"
 ```
+
+### Launcher / Shutdown / Reboot
+
+```bash
+# Iniciar el orquestador en ciclo continuo
+python sentinel_omega/launcher.py
+
+# Iniciar con dashboard + sin alertas Telegram (dry run)
+python sentinel_omega/launcher.py --dashboard --dry-run
+
+# Un solo ciclo y salir
+python sentinel_omega/launcher.py --once
+
+# Carga histórica (one-time, 1994-2025)
+python sentinel_omega/launcher.py --backcast
+
+# Entrenamiento de firmas sobre el backcast (Fase 1 reconocimiento + Fase 2 disciplina)
+python sentinel_omega/launcher.py --entrenar
+
+# Detener gracefully (SIGTERM -> espera 30s)
+python sentinel_omega/shutdown.py
+
+# Detener forzado (SIGKILL si no responde)
+python sentinel_omega/shutdown.py --force
+
+# Reiniciar (stop + relaunch)
+python sentinel_omega/reboot.py
+python sentinel_omega/reboot.py --dashboard --dry-run
+```
+
+| Archivo                     | Propósito                              |
+|-----------------------------|----------------------------------------|
+| `data/sentinel_omega.pid`   | PID del proceso activo                 |
+| `data/sentinel_omega.log`   | Log persistente del orquestador        |
+
+El launcher:
+- Verifica que no haya otra instancia corriendo (vía PID file)
+- Inicializa la base de datos, aplica migraciones y siembra los 125 nodos si está vacía
+- Ejecuta ciclos en loop con el intervalo configurado (default 300s)
+- Maneja SIGTERM/SIGINT para shutdown graceful
+- Persiste cada ciclo en SQLite (precursores cósmicos + ciclos + detecciones + muro)
+- Opcionalmente lanza el dashboard de Streamlit como proceso hijo
+- El flag `--backcast` ejecuta la carga histórica antes de iniciar ciclos
 
 ## Variables de Entorno
 
@@ -446,7 +451,7 @@ export BITSO_API_KEY="..."             # Exchange Bitso
 export BITSO_API_SECRET="..."          # Exchange Bitso
 ```
 
-> **Seguridad**: Todas las claves se cargan exclusivamente via `os.environ.get()`. Nunca se hardcodean tokens en el código. Las claves se rotan según se van usando.
+> **Seguridad**: Todas las claves se cargan exclusivamente vía `os.environ.get()`. Nunca se hardcodean tokens en el código. Las claves se rotan según se van usando.
 
 ---
 
@@ -457,7 +462,7 @@ export BITSO_API_SECRET="..."          # Exchange Bitso
 | V32      | TITAN V32        | Fórmula Fantasma, Schumann WPC, 2 muros (Geo+Solar) |
 | V46      | TITAN V46        | Asertividad, validación contra USGS, hits/misses     |
 | V53      | TITAN V53        | Patrones WPC, Lorenz-X/Lyapunov, multi-horizonte     |
-| v2.5     | Sentinel Omega   | 15 precursores, 5 muros, 125 nodos, 14 agentes, dashboard, filtro Schumann |
+| v2.5     | Sentinel Omega   | 15 precursores, 5 muros, 125 nodos, 6 agentes, dashboard, filtro Schumann, backcast 1H |
 
 ---
 

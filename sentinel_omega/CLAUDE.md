@@ -9,23 +9,37 @@ Sentinel Omega detects **precursors of natural events** (earthquakes, volcanic a
 
 The system is the successor to the TITAN V32/V46/V53 bot family.
 
-## Architecture
+## Architecture — 6 Agents, Single System
 
 ```
-Orchestrator
-├── Crypto Layer    → Alfa/Beta/Delta/Padre → Consensus
-├── Bolsa Layer     → Alfa/Beta/Delta/Padre → Consensus
-└── Geodynamic Layer
-    ├── Alfa-1 (NOAA OMNI Bz/Solar Wind)
-    ├── Alfa-2 (ESA Sentinel-2 Satellite)
-    ├── Beta-1 (Kp FFT + Schumann Harmonic Filter)
-    ├── Beta-2 (Sentinel-1 SAR InSAR)
-    ├── Delta  (N-Body Topology + Atmospheric)
-    └── Padre  (Asymmetric Loss Consensus)
+Orchestrator → GeodynamicLayerRunner → 6 Agents → Padre Consensus
+│
+├── Alfa-1 (Geodynamic: Bz, solar wind, seismic) — 30yr training
+│       ↑ validates
+├── Alfa-2 (Satellite: ESA Sentinel) — 16yr training
+│
+├── Beta-1 (Schumann/cymatics/energy released) — 30yr training  ← HEARTBEAT
+│       ↑ validates
+├── Beta-2 (Air chemistry/atmospheric) — 16yr training
+│
+├── Delta  (Crypto + Bolsa + humor de la tierra) — 10yr training
+│
+└── Padre  (Hierarchical cross-family validator)
         ├── TITAN V32 Fantasma Risk Index
         ├── Precursor Scanner (15 types)
         └── Muro de los 5 Eventos
 ```
+
+**Hierarchy**: #2 agents → report to #1 → Padre cross-validates across families.
+**Schumann is the heartbeat**: Everything correlates against Schumann resonance (Beta-1).
+If Schumann is perturbed alongside any other signal = precursor detected.
+
+**Families**:
+- `space_weather`: Alfa-1, Alfa-2
+- `schumann_cymatics`: Beta-1, Beta-2
+- `financial_sentiment`: Delta
+
+**Consensus requires**: >= 2 families active + >= 2 alerts + schumann_correlation > 0.3
 
 ## Key formulas
 
@@ -46,6 +60,38 @@ python -m pytest sentinel_omega/tests/test_precursor.py -v
 
 **Important**: Always run from `/home/user/workspaces/`, not from inside `sentinel_omega/`.
 
+## Launcher / Shutdown / Reboot
+
+```bash
+# Launch orchestrator (continuous cycle mode)
+python sentinel_omega/launcher.py
+
+# Launch with dashboard + dry run (no Telegram)
+python sentinel_omega/launcher.py --dashboard --dry-run
+
+# Single cycle and exit
+python sentinel_omega/launcher.py --once
+
+# Historical backcast (one-time, 1994-2025)
+python sentinel_omega/launcher.py --backcast
+
+# Signature training over the backcast (Fase 1 reconocimiento + Fase 2 disciplina)
+python sentinel_omega/launcher.py --entrenar
+
+# Graceful shutdown (SIGTERM)
+python sentinel_omega/shutdown.py
+
+# Force shutdown (SIGKILL after 30s timeout)
+python sentinel_omega/shutdown.py --force
+
+# Reboot (stop + relaunch)
+python sentinel_omega/reboot.py
+python sentinel_omega/reboot.py --dashboard --dry-run
+```
+
+PID file: `data/sentinel_omega.pid`
+Log file: `data/sentinel_omega.log`
+
 ## Running the dashboard
 
 ```bash
@@ -56,30 +102,33 @@ streamlit run sentinel_omega/infrastructure/dashboard/app.py
 
 ```
 sentinel_omega/
-├── orchestrator.py              # Master orchestrator — runs cycles
+├── orchestrator.py              # Master orchestrator — single runner cycle
 ├── config/sentinel_config.py    # Central config (secrets via os.environ)
 ├── core/
 │   ├── shared/
 │   │   ├── agent_base.py        # BaseAgent, PadreAgent, SignalType, ConsensusResult
-│   │   └── data_pipeline.py     # Pipeline base class
+│   │   ├── data_pipeline.py     # Pipeline base class
+│   │   └── geometria_uvg.py     # Static UVG-125 Becker-Hagens matrix in RAM
 │   ├── precursor/
 │   │   ├── risk_calculator.py   # TITAN V32 fantasma formula
 │   │   ├── scanner.py           # 15-type precursor scanner
 │   │   ├── muro_cinco_eventos.py # 5-wall cross-correlation engine
 │   │   ├── precursor_types.py   # Type registry + detection functions
 │   │   └── assertivity.py       # V46 prediction tracking
+│   ├── firmas/                  # Signature engine: per-bot pattern memory
+│   │   └── signature_engine.py  # Extract/promote/match firmas (nueva→consolidada)
+│   ├── juez/                    # Cold auditor, SEPARATE from Padre
+│   │   └── juez.py              # ACIERTO/FALLO/FALSO_POSITIVO, recidivism severity
 │   └── snt_engine/              # SNT math framework (satellization, friction, ASI, N-Body)
 ├── layers/
-│   ├── geodynamic/              # Alfa-1, Alfa-2, Beta-1, Beta-2, Delta, Padre
-│   ├── crypto/                  # Alfa, Beta, Delta, Padre
-│   └── bolsa/                   # Alfa, Beta, Delta, Padre
+│   └── geodynamic/              # All 6 agents: alfa1, alfa2, beta1, beta2, delta, padre
 ├── infrastructure/
 │   ├── api/                     # NOAA, USGS, Schumann, ESA, OWM, Crypto, Bolsa, Telegram
-│   ├── pipeline/                # Data pipelines + layer runners
+│   ├── pipeline/                # GeodynamicPipeline + GeodynamicLayerRunner + backcast
 │   ├── database/                # SQLite schema, repository, 125-node seed
 │   └── dashboard/               # Streamlit + Plotly dashboard (9 tabs)
 ├── data/                        # SQLite databases
-└── tests/                       # 312 tests (7 test files)
+└── tests/                       # 301 tests (7 test files)
 ```
 
 ## Security rules
@@ -102,14 +151,27 @@ ALPHA_VANTAGE_KEY     — Stock market data
 
 ## Database (SQLite)
 
-Tables in `data/SENTINEL_OMEGA_PRO.db`:
+Operational tables in `data/SENTINEL_OMEGA_PRO.db`:
 - `TBL_PRECURSORES_COSMICOS` — Bz, viento, protones, Kp, LOD, Schumann, fase lunar, fantasma
 - `TBL_NODOS_TOPOLOGIA` — 125 nodes (50 real + 50 ghost + 25 geobattery)
 - `TBL_HISTORICO_SISMICO` — USGS seismic catalog
 - `TBL_DETECCIONES` — Precursor detection log
 - `TBL_CICLOS` — Orchestrator cycle history
 - `TBL_MURO_EVENTOS` — Muro breach history
-- Trigger: `trg_nodo_saturacion` caps saturacion at 1.0
+
+Learning/audit tables:
+- `TBL_FIRMAS` — per-bot signature memory. Estado: nueva → observada → recurrente → consolidada (by recurrence). Only consolidadas are enforceable knowledge.
+- `TBL_JUEZ_AUDITORIA` — Juez discipline ledger: ACIERTO / FALLO / FALSO_POSITIVO, asymmetric severity (miss of known firma = 20 base, miss = 10, false alarm = 1), recidivism-scaled.
+
+Backcast tables (1H resolution, 1994-2025):
+- `tbl_clima_espacial_raw` — NASA OMNI2 (Bz, solar wind, Kp, proton flux)
+- `tbl_astronomia_cinematica` — LOD, lunar phase, lunar distance, syzygy
+- `tbl_historico_sismico_raw` — USGS seismic mapped to UVG-125 nodes
+- `tbl_psique_financiera` — BTC price, volatility (2014+)
+- `tbl_enjambre_telemetria` — Schumann resonance per node
+- `tbl_nodo_estado_dinamico` — Node charge/tension (capped at 1.0)
+
+Triggers: `trg_nodo_saturacion` + `trg_procesar_saturacion` cap saturation at 1.0
 
 ## Muro de los 5 Eventos
 
@@ -123,12 +185,14 @@ Five walls of cross-correlation. Breach when >= 3 walls active:
 
 ## Orchestrator cycle order
 
-1. Crypto + Bolsa layers run first
-2. Financial data extracted (fear_greed, VIX, BTC change)
-3. Geodynamic layer runs with financial cross-correlation
+1. GeodynamicPipeline fetches data for all agents (alfa1, beta1, beta2, delta, alfa2)
+2. Precursor risk computed (TITAN V32 fantasma)
+3. Hurricane data fetched (non-blocking)
 4. Scanner evaluates 15 precursor types
 5. Muro evaluates 5-wall correlation
-6. Alerts dispatched via Telegram
+6. All agents ingest + analyze → signals
+7. Padre evaluates consensus (hierarchical + Schumann correlation)
+8. Alerts dispatched via Telegram
 
 ## Dashboard tabs
 

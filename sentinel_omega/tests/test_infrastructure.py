@@ -33,8 +33,8 @@ class TestTelegramBot:
     def test_dry_run_no_token(self):
         bot = SentinelTelegramBot(token="", chat_id="")
         msg = TelegramMessage(
-            layer="crypto", signal_type="BULLISH", confidence=0.85,
-            summary="BTC altcoin convergence detected"
+            layer="geodynamic", signal_type="ALERT", confidence=0.85,
+            summary="Precursor correlation detected"
         )
         assert bot.send_alert(msg) is True
 
@@ -48,9 +48,7 @@ class TestTelegramBot:
 
     def test_layer_emojis_mapping(self):
         assert SentinelTelegramBot.LAYER_EMOJIS["geodynamic"] == "🌍"
-        assert SentinelTelegramBot.LAYER_EMOJIS["crypto"] == "₿"
-        assert SentinelTelegramBot.LAYER_EMOJIS["bolsa"] == "📈"
-        assert SentinelTelegramBot.LAYER_EMOJIS["lottery"] == "🎰"
+        assert SentinelTelegramBot.LAYER_EMOJIS["system"] == "⚙️"
 
     def test_unknown_layer_gets_default_emoji(self):
         bot = SentinelTelegramBot(token="", chat_id="")
@@ -62,7 +60,7 @@ class TestTelegramBot:
 
     def test_send_heartbeat(self):
         bot = SentinelTelegramBot(token="", chat_id="")
-        status = {"geodynamic": True, "crypto": True, "bolsa": False}
+        status = {"geodynamic": True}
         assert bot.send_heartbeat(status) is True
 
     @patch("requests.post")
@@ -73,7 +71,7 @@ class TestTelegramBot:
 
         bot = SentinelTelegramBot(token="test_token", chat_id="12345")
         msg = TelegramMessage(
-            layer="crypto", signal_type="BULLISH", confidence=0.7,
+            layer="geodynamic", signal_type="ALERT", confidence=0.7,
             summary="Test alert"
         )
         assert bot.send_alert(msg) is True
@@ -85,7 +83,7 @@ class TestTelegramBot:
     @patch("requests.post", side_effect=ConnectionError("Network error"))
     def test_send_failure_returns_false(self, mock_post):
         bot = SentinelTelegramBot(token="token", chat_id="123")
-        msg = TelegramMessage(layer="crypto", signal_type="TEST", confidence=0.5, summary="fail")
+        msg = TelegramMessage(layer="geodynamic", signal_type="TEST", confidence=0.5, summary="fail")
         assert bot.send_alert(msg) is False
 
 
@@ -137,7 +135,7 @@ class TestConfig:
         config = SentinelOmegaConfig()
         assert config.version == "2.5.0-shadow-node"
         assert "Elán" in config.author
-        assert len(config.layers) == 4
+        assert len(config.layers) == 2
 
     def test_lottery_disabled_by_default(self):
         config = SentinelOmegaConfig()
@@ -147,15 +145,11 @@ class TestConfig:
         config = SentinelOmegaConfig()
         active = [k for k, v in config.layers.items() if v.enabled]
         assert "geodynamic" in active
-        assert "crypto" in active
-        assert "bolsa" in active
         assert "lottery" not in active
 
     def test_refresh_intervals(self):
         config = SentinelOmegaConfig()
-        assert config.layers["crypto"].refresh_interval_s == 60
         assert config.layers["geodynamic"].refresh_interval_s == 300
-        assert config.layers["bolsa"].refresh_interval_s == 900
 
     def test_snt_config_defaults(self):
         config = SentinelOmegaConfig()
@@ -177,11 +171,13 @@ class TestConfig:
 # ── SentinelOrchestrator ────────────────────────────────────────────
 
 
-class FakeLayer:
+class FakeRunner:
     def __init__(self, result):
         self._result = result
 
     def run(self):
+        if self._result is None:
+            raise RuntimeError("no result")
         return self._result
 
 
@@ -190,23 +186,17 @@ class TestOrchestrator:
     def _config(self):
         return SentinelOmegaConfig()
 
-    def test_register_layer(self):
+    def test_init(self):
         orch = SentinelOrchestrator(self._config())
-        orch.register_layer("crypto", FakeLayer(None))
-        assert "crypto" in orch._layers
-        assert orch._status.layer_statuses["crypto"] is True
+        assert orch._status.is_online is False
+        assert orch._runner is None
 
-    def test_register_unknown_layer_raises(self):
+    def test_run_cycle_no_runner(self):
         orch = SentinelOrchestrator(self._config())
-        with pytest.raises(ValueError, match="Unknown layer"):
-            orch.register_layer("quantum", FakeLayer(None))
+        results = orch.run_cycle()
+        assert results == {}
 
-    def test_register_disabled_layer_skips(self):
-        orch = SentinelOrchestrator(self._config())
-        orch.register_layer("lottery", FakeLayer(None))
-        assert "lottery" not in orch._layers
-
-    def test_run_cycle(self):
+    def test_run_cycle_with_runner(self):
         consensus = ConsensusResult(
             consensus_reached=True,
             final_signal=SignalType.BULLISH,
@@ -214,27 +204,24 @@ class TestOrchestrator:
             agent_signals=[],
         )
         orch = SentinelOrchestrator(self._config())
-        orch.register_layer("crypto", FakeLayer(consensus))
+        orch._runner = FakeRunner(consensus)
         results = orch.run_cycle()
-        assert "crypto" in results
-        assert results["crypto"].final_signal == SignalType.BULLISH
+        assert "geodynamic" in results
+        assert results["geodynamic"].final_signal == SignalType.BULLISH
 
-    def test_run_cycle_handles_layer_error(self):
-        class FailLayer:
-            def run(self):
-                raise RuntimeError("boom")
-
+    def test_run_cycle_handles_runner_error(self):
         orch = SentinelOrchestrator(self._config())
-        orch.register_layer("crypto", FailLayer())
+        orch._runner = FakeRunner(None)
         results = orch.run_cycle()
-        assert "crypto" not in results
-        assert orch._status.layer_statuses["crypto"] is False
+        assert "geodynamic" not in results
 
     def test_health_check(self):
         orch = SentinelOrchestrator(self._config())
-        orch.register_layer("crypto", FakeLayer(None))
         health = orch.health_check()
-        assert health["crypto"] is True
+        assert health["geodynamic"] is False
+        orch._status.is_online = True
+        health = orch.health_check()
+        assert health["geodynamic"] is True
 
     def test_status_uptime(self):
         orch = SentinelOrchestrator(self._config())

@@ -17,7 +17,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 4
 
 SCHEMA_SQL = """
 -- ─── Precursores Cósmicos ──────────────────────────────────────────
@@ -123,13 +123,10 @@ CREATE TABLE IF NOT EXISTS TBL_CICLOS (
     geo_signal          TEXT    DEFAULT 'no_signal',
     geo_confidence      REAL    DEFAULT 0.0,
     geo_consensus       INTEGER DEFAULT 0,
-    crypto_signal       TEXT    DEFAULT 'no_signal',
-    crypto_confidence   REAL    DEFAULT 0.0,
-    bolsa_signal        TEXT    DEFAULT 'no_signal',
-    bolsa_confidence    REAL    DEFAULT 0.0,
     fantasma            REAL    DEFAULT 0.0,
     nivel_riesgo        TEXT    DEFAULT 'LOW',
     precursors_count    INTEGER DEFAULT 0,
+    precursor_types     TEXT    DEFAULT '[]',
     muro_walls_active   INTEGER DEFAULT 0,
     muro_breach         INTEGER DEFAULT 0,
     alerts_dispatched   INTEGER DEFAULT 0,
@@ -164,12 +161,156 @@ CREATE INDEX IF NOT EXISTS idx_muro_ts
 CREATE INDEX IF NOT EXISTS idx_muro_breach
     ON TBL_MURO_EVENTOS(muro_breach);
 
+-- ─── Historical Backcast Tables (1H resolution) ──────────────────
+CREATE TABLE IF NOT EXISTS tbl_clima_espacial_raw (
+    timestamp_blk    TEXT PRIMARY KEY,
+    bz_promedio     REAL,
+    bz_derivada     REAL,
+    bz_min          REAL,
+    bz_max          REAL,
+    viento_solar_avg REAL,
+    viento_solar_max REAL,
+    kp_max          REAL,
+    kp_promedio     REAL,
+    proton_flux_10mev REAL
+);
+
+CREATE TABLE IF NOT EXISTS tbl_astronomia_cinematica (
+    timestamp_blk        TEXT PRIMARY KEY,
+    lod_ms              REAL DEFAULT 0.0,
+    fase_lunar_pct      REAL DEFAULT 0.0,
+    distancia_lunar_km  REAL DEFAULT 384400.0,
+    es_sicigia          INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS tbl_historico_sismico_raw (
+    timestamp_blk    TEXT NOT NULL,
+    id_nodo         INTEGER NOT NULL,
+    sismo_count     INTEGER DEFAULT 0,
+    sismo_max_mag   REAL DEFAULT 0.0,
+    PRIMARY KEY (timestamp_blk, id_nodo)
+);
+
+CREATE TABLE IF NOT EXISTS tbl_psique_financiera (
+    timestamp_blk    TEXT PRIMARY KEY,
+    btc_precio_usd  REAL,
+    volatilidad_24h REAL DEFAULT 0.0
+);
+
+CREATE TABLE IF NOT EXISTS tbl_enjambre_telemetria (
+    timestamp_blk    TEXT NOT NULL,
+    id_nodo         INTEGER NOT NULL,
+    schumann_hz     REAL DEFAULT 7.83,
+    PRIMARY KEY (timestamp_blk, id_nodo)
+);
+
+CREATE TABLE IF NOT EXISTS tbl_nodo_estado_dinamico (
+    timestamp_blk            TEXT NOT NULL,
+    id_nodo                 INTEGER NOT NULL,
+    carga_tension_actual    REAL DEFAULT 0.0,
+    PRIMARY KEY (timestamp_blk, id_nodo)
+);
+
+CREATE TRIGGER IF NOT EXISTS trg_procesar_saturacion
+    AFTER UPDATE OF carga_tension_actual ON tbl_nodo_estado_dinamico
+    WHEN NEW.carga_tension_actual > 1.0
+BEGIN
+    UPDATE tbl_nodo_estado_dinamico
+    SET carga_tension_actual = 1.0
+    WHERE timestamp_blk = NEW.timestamp_blk AND id_nodo = NEW.id_nodo;
+END;
+
+-- ─── Firmas (memoria de patrones por bot) ────────────────────────
+-- Cada bot mantiene firmas aprendidas del histórico. Estado epistemológico:
+-- nueva -> observada -> recurrente -> consolidada (por recurrencia).
+-- Solo las consolidadas son conocimiento exigible (castigable por el Juez).
+CREATE TABLE IF NOT EXISTS TBL_FIRMAS (
+    firma_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_name        TEXT    NOT NULL,
+    event_class     TEXT    NOT NULL,
+    id_nodo         INTEGER,
+    features_json   TEXT    NOT NULL,
+    ventana_horas   INTEGER DEFAULT 336,
+    recurrencia     INTEGER DEFAULT 1,
+    estado          TEXT    DEFAULT 'nueva'
+                    CHECK(estado IN ('nueva','observada','recurrente','consolidada')),
+    primera_vista   TEXT,
+    ultima_vista    TEXT,
+    eventos_json    TEXT    DEFAULT '[]',
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_firmas_bot ON TBL_FIRMAS(bot_name);
+CREATE INDEX IF NOT EXISTS idx_firmas_estado ON TBL_FIRMAS(estado);
+CREATE INDEX IF NOT EXISTS idx_firmas_class ON TBL_FIRMAS(event_class);
+
+-- ─── Juez (auditoría disciplinaria, separado del Padre) ──────────
+CREATE TABLE IF NOT EXISTS TBL_JUEZ_AUDITORIA (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp       REAL    NOT NULL,
+    bot_name        TEXT    NOT NULL,
+    prediccion      TEXT    NOT NULL,
+    confianza       REAL    DEFAULT 0.0,
+    ventana_h       INTEGER DEFAULT 72,
+    verdad          TEXT    DEFAULT '',
+    resultado       TEXT    DEFAULT 'PENDIENTE'
+                    CHECK(resultado IN ('PENDIENTE','ACIERTO','FALLO','FALSO_POSITIVO')),
+    severidad       REAL    DEFAULT 0.0,
+    reincidencia    INTEGER DEFAULT 0,
+    detalles_json   TEXT    DEFAULT '{}',
+    resuelto_at     TEXT,
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_juez_bot ON TBL_JUEZ_AUDITORIA(bot_name);
+CREATE INDEX IF NOT EXISTS idx_juez_resultado ON TBL_JUEZ_AUDITORIA(resultado);
+CREATE INDEX IF NOT EXISTS idx_juez_ts ON TBL_JUEZ_AUDITORIA(timestamp);
+
+-- ─── Pesos de credibilidad por bot (ajustados por el castigo) ─────
+-- El Padre pondera cada bot en el consenso con su peso. La Fase 2 del
+-- entrenamiento castiga (hijo x1, Padre x2) o refuerza estos pesos.
+CREATE TABLE IF NOT EXISTS TBL_PESOS_BOTS (
+    bot_name        TEXT    PRIMARY KEY,
+    peso            REAL    DEFAULT 1.0,
+    aciertos        INTEGER DEFAULT 0,
+    fallos          INTEGER DEFAULT 0,
+    updated_at      TEXT    DEFAULT (datetime('now'))
+);
+
 -- ─── Schema Version ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS TBL_SCHEMA_VERSION (
     version     INTEGER PRIMARY KEY,
     applied_at  TEXT    DEFAULT (datetime('now'))
 );
 """
+
+
+# Columns expected per operational table. Used to migrate older databases
+# created before a column was added (CREATE TABLE IF NOT EXISTS never alters
+# an existing table, so new columns must be added explicitly).
+EXPECTED_COLUMNS = {
+    "TBL_CICLOS": {
+        "precursor_types": "TEXT DEFAULT '[]'",
+    },
+}
+
+
+def _migrate_add_missing_columns(conn: sqlite3.Connection) -> None:
+    """Add any columns missing from existing tables (forward-only migration)."""
+    for table, columns in EXPECTED_COLUMNS.items():
+        try:
+            existing_cols = {
+                row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+        except sqlite3.OperationalError:
+            continue  # table doesn't exist yet; executescript will create it
+        if not existing_cols:
+            continue
+        for col_name, col_def in columns.items():
+            if col_name not in existing_cols:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+                logger.info(f"Migration: added {table}.{col_name}")
+    conn.commit()
 
 
 def init_database(db_path: str) -> sqlite3.Connection:
@@ -182,6 +323,7 @@ def init_database(db_path: str) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
 
     conn.executescript(SCHEMA_SQL)
+    _migrate_add_missing_columns(conn)
 
     existing = conn.execute(
         "SELECT version FROM TBL_SCHEMA_VERSION ORDER BY version DESC LIMIT 1"

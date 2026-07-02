@@ -267,31 +267,25 @@ class SentinelRepository:
         geo_signal: str = "no_signal",
         geo_confidence: float = 0.0,
         geo_consensus: bool = False,
-        crypto_signal: str = "no_signal",
-        crypto_confidence: float = 0.0,
-        bolsa_signal: str = "no_signal",
-        bolsa_confidence: float = 0.0,
         fantasma: float = 0.0,
         nivel_riesgo: str = "LOW",
         precursors_count: int = 0,
+        precursor_types: Optional[List[str]] = None,
         muro_walls_active: int = 0,
         muro_breach: bool = False,
         alerts_dispatched: int = 0,
         timestamp: Optional[float] = None,
     ) -> int:
         ts = timestamp or time.time()
+        types_json = json.dumps(precursor_types or [])
         cur = self._execute(
             """INSERT INTO TBL_CICLOS
             (timestamp, geo_signal, geo_confidence, geo_consensus,
-             crypto_signal, crypto_confidence,
-             bolsa_signal, bolsa_confidence,
-             fantasma, nivel_riesgo, precursors_count,
+             fantasma, nivel_riesgo, precursors_count, precursor_types,
              muro_walls_active, muro_breach, alerts_dispatched)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (ts, geo_signal, geo_confidence, int(geo_consensus),
-             crypto_signal, crypto_confidence,
-             bolsa_signal, bolsa_confidence,
-             fantasma, nivel_riesgo, precursors_count,
+             fantasma, nivel_riesgo, precursors_count, types_json,
              muro_walls_active, int(muro_breach), alerts_dispatched),
         )
         self._conn.commit()
