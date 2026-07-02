@@ -274,4 +274,92 @@ def entrenar(db_path: str, max_eventos: Optional[int] = None) -> Dict:
     """Full training run: Fase 1 then Fase 2."""
     fase1 = entrenar_reconocimiento(db_path, max_eventos=max_eventos)
     fase2 = backtest_disciplinario(db_path)
-    return {"fase1": fase1, "fase2": fase2}
+    lags = calcular_lags_anticipacion(db_path)
+    return {"fase1": fase1, "fase2": fase2, "lags": lags}
+
+
+# Offsets probados: la ventana de la firma termina N horas ANTES del evento.
+# El lag de un evento es el offset MÁS TEMPRANO donde la firma ya se reconocía.
+LAG_OFFSETS_H = [336, 240, 168, 120, 72, 24]
+LAG_MUESTRA_POR_CLASE = 150
+
+
+def calcular_lags_anticipacion(db_path: str) -> Dict:
+    """Average anticipation lead time per event class (in-sample).
+
+    For consolidated Padre signatures, re-test each member event with the
+    window shifted back in time: if the signature already matched 7 days
+    before the event, the system had ~7 days of warning. Persisted to
+    tbl_lag_anticipacion for the report.
+    """
+    import json as _json
+    from datetime import datetime as _dt, timedelta as _td
+    from sentinel_omega.core.firmas.signature_engine import similitud
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_lag_anticipacion ("
+        "event_class TEXT PRIMARY KEY, lag_promedio_h REAL, lag_max_h REAL, "
+        "lag_min_h REAL, n_eventos INTEGER, "
+        "updated_at TEXT DEFAULT (datetime('now')))"
+    )
+
+    memoria = FirmaMemoria(conn)
+    consolidadas = [
+        f for f in memoria.consolidadas() if f["bot_name"] == "padre"
+    ]
+
+    lags_por_clase: Dict[str, List[float]] = {}
+    evaluados_por_clase: Dict[str, int] = {}
+
+    for firma in consolidadas:
+        clase = firma["event_class"]
+        if evaluados_por_clase.get(clase, 0) >= LAG_MUESTRA_POR_CLASE:
+            continue
+        row = conn.execute(
+            "SELECT eventos_json FROM TBL_FIRMAS WHERE firma_id = ?",
+            (firma["firma_id"],),
+        ).fetchone()
+        eventos = _json.loads(row[0]) if row else []
+
+        for ref in eventos[:3]:  # sample per firma
+            if evaluados_por_clase.get(clase, 0) >= LAG_MUESTRA_POR_CLASE:
+                break
+            try:
+                ts_evento, nodo_part, _ = ref.split("|")
+                id_nodo = int(nodo_part.replace("nodo", ""))
+                t0 = _dt.strptime(ts_evento, "%Y-%m-%d %H:%M")
+            except ValueError:
+                continue
+
+            evaluados_por_clase[clase] = evaluados_por_clase.get(clase, 0) + 1
+            lag_detectado = None
+            for offset_h in LAG_OFFSETS_H:  # earliest first
+                ts_shift = (t0 - _td(hours=offset_h)).strftime("%Y-%m-%d %H:%M")
+                features = extraer_features_ventana(conn, ts_shift, id_nodo)
+                if features is None:
+                    continue
+                if similitud(features, firma["features"]) >= SIMILARITY_ALERT:
+                    lag_detectado = float(offset_h)
+                    break  # earliest matching offset = max anticipation
+            if lag_detectado is not None:
+                lags_por_clase.setdefault(clase, []).append(lag_detectado)
+
+    resultado = {}
+    for clase, lags in lags_por_clase.items():
+        prom = sum(lags) / len(lags)
+        conn.execute(
+            "INSERT OR REPLACE INTO tbl_lag_anticipacion "
+            "(event_class, lag_promedio_h, lag_max_h, lag_min_h, n_eventos, "
+            " updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'))",
+            (clase, prom, max(lags), min(lags), len(lags)),
+        )
+        resultado[clase] = {
+            "lag_promedio_dias": round(prom / 24, 1),
+            "lag_max_dias": round(max(lags) / 24, 1),
+            "n": len(lags),
+        }
+    conn.commit()
+    conn.close()
+    logger.info(f"Lags de anticipación: {resultado}")
+    return resultado

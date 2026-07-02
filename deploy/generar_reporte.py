@@ -88,6 +88,33 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 )
             lineas.append("")
 
+    # ── Lag de anticipación por tipo de evento ──
+    try:
+        lags = conn.execute(
+            "SELECT event_class, lag_promedio_h, lag_max_h, lag_min_h, "
+            "n_eventos FROM tbl_lag_anticipacion ORDER BY event_class"
+        ).fetchall()
+        if lags:
+            lineas += [
+                "## ⏱ Anticipación — con cuánto tiempo avisa la firma",
+                "",
+                "| Evento | Lag promedio | Máximo | Mínimo | Eventos medidos |",
+                "|---|---|---|---|---|",
+            ]
+            for l in lags:
+                lineas.append(
+                    f"| {l[0]} | **{l[1]/24:.1f} días** | {l[2]/24:.1f} d | "
+                    f"{l[3]/24:.1f} d | {l[4]} |"
+                )
+            lineas += [
+                "",
+                "*Lag = desde cuándo (antes del evento) la firma ya era "
+                "reconocible en el histórico (in-sample).*",
+                "",
+            ]
+    except sqlite3.OperationalError:
+        pass
+
     # ── Memoria y disciplina ──
     firmas = conn.execute(
         "SELECT bot_name, COUNT(*), SUM(recurrencia) FROM TBL_FIRMAS "

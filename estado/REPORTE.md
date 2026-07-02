@@ -1,6 +1,6 @@
 # 🌍 Sentinel Omega — Estado del Sistema
 
-**Generado:** 2026-07-02 20:05 UTC (14:05 UTC-6)
+**Generado:** 2026-07-02 20:09 UTC (14:09 UTC-6)
 
 ## Último ciclo
 
@@ -10,7 +10,7 @@
 | Señal / consenso | NO_SIGNAL (0%) |
 | Muro de los 5 | 🚨 BREACH — 3/5 muros |
 | Precursores activos | 4: ["SILENT_TRIGGER", "SEISMIC_CLUSTER", "SCHUMANN", "TSUNAMI"] |
-| Hora del ciclo | 2026-07-02 20:02 UTC |
+| Hora del ciclo | 2026-07-02 20:07 UTC |
 
 ## Detecciones recientes
 
@@ -23,7 +23,7 @@
 | Tsunami / Maremoto | 70% | regional |
 | Resonancia Schumann | 70% | global |
 | Enjambre Sísmico Local | 95% | regional |
-| Patrón Silent Trigger (Calma) | 80% | global |
+| Patrón Silent Trigger (Calma) | 90% | global |
 
 ## 🎯 Firma Match — la memoria reconoce el estado actual
 
@@ -33,7 +33,17 @@
 | **83%** | SISMO_M6 | 71 | 18 |
 | **83%** | SISMO_M5 | 14 | 177 |
 | **82%** | SISMO_M5 | 14 | 295 |
-| **81%** | SISMO_M5 | 81 | 399 |
+| **82%** | SISMO_M5 | 81 | 399 |
+
+## ⏱ Anticipación — con cuánto tiempo avisa la firma
+
+| Evento | Lag promedio | Máximo | Mínimo | Eventos medidos |
+|---|---|---|---|---|
+| SISMO_M5 | **7.2 días** | 14.0 d | 1.0 d | 125 |
+| SISMO_M6 | **9.0 días** | 14.0 d | 1.0 d | 144 |
+| SISMO_M7 | **11.0 días** | 14.0 d | 1.0 d | 86 |
+
+*Lag = desde cuándo (antes del evento) la firma ya era reconocible en el histórico (in-sample).*
 
 ## Memoria entrenada (30 años)
 
@@ -48,7 +58,7 @@
 ## Juez (auditoría)
 
 - FALLO: 260
-- PENDIENTES (ventana abierta): 94
+- PENDIENTES (ventana abierta): 95
 
 ---
-*Ciclos totales: 95 · Sentinel Omega · Fractal Core Research*
+*Ciclos totales: 96 · Sentinel Omega · Fractal Core Research*
