@@ -1,16 +1,16 @@
 # 🌍 Sentinel Omega — Estado del Sistema
 
-**Generado:** 2026-07-02 20:09 UTC (14:09 UTC-6)
+**Generado:** 2026-07-02 20:20 UTC (14:20 UTC-6)
 
 ## Último ciclo
 
 | Métrica | Valor |
 |---|---|
-| Fantasma | 🔴 **30.7** (CRITICAL) |
+| Fantasma | 🔴 **30.3** (CRITICAL) |
 | Señal / consenso | NO_SIGNAL (0%) |
 | Muro de los 5 | 🚨 BREACH — 3/5 muros |
 | Precursores activos | 4: ["SILENT_TRIGGER", "SEISMIC_CLUSTER", "SCHUMANN", "TSUNAMI"] |
-| Hora del ciclo | 2026-07-02 20:07 UTC |
+| Hora del ciclo | 2026-07-02 20:19 UTC |
 
 ## Detecciones recientes
 
@@ -31,9 +31,9 @@
 |---|---|---|---|
 | **84%** | SISMO_M5 | 81 | 413 |
 | **83%** | SISMO_M6 | 71 | 18 |
-| **83%** | SISMO_M5 | 14 | 177 |
-| **82%** | SISMO_M5 | 14 | 295 |
+| **82%** | SISMO_M5 | 14 | 177 |
 | **82%** | SISMO_M5 | 81 | 399 |
+| **82%** | SISMO_M5 | 14 | 295 |
 
 ## ⏱ Anticipación — con cuánto tiempo avisa la firma
 
@@ -44,6 +44,19 @@
 | SISMO_M7 | **11.0 días** | 14.0 d | 1.0 d | 86 |
 
 *Lag = desde cuándo (antes del evento) la firma ya era reconocible en el histórico (in-sample).*
+
+## 🔍 Factores del lag — qué comparten las que avisan antes
+
+| Variable | Firmas rápidas | Firmas lentas | Sesgo |
+|---|---|---|---|
+| kp_max_72h | 2.39 | 0.15 | ⬆ más en RÁPIDAS (-1.77) |
+| kp_max | 4.28 | 0.67 | ⬆ más en RÁPIDAS (-1.46) |
+| kp_mean | 0.43 | 0.09 | ⬆ más en RÁPIDAS (-1.32) |
+| sismo_count_72h | 13.36 | 5.72 | ⬆ más en RÁPIDAS (-0.80) |
+| viento_avg | 1994.95 | 1312.22 | ⬆ más en RÁPIDAS (-0.41) |
+| sismo_count_win | 31.63 | 22.39 | ⬆ más en RÁPIDAS (-0.34) |
+
+*Rápidas = tercil con menor anticipación; lentas = tercil con mayor. El sesgo revela qué condiciones alargan o acortan la preparación del evento.*
 
 ## Memoria entrenada (30 años)
 
@@ -58,7 +71,7 @@
 ## Juez (auditoría)
 
 - FALLO: 260
-- PENDIENTES (ventana abierta): 95
+- PENDIENTES (ventana abierta): 98
 
 ---
-*Ciclos totales: 96 · Sentinel Omega · Fractal Core Research*
+*Ciclos totales: 99 · Sentinel Omega · Fractal Core Research*

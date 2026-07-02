@@ -115,6 +115,34 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     except sqlite3.OperationalError:
         pass
 
+    # ── Factores: qué distingue firmas lentas de rápidas ──
+    try:
+        fact = conn.execute(
+            "SELECT feature, media_rapidas, media_lentas, diferencia_norm "
+            "FROM tbl_factores_lag ORDER BY ABS(diferencia_norm) DESC LIMIT 6"
+        ).fetchall()
+        if fact:
+            lineas += [
+                "## 🔍 Factores del lag — qué comparten las que avisan antes",
+                "",
+                "| Variable | Firmas rápidas | Firmas lentas | Sesgo |",
+                "|---|---|---|---|",
+            ]
+            for f in fact:
+                sesgo = "⬆ más en LENTAS" if f[3] > 0 else "⬆ más en RÁPIDAS"
+                lineas.append(
+                    f"| {f[0]} | {f[1]:.2f} | {f[2]:.2f} | {sesgo} ({f[3]:+.2f}) |"
+                )
+            lineas += [
+                "",
+                "*Rápidas = tercil con menor anticipación; lentas = tercil "
+                "con mayor. El sesgo revela qué condiciones alargan o "
+                "acortan la preparación del evento.*",
+                "",
+            ]
+    except sqlite3.OperationalError:
+        pass
+
     # ── Memoria y disciplina ──
     firmas = conn.execute(
         "SELECT bot_name, COUNT(*), SUM(recurrencia) FROM TBL_FIRMAS "

@@ -368,17 +368,31 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                 # presentarse este tipo de evento tras verse la firma.
                 ventana = ""
                 try:
-                    lag = conn.execute(
-                        "SELECT lag_promedio_h, lag_max_h FROM "
-                        "tbl_lag_anticipacion WHERE event_class = ?",
-                        (m["event_class"],),
+                    # Preferir el lag propio de ESTA firma; si no lo tiene,
+                    # caer al promedio de su clase de evento.
+                    lag_firma = conn.execute(
+                        "SELECT lag_promedio_h, lag_n FROM TBL_FIRMAS "
+                        "WHERE firma_id = ? AND lag_promedio_h IS NOT NULL",
+                        (m["firma_id"],),
                     ).fetchone()
-                    if lag:
-                        m["ventana_tipica_dias"] = round(lag[0] / 24, 1)
+                    if lag_firma:
+                        m["ventana_tipica_dias"] = round(lag_firma[0] / 24, 1)
                         ventana = (
-                            f" — ventana típica ~{lag[0]/24:.0f} días "
-                            f"(hasta {lag[1]/24:.0f}d)"
+                            f" — ESTA firma suele presentarse en "
+                            f"~{lag_firma[0]/24:.0f} días (n={lag_firma[1]})"
                         )
+                    else:
+                        lag = conn.execute(
+                            "SELECT lag_promedio_h, lag_max_h FROM "
+                            "tbl_lag_anticipacion WHERE event_class = ?",
+                            (m["event_class"],),
+                        ).fetchone()
+                        if lag:
+                            m["ventana_tipica_dias"] = round(lag[0] / 24, 1)
+                            ventana = (
+                                f" — ventana típica ~{lag[0]/24:.0f} días "
+                                f"(hasta {lag[1]/24:.0f}d)"
+                            )
                 except Exception:
                     pass
                 logger.warning(
@@ -388,12 +402,25 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                     f"{ventana}"
                 )
 
+        # Muro de Lags: ¿varias firmas convergen en las mismas fechas?
+        muro_lags = {}
+        try:
+            from sentinel_omega.core.precursor.muro_lags import (
+                evaluar_muro_lags,
+                format_muro_lags,
+            )
+            muro_lags = evaluar_muro_lags(matches)
+            if muro_lags.get("activo"):
+                logger.warning(format_muro_lags(muro_lags))
+        except Exception as e:
+            logger.warning(f"Muro de lags failed (non-blocking): {e}")
+
         juez.registrar_prediccion(
             bot_name="padre",
             prediccion=geo.final_signal.value,
             confianza=geo.confidence,
             ventana_h=72,
-            detalles={"firma_matches": matches[:5]},
+            detalles={"firma_matches": matches[:5], "muro_lags": muro_lags},
         )
 
         # Resolve predictions whose 72h window closed, against USGS truth.

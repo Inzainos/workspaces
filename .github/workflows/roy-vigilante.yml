@@ -15,9 +15,11 @@ name: Roy Vigilante
 
 on:
   schedule:
-    # Cada 30 min (repo público = minutos ilimitados). Minutos 7 y 37 para
-    # esquivar la congestión de GitHub en :00/:30.
-    - cron: "7,37 * * * *"
+    # Repo PRIVADO = 2,000 min/mes gratis. Cada 3h (~8 corridas/día × ~5 min
+    # ≈ 1,240 min/mes) deja margen. Para ciclos extra al momento: el Atajo
+    # "Roy Despierta" (deploy/ATAJO_IOS.md) o el botón Run workflow.
+    # Si el repo vuelve a ser público (minutos ilimitados): "7,37 * * * *"
+    - cron: "7 */3 * * *"
   workflow_dispatch:
 
 concurrency:

@@ -376,6 +376,44 @@ class TestPesos:
         assert res_neutral.final_signal == SignalType.ALERT
         assert res_castigado.final_signal != SignalType.ALERT
 
+    def test_muro_lags_convergencia(self):
+        from sentinel_omega.core.precursor.muro_lags import evaluar_muro_lags
+        matches = [
+            {"firma_id": 1, "event_class": "SISMO_M5", "similitud": 0.85,
+             "ventana_tipica_dias": 7.0},
+            {"firma_id": 2, "event_class": "SISMO_M6", "similitud": 0.83,
+             "ventana_tipica_dias": 9.0},
+            {"firma_id": 3, "event_class": "SISMO_M5", "similitud": 0.82,
+             "ventana_tipica_dias": 8.0},
+        ]
+        r = evaluar_muro_lags(matches)
+        # ventanas: [3.5-10.5], [4.5-13.5], [4-12] → convergen en [4.5, 10.5]
+        assert r["activo"] is True
+        assert r["firmas_convergentes"] == 3
+        assert r["ventana_dias"] == [4.5, 10.5]
+        assert "SISMO_M6" in r["clases"]
+
+    def test_muro_lags_sin_convergencia(self):
+        from sentinel_omega.core.precursor.muro_lags import evaluar_muro_lags
+        matches = [
+            {"firma_id": 1, "event_class": "A", "similitud": 0.9,
+             "ventana_tipica_dias": 1.0},
+            {"firma_id": 2, "event_class": "B", "similitud": 0.9,
+             "ventana_tipica_dias": 10.0},
+            {"firma_id": 3, "event_class": "C", "similitud": 0.9,
+             "ventana_tipica_dias": 100.0},
+        ]
+        r = evaluar_muro_lags(matches)
+        assert r["activo"] is False
+
+    def test_muro_lags_pocos_matches(self):
+        from sentinel_omega.core.precursor.muro_lags import evaluar_muro_lags
+        r = evaluar_muro_lags([
+            {"firma_id": 1, "event_class": "A", "similitud": 0.9,
+             "ventana_tipica_dias": 7.0},
+        ])
+        assert r["activo"] is False
+
     def test_peso_alto_no_demotion(self):
         import time as _time
         from sentinel_omega.layers.geodynamic.padre.agent import GeodynamicPadre

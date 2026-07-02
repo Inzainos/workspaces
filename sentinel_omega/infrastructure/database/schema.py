@@ -302,6 +302,11 @@ EXPECTED_COLUMNS = {
     "TBL_CICLOS": {
         "precursor_types": "TEXT DEFAULT '[]'",
     },
+    "TBL_FIRMAS": {
+        # Per-signature anticipation: this firma's own typical lead time
+        "lag_promedio_h": "REAL",
+        "lag_n": "INTEGER DEFAULT 0",
+    },
 }
 
 
