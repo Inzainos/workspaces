@@ -82,7 +82,7 @@ jobs:
           python deploy/generar_reporte.py
           git config user.name "roy-vigilante"
           git config user.email "actions@users.noreply.github.com"
-          git add estado/REPORTE.md
+          git add estado/
           if ! git diff --cached --quiet; then
             git commit -m "🌍 Reporte Roy $(date -u +'%Y-%m-%d %H:%M') UTC"
             git pull --rebase origin ${{ github.ref_name }} || true

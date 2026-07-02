@@ -275,7 +275,19 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     out.parent.mkdir(parents=True, exist_ok=True)
     contenido = "\n".join(lineas) + "\n"
     out.write_text(contenido, encoding="utf-8")
+
+    # Versionado: cada corte queda guardado en estado/historial/AAAA/MM/
+    # con fecha y hora local (UTC-6) en el nombre. El operador va vaciando
+    # carpetas viejas cuando quiera; REPORTE.md siempre es el último.
+    from datetime import timedelta
+    local = ahora - timedelta(hours=6)
+    version_dir = out.parent / "historial" / local.strftime("%Y") / local.strftime("%m")
+    version_dir.mkdir(parents=True, exist_ok=True)
+    version_file = version_dir / f"{local.strftime('%Y-%m-%d_%H-%M')}_MX.md"
+    version_file.write_text(contenido, encoding="utf-8")
+
     print(f"Reporte generado: {out}")
+    print(f"Versión guardada: {version_file}")
     return contenido
 
 
