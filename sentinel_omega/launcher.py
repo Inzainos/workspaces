@@ -145,6 +145,12 @@ def run(args):
         run_backcast(str(db_path))
         logger.info("Backcast complete.")
 
+    if args.entrenar:
+        from sentinel_omega.infrastructure.pipeline.entrenamiento import entrenar
+        logger.info("Running signature training (Fase 1 + Fase 2)...")
+        resultado = entrenar(str(db_path))
+        logger.info(f"Training complete: {resultado}")
+
     dashboard_proc = None
     if args.dashboard:
         dashboard_proc = _launch_dashboard()
@@ -165,7 +171,7 @@ def run(args):
                 results = orch.run_cycle()
                 status = orch.get_status()
 
-                _log_cycle_summary(status, results, repo, config)
+                _log_cycle_summary(status, results, repo, config, runner=orch._runner)
 
             except Exception as e:
                 logger.error(f"Cycle failed: {e}", exc_info=True)
@@ -199,7 +205,7 @@ def _interruptible_sleep(seconds: float):
         time.sleep(min(1.0, end - time.time()))
 
 
-def _log_cycle_summary(status, results, repo, config):
+def _log_cycle_summary(status, results, repo, config, runner=None):
     risk = status.last_precursor_risk
     if risk:
         logger.info(
@@ -280,6 +286,94 @@ def _log_cycle_summary(status, results, repo, config):
                 except Exception as e:
                     logger.warning(f"Failed to persist detection: {e}")
 
+            _auditar_ciclo(geo, repo, runner)
+
+
+def _build_live_features(runner) -> dict:
+    """Approximate the firma feature vector from the live pipeline cache."""
+    import numpy as np
+
+    features = {}
+    if runner is None or not hasattr(runner, "pipeline"):
+        return features
+    cache = getattr(runner.pipeline, "_cache", {})
+
+    alfa1 = cache.get("alfa1") or {}
+    omni = alfa1.get("omni_dataframe")
+    if omni is not None:
+        if "bz_gsm" in omni.columns:
+            bz = omni["bz_gsm"].dropna()
+            if len(bz) > 0:
+                features["bz_mean"] = float(bz.mean())
+                features["bz_min"] = float(bz.min())
+        if "plasma_speed" in omni.columns:
+            wind = omni["plasma_speed"].dropna()
+            if len(wind) > 0:
+                features["viento_avg"] = float(wind.mean())
+                features["viento_max"] = float(wind.max())
+
+    beta1 = cache.get("beta1") or {}
+    kp = beta1.get("kp_series")
+    if kp is not None and len(kp) > 0:
+        features["kp_mean"] = float(np.nanmean(kp))
+        features["kp_max"] = float(np.nanmax(kp))
+    if "schumann_frequency" in beta1:
+        features["schumann_mean"] = float(beta1["schumann_frequency"])
+    mags = beta1.get("seismic_magnitudes")
+    if mags is not None and len(mags) > 0:
+        features["sismo_count_win"] = float(len(mags))
+        features["sismo_max_mag_win"] = float(np.nanmax(mags))
+    lunar = beta1.get("lunar_phase")
+    if lunar is not None and len(lunar) > 0:
+        features["fase_lunar"] = float(lunar[-1])
+
+    return features
+
+
+def _auditar_ciclo(geo, repo, runner) -> None:
+    """Firma matching + Juez registration/resolution for this cycle."""
+    try:
+        from sentinel_omega.core.firmas.signature_engine import FirmaMemoria
+        from sentinel_omega.core.juez.juez import Juez
+
+        conn = repo._conn
+        memoria = FirmaMemoria(conn)
+        juez = Juez(conn)
+
+        matches = []
+        features = _build_live_features(runner)
+        if features:
+            matches = memoria.match_estado_actual(features)
+            for m in matches[:3]:
+                logger.warning(
+                    f"FIRMA MATCH: estado actual se parece {m['similitud']:.0%} "
+                    f"a la firma que precedió {m['event_class']} "
+                    f"(nodo {m['id_nodo']}, vista {m['recurrencia']} veces)"
+                )
+
+        juez.registrar_prediccion(
+            bot_name="padre",
+            prediccion=geo.final_signal.value,
+            confianza=geo.confidence,
+            ventana_h=72,
+            detalles={"firma_matches": matches[:5]},
+        )
+
+        # Resolve predictions whose 72h window closed, against USGS truth.
+        from sentinel_omega.infrastructure.api.usgs import fetch_earthquakes
+        eq = fetch_earthquakes(min_magnitude=5.0, days=4)
+        evento_ocurrido = eq is not None and len(eq) > 0
+        verdad = f"{len(eq)} eventos M5+ en 4 dias" if evento_ocurrido else "sin eventos M5+"
+        resueltos = juez.evaluar_pendientes(
+            evento_ocurrido=evento_ocurrido,
+            verdad=verdad,
+            firma_conocida=bool(matches),
+        )
+        if resueltos:
+            logger.info(f"Juez resolvió {len(resueltos)} predicciones pendientes")
+    except Exception as e:
+        logger.warning(f"Audit step failed (non-blocking): {e}")
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -300,6 +394,10 @@ def parse_args():
     parser.add_argument(
         "--backcast", action="store_true",
         help="Run historical backcast (1994-2025) before starting cycles",
+    )
+    parser.add_argument(
+        "--entrenar", action="store_true",
+        help="Run signature training over the backcast (Fase 1 + Fase 2)",
     )
     return parser.parse_args()
 

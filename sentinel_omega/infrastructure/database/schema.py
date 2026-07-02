@@ -17,7 +17,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 -- ─── Precursores Cósmicos ──────────────────────────────────────────
@@ -219,6 +219,52 @@ BEGIN
     SET carga_tension_actual = 1.0
     WHERE timestamp_blk = NEW.timestamp_blk AND id_nodo = NEW.id_nodo;
 END;
+
+-- ─── Firmas (memoria de patrones por bot) ────────────────────────
+-- Cada bot mantiene firmas aprendidas del histórico. Estado epistemológico:
+-- nueva -> observada -> recurrente -> consolidada (por recurrencia).
+-- Solo las consolidadas son conocimiento exigible (castigable por el Juez).
+CREATE TABLE IF NOT EXISTS TBL_FIRMAS (
+    firma_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_name        TEXT    NOT NULL,
+    event_class     TEXT    NOT NULL,
+    id_nodo         INTEGER,
+    features_json   TEXT    NOT NULL,
+    ventana_horas   INTEGER DEFAULT 336,
+    recurrencia     INTEGER DEFAULT 1,
+    estado          TEXT    DEFAULT 'nueva'
+                    CHECK(estado IN ('nueva','observada','recurrente','consolidada')),
+    primera_vista   TEXT,
+    ultima_vista    TEXT,
+    eventos_json    TEXT    DEFAULT '[]',
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_firmas_bot ON TBL_FIRMAS(bot_name);
+CREATE INDEX IF NOT EXISTS idx_firmas_estado ON TBL_FIRMAS(estado);
+CREATE INDEX IF NOT EXISTS idx_firmas_class ON TBL_FIRMAS(event_class);
+
+-- ─── Juez (auditoría disciplinaria, separado del Padre) ──────────
+CREATE TABLE IF NOT EXISTS TBL_JUEZ_AUDITORIA (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp       REAL    NOT NULL,
+    bot_name        TEXT    NOT NULL,
+    prediccion      TEXT    NOT NULL,
+    confianza       REAL    DEFAULT 0.0,
+    ventana_h       INTEGER DEFAULT 72,
+    verdad          TEXT    DEFAULT '',
+    resultado       TEXT    DEFAULT 'PENDIENTE'
+                    CHECK(resultado IN ('PENDIENTE','ACIERTO','FALLO','FALSO_POSITIVO')),
+    severidad       REAL    DEFAULT 0.0,
+    reincidencia    INTEGER DEFAULT 0,
+    detalles_json   TEXT    DEFAULT '{}',
+    resuelto_at     TEXT,
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_juez_bot ON TBL_JUEZ_AUDITORIA(bot_name);
+CREATE INDEX IF NOT EXISTS idx_juez_resultado ON TBL_JUEZ_AUDITORIA(resultado);
+CREATE INDEX IF NOT EXISTS idx_juez_ts ON TBL_JUEZ_AUDITORIA(timestamp);
 
 -- ─── Schema Version ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS TBL_SCHEMA_VERSION (

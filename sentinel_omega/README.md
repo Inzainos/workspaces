@@ -224,6 +224,15 @@ Se aplica a:
 | TBL_CICLOS               | Por ciclo   | Historial de ciclos: señal, consenso, riesgo, muro     |
 | TBL_MURO_EVENTOS         | Por breach  | Breaches del Muro con correlación y muros activos      |
 
+### Tablas de Aprendizaje y Auditoría
+
+| Tabla                | Propósito                                                        |
+|----------------------|-------------------------------------------------------------------|
+| TBL_FIRMAS           | Memoria de patrones por bot. Estado: nueva → observada → recurrente → consolidada (por recurrencia). Solo las consolidadas son conocimiento exigible. |
+| TBL_JUEZ_AUDITORIA   | Ledger disciplinario del Juez: ACIERTO / FALLO / FALSO_POSITIVO con severidad asimétrica (omitir firma conocida = 20 base, omisión = 10, falsa alarma = 1) escalada por reincidencia. |
+
+**Entrenamiento en dos fases** (`--entrenar`): Fase 1 (reconocimiento, sin castigo) extrae la ventana de 14 días previa a cada evento M5+ del backcast y la registra como firma por bot sobre su dominio de variables; la recurrencia promueve firmas. Fase 2 (disciplina) re-presenta las firmas consolidadas y el Juez castiga si el sistema ya no las reconoce. En operación, cada ciclo compara el estado vivo contra las firmas consolidadas ("el estado actual se parece 87% al que precedió el M7 del nodo 45").
+
 ### Tablas de Backcast Histórico (resolución 1H, 1994-2025)
 
 | Tabla                      | Clave Primaria          | Propósito                                    |
@@ -298,6 +307,10 @@ sentinel_omega/
 │   │   ├── muro_cinco_eventos.py        # Motor de correlación cruzada 5 muros
 │   │   ├── precursor_types.py           # Registro de tipos + funciones de detección
 │   │   └── assertivity.py              # Tracking de asertividad V46
+│   ├── firmas/
+│   │   └── signature_engine.py          # Memoria de patrones por bot (nueva→consolidada)
+│   ├── juez/
+│   │   └── juez.py                      # Auditor frío separado del Padre (ACIERTO/FALLO/FP)
 │   └── snt_engine/
 │       ├── satellization.py             # R(t) = a*t^b — fits y regímenes
 │       ├── friction.py                  # Calculador de fricción institucional
@@ -397,6 +410,9 @@ python sentinel_omega/launcher.py --once
 
 # Carga histórica (one-time, 1994-2025)
 python sentinel_omega/launcher.py --backcast
+
+# Entrenamiento de firmas sobre el backcast (Fase 1 reconocimiento + Fase 2 disciplina)
+python sentinel_omega/launcher.py --entrenar
 
 # Detener gracefully (SIGTERM -> espera 30s)
 python sentinel_omega/shutdown.py

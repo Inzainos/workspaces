@@ -72,6 +72,12 @@ python sentinel_omega/launcher.py --dashboard --dry-run
 # Single cycle and exit
 python sentinel_omega/launcher.py --once
 
+# Historical backcast (one-time, 1994-2025)
+python sentinel_omega/launcher.py --backcast
+
+# Signature training over the backcast (Fase 1 reconocimiento + Fase 2 disciplina)
+python sentinel_omega/launcher.py --entrenar
+
 # Graceful shutdown (SIGTERM)
 python sentinel_omega/shutdown.py
 
@@ -109,6 +115,10 @@ sentinel_omega/
 │   │   ├── muro_cinco_eventos.py # 5-wall cross-correlation engine
 │   │   ├── precursor_types.py   # Type registry + detection functions
 │   │   └── assertivity.py       # V46 prediction tracking
+│   ├── firmas/                  # Signature engine: per-bot pattern memory
+│   │   └── signature_engine.py  # Extract/promote/match firmas (nueva→consolidada)
+│   ├── juez/                    # Cold auditor, SEPARATE from Padre
+│   │   └── juez.py              # ACIERTO/FALLO/FALSO_POSITIVO, recidivism severity
 │   └── snt_engine/              # SNT math framework (satellization, friction, ASI, N-Body)
 ├── layers/
 │   └── geodynamic/              # All 6 agents: alfa1, alfa2, beta1, beta2, delta, padre
@@ -148,6 +158,10 @@ Operational tables in `data/SENTINEL_OMEGA_PRO.db`:
 - `TBL_DETECCIONES` — Precursor detection log
 - `TBL_CICLOS` — Orchestrator cycle history
 - `TBL_MURO_EVENTOS` — Muro breach history
+
+Learning/audit tables:
+- `TBL_FIRMAS` — per-bot signature memory. Estado: nueva → observada → recurrente → consolidada (by recurrence). Only consolidadas are enforceable knowledge.
+- `TBL_JUEZ_AUDITORIA` — Juez discipline ledger: ACIERTO / FALLO / FALSO_POSITIVO, asymmetric severity (miss of known firma = 20 base, miss = 10, false alarm = 1), recidivism-scaled.
 
 Backcast tables (1H resolution, 1994-2025):
 - `tbl_clima_espacial_raw` — NASA OMNI2 (Bz, solar wind, Kp, proton flux)
