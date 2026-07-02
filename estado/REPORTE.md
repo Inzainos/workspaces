@@ -1,6 +1,6 @@
 # 🌍 Sentinel Omega — Estado del Sistema
 
-**Generado:** 2026-07-02 20:20 UTC (14:20 UTC-6)
+**Generado:** 2026-07-02 20:24 UTC (14:24 UTC-6)
 
 ## Último ciclo
 
@@ -67,6 +67,26 @@
 | beta2 | 467 | 21,720 | 1.00 |
 | delta | 380 | 15,727 | 1.00 |
 | padre | 561 | 49,001 | 1.00 |
+
+## 🎯 Asertividad
+
+| Métrica | Valor |
+|---|---|
+| **Global histórica** (backtest 30 años) | 99.9% |
+| **Global viva** (operación resuelta) | — |
+| **Últimos 7 días** (viva) | — |
+
+### Individual por bot
+
+| Bot | Histórica (30a) | Viva | Viva 7d | Peso |
+|---|---|---|---|---|
+| alfa1 | 100.0% | — | — | 1.50 |
+| beta1 | 99.9% | — | — | 1.50 |
+| beta2 | 99.6% | — | — | 1.00 |
+| delta | 100.0% | — | — | 1.00 |
+| padre | 99.7% | — | — | 1.00 |
+
+*Histórica = reconocimiento de firmas consolidadas en el backtest. Viva = predicciones en operación calificadas por el Juez al cerrar su ventana de 72h.*
 
 ## Juez (auditoría)
 

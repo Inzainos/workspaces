@@ -160,6 +160,95 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             )
         lineas.append("")
 
+    # ── Asertividad: global, histórica, individual y a 7 días ──
+    try:
+        # Histórica (backtest 30 años): contadores acumulados por bot
+        hist = {
+            r[0]: (r[1], r[2])
+            for r in conn.execute(
+                "SELECT bot_name, aciertos, fallos FROM TBL_PESOS_BOTS"
+            ).fetchall()
+        }
+        # Viva (operación): predicciones resueltas del Juez, sin backtest
+        viva_q = (
+            "SELECT bot_name, resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
+            "WHERE resultado != 'PENDIENTE' "
+            "AND detalles_json NOT LIKE '%\"fase\": \"backtest\"%' {extra} "
+            "GROUP BY bot_name, resultado"
+        )
+
+        def _tabla(rows):
+            t = {}
+            for bot, res, n in rows:
+                d = t.setdefault(
+                    bot, {"ACIERTO": 0, "FALLO": 0, "FALSO_POSITIVO": 0}
+                )
+                d[res] = n
+            return t
+
+        viva = _tabla(conn.execute(viva_q.format(extra="")).fetchall())
+        hace7d = ahora.timestamp() - 7 * 86400
+        viva7 = _tabla(
+            conn.execute(
+                viva_q.format(extra="AND timestamp >= ?"), (hace7d,)
+            ).fetchall()
+        )
+
+        def _pct(a, f, fp=0):
+            total = a + f + fp
+            return f"{a/total:.1%}" if total else "—"
+
+        def _viva_pct(t, bot=None):
+            if bot is not None:
+                d = t.get(bot)
+                if not d:
+                    return "—"
+                return _pct(d["ACIERTO"], d["FALLO"], d["FALSO_POSITIVO"])
+            a = sum(d["ACIERTO"] for d in t.values())
+            f = sum(d["FALLO"] for d in t.values())
+            fp = sum(d["FALSO_POSITIVO"] for d in t.values())
+            return _pct(a, f, fp)
+
+        ha = sum(v[0] for v in hist.values())
+        hf = sum(v[1] for v in hist.values())
+
+        lineas += [
+            "## 🎯 Asertividad",
+            "",
+            "| Métrica | Valor |",
+            "|---|---|",
+            f"| **Global histórica** (backtest 30 años) | {_pct(ha, hf)} |",
+            f"| **Global viva** (operación resuelta) | {_viva_pct(viva)} |",
+            f"| **Últimos 7 días** (viva) | {_viva_pct(viva7)} |",
+            "",
+            "### Individual por bot",
+            "",
+            "| Bot | Histórica (30a) | Viva | Viva 7d | Peso |",
+            "|---|---|---|---|---|",
+        ]
+        pesos_tbl = {
+            r[0]: r[1]
+            for r in conn.execute(
+                "SELECT bot_name, peso FROM TBL_PESOS_BOTS"
+            ).fetchall()
+        }
+        for bot in sorted(set(hist) | set(viva) | set(pesos_tbl)):
+            h = hist.get(bot)
+            lineas.append(
+                f"| {bot} | {_pct(h[0], h[1]) if h else '—'} | "
+                f"{_viva_pct(viva, bot)} | {_viva_pct(viva7, bot)} | "
+                f"{pesos_tbl.get(bot, 1.0):.2f} |"
+            )
+        lineas += [
+            "",
+            "*Histórica = reconocimiento de firmas consolidadas en el "
+            "backtest. Viva = predicciones en operación calificadas por el "
+            "Juez al cerrar su ventana de 72h.*",
+            "",
+        ]
+    except sqlite3.OperationalError:
+        pass
+
     # ── Auditoría del Juez ──
     juez = conn.execute(
         "SELECT resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
