@@ -55,12 +55,24 @@ def _ajustar(conn: sqlite3.Connection, bot: str, factor: float, es_fallo: bool) 
     return nuevo
 
 
-def castigar(conn: sqlite3.Connection, bot: str, es_padre: bool = False) -> float:
-    """Punish a bot for missing enforceable knowledge. Padre pays double."""
-    factor = CASTIGO_PADRE if es_padre else CASTIGO_HIJO
+def castigar(
+    conn: sqlite3.Connection,
+    bot: str,
+    es_padre: bool = False,
+    gravedad: float = 1.0,
+) -> float:
+    """Punish a bot for missing enforceable knowledge.
+
+    base_geo protocol: the punishment scales with the gravity of the error —
+    missing an M7 hurts far more than missing an M5 (gravedad M5=1, M6=2,
+    M7=3; decay factor raised to gravedad). The Padre pays double.
+    """
+    base = CASTIGO_PADRE if es_padre else CASTIGO_HIJO
+    factor = base ** max(1.0, gravedad)
     nuevo = _ajustar(conn, bot, factor, es_fallo=True)
     logger.warning(
-        f"CASTIGO {'x2 (PADRE)' if es_padre else 'x1'} a {bot}: peso -> {nuevo:.3f}"
+        f"CASTIGO {'x2 (PADRE)' if es_padre else 'x1'} a {bot} "
+        f"(gravedad={gravedad:.1f}): peso -> {nuevo:.3f}"
     )
     return nuevo
 

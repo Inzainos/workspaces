@@ -282,6 +282,33 @@ class TestPesos:
         assert pesos["beta1"] == pytest.approx(0.95)
         assert pesos["padre"] == pytest.approx(0.90)  # double decay
 
+    def test_castigo_escala_con_gravedad(self, db):
+        conn, _ = db
+        from sentinel_omega.core.juez.pesos import castigar, cargar_pesos
+        # Missing an M7 (gravedad 3) hurts much more than an M5 (gravedad 1)
+        castigar(conn, "bot_m5", gravedad=1.0)
+        castigar(conn, "bot_m7", gravedad=3.0)
+        pesos = cargar_pesos(conn)
+        assert pesos["bot_m5"] == pytest.approx(0.95)
+        assert pesos["bot_m7"] == pytest.approx(0.95 ** 3)
+        assert pesos["bot_m7"] < pesos["bot_m5"]
+
+    def test_juez_severidad_cuadratica_en_gravedad(self, db):
+        conn, _ = db
+        juez = Juez(conn)
+        juez.registrar_prediccion("a", "neutral", 0.3, ventana_h=0)
+        res_m5 = juez.evaluar_pendientes(
+            evento_ocurrido=True, verdad="M5", gravedad=1.0
+        )
+        juez.registrar_prediccion("b", "neutral", 0.3, ventana_h=0)
+        res_m7 = juez.evaluar_pendientes(
+            evento_ocurrido=True, verdad="M7", gravedad=3.0
+        )
+        # quadratic: gravedad 3 -> 9x the severity of gravedad 1
+        assert res_m7[0]["severidad"] == pytest.approx(
+            res_m5[0]["severidad"] * 9.0
+        )
+
     def test_peso_bounded_below(self, db):
         conn, _ = db
         from sentinel_omega.core.juez.pesos import castigar

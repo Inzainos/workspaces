@@ -127,11 +127,15 @@ def backtest_disciplinario(db_path: str) -> Dict:
     )
 
     stats = {"firmas_evaluadas": 0, "reconocidas": 0, "fallos": 0,
-             "castigos_hijo": 0, "castigos_padre": 0}
+             "castigos_hijo": 0, "castigos_padre": 0,
+             "atencion_redistribuida": 0}
 
     import json as _json
     from sentinel_omega.core.firmas.signature_engine import similitud
     from sentinel_omega.core.juez.pesos import castigar, reforzar, cargar_pesos
+
+    # evento_ref -> {bot: reconoció} — needed for attention redistribution
+    resultados_por_evento: Dict[str, Dict[str, bool]] = {}
 
     for firma in consolidadas:
         bot = firma["bot_name"]
@@ -145,10 +149,15 @@ def backtest_disciplinario(db_path: str) -> Dict:
 
         for ref in eventos:
             try:
-                ts_evento, nodo_part, _ = ref.split("|")
+                ts_evento, nodo_part, mag_part = ref.split("|")
                 id_nodo = int(nodo_part.replace("nodo", ""))
+                magnitud = float(mag_part.replace("M", ""))
             except ValueError:
                 continue
+
+            # base_geo: gravity of the error scales with event size
+            # (M5 -> 1, M6 -> 2, M7 -> 3)
+            gravedad = 1.0 + max(0.0, magnitud - MIN_MAGNITUD_FIRMA)
 
             features = extraer_features_ventana(conn, ts_evento, id_nodo)
             if features is None:
@@ -161,13 +170,15 @@ def backtest_disciplinario(db_path: str) -> Dict:
             )
             sim = similitud(sub, firma["features"])
             stats["firmas_evaluadas"] += 1
+            reconocio = sim >= SIMILARITY_ALERT
+            resultados_por_evento.setdefault(ref, {})[bot] = reconocio
 
-            if sim >= SIMILARITY_ALERT:
+            if reconocio:
                 stats["reconocidas"] += 1
                 reforzar(conn, bot)
             else:
                 stats["fallos"] += 1
-                castigar(conn, bot, es_padre=es_padre)
+                castigar(conn, bot, es_padre=es_padre, gravedad=gravedad)
                 if es_padre:
                     stats["castigos_padre"] += 1
                 else:
@@ -183,6 +194,7 @@ def backtest_disciplinario(db_path: str) -> Dict:
                         "firma_id": firma["firma_id"],
                         "evento": ref,
                         "similitud": round(sim, 3),
+                        "gravedad": round(gravedad, 2),
                     },
                 )
                 juez.evaluar_pendientes(
@@ -190,7 +202,22 @@ def backtest_disciplinario(db_path: str) -> Dict:
                     verdad=ref,
                     firma_conocida=True,
                     multiplicador=2.0 if es_padre else 1.0,
+                    gravedad=gravedad,
                 )
+
+    # base_geo: when the Padre missed an event that a subordinate DID see,
+    # the punished Padre is forced to give more attention weight to the bot
+    # that was right — extra reinforcement for that bot.
+    for ref, resultados in resultados_por_evento.items():
+        if resultados.get("padre") is False:
+            for bot, reconocio in resultados.items():
+                if bot != "padre" and reconocio:
+                    reforzar(conn, bot)
+                    stats["atencion_redistribuida"] += 1
+                    logger.info(
+                        f"ATENCIÓN REDISTRIBUIDA: {bot} vio {ref} que el "
+                        f"Padre ignoró — refuerzo extra"
+                    )
 
     stats["auditoria"] = juez.resumen_por_bot()
     stats["pesos"] = cargar_pesos(conn)
