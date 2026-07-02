@@ -140,9 +140,14 @@ def run(args):
         logger.info("Topology seeded.")
 
     if args.backcast:
-        from sentinel_omega.infrastructure.pipeline.backcast import run_backcast
+        from sentinel_omega.infrastructure.pipeline.backcast import (
+            run_backcast,
+            run_backfill_secundario,
+        )
         logger.info("Running historical backcast (one-time)...")
         run_backcast(str(db_path))
+        logger.info("Running secondary backfill (volcanic SO2 + BTC)...")
+        run_backfill_secundario(str(db_path))
         logger.info("Backcast complete.")
 
     if args.entrenar:

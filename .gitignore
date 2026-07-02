@@ -227,3 +227,9 @@ data/
 *.key
 *.pem
 credentials.json
+
+# Secrets de despliegue
+deploy/.env
+.venv/
+*.pyc
+__pycache__/
