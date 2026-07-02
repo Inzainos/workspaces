@@ -50,6 +50,28 @@ deploy\run_windows.bat
 Para auto-arranque: agrega `deploy\run_windows.bat` al Programador de Tareas
 (al iniciar sesión) o a la carpeta de Inicio.
 
+## Desde la iPad (o cualquier dispositivo)
+
+La iPad no corre el servidor, pero es el centro de mando:
+
+```bash
+# En el servidor, una vez (dashboard 24/7 en el puerto 8501):
+sudo cp deploy/sentinel-omega-dashboard.service /etc/systemd/system/
+sudo sed -i "s|__REPO_DIR__|$(pwd)|g" /etc/systemd/system/sentinel-omega-dashboard.service
+sudo systemctl daemon-reload && sudo systemctl enable --now sentinel-omega-dashboard
+```
+
+| En la iPad | Para qué |
+|---|---|
+| **Safari** → `http://IP-DEL-SERVIDOR:8501` | Dashboard completo (9 pestañas, mapas, fantasma, muro) |
+| **Telegram** | Alertas rojas/amarillas al instante |
+| **Termius** (o Blink) → SSH al servidor | `journalctl -u sentinel-omega -f`, reiniciar, actualizar |
+| **Working Copy** | Ver/editar el repo, pull de versiones |
+
+> **Fuera de casa**: instala [Tailscale](https://tailscale.com) (gratis) en el
+> servidor y en la iPad — te da una IP privada segura para llegar al dashboard
+> y SSH desde cualquier red, sin abrir puertos al internet.
+
 ## Notas
 
 - **Sin Telegram configurado** el sistema corre igual (dry-run automático);
