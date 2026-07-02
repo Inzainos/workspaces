@@ -39,11 +39,20 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     "beta1": ["kp_mean", "kp_max", "schumann_mean", "schumann_std",
               "sismo_count_win", "sismo_max_mag_win", "fase_lunar",
               "es_sicigia", "kp_max_72h", "sismo_count_72h"],
-    "delta": ["btc_volatilidad"],
+    "beta2": ["so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d"],
+    "delta": ["btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h"],
     "padre": None,  # full vector
 }
 
-MIN_FEATURES_POR_BOT = {"alfa1": 3, "beta1": 3, "delta": 1, "padre": 5}
+MIN_FEATURES_POR_BOT = {"alfa1": 3, "beta1": 3, "beta2": 4, "delta": 4,
+                        "padre": 5}
+
+# Each bot only trains inside its own historical window (data availability):
+# alfa2/beta2 = 14 years (Sentinel era), delta = 10 years (trends/crypto).
+BOT_DESDE: Dict[str, str] = {
+    "beta2": "2012-01-01",
+    "delta": "2016-01-01",
+}
 
 
 def _event_class(mag: float) -> str:
@@ -54,17 +63,39 @@ def _event_class(mag: float) -> str:
     return "SISMO_M5"
 
 
-def entrenar_reconocimiento(db_path: str, max_eventos: Optional[int] = None) -> Dict:
-    """Fase 1 — learn signatures from every significant historical event."""
+def entrenar_reconocimiento(
+    db_path: str,
+    max_eventos: Optional[int] = None,
+    bots: Optional[List[str]] = None,
+) -> Dict:
+    """Fase 1 — learn signatures from every significant historical event.
+
+    bots: restrict registration to these bots (e.g. ["beta2", "delta"] for
+    an incremental training pass without inflating other bots' recurrence).
+    """
     conn = sqlite3.connect(db_path)
     memoria = FirmaMemoria(conn)
+    bots_activos = {
+        b: k for b, k in BOT_FEATURES.items() if bots is None or b in bots
+    }
 
-    eventos = conn.execute(
+    # If every active bot has a bounded window, skip events before the
+    # earliest one (no bot would register them anyway).
+    desde_global = None
+    if bots is not None and all(b in BOT_DESDE for b in bots_activos):
+        desde_global = min(BOT_DESDE[b] for b in bots_activos)
+
+    query = (
         "SELECT timestamp_blk, id_nodo, sismo_max_mag "
         "FROM tbl_historico_sismico_raw "
-        "WHERE sismo_max_mag >= ? ORDER BY timestamp_blk",
-        (MIN_MAGNITUD_FIRMA,),
-    ).fetchall()
+        "WHERE sismo_max_mag >= ? "
+    )
+    params: tuple = (MIN_MAGNITUD_FIRMA,)
+    if desde_global:
+        query += "AND timestamp_blk >= ? "
+        params = (MIN_MAGNITUD_FIRMA, desde_global)
+    query += "ORDER BY timestamp_blk"
+    eventos = conn.execute(query, params).fetchall()
     if max_eventos:
         eventos = eventos[:max_eventos]
 
@@ -90,7 +121,10 @@ def entrenar_reconocimiento(db_path: str, max_eventos: Optional[int] = None) -> 
         clase = _event_class(mag)
         evento_ref = f"{ts_evento}|nodo{id_nodo}|M{mag:.1f}"
 
-        for bot, keys in BOT_FEATURES.items():
+        for bot, keys in bots_activos.items():
+            desde = BOT_DESDE.get(bot)
+            if desde and ts_evento < desde:
+                continue  # event predates this bot's historical window
             sub = (
                 features if keys is None
                 else {k: v for k, v in features.items() if k in keys}
@@ -111,7 +145,7 @@ def entrenar_reconocimiento(db_path: str, max_eventos: Optional[int] = None) -> 
     return stats
 
 
-def backtest_disciplinario(db_path: str) -> Dict:
+def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Dict:
     """Fase 2 — el Padre castiga.
 
     Re-presents the member events of every consolidated signature:
@@ -128,6 +162,8 @@ def backtest_disciplinario(db_path: str) -> Dict:
     juez = Juez(conn)
 
     consolidadas = memoria.consolidadas()
+    if bots is not None:
+        consolidadas = [f for f in consolidadas if f["bot_name"] in bots]
     logger.info(
         f"=== FASE 2 DISCIPLINA: {len(consolidadas)} firmas consolidadas ==="
     )

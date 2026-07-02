@@ -204,6 +204,16 @@ CREATE TABLE IF NOT EXISTS tbl_enjambre_telemetria (
     PRIMARY KEY (timestamp_blk, id_nodo)
 );
 
+CREATE TABLE IF NOT EXISTS tbl_desgasificacion_raw (
+    timestamp_blk    TEXT NOT NULL,
+    id_nodo         INTEGER NOT NULL,
+    volcan          TEXT NOT NULL DEFAULT '',
+    tipo_erupcion   TEXT DEFAULT '',
+    vei             REAL,
+    so2_kt          REAL DEFAULT 0.0,
+    PRIMARY KEY (timestamp_blk, id_nodo, volcan)
+);
+
 CREATE TABLE IF NOT EXISTS tbl_nodo_estado_dinamico (
     timestamp_blk            TEXT NOT NULL,
     id_nodo                 INTEGER NOT NULL,

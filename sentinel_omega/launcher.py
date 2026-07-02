@@ -336,6 +336,11 @@ def _build_live_features(runner) -> dict:
     if lunar is not None and len(lunar) > 0:
         features["fase_lunar"] = float(lunar[-1])
 
+    delta = cache.get("delta") or {}
+    for key in ("btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h"):
+        if key in delta:
+            features[key] = float(delta[key])
+
     return features
 
 

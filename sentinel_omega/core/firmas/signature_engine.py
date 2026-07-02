@@ -35,7 +35,8 @@ FEATURE_KEYS = [
     "schumann_mean", "schumann_std",
     "sismo_count_win", "sismo_max_mag_win",
     "fase_lunar", "es_sicigia",
-    "btc_volatilidad",
+    "btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h",
+    "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
     # near sub-window (last 72h before the event)
     "bz_mean_72h", "kp_max_72h", "sismo_count_72h",
 ]
@@ -151,16 +152,51 @@ def extraer_features_ventana(
         features["fase_lunar"] = float(luna[0])
         features["es_sicigia"] = float(luna[1] or 0)
 
-    # Financial psyche (2014+)
+    # Financial psyche (2014+) — Delta's domain: volatility pattern + net move
     btc = conn.execute(
-        "SELECT volatilidad_24h FROM tbl_psique_financiera "
+        "SELECT volatilidad_24h, btc_precio_usd FROM tbl_psique_financiera "
         "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?) "
-        "AND volatilidad_24h IS NOT NULL",
+        "AND volatilidad_24h IS NOT NULL "
+        "ORDER BY timestamp_blk",
         (ts_evento, ts_evento, f"-{VENTANA_HORAS} hours"),
     ).fetchall()
     btc_stats = _stats([r[0] for r in btc])
     if btc_stats:
         features["btc_volatilidad"] = btc_stats[0]
+        features["btc_vol_max"] = btc_stats[2]
+        precios = [r[1] for r in btc if r[1] is not None]
+        if len(precios) >= 2 and precios[0]:
+            features["btc_ret_win"] = (precios[-1] - precios[0]) / precios[0] * 100
+        btc72 = conn.execute(
+            "SELECT AVG(volatilidad_24h) FROM tbl_psique_financiera "
+            "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?) "
+            "AND volatilidad_24h IS NOT NULL",
+            (ts_evento, ts_evento, f"-{SUBVENTANA_HORAS} hours"),
+        ).fetchone()
+        if btc72 and btc72[0] is not None:
+            features["btc_vol_72h"] = float(btc72[0])
+
+    # Volcanic degassing (Beta-2's domain) — global planetary SO2 state.
+    # 14-day window + 90-day charge context. Zero eruptions is real signal.
+    try:
+        des = conn.execute(
+            "SELECT COALESCE(SUM(so2_kt),0), COUNT(*) "
+            "FROM tbl_desgasificacion_raw "
+            "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?)",
+            (ts_evento, ts_evento, f"-{VENTANA_HORAS} hours"),
+        ).fetchone()
+        des90 = conn.execute(
+            "SELECT COALESCE(SUM(so2_kt),0), COUNT(*) "
+            "FROM tbl_desgasificacion_raw "
+            "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, '-90 days')",
+            (ts_evento, ts_evento),
+        ).fetchone()
+        features["so2_kt_win"] = float(des[0])
+        features["erupciones_win"] = float(des[1])
+        features["so2_kt_90d"] = float(des90[0])
+        features["erupciones_90d"] = float(des90[1])
+    except sqlite3.OperationalError:
+        pass  # table not present in this database
 
     # Near sub-window (last 72h)
     near = conn.execute(
