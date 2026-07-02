@@ -246,8 +246,11 @@ def extraer_desgasificacion_volcanica() -> pd.DataFrame:
 
         r = requests.get(f"{base}{latest}", headers=headers, timeout=60)
         r.raise_for_status()
-        df = pd.read_csv(StringIO(r.text), sep="\t")
+        df = pd.read_csv(
+            StringIO(r.text), sep="\t", engine="python", on_bad_lines="skip"
+        )
         df.columns = [c.strip() for c in df.columns]
+        df = df.loc[:, [c for c in df.columns if c]]  # drop trailing-tab cols
         df = df.rename(columns={"so2(kt)": "so2_kt"})
         df = df.dropna(subset=["lat", "lon", "yyyy", "mm", "dd"])
         df["fecha"] = pd.to_datetime(

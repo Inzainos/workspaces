@@ -177,8 +177,15 @@ def extraer_features_ventana(
             features["btc_vol_72h"] = float(btc72[0])
 
     # Volcanic degassing (Beta-2's domain) — global planetary SO2 state.
-    # 14-day window + 90-day charge context. Zero eruptions is real signal.
+    # 14-day window + 90-day charge context. Zero eruptions in the window is
+    # a real signal ONLY when the catalog is actually loaded — an empty table
+    # would otherwise mint garbage all-zero signatures.
     try:
+        catalogo = conn.execute(
+            "SELECT COUNT(*) FROM tbl_desgasificacion_raw"
+        ).fetchone()
+        if not catalogo or catalogo[0] == 0:
+            raise sqlite3.OperationalError("catalog empty")
         des = conn.execute(
             "SELECT COALESCE(SUM(so2_kt),0), COUNT(*) "
             "FROM tbl_desgasificacion_raw "
