@@ -75,7 +75,13 @@ def entrenar_reconocimiento(db_path: str, max_eventos: Optional[int] = None) -> 
     stats = {"eventos": len(eventos), "firmas_nuevas": 0, "recurrencias": 0,
              "sin_datos": 0}
 
-    for ts_evento, id_nodo, mag in eventos:
+    for idx, (ts_evento, id_nodo, mag) in enumerate(eventos):
+        if idx % 1000 == 0 and idx > 0:
+            logger.info(
+                f"  Fase 1 progreso: {idx}/{len(eventos)} eventos "
+                f"({stats['firmas_nuevas']} firmas, "
+                f"{stats['recurrencias']} recurrencias)"
+            )
         features = extraer_features_ventana(conn, ts_evento, id_nodo)
         if features is None:
             stats["sin_datos"] += 1
