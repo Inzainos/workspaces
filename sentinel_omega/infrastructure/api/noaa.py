@@ -58,6 +58,29 @@ def fetch_goes_xray() -> Optional[pd.DataFrame]:
     return None
 
 
+def fetch_electron_flux() -> Optional[pd.DataFrame]:
+    """Fetch GOES integral electron flux (relativistic electrons, 6-hour).
+
+    High electron flux marks magnetospheric energization — a charge-loading
+    signal complementary to proton flux in the risk composite.
+    """
+    url = "https://services.swpc.noaa.gov/json/goes/primary/integral-electrons-6-hour.json"
+    try:
+        resp = requests.get(url, timeout=TIMEOUT)
+        resp.raise_for_status()
+        data = resp.json()
+        df = pd.DataFrame(data)
+        if "time_tag" in df.columns and "flux" in df.columns:
+            df["time_tag"] = pd.to_datetime(df["time_tag"])
+            df["flux"] = pd.to_numeric(df["flux"], errors="coerce")
+            df = df.dropna(subset=["flux"])
+            logger.info(f"Fetched {len(df)} GOES electron flux records")
+            return df[["time_tag", "flux"]].sort_values("time_tag")
+    except Exception as e:
+        logger.error(f"GOES electron flux fetch failed: {e}")
+    return None
+
+
 def fetch_solar_wind() -> Optional[pd.DataFrame]:
     """Fetch real-time solar wind data (Bz, speed, density)."""
     url = f"{NOAA_BASE}rtsw/rtsw_wind_1m.json"

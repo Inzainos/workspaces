@@ -26,7 +26,9 @@ from sentinel_omega.infrastructure.api.noaa import (
     fetch_goes_xray,
     fetch_solar_wind,
     fetch_mag_field,
+    fetch_electron_flux,
 )
+from sentinel_omega.infrastructure.api.nasa_neo import fetch_neo_hazard_summary
 from sentinel_omega.infrastructure.api.usgs import fetch_earthquakes
 from sentinel_omega.infrastructure.api.schumann import fetch_schumann_resonance
 from sentinel_omega.infrastructure.api.geophysical import (
@@ -43,6 +45,7 @@ from sentinel_omega.infrastructure.api.openweathermap import (
     fetch_monitoring_network,
     fetch_air_quality,
     fetch_reference_baseline,
+    scan_global_nodes,
     compute_pressure_gradient,
     MONITORING_STATIONS,
 )
@@ -148,6 +151,41 @@ class GeodynamicPipeline:
         except Exception as e:
             logger.warning(f"Lunar phase computation failed: {e}")
 
+        electron_df = fetch_electron_flux()
+        if electron_df is not None and len(electron_df) > 0:
+            result["electron_flux"] = float(electron_df["flux"].iloc[-1])
+
+        neo = fetch_neo_hazard_summary()
+        if neo:
+            result["neo_hazardous_count"] = neo["hazardous_count"]
+            if neo.get("closest_hazardous_ld") is not None:
+                result["neo_closest_ld"] = neo["closest_hazardous_ld"]
+
+        # TEC sintético — derived index, NOT sensor data. With no public TEC
+        # sensor feed, the ionospheric charge state is estimated from real
+        # inputs (X-ray flux proxy, Kp, solar wind), V31 cortex lineage.
+        try:
+            xray_df = fetch_goes_xray()
+            flux_proxy = 70.0
+            if xray_df is not None and len(xray_df) > 0:
+                f = float(xray_df["flux"].iloc[-1]) * 100000
+                if f > 0:
+                    flux_proxy = 70.0 + f
+            kp_now = float(result["kp_series"][-1]) if "kp_series" in result else 2.0
+            wind_now = 350.0
+            cached_alfa1 = self._cache.get("alfa1")
+            if cached_alfa1:
+                omni = cached_alfa1.get("omni_dataframe")
+                if omni is not None and "plasma_speed" in omni.columns:
+                    last_wind = omni["plasma_speed"].dropna()
+                    if len(last_wind) > 0:
+                        wind_now = float(last_wind.iloc[-1])
+            result["tec_estimated"] = round(
+                flux_proxy * 0.5 + kp_now * 2.0 + wind_now * 0.01, 2
+            )
+        except Exception as e:
+            logger.warning(f"Synthetic TEC computation failed: {e}")
+
         if not result:
             logger.warning("No Kp/seismic data for Beta-1 — activating LOCF")
             return self._locf_get("beta1")
@@ -227,6 +265,13 @@ class GeodynamicPipeline:
                 result["degassing_baseline"] = baseline
         except Exception as e:
             logger.warning(f"Reference baseline fetch failed: {e}")
+
+        try:
+            node_scan = scan_global_nodes()
+            if node_scan:
+                result["global_node_scan"] = node_scan
+        except Exception as e:
+            logger.warning(f"Global node scan failed: {e}")
 
         if not result:
             logger.warning("No atmospheric data for Beta-2 — activating LOCF")

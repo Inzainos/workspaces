@@ -23,23 +23,30 @@ class Beta2Agent(BaseAgent):
     FOG_VISIBILITY_THRESHOLD = 1000
     TRAINING_YEARS = 16
 
+    MARINE_THERMAL_THRESHOLD_C = 29.0
+    NODE_SO2_EXCESS_ALERT = 50.0
+    NODE_CO_ALERT = 400.0
+
     def __init__(self):
         super().__init__(name="beta2", layer="geodynamic")
         self._pressure_gradient: Optional[Dict[str, Any]] = None
         self._air_quality: Optional[Dict[str, float]] = None
         self._atmospheric_readings: List[Dict[str, Any]] = []
         self._degassing_baseline: Optional[Dict[str, float]] = None
+        self._global_node_scan: List[Dict[str, Any]] = []
 
     def ingest(self, data: Dict[str, Any]) -> None:
         self._pressure_gradient = data.get("pressure_gradient")
         self._air_quality = data.get("air_quality")
         self._atmospheric_readings = data.get("atmospheric_readings", [])
         self._degassing_baseline = data.get("degassing_baseline")
+        self._global_node_scan = data.get("global_node_scan", [])
         n_stations = len(self._atmospheric_readings)
         self.logger.info(
             f"Beta-2 ingested: {n_stations} stations, "
             f"AQ={'yes' if self._air_quality else 'no'}, "
-            f"baseline={'yes' if self._degassing_baseline else 'no'}"
+            f"baseline={'yes' if self._degassing_baseline else 'no'}, "
+            f"global_nodes={len(self._global_node_scan)}"
         )
 
     def _pressure_stress(self) -> float:
@@ -108,6 +115,48 @@ class Beta2Agent(BaseAgent):
 
         return min(1.0, stress)
 
+    def _global_node_anomalies(self) -> List[Dict[str, Any]]:
+        """Evaluate the global event nodes for degassing and marine anomalies.
+
+        Volcano/tectonic nodes: SO2 excess over the natural baseline (or high
+        CO) marks active outgassing. Marine nodes: anomalous sea-surface
+        heating (the marine variable fantasma) marks possible energy discharge.
+        """
+        base = self._degassing_baseline or {}
+        base_so2 = base.get("so2", 0.0)
+        anomalies: List[Dict[str, Any]] = []
+
+        for node in self._global_node_scan:
+            tipo = node.get("tipo", "")
+            name = node.get("node", "?")
+
+            if tipo in ("VOLCAN", "TECTONICO"):
+                so2_excess = max(0.0, node.get("so2", 0.0) - base_so2)
+                co = node.get("co", 0.0)
+                if so2_excess > self.NODE_SO2_EXCESS_ALERT or co > self.NODE_CO_ALERT:
+                    anomalies.append({
+                        "node": name,
+                        "tipo": tipo,
+                        "anomaly": "DEGASSING",
+                        "so2_excess": round(so2_excess, 2),
+                        "co": co,
+                        "lat": node.get("lat"),
+                        "lon": node.get("lon"),
+                    })
+            elif tipo == "MARINO":
+                temp = node.get("temp_c")
+                if temp is not None and temp > self.MARINE_THERMAL_THRESHOLD_C:
+                    anomalies.append({
+                        "node": name,
+                        "tipo": tipo,
+                        "anomaly": "MARINE_THERMAL",
+                        "temp_c": temp,
+                        "lat": node.get("lat"),
+                        "lon": node.get("lon"),
+                    })
+
+        return anomalies
+
     def _fog_anomaly(self) -> bool:
         for reading in self._atmospheric_readings:
             vis = reading.get("visibility_m", 10000)
@@ -116,7 +165,11 @@ class Beta2Agent(BaseAgent):
         return False
 
     def analyze(self) -> AgentSignal:
-        if not self._pressure_gradient and not self._air_quality:
+        if (
+            not self._pressure_gradient
+            and not self._air_quality
+            and not self._global_node_scan
+        ):
             return self.emit_signal(
                 SignalType.NO_SIGNAL, 0.0,
                 reasoning="No atmospheric data available",
@@ -125,16 +178,21 @@ class Beta2Agent(BaseAgent):
         pressure_score = self._pressure_stress()
         chemical_score = self._chemical_stress()
         fog_detected = self._fog_anomaly()
+        node_anomalies = self._global_node_anomalies()
 
         combined = pressure_score * 0.4 + chemical_score * 0.4
         if fog_detected:
             combined += 0.2
+        # Each global node anomaly (degassing at a volcano, marine heating)
+        # raises the composite — capped so a single noisy node can't max it.
+        combined += min(0.3, len(node_anomalies) * 0.15)
 
         signal_data = {
             "pressure_stress": pressure_score,
             "chemical_stress": chemical_score,
             "fog_detected": fog_detected,
             "combined_atmospheric": combined,
+            "global_node_anomalies": node_anomalies,
         }
 
         if self._pressure_gradient:
@@ -160,6 +218,8 @@ class Beta2Agent(BaseAgent):
                 )
             if fog_detected:
                 reasons.append("fog/low visibility")
+            for anomaly in node_anomalies:
+                reasons.append(f"{anomaly['anomaly']} @ {anomaly['node']}")
             return self.emit_signal(
                 SignalType.ALERT,
                 min(0.6 + combined * 0.3, 0.95),
