@@ -443,13 +443,21 @@ def _auditar_ciclo(geo, repo, runner) -> None:
 
         # Resolve predictions whose 72h window closed, against USGS truth.
         from sentinel_omega.infrastructure.api.usgs import fetch_earthquakes
-        eq = fetch_earthquakes(min_magnitude=5.0, days=4)
+        eq = fetch_earthquakes(min_magnitude=4.5, days=4)
         evento_ocurrido = eq is not None and len(eq) > 0
-        verdad = f"{len(eq)} eventos M5+ en 4 dias" if evento_ocurrido else "sin eventos M5+"
+        # Gravedad = escala el castigo con la magnitud más fuerte que ocurrió
+        # (M4.5 -> 1.0, M7 -> 3.5). Mismo anclaje que el backtest.
+        mag_max = float(eq["magnitude"].max()) if evento_ocurrido else 0.0
+        gravedad = 1.0 + max(0.0, mag_max - 4.5) if evento_ocurrido else 1.0
+        verdad = (
+            f"{len(eq)} eventos M4.5+ en 4 dias (máx M{mag_max:.1f})"
+            if evento_ocurrido else "sin eventos M4.5+"
+        )
         resueltos = juez.evaluar_pendientes(
             evento_ocurrido=evento_ocurrido,
             verdad=verdad,
             firma_conocida=bool(matches),
+            gravedad=gravedad,
         )
         if resueltos:
             logger.info(f"Juez resolvió {len(resueltos)} predicciones pendientes")

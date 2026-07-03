@@ -29,7 +29,10 @@ from sentinel_omega.core.juez.juez import Juez
 
 logger = logging.getLogger(__name__)
 
-MIN_MAGNITUD_FIRMA = 5.0
+# Los bots OBSERVAN todas las magnitudes (hasta el mínimo movimiento es un
+# gatillo precursor), pero el sistema solo ALERTA y CASTIGA desde 4.5 para
+# arriba: ese es el piso de firmas exigibles y de disciplina del Juez.
+MIN_MAGNITUD_FIRMA = 4.5
 
 # Feature domain per bot — each bot only remembers what it measures.
 # Padre keeps the full cross-domain vector (patterns within patterns).
@@ -60,7 +63,9 @@ def _event_class(mag: float) -> str:
         return "SISMO_M7"
     if mag >= 6.0:
         return "SISMO_M6"
-    return "SISMO_M5"
+    if mag >= 5.0:
+        return "SISMO_M5"
+    return "SISMO_M4"  # 4.5–4.99: piso de alerta/castigo
 
 
 def entrenar_reconocimiento(
