@@ -28,6 +28,8 @@ if str(_WORKSPACE_ROOT) not in sys.path:
 
 PIDFILE = Path(__file__).parent / "data" / "sentinel_omega.pid"
 LOGFILE = Path(__file__).parent / "data" / "sentinel_omega.log"
+# data/ está en .gitignore: en un checkout limpio (GitHub Actions) no existe
+LOGFILE.parent.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
