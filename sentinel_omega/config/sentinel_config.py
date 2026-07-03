@@ -10,17 +10,21 @@ from typing import Dict
 
 @dataclass
 class DatabaseConfig:
-    geodynamic_db: str = "data/SENTINEL_OMEGA_PRO.db"
-    lottery_db: str = "data/TITAN_MEMORY.db"
+    geodynamic_db: str = "sentinel_omega/data/SENTINEL_OMEGA_PRO.db"
+    lottery_db: str = "sentinel_omega/data/TITAN_MEMORY.db"
+    ensure_dir: bool = True
 
 
 @dataclass
 class TelegramConfig:
     bot_token: str = field(default_factory=lambda: os.environ.get("TELEGRAM_BOT_TOKEN", ""))
     chat_id: str = field(default_factory=lambda: os.environ.get("TELEGRAM_CHAT_ID", ""))
+    enabled: bool = field(default_factory=lambda: bool(
+        os.environ.get("TELEGRAM_BOT_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID")
+    ))
 
     @property
-    def enabled(self) -> bool:
+    def is_configured(self) -> bool:
         return bool(self.bot_token and self.chat_id)
 
 
@@ -73,6 +77,25 @@ class LayerConfig:
 
 
 @dataclass
+class ONNXConfig:
+    """ONNX Models Configuration"""
+    enabled: bool = True
+    models_dir: str = "sentinel_omega/models"
+    fallback_to_mock: bool = True  # Use mock models if real ones not found
+    use_gpu: bool = field(default_factory=lambda: os.environ.get("ONNX_USE_GPU", "true").lower() == "true")
+
+
+@dataclass
+class JupyterConfig:
+    """Jupyter/Notebook-specific settings"""
+    enabled: bool = field(default_factory=lambda: os.environ.get("JUPYTER_ENABLED", "false").lower() == "true")
+    notebook_mode: bool = True  # True = notebook, False = script
+    disable_telegram: bool = field(default_factory=lambda: os.environ.get("JUPYTER_DISABLE_TELEGRAM", "true").lower() == "true")
+    display_plots: bool = True
+    refresh_interval_s: int = 300
+
+
+@dataclass
 class SentinelOmegaConfig:
     project_name: str = "Sentinel Omega"
     version: str = "2.5.0-shadow-node"
@@ -82,6 +105,8 @@ class SentinelOmegaConfig:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     apis: APIConfig = field(default_factory=APIConfig)
     snt: SNTConfig = field(default_factory=SNTConfig)
+    onnx: ONNXConfig = field(default_factory=ONNXConfig)
+    jupyter: JupyterConfig = field(default_factory=JupyterConfig)
 
     layers: Dict[str, LayerConfig] = field(default_factory=lambda: {
         "geodynamic": LayerConfig(refresh_interval_s=300),
@@ -96,3 +121,7 @@ class SentinelOmegaConfig:
         "lon": -98.24,
         "location": "Tlaxcala, México",
     })
+
+
+# Global config instance
+config = SentinelOmegaConfig()
