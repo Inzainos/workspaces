@@ -363,6 +363,21 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         features = _build_live_features(runner)
         if features:
             matches = memoria.match_estado_actual(features)
+            for m in matches[:5]:
+                # Ubicación del nodo, no solo el número
+                try:
+                    nodo = conn.execute(
+                        "SELECT nombre, lat, lon, region FROM "
+                        "TBL_NODOS_TOPOLOGIA WHERE node_id = ?",
+                        (m["id_nodo"],),
+                    ).fetchone()
+                    if nodo:
+                        m["nodo_nombre"] = nodo[0]
+                        m["nodo_lat"] = round(nodo[1], 1)
+                        m["nodo_lon"] = round(nodo[2], 1)
+                        m["nodo_region"] = nodo[3]
+                except Exception:
+                    pass
             for m in matches[:3]:
                 # Referente de anticipación: cuánto suele tardar en
                 # presentarse este tipo de evento tras verse la firma.
@@ -395,11 +410,12 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                             )
                 except Exception:
                     pass
+                lugar = m.get("nodo_nombre") or f"nodo {m['id_nodo']}"
                 logger.warning(
                     f"FIRMA MATCH: estado actual se parece {m['similitud']:.0%} "
                     f"a la firma que precedió {m['event_class']} "
-                    f"(nodo {m['id_nodo']}, vista {m['recurrencia']} veces)"
-                    f"{ventana}"
+                    f"({lugar}, nodo {m['id_nodo']}, "
+                    f"vista {m['recurrencia']} veces){ventana}"
                 )
 
         # Muro de Lags: ¿varias firmas convergen en las mismas fechas?

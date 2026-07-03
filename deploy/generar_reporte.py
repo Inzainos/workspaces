@@ -166,9 +166,16 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 "evento real en el histórico — a más repeticiones, más "
                 "confiable el parecido.",
                 "",
-                "| Parecido | Precedió a | Nodo de la malla | Veces vista | Suele avisar con |",
+                "| Parecido | Precedió a | Zona (nodo de la malla) | Veces vista | Suele avisar con |",
                 "|---|---|---|---|---|",
             ]
+            nodos = {
+                r[0]: (r[1], r[2], r[3], r[4])
+                for r in conn.execute(
+                    "SELECT node_id, nombre, lat, lon, region "
+                    "FROM TBL_NODOS_TOPOLOGIA"
+                ).fetchall()
+            }
             for m in fm[:5]:
                 # Lag propio de la firma si ya lo tiene medido; si no, el
                 # típico de su clase de evento (ventana_tipica_dias).
@@ -199,16 +206,25 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                     except sqlite3.OperationalError:
                         pass
                 lag_txt = f"~{lag_dias:.0f} días" if lag_dias else "—"
+                nodo = nodos.get(m["id_nodo"])
+                if nodo:
+                    lugar = (
+                        f"**{nodo[0]}** ({nodo[1]:.1f}, {nodo[2]:.1f}) "
+                        f"· nodo {m['id_nodo']}"
+                    )
+                else:
+                    lugar = f"nodo {m['id_nodo']}"
                 lineas.append(
                     f"| **{m['similitud']:.0%}** `{_barra(m['similitud'], 5)}` | "
-                    f"{m['event_class']} | {m['id_nodo']} | "
+                    f"{m['event_class']} | {lugar} | "
                     f"{m['recurrencia']:,} | {lag_txt} |"
                 )
             lineas += [
                 "",
-                "*SISMO_M5 / M6 / M7 = sismo de magnitud 5+, 6+ o 7+. El nodo "
-                "indica en qué región de la malla global UVG-125 se aprendió "
-                "la firma.*",
+                "*SISMO_M5 / M6 / M7 = sismo de magnitud 5+, 6+ o 7+. La zona "
+                "es el punto de la malla global UVG-125 donde se aprendió la "
+                "firma (nombre y coordenadas lat, lon); los nodos 'Ghost' son "
+                "puntos teóricos de la malla sin estación física encima.*",
                 "",
             ]
 
