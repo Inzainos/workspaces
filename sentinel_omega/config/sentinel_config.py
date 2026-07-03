@@ -10,8 +10,11 @@ from typing import Dict
 
 @dataclass
 class DatabaseConfig:
-    geodynamic_db: str = "sentinel_omega/data/SENTINEL_OMEGA_PRO.db"
-    lottery_db: str = "sentinel_omega/data/TITAN_MEMORY.db"
+    # Relativas a sentinel_omega/ — el launcher las une con
+    # Path(__file__).parent (que ya es sentinel_omega/). NO anteponer
+    # "sentinel_omega/" aquí o la ruta se duplica y se crea una DB vacía.
+    geodynamic_db: str = "data/SENTINEL_OMEGA_PRO.db"
+    lottery_db: str = "data/TITAN_MEMORY.db"
     ensure_dir: bool = True
 
 
