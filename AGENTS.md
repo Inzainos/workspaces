@@ -1,0 +1,114 @@
+# AGENTS.md — Sentinel Omega
+
+Guía operativa para agentes de IA que trabajen en este repositorio (Claude Code,
+Cursor, Copilot, Codex, etc.). Es el archivo neutral que leen todas las
+herramientas; `sentinel_omega/CLAUDE.md` tiene detalle adicional y
+`sentinel_omega/README.md` la descripción completa del proyecto.
+
+> Si editas archivos dentro de `sentinel_omega/`, ese `CLAUDE.md` aplica también.
+
+## Qué es este repo
+
+**Sentinel Omega** — plataforma de detección de **precursores de eventos
+naturales** (sismos, actividad volcánica, tormentas solares, tsunamis).
+Autor: Elán Zainos Corona (Fractal Core Research). Sucesor de la familia TITAN
+V32/V46/V53.
+
+Alcance: **únicamente precursores de eventos naturales.** No mezclar aquí:
+- **Genómica** → va en el repo *SNT Genómica*.
+- **Sentinel Titan** (lotería / "Elite") → va en otra rama, no en `main`.
+- De lo financiero, este repo **sí** usa bolsa, cripto y tendencias (el bot
+  `delta`, "el humor de la tierra") como una señal precursora más.
+
+SNT (Shadow Node Theory) se usa **solo como framework matemático**
+(ley de potencia `R(t) = a·t^b`), no como propósito del sistema.
+
+## Estructura de alto nivel
+
+```
+sentinel_omega/     El sistema (6 agentes + Padre + Juez, pipeline, DB, dashboard)
+deploy/             Operación: generar_reporte.py, systemd/Windows, atajo iOS, .env.example
+estado/             Reportes publicados: REPORTE.md (último) + historial/AAAA/MM/ (versionado)
+.github/workflows/  roy-vigilante.yml — corre un ciclo cada 3h en GitHub Actions (serverless)
+```
+
+## Comandos
+
+```bash
+# Tests — SIEMPRE desde la raíz del workspace, nunca desde dentro de sentinel_omega/
+python -m pytest sentinel_omega/tests/ -q          # 335 tests
+
+# Un solo archivo
+python -m pytest sentinel_omega/tests/test_firmas.py -v
+
+# Sistema en vivo
+python sentinel_omega/launcher.py                  # ciclo continuo (default 300s)
+python sentinel_omega/launcher.py --once           # un ciclo y salir
+python sentinel_omega/launcher.py --backcast        # carga histórica 1994-2025 (one-time)
+python sentinel_omega/launcher.py --entrenar        # entrenamiento de firmas (2 fases)
+python sentinel_omega/shutdown.py                  # parar (SIGTERM, 30s → SIGKILL)
+python sentinel_omega/reboot.py                    # stop + relaunch
+
+# Reporte (los "ojos" del sistema; lo corre el vigilante tras cada ciclo)
+python deploy/generar_reporte.py
+
+# Dashboard
+streamlit run sentinel_omega/infrastructure/dashboard/app.py
+```
+
+## Reglas duras (no romper)
+
+1. **Secretos solo por entorno.** Nunca hardcodear API keys/tokens. Usa
+   `os.environ.get("NOMBRE", "")`. Los `.env` están en `.gitignore`; en CI van
+   como GitHub Secrets. Las claves se rotan según se usan.
+2. **Cero datos sintéticos.** Faltante = `NULL`. LOCF solo desde registros
+   reales. El TEC derivado se etiqueta como *derived*, nunca como dato de sensor.
+3. **`sentinel_omega/data/` está en `.gitignore`** — no existe en un checkout
+   limpio (GitHub Actions). Crea la carpeta antes de abrir archivos ahí
+   (`Path(...).parent.mkdir(parents=True, exist_ok=True)`).
+4. **Reportes versionados, no sobrescritos.** `estado/REPORTE.md` es el último;
+   cada corte se guarda en `estado/historial/AAAA/MM/` con hora local (UTC-6).
+5. **Migración de esquema forward-only.** Columnas nuevas vía
+   `EXPECTED_COLUMNS` / `_migrate_add_missing_columns`; no borrar columnas.
+6. **Los tests deben pasar** antes de commitear cambios de código.
+
+## Arquitectura (para ubicarte rápido)
+
+6 agentes + Padre árbitro + Juez auditor (separado, nunca predice):
+
+| Bot | Dominio | Entrenamiento |
+|-----|---------|---------------|
+| `alfa1` | Clima espacial: Bz, viento solar, Kp, protones/electrones | 30 años |
+| `beta1` | Resonancia Schumann — **el latido**; todo se correlaciona contra él | 30 años |
+| `alfa2` | Satélites ESA Sentinel | 14 años |
+| `beta2` | Desgasificación volcánica / atmósfera (SO₂ sobre baseline natural) | 14 años |
+| `delta` | Bolsa + cripto + tendencias | 10 años |
+| `padre` | Consenso jerárquico cruzado entre familias (aplica pesos) | — |
+
+- **Familias:** `space_weather` (alfa1/alfa2), `schumann_cymatics` (beta1/beta2),
+  `financial_sentiment` (delta). Consenso: ≥2 familias + ≥2 alertas +
+  correlación Schumann > 0.3.
+- **Firmas:** memoria de patrones por bot de la ventana de 14 días previa a cada
+  evento. Estados `nueva → observada → recurrente → consolidada`; solo las
+  consolidadas son exigibles.
+- **Entrenamiento en 2 fases:** Fase 1 reconocimiento (sin castigo) → Fase 2
+  disciplina (el Padre castiga; el Juez audita con severidad asimétrica —
+  omitir un evento pesa 10× más que una falsa alarma).
+- **Pérdida asimétrica:** el sistema prefiere sobre-alertar a sub-alertar.
+
+## Git y PRs
+
+- Rama de desarrollo: **`claude/sentinel-omega-architecture-j3c2kn`**.
+- No pushear a otra rama sin permiso explícito.
+- Los PRs se abren como **draft**. Si un PR ya fue mergeado, no apiles trabajo
+  nuevo encima: reinicia la rama desde `origin/main` y abre un PR nuevo.
+- El cron de `roy-vigilante.yml` solo dispara en `main` → hay que mergear para
+  activarlo.
+
+## Fuentes de datos (todas públicas salvo donde se indica)
+
+NOAA SWPC · USGS FDSN · NASA OMNI2 (backcast) · NASA MSVOLSO2L4 (SO₂ volcánico) ·
+Tomsk (Schumann) · IERS (LOD) · Yahoo Finance (BTC, keyless) ·
+OpenWeatherMap (`OPENWEATHERMAP_KEY`) · NASA NEO (`NASA_API_KEY`, fallback DEMO_KEY) ·
+ESA Copernicus vía eodag. Telegram para alertas (`TELEGRAM_BOT_TOKEN` /
+`TELEGRAM_CHAT_ID`).

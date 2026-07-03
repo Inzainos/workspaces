@@ -128,8 +128,12 @@ sentinel_omega/
 │   ├── database/                # SQLite schema, repository, 125-node seed
 │   └── dashboard/               # Streamlit + Plotly dashboard (9 tabs)
 ├── data/                        # SQLite databases
-└── tests/                       # 301 tests (7 test files)
+└── tests/                       # 335 tests
 ```
+
+> El repositorio raíz tiene un `AGENTS.md` (estándar neutral para cualquier
+> agente de IA). Este `CLAUDE.md` es la guía específica de Claude Code y tiene
+> prioridad para archivos dentro de `sentinel_omega/`.
 
 ## Security rules
 
