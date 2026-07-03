@@ -7,7 +7,8 @@ scipy>=1.10
 pandas>=2.0
 
 # ML/Inference
-onnxruntime>=1.14
+onnxruntime>=1.14       # inference (correr modelos .onnx)
+onnx>=1.14              # builder — necesario para create_mock_onnx_session()
 
 # Visualization
 matplotlib>=3.7
