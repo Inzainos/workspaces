@@ -15,11 +15,14 @@ name: Roy Vigilante
 
 on:
   schedule:
-    # Repo PRIVADO = 2,000 min/mes gratis. Cada 3h (~8 corridas/día × ~5 min
-    # ≈ 1,240 min/mes) deja margen. Para ciclos extra al momento: el Atajo
-    # "Roy Despierta" (deploy/ATAJO_IOS.md) o el botón Run workflow.
-    # Si el repo vuelve a ser público (minutos ilimitados): "7,37 * * * *"
-    - cron: "7 */3 * * *"
+    # Cada 2 horas (minuto :07 para evitar la congestión del scheduler en
+    # punto). Genera un corte de reporte y lo versiona en
+    # estado/historial/AAAA/MM/AAAA-MM-DD_HH-MM_MX.md (hora local UTC-6).
+    # Repo PRIVADO = 2,000 min/mes gratis: 12 corridas/día × ~2-3 min de ciclo
+    # ≈ 720-1,080 min/mes, deja buen margen. Para un ciclo extra al momento:
+    # el Atajo "Roy Despierta" (deploy/ATAJO_IOS.md) o el botón Run workflow.
+    # Si el repo es público (minutos ilimitados) se puede subir a "7,37 * * * *".
+    - cron: "7 */2 * * *"
   workflow_dispatch:
 
 concurrency:
