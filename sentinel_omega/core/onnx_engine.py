@@ -137,34 +137,62 @@ class ONNXBotInference:
             return 0.0, "NO_SIGNAL"
 
 
-def create_mock_onnx_session() -> rt.InferenceSession:
+def create_mock_onnx_session(
+    input_features: int = 10, output_features: int = 2
+) -> Optional["rt.InferenceSession"]:
     """
     Create a mock ONNX session for testing (when models not yet exported).
-    Returns a simple ONNX Linear model.
+
+    Builds a valid MatMul model that maps [N, input_features] ->
+    [N, output_features] with a zero weight, so inference returns a
+    well-formed all-zero output (confidence 0.0 -> NO_SIGNAL). Shapes are
+    parametrizable so the mock can stand in for any bot's model_config.
+
+    Requires the `onnx` builder package (see requirements_jupyter.txt).
     """
     if not ONNX_AVAILABLE:
         return None
-    
+
     try:
-        import onnx
-        from onnx import helper, TensorProto
-        
-        # Create a simple identity model
-        X = helper.make_tensor_value_info('X', TensorProto.FLOAT, [None, 10])
-        Y = helper.make_tensor_value_info('Y', TensorProto.FLOAT, [None, 2])
-        
-        node = helper.make_node(
-            'Identity',
-            inputs=['X'],
-            outputs=['Y_temp']
+        import numpy as np
+        from onnx import helper, numpy_helper, TensorProto
+
+        X = helper.make_tensor_value_info(
+            'X', TensorProto.FLOAT, [None, input_features]
         )
-        
-        graph = helper.make_graph([node], 'test_graph', [X], [Y])
-        model = helper.make_model(graph, producer_name='sentinel_omega')
-        
+        Y = helper.make_tensor_value_info(
+            'Y', TensorProto.FLOAT, [None, output_features]
+        )
+
+        # Constant weight [input_features, output_features] of zeros — a valid
+        # linear layer whose output is the declared graph output Y.
+        weight = numpy_helper.from_array(
+            np.zeros((input_features, output_features), dtype=np.float32), name='W'
+        )
+        node = helper.make_node('MatMul', inputs=['X', 'W'], outputs=['Y'])
+
+        graph = helper.make_graph(
+            [node], 'mock_graph', [X], [Y], initializer=[weight]
+        )
+        # Opset 17 — soportado por onnxruntime>=1.14 (el default de onnx es
+        # más nuevo de lo que garantiza el runtime instalado).
+        model = helper.make_model(
+            graph,
+            producer_name='sentinel_omega',
+            opset_imports=[helper.make_opsetid("", 17)],
+        )
+
         session = rt.InferenceSession(model.SerializeToString())
-        logger.info("Created mock ONNX session for testing")
+        logger.info(
+            "Created mock ONNX session (%d -> %d)", input_features, output_features
+        )
         return session
+    except ImportError:
+        logger.warning(
+            "Mock ONNX model needs the `onnx` package "
+            "(pip install onnx); mock unavailable."
+        )
+        return None
     except Exception as e:
         logger.error(f"Failed to create mock session: {e}")
         return None
