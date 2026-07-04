@@ -273,6 +273,19 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
 
     stats["auditoria"] = juez.resumen_por_bot()
     stats["pesos"] = cargar_pesos(conn)
+
+    # Aligerar el historial: el backtest evaluó TODO el catálogo para ajustar
+    # los pesos y calcular la reincidencia, pero esos FALLOs son transitorios
+    # y se regeneran en cada entrenamiento. Ya cumplieron su función — nos
+    # quedamos con lo significativo (los pesos + las predicciones VIVAS) y
+    # podamos el registro del backtest para que el ledger no crezca sin fin.
+    podados = conn.execute(
+        "DELETE FROM TBL_JUEZ_AUDITORIA "
+        "WHERE detalles_json LIKE '%\"fase\": \"backtest\"%'"
+    ).rowcount
+    conn.commit()
+    stats["auditoria_backtest_podada"] = podados
+
     logger.info(f"Fase 2 completa: {stats}")
     conn.close()
     return stats
