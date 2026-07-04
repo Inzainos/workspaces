@@ -117,6 +117,10 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
     # significativo. Aprender la esencia, soltar el detalle.
     stats["correlaciones_padre"] = construir_correlaciones_padre(db_path)
 
+    # Realidad vs fantasía: mide el sesgo de aprendizaje (in-sample vs causal)
+    # y castiga al Padre si su decisión real no mejora.
+    stats["sesgo_aprendizaje"] = evaluar_sesgo_aprendizaje(db_path)
+
     logger.info(f"Barrido diario: {stats}")
     return stats
 
@@ -194,3 +198,105 @@ def construir_correlaciones_padre(db_path: str, min_n: int = CORRELACION_MIN_N) 
              "descartados": len(conteo) - len(filas)}
     logger.info(f"Correlaciones del Padre: {stats}")
     return stats
+
+
+# ── Sesgo de aprendizaje: realidad vs fantasía por comodidad ─────────────────
+# La asertividad histórica (~99.9%) es una FANTASÍA: los bots reconocen las
+# firmas con las que se entrenaron (in-sample). La REALIDAD es causal: ¿reconoce
+# el evento la memoria que YA existía ANTES de ese evento? Medimos la diferencia
+# (el sesgo). Aunque el número real baje, es honesto. Y al Padre le toca su
+# castigo si su decisión real no mejora.
+SESGO_MUESTRA = 400
+SESGO_MAX_CASTIGOS_PADRE = 3
+
+
+def evaluar_sesgo_aprendizaje(db_path: str, muestra: int = SESGO_MUESTRA) -> Dict:
+    import json as _json
+    from sentinel_omega.core.firmas.signature_engine import (
+        SIMILARITY_ALERT, extraer_features_ventana, similitud,
+    )
+    from sentinel_omega.infrastructure.pipeline.entrenamiento import BOT_FEATURES
+    from sentinel_omega.core.juez.pesos import castigar
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_sesgo_aprendizaje ("
+        "bot TEXT PRIMARY KEY, n INTEGER, recon_insample REAL, recon_causal REAL, "
+        "sesgo REAL, castigos INTEGER, evaluada_at TEXT DEFAULT (datetime('now')))"
+    )
+
+    # Firmas consolidadas por bot + el timestamp más temprano de su memoria.
+    firmas: Dict[str, list] = {}
+    for bot, feats, evs in conn.execute(
+        "SELECT bot_name, features_json, eventos_json FROM TBL_FIRMAS "
+        "WHERE estado = 'consolidada'"
+    ):
+        try:
+            f = _json.loads(feats)
+            refs = _json.loads(evs) if evs else []
+            t0 = min((r.split("|")[0] for r in refs), default=None)
+        except Exception:
+            continue
+        firmas.setdefault(bot, []).append((f, t0))
+
+    # Muestra de eventos repartida por toda la línea de tiempo.
+    todos = conn.execute(
+        "SELECT timestamp_blk, id_nodo FROM tbl_historico_sismico_raw "
+        "WHERE sismo_max_mag >= 4.5 ORDER BY timestamp_blk"
+    ).fetchall()
+    if not todos:
+        conn.close()
+        return {"eventos": 0}
+    paso = max(1, len(todos) // muestra)
+    eventos = todos[::paso]
+
+    conteo = {b: {"n": 0, "insample": 0, "causal": 0} for b in BOT_FEATURES}
+    for ts, nodo in eventos:
+        feats = extraer_features_ventana(conn, ts, nodo)
+        if not feats:
+            continue
+        for bot, keys in BOT_FEATURES.items():
+            fs = firmas.get(bot)
+            if not fs:
+                continue
+            sub = feats if keys is None else {k: feats[k] for k in keys if k in feats}
+            if not sub:
+                continue
+            best_all = max((similitud(sub, f) for f, _ in fs), default=0.0)
+            # Causal: solo firmas cuya memoria existía ANTES de este evento.
+            best_causal = max(
+                (similitud(sub, f) for f, t0 in fs if t0 and t0 < ts), default=0.0
+            )
+            c = conteo[bot]
+            c["n"] += 1
+            if best_all >= SIMILARITY_ALERT:
+                c["insample"] += 1
+            if best_causal >= SIMILARITY_ALERT:
+                c["causal"] += 1
+
+    resultado = {}
+    for bot, c in conteo.items():
+        if c["n"] == 0:
+            continue
+        insample = c["insample"] / c["n"]
+        causal = c["causal"] / c["n"]
+        sesgo = insample - causal
+        # Al Padre le toca castigo si su decisión REAL (causal) es floja —
+        # acotado, y proporcional a qué tan lejos está de reconocer de verdad.
+        castigos = 0
+        if bot == "padre":
+            castigos = min(SESGO_MAX_CASTIGOS_PADRE, round((1.0 - causal) * SESGO_MAX_CASTIGOS_PADRE))
+            for _ in range(castigos):
+                castigar(conn, bot, es_padre=True, gravedad=1.0)
+        conn.execute(
+            "INSERT OR REPLACE INTO tbl_sesgo_aprendizaje "
+            "(bot, n, recon_insample, recon_causal, sesgo, castigos) "
+            "VALUES (?,?,?,?,?,?)",
+            (bot, c["n"], round(insample, 4), round(causal, 4), round(sesgo, 4), castigos),
+        )
+        resultado[bot] = {"insample": round(insample, 3), "causal": round(causal, 3),
+                          "sesgo": round(sesgo, 3), "castigos": castigos}
+    conn.commit()
+    conn.close()
+    logger.info(f"Sesgo de aprendizaje (realidad vs fantasía): {resultado}")
+    return {"eventos": len(eventos), "por_bot": resultado}

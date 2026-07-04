@@ -612,3 +612,39 @@ class TestCorrelacionesPadre:
         assert conn.execute(
             "SELECT COUNT(*) FROM tbl_correlaciones_padre WHERE event_class='SISMO_M7'"
         ).fetchone()[0] == 0
+
+
+class TestSesgoAprendizaje:
+    """Realidad (causal) vs fantasía (in-sample); el Padre paga si es fantasía."""
+
+    def test_causal_menor_que_insample_y_castiga_padre(self, db):
+        conn, path = db
+        import json as _json
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            evaluar_sesgo_aprendizaje,
+        )
+        _seed_backcast(conn, n_eventos=6)  # eventos M6.4 en nodo 45, 2010-06+
+        # firma del PADRE consolidada cuya memoria nace DESPUÉS de los eventos
+        # -> in-sample la reconoce, pero causalmente no existía antes -> sesgo
+        feats = _features_base(sismo_count_win=5.0, sismo_max_mag_win=6.4)
+        conn.execute(
+            "INSERT INTO TBL_FIRMAS (bot_name, event_class, id_nodo, "
+            "features_json, eventos_json, recurrencia, estado, ventana_horas) "
+            "VALUES ('padre','SISMO_M6',45,?,?,9,'consolidada',336)",
+            (_json.dumps(feats),
+             _json.dumps(["2020-01-01 00:00|nodo45|M6.4"])),  # memoria de 2020
+        )
+        conn.commit()
+        res = evaluar_sesgo_aprendizaje(path, muestra=50)
+        p = res["por_bot"].get("padre")
+        assert p is not None
+        # causal <= in-sample (la memoria de 2020 no existia en 2010)
+        assert p["causal"] <= p["insample"]
+        # con sesgo real, al Padre le toca castigo
+        if p["causal"] < 1.0:
+            assert p["castigos"] >= 1
+        fila = conn.execute(
+            "SELECT recon_insample, recon_causal FROM tbl_sesgo_aprendizaje "
+            "WHERE bot='padre'"
+        ).fetchone()
+        assert fila is not None
