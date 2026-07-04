@@ -6,16 +6,21 @@ on:
       target_branch:
         description: 'Rama destino en The-shadow-Node-Theory (se crea si no existe)'
         required: false
-        default: 'feat/delta-from-sentinel-omega'
+        default: 'feat/delta-enriched'
 
 jobs:
   copy-delta:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout workspaces (jupyter-setup)
+      - name: Checkout workspaces (current branch — contains staging/snt_delta)
         uses: actions/checkout@v4
         with:
-          ref: jupyter-setup
+          fetch-depth: 0
+
+      - name: Checkout jupyter-setup files into temp dir
+        run: |
+          git fetch origin jupyter-setup
+          git worktree add /tmp/jupyter-branch origin/jupyter-setup
 
       - name: Clone The-shadow-Node-Theory
         env:
@@ -27,18 +32,27 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -B "${{ github.event.inputs.target_branch }}"
 
-      - name: Copy Delta agent files
+      - name: Copy Delta agent files (from jupyter-setup)
         run: |
           TARGET=/tmp/snt/delta
 
-          # Agente Delta (lógica principal)
-          cp sentinel_omega/layers/geodynamic/delta/__init__.py  "$TARGET/__init__.py"
-          cp sentinel_omega/layers/geodynamic/delta/agent.py     "$TARGET/agent.py"
+          # Agente Delta Sentinel Omega (lógica principal del agente)
+          cp /tmp/jupyter-branch/sentinel_omega/layers/geodynamic/delta/__init__.py  "$TARGET/__init__.py"
+          cp /tmp/jupyter-branch/sentinel_omega/layers/geodynamic/delta/agent.py     "$TARGET/agent.py"
 
           # Notebooks Jupyter
-          cp sentinel_omega/notebooks/jupyter_launcher.ipynb      "$TARGET/jupyter_launcher.ipynb"
-          cp sentinel_omega/notebooks/requirements_jupyter.txt    "$TARGET/requirements_jupyter.txt"
-          cp sentinel_omega/notebooks/README.md                   "$TARGET/notebooks_README.md"
+          cp /tmp/jupyter-branch/sentinel_omega/notebooks/jupyter_launcher.ipynb      "$TARGET/jupyter_launcher.ipynb"
+          cp /tmp/jupyter-branch/sentinel_omega/notebooks/requirements_jupyter.txt    "$TARGET/requirements_jupyter.txt"
+          cp /tmp/jupyter-branch/sentinel_omega/notebooks/README.md                   "$TARGET/notebooks_README.md"
+
+      - name: Copy enriched Delta modules (from staging/snt_delta)
+        run: |
+          TARGET=/tmp/snt/delta
+
+          # Nuevos módulos especializados para SNT Delta
+          cp staging/snt_delta/delta_fetchers.py    "$TARGET/delta_fetchers.py"
+          cp staging/snt_delta/delta_cross.py       "$TARGET/delta_cross.py"
+          cp staging/snt_delta/delta_composite.py   "$TARGET/delta_composite.py"
 
       - name: Commit & push to The-shadow-Node-Theory
         env:
@@ -47,17 +61,21 @@ jobs:
           cd /tmp/snt
           git add delta/
           git diff --cached --stat
-          git commit -m "feat(delta): import DeltaAgent + notebooks desde workspaces/jupyter-setup
+          git commit -m "feat(delta): import enriched Delta modules desde workspaces
 
-          Archivos copiados:
-          - delta/__init__.py        (paquete)
-          - delta/agent.py           (DeltaAgent — financial cross-correlation)
+          Archivos de agente base (workspaces/jupyter-setup):
+          - delta/__init__.py
+          - delta/agent.py           (DeltaAgent Sentinel Omega)
           - delta/jupyter_launcher.ipynb
           - delta/requirements_jupyter.txt
           - delta/notebooks_README.md
 
-          Fuente: Inzainos/workspaces @ jupyter-setup
-          Rama origen: ${{ github.ref_name }}
+          Nuevos módulos enriquecidos (workspaces/staging/snt_delta):
+          - delta/delta_fetchers.py  (yfinance + NOAA SWPC + Schumann + pytrends)
+          - delta/delta_cross.py     (correlación cruzada geofísica ↔ financiera)
+          - delta/delta_composite.py (señal compuesta enriched con contexto geofísico)
+
+          Fuente: Inzainos/workspaces
           Workflow: ${{ github.workflow }} #${{ github.run_number }}"
 
           git push https://x-access-token:${GH_PAT}@github.com/Inzainos/The-shadow-Node-Theory.git \
@@ -67,12 +85,18 @@ jobs:
         run: |
           echo "## ✅ Copia completada" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Archivos copiados al repo **The-shadow-Node-Theory** en \`delta/\`:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`delta/agent.py\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Archivos copiados a \`The-shadow-Node-Theory/delta/\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Agente base (de jupyter-setup):**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`delta/agent.py\` — DeltaAgent Sentinel Omega" >> $GITHUB_STEP_SUMMARY
           echo "- \`delta/__init__.py\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`delta/jupyter_launcher.ipynb\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`delta/requirements_jupyter.txt\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`delta/notebooks_README.md\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Módulos enriquecidos (nuevos):**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`delta/delta_fetchers.py\` — conectores reales: yfinance, NOAA SWPC, Schumann/Tomsk, pytrends" >> $GITHUB_STEP_SUMMARY
+          echo "- \`delta/delta_cross.py\` — correlación cruzada geofísica ↔ financiera con análisis de lag" >> $GITHUB_STEP_SUMMARY
+          echo "- \`delta/delta_composite.py\` — señal compuesta enriched (clima espacial + Schumann + mercados)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Rama destino:** \`${{ github.event.inputs.target_branch }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
