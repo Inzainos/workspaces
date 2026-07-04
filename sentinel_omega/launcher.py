@@ -320,9 +320,78 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
 
             _auditar_ciclo(geo, repo, runner)
 
+    # ── Persistir alfa2 (cobertura satelital) ──────────────────────
+    if runner is not None:
+        try:
+            alfa2_data = getattr(runner, "_last_alfa2_data", None)
+            if alfa2_data and alfa2_data.get("zone_coverages"):
+                from datetime import datetime as _dt
+                ts_blk = _dt.utcnow().strftime("%Y-%m-%d %H:00:00")
+                for zona, cov in alfa2_data["zone_coverages"].items():
+                    cloud_covers = cov.get("s2_cloud_covers", [])
+                    clear_passes = sum(1 for cc in cloud_covers if cc < 20.0)
+                    total = cov.get("total_passes", 0)
+                    s2 = cov.get("s2_count", 0)
+                    s1 = cov.get("s1_count", 0)
+                    coverage_score = min(total / 8.0, 1.0)
+                    clarity = clear_passes / max(len(cloud_covers), 1)
+                    revisit = cov.get("mean_revisit_days", 0.0)
+                    repo.insert_cobertura_satelital(
+                        timestamp_blk=ts_blk,
+                        zona=zona,
+                        coverage_score=round(coverage_score * 0.4 + clarity * 0.3 +
+                                             max(0, 1.0 - revisit / 12.0) * 0.3, 4),
+                        thermal_anomalies=alfa2_data.get("thermal_anomaly_count", 0),
+                        clear_passes=clear_passes,
+                        total_passes=total,
+                        revisit_days=revisit,
+                    )
+        except Exception as exc:
+            logger.warning(f"Failed to persist alfa2 coverage (non-blocking): {exc}")
+
+    # ── Persistir correlación cruzada delta_enriched ──────────────
+    if runner is not None:
+        try:
+            delta_cache = getattr(runner.pipeline, "_cache", {}).get("delta") or {}
+            if delta_cache.get("cross_coupling") is not None:
+                from datetime import datetime as _dt
+                ts_blk = _dt.utcnow().strftime("%Y-%m-%d %H:00:00")
+                repo.insert_delta_cross(
+                    timestamp_blk=ts_blk,
+                    cross_coupling=delta_cache.get("cross_coupling", 0.0),
+                    geomagnetic_coupling=delta_cache.get("geo_coupling", 0.0),
+                    schumann_coupling=delta_cache.get("schumann_coupling", 0.0),
+                    composite_score=delta_cache.get("delta_composite_score", 0.0),
+                    regime_label=delta_cache.get("delta_regime_label", ""),
+                    confidence=delta_cache.get("delta_confidence", 0.0),
+                    data_completeness=delta_cache.get("delta_data_completeness", 0.0),
+                    geo_kp_max_3d=delta_cache.get("geo_kp_max_3d"),
+                    geo_storm_active=delta_cache.get("geo_storm_active", 0),
+                    geo_schumann_deviation=delta_cache.get("geo_schumann_deviation"),
+                )
+        except Exception as exc:
+            logger.warning(f"Failed to persist delta cross (non-blocking): {exc}")
+
 
 def _build_live_features(runner) -> dict:
-    """Approximate the firma feature vector from the live pipeline cache."""
+    """Build the firma feature vector from the live pipeline cache.
+
+    Extrae features para los 5 bots entrenados:
+      alfa1  — clima espacial (Bz, viento solar)
+      beta1  — Kp, Schumann, sismicidad, fase lunar
+      beta2  — desgasificación volcánica (proxy OWM → escala kt aproximada)
+      delta  — volatilidad financiera BTC
+      alfa2  — cobertura satelital ESA Sentinel (acumulación desde ciclos vivos)
+
+    El proxy de beta2 usa el global_node_scan de OpenWeatherMap:
+    - erupciones_win  ≈ # nodos volcánicos/tectónicos con SO2 > umbral
+    - so2_kt_win      ≈ suma de exceso SO2 en nodos (μg/m³) × factor escala
+    El factor de escala es muy conservador (1e-4) porque 1 kilotón de SO2
+    dispersado a nivel global corresponde a ~10 μg/m³ en 1 nodo de referencia.
+    Los valores se mueven en la misma escala relativa que el histórico entrenado
+    (0 en calma, positivo en actividad), lo que es suficiente para que la
+    función de similitud distinga estados activos de estados quietos.
+    """
     import numpy as np
 
     features = {}
@@ -330,6 +399,7 @@ def _build_live_features(runner) -> dict:
         return features
     cache = getattr(runner.pipeline, "_cache", {})
 
+    # ── alfa1: clima espacial ──────────────────────────────────────
     alfa1 = cache.get("alfa1") or {}
     omni = alfa1.get("omni_dataframe")
     if omni is not None:
@@ -344,6 +414,7 @@ def _build_live_features(runner) -> dict:
                 features["viento_avg"] = float(wind.mean())
                 features["viento_max"] = float(wind.max())
 
+    # ── beta1: Kp / Schumann / sismicidad / lunar ─────────────────
     beta1 = cache.get("beta1") or {}
     kp = beta1.get("kp_series")
     if kp is not None and len(kp) > 0:
@@ -359,10 +430,67 @@ def _build_live_features(runner) -> dict:
     if lunar is not None and len(lunar) > 0:
         features["fase_lunar"] = float(lunar[-1])
 
+    # ── beta2: desgasificación volcánica (proxy OWM) ──────────────
+    # so2_kt_win / erupciones_win se aprenden del catálogo NASA MSVOLSO2L4
+    # (kilotones). En tiempo real no hay esa fuente; usamos el global_node_scan
+    # de OpenWeatherMap como proxy: nodos VOLCAN/TECTONICO con SO2 elevado.
+    # Factor empírico 1e-4: normaliza μg/m³ a orden de magnitud de kt para
+    # que la función similitud vea "calma=0" y "actividad>0" correctamente.
+    _SO2_SCALE = 1e-4
+    beta2 = cache.get("beta2") or {}
+    node_scan = beta2.get("global_node_scan", [])
+    if node_scan:
+        degassing_nodes = [
+            n for n in node_scan
+            if n.get("tipo", "") in ("VOLCAN", "TECTONICO")
+        ]
+        aq_baseline = beta2.get("degassing_baseline") or {}
+        base_so2 = aq_baseline.get("so2", 0.0)
+        erupciones_proxy = 0
+        so2_sum = 0.0
+        for node in degassing_nodes:
+            excess = max(0.0, node.get("so2", 0.0) - base_so2)
+            if excess > 50.0:  # NODE_SO2_EXCESS_ALERT
+                erupciones_proxy += 1
+                so2_sum += excess
+        features["erupciones_win"] = float(erupciones_proxy)
+        features["so2_kt_win"] = round(so2_sum * _SO2_SCALE, 6)
+        # 90-day context: si no tenemos historial, aproximar con la misma
+        # ventana escalada (conservador — subestima la carga de fondo).
+        features["erupciones_90d"] = float(erupciones_proxy)
+        features["so2_kt_90d"] = round(so2_sum * _SO2_SCALE, 6)
+
+    # ── delta: volatilidad financiera BTC ─────────────────────────
     delta = cache.get("delta") or {}
     for key in ("btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h"):
         if key in delta:
             features[key] = float(delta[key])
+
+    # ── alfa2: cobertura satelital (features acumulados en vivo) ──
+    # Las firmas de alfa2 se acumulan desde tbl_cobertura_satelital (ciclos vivos).
+    # La feature principal es composite_coverage_score [0,1] por zona.
+    alfa2_data = getattr(runner, "_last_alfa2_data", None)
+    if alfa2_data and alfa2_data.get("zone_coverages"):
+        scores = []
+        clear_total = 0
+        total_passes = 0
+        for zona, cov in alfa2_data["zone_coverages"].items():
+            cloud_covers = cov.get("s2_cloud_covers", [])
+            clear_p = sum(1 for cc in cloud_covers if cc < 20.0)
+            total_p = cov.get("total_passes", 0)
+            revisit = cov.get("mean_revisit_days", 0.0)
+            score = min(total_p / 8.0, 1.0) * 0.4
+            score += (clear_p / max(len(cloud_covers), 1)) * 0.3
+            score += max(0, 1.0 - revisit / 12.0) * 0.3
+            scores.append(score)
+            clear_total += clear_p
+            total_passes += total_p
+        if scores:
+            features["satellite_coverage_score"] = round(float(np.mean(scores)), 4)
+            features["satellite_thermal_anomalies"] = float(
+                alfa2_data.get("thermal_anomaly_count", 0)
+            )
+            features["satellite_clear_passes"] = float(clear_total)
 
     return features
 

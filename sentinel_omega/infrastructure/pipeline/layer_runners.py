@@ -155,8 +155,14 @@ class GeodynamicLayerRunner:
                 alfa2_data = self.pipeline.fetch_alfa2_data()
                 self.alfa2.ingest(alfa2_data)
                 signals.append(self.alfa2.analyze())
+                # Exponer los datos de alfa2 en el atributo del runner para que
+                # el launcher los persista en tbl_cobertura_satelital.
+                self._last_alfa2_data = alfa2_data
             except Exception as e:
                 logger.warning(f"Satellite layer failed (non-blocking): {e}")
+                self._last_alfa2_data = None
+        else:
+            self._last_alfa2_data = None
 
         consensus = self.padre.evaluate_consensus(signals)
         consensus.precursor_risk = risk

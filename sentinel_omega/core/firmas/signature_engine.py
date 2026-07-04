@@ -39,6 +39,8 @@ FEATURE_KEYS = [
     "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
     # near sub-window (last 72h before the event)
     "bz_mean_72h", "kp_max_72h", "sismo_count_72h",
+    # alfa2: cobertura satelital ESA Sentinel (live-only, acumulado desde ciclos)
+    "satellite_coverage_score", "satellite_thermal_anomalies", "satellite_clear_passes",
 ]
 
 VENTANA_HORAS = 336  # 14 days
@@ -222,6 +224,32 @@ def extraer_features_ventana(
         (id_nodo, ts_evento, ts_evento, f"-{SUBVENTANA_HORAS} hours"),
     ).fetchone()
     features["sismo_count_72h"] = float(sis72[0])
+
+    # Cobertura satelital alfa2 (tbl_cobertura_satelital).
+    # Solo disponible desde que el sistema corre en vivo — si la tabla está
+    # vacía (backcast o primer arranque) simplemente no se añaden estas features.
+    try:
+        sat = conn.execute(
+            "SELECT coverage_score, thermal_anomalies, clear_passes "
+            "FROM tbl_cobertura_satelital "
+            "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?) "
+            "ORDER BY timestamp_blk",
+            (ts_evento, ts_evento, f"-{VENTANA_HORAS} hours"),
+        ).fetchall()
+        if sat:
+            cov_scores = [r[0] for r in sat if r[0] is not None]
+            thermal = [r[1] for r in sat if r[1] is not None]
+            clear_p = [r[2] for r in sat if r[2] is not None]
+            if cov_scores:
+                features["satellite_coverage_score"] = float(
+                    np.mean(cov_scores)
+                )
+            if thermal:
+                features["satellite_thermal_anomalies"] = float(sum(thermal))
+            if clear_p:
+                features["satellite_clear_passes"] = float(sum(clear_p))
+    except Exception:
+        pass  # tabla no existe aún → features de alfa2 ausentes (NaN en vector)
 
     return features
 
