@@ -47,18 +47,31 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
               "es_sicigia", "kp_max_72h", "sismo_count_72h"],
     "beta2": ["so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d"],
     "delta": ["btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h"],
+    # alfa2 entrena desde la tabla tbl_cobertura_satelital, que se acumula en
+    # ciclos en vivo (no hay backcast de 14 años de cobertura ESA Sentinel).
+    # Las firmas de alfa2 empiezan en 0 y crecen con el tiempo operativo.
+    "alfa2": ["satellite_coverage_score", "satellite_thermal_anomalies",
+              "satellite_clear_passes"],
     "padre": None,  # full vector
 }
 
 MIN_FEATURES_POR_BOT = {"alfa1": 3, "beta1": 3, "beta2": 4, "delta": 4,
-                        "padre": 5}
+                         "alfa2": 2, "padre": 5}
 
 # Each bot only trains inside its own historical window (data availability):
-# alfa2/beta2 = 14 years (Sentinel era), delta = 10 years (trends/crypto).
+# beta2 = desde 2012 (catálogo volcánico NASA MSVOLSO2L4)
+# delta = desde 2016 (BTC/cripto/tendencias)
+# alfa2 NO tiene ventana de arranque fija: entrena solo desde la primera fila
+# de tbl_cobertura_satelital (datos en vivo). El backcast no la incluye.
 BOT_DESDE: Dict[str, str] = {
     "beta2": "2012-01-01",
     "delta": "2016-01-01",
 }
+
+# Bots que solo entrenan desde datos EN VIVO (no tienen backcast en la DB).
+# El loop de Fase 1 los salta si la fuente es tbl_historico_sismico_raw
+# sin filas de tbl_cobertura_satelital en el mismo periodo.
+BOTS_LIVE_ONLY = {"alfa2"}
 
 
 def _event_class(mag: float) -> str:
@@ -130,6 +143,10 @@ def entrenar_reconocimiento(
         evento_ref = f"{ts_evento}|nodo{id_nodo}|M{mag:.1f}"
 
         for bot, keys in bots_activos.items():
+            # alfa2 (y cualquier bot live-only) NO tiene datos en el backcast;
+            # sus firmas se acumulan desde ciclos operativos en tbl_cobertura_satelital.
+            if bot in BOTS_LIVE_ONLY:
+                continue
             desde = BOT_DESDE.get(bot)
             if desde and ts_evento < desde:
                 continue  # event predates this bot's historical window
@@ -578,6 +595,10 @@ def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
             continue
         clase = f"SISMO_M{int(mag)}"               # M2 / M3 / M4 (menores)
         for bot, keys in BOT_FEATURES.items():
+            # alfa2 no tiene backcast → sus firmas consolidadas estarán vacías
+            # durante el entrenamiento inicial; saltarlo evita falsos cero.
+            if bot in BOTS_LIVE_ONLY:
+                continue
             firmas_bot = consolidadas.get(bot) or []
             if not firmas_bot:
                 continue

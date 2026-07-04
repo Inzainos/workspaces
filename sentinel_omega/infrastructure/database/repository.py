@@ -496,6 +496,59 @@ class SentinelRepository:
             for r in rows
         ]
 
+    # ── v5: Cobertura Satelital alfa2 ────────────────────────────────
+
+    def insert_cobertura_satelital(
+        self,
+        timestamp_blk: str,
+        zona: str,
+        coverage_score: float = 0.0,
+        thermal_anomalies: int = 0,
+        clear_passes: int = 0,
+        total_passes: int = 0,
+        revisit_days: float = 0.0,
+    ) -> None:
+        """Persiste datos de cobertura ESA Sentinel para una zona y ciclo."""
+        self._execute(
+            "INSERT OR REPLACE INTO tbl_cobertura_satelital "
+            "(timestamp_blk, zona, coverage_score, thermal_anomalies, "
+            " clear_passes, total_passes, revisit_days) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (timestamp_blk, zona, coverage_score, thermal_anomalies,
+             clear_passes, total_passes, revisit_days),
+        )
+        self._conn.commit()
+
+    def insert_delta_cross(
+        self,
+        timestamp_blk: str,
+        cross_coupling: float = 0.0,
+        geomagnetic_coupling: float = 0.0,
+        schumann_coupling: float = 0.0,
+        sentiment_coupling: float = 0.0,
+        composite_score: float = 0.0,
+        regime_label: str = "",
+        confidence: float = 0.0,
+        data_completeness: float = 0.0,
+        geo_kp_max_3d: float = None,
+        geo_storm_active: int = 0,
+        geo_schumann_deviation: float = None,
+    ) -> None:
+        """Persiste el resultado delta_enriched de un ciclo."""
+        self._execute(
+            "INSERT OR REPLACE INTO tbl_delta_cross "
+            "(timestamp_blk, cross_coupling, geomagnetic_coupling, "
+            " schumann_coupling, sentiment_coupling, composite_score, "
+            " regime_label, confidence, data_completeness, "
+            " geo_kp_max_3d, geo_storm_active, geo_schumann_deviation) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (timestamp_blk, cross_coupling, geomagnetic_coupling,
+             schumann_coupling, sentiment_coupling, composite_score,
+             regime_label, confidence, data_completeness,
+             geo_kp_max_3d, geo_storm_active, geo_schumann_deviation),
+        )
+        self._conn.commit()
+
     # ── Helpers ───────────────────────────────────────────────────
 
     def _col_names(self, table: str) -> List[str]:

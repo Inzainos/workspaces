@@ -8,6 +8,11 @@ Tables (from base_geo.docx architecture):
   TBL_DETECCIONES           — Precursor detections from scanner
   TBL_CICLOS                — Orchestrator cycle log with consensus + risk
   TBL_MURO_EVENTOS          — Muro de los 5 Eventos breach history
+
+v5 additions:
+  tbl_cobertura_satelital  — Cobertura satelital alfa2 (ESA Sentinel) por ciclo;
+                             permite que alfa2 acumule firmas desde datos en vivo.
+  tbl_delta_cross          — Resultados de correlación cruzada delta_enriched por ciclo.
 """
 
 import logging
@@ -17,7 +22,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA_SQL = """
 -- ─── Precursores Cósmicos ──────────────────────────────────────────
@@ -287,6 +292,41 @@ CREATE TABLE IF NOT EXISTS TBL_PESOS_BOTS (
     updated_at      TEXT    DEFAULT (datetime('now'))
 );
 
+-- ─── Cobertura Satelital alfa2 (v5) ───────────────────────────────
+-- Almacena métricas de cobertura ESA Sentinel por ciclo por zona.
+-- Permite que alfa2 acumule firmas históricas a partir de datos en vivo
+-- (no hay backcast satelital de 14 años, así que alfa2 entrena desde hoy).
+CREATE TABLE IF NOT EXISTS tbl_cobertura_satelital (
+    timestamp_blk        TEXT    NOT NULL,
+    zona                 TEXT    NOT NULL,
+    coverage_score       REAL    DEFAULT 0.0,    -- cobertura compuesta [0,1]
+    thermal_anomalies    INTEGER DEFAULT 0,       -- conteo de anomalías térmicas
+    clear_passes         INTEGER DEFAULT 0,       -- pases sin nube
+    total_passes         INTEGER DEFAULT 0,       -- pases totales
+    revisit_days         REAL    DEFAULT 0.0,     -- promedio días entre revisitas
+    PRIMARY KEY (timestamp_blk, zona)
+);
+CREATE INDEX IF NOT EXISTS idx_cobertura_ts
+    ON tbl_cobertura_satelital(timestamp_blk);
+
+-- ─── Correlación cruzada delta_enriched (v5) ──────────────────────
+-- Resultados del pipeline delta_enriched (geofísica ↔ financiero).
+-- Una fila por ciclo con los scores de acoplamiento.
+CREATE TABLE IF NOT EXISTS tbl_delta_cross (
+    timestamp_blk            TEXT    PRIMARY KEY,
+    cross_coupling           REAL    DEFAULT 0.0,
+    geomagnetic_coupling     REAL    DEFAULT 0.0,
+    schumann_coupling        REAL    DEFAULT 0.0,
+    sentiment_coupling       REAL    DEFAULT 0.0,
+    composite_score          REAL    DEFAULT 0.0,
+    regime_label             TEXT    DEFAULT '',
+    confidence               REAL    DEFAULT 0.0,
+    data_completeness        REAL    DEFAULT 0.0,
+    geo_kp_max_3d            REAL,
+    geo_storm_active         INTEGER DEFAULT 0,
+    geo_schumann_deviation   REAL
+);
+
 -- ─── Schema Version ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS TBL_SCHEMA_VERSION (
     version     INTEGER PRIMARY KEY,
@@ -306,6 +346,29 @@ EXPECTED_COLUMNS = {
         # Per-signature anticipation: this firma's own typical lead time
         "lag_promedio_h": "REAL",
         "lag_n": "INTEGER DEFAULT 0",
+    },
+    # v5: cobertura satelital — nueva tabla (creada por SCHEMA_SQL con IF NOT EXISTS;
+    # se incluye aquí para que _migrate_add_missing_columns no falle en DBs antiguas
+    # que no tengan la tabla — el try/except la ignora si no existe aún).
+    "tbl_cobertura_satelital": {
+        "coverage_score": "REAL DEFAULT 0.0",
+        "thermal_anomalies": "INTEGER DEFAULT 0",
+        "clear_passes": "INTEGER DEFAULT 0",
+        "total_passes": "INTEGER DEFAULT 0",
+        "revisit_days": "REAL DEFAULT 0.0",
+    },
+    "tbl_delta_cross": {
+        "cross_coupling": "REAL DEFAULT 0.0",
+        "geomagnetic_coupling": "REAL DEFAULT 0.0",
+        "schumann_coupling": "REAL DEFAULT 0.0",
+        "sentiment_coupling": "REAL DEFAULT 0.0",
+        "composite_score": "REAL DEFAULT 0.0",
+        "regime_label": "TEXT DEFAULT ''",
+        "confidence": "REAL DEFAULT 0.0",
+        "data_completeness": "REAL DEFAULT 0.0",
+        "geo_kp_max_3d": "REAL",
+        "geo_storm_active": "INTEGER DEFAULT 0",
+        "geo_schumann_deviation": "REAL",
     },
 }
 

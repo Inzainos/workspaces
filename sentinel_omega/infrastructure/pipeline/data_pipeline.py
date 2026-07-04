@@ -341,6 +341,42 @@ class GeodynamicPipeline:
             if cached:
                 return cached
 
+        # Delta enriquecido: correlación cruzada geofísica ↔ financiera.
+        # Usa delta_enriched (ex staging/snt_delta) para generar:
+        #   - cross_coupling: qué tan acoplados están el clima espacial / Schumann
+        #     con los movimientos financieros en esta ventana de 14 días.
+        #   - geophysical_context: contexto Kp/Bz/Schumann para el reporte.
+        # Fail-soft: si falla no bloquea el ciclo.
+        try:
+            from sentinel_omega.core.delta_enriched.fetchers import fetch_all
+            from sentinel_omega.core.delta_enriched.composite import run_composite
+
+            enriched_data = fetch_all(days=14)
+            enriched = run_composite(enriched_data, window_days=14)
+
+            result["cross_coupling"] = round(enriched.cross.composite_coupling, 4) if enriched.cross else 0.0
+            result["geo_coupling"] = round(enriched.cross.geomagnetic_coupling, 4) if enriched.cross else 0.0
+            result["schumann_coupling"] = round(enriched.cross.schumann_coupling, 4) if enriched.cross else 0.0
+            result["delta_composite_score"] = round(enriched.composite_score, 4)
+            result["delta_regime_label"] = enriched.regime_label
+            result["delta_narrative"] = enriched.narrative
+            result["delta_confidence"] = round(enriched.confidence, 4)
+            result["delta_data_completeness"] = round(enriched.data_completeness, 2)
+
+            if enriched.geophysical:
+                geo = enriched.geophysical
+                result["geo_kp_max_3d"] = geo.kp_max_3d
+                result["geo_storm_active"] = int(geo.storm_active)
+                result["geo_schumann_deviation"] = geo.schumann_freq_deviation
+
+            logger.info(
+                f"Delta enriquecido: composite={result['delta_composite_score']:.3f}, "
+                f"cross_coupling={result['cross_coupling']:.3f}, "
+                f"regime={result['delta_regime_label']}"
+            )
+        except Exception as exc:
+            logger.warning(f"Delta enriched pipeline failed (non-blocking): {exc}")
+
         logger.info(
             f"Delta pipeline: FGI={result.get('fear_greed', '?')}, "
             f"VIX={result.get('vix', '?')}, "
