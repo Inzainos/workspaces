@@ -1,0 +1,79 @@
+name: Copy Delta files → The-shadow-Node-Theory
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Rama destino en The-shadow-Node-Theory (se crea si no existe)'
+        required: false
+        default: 'feat/delta-from-sentinel-omega'
+
+jobs:
+  copy-delta:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout workspaces (jupyter-setup)
+        uses: actions/checkout@v4
+        with:
+          ref: jupyter-setup
+
+      - name: Clone The-shadow-Node-Theory
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git clone https://x-access-token:${GH_PAT}@github.com/Inzainos/The-shadow-Node-Theory.git /tmp/snt
+          cd /tmp/snt
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "${{ github.event.inputs.target_branch }}"
+
+      - name: Copy Delta agent files
+        run: |
+          TARGET=/tmp/snt/delta
+
+          # Agente Delta (lógica principal)
+          cp sentinel_omega/layers/geodynamic/delta/__init__.py  "$TARGET/__init__.py"
+          cp sentinel_omega/layers/geodynamic/delta/agent.py     "$TARGET/agent.py"
+
+          # Notebooks Jupyter
+          cp sentinel_omega/notebooks/jupyter_launcher.ipynb      "$TARGET/jupyter_launcher.ipynb"
+          cp sentinel_omega/notebooks/requirements_jupyter.txt    "$TARGET/requirements_jupyter.txt"
+          cp sentinel_omega/notebooks/README.md                   "$TARGET/notebooks_README.md"
+
+      - name: Commit & push to The-shadow-Node-Theory
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          cd /tmp/snt
+          git add delta/
+          git diff --cached --stat
+          git commit -m "feat(delta): import DeltaAgent + notebooks desde workspaces/jupyter-setup
+
+          Archivos copiados:
+          - delta/__init__.py        (paquete)
+          - delta/agent.py           (DeltaAgent — financial cross-correlation)
+          - delta/jupyter_launcher.ipynb
+          - delta/requirements_jupyter.txt
+          - delta/notebooks_README.md
+
+          Fuente: Inzainos/workspaces @ jupyter-setup
+          Rama origen: ${{ github.ref_name }}
+          Workflow: ${{ github.workflow }} #${{ github.run_number }}"
+
+          git push https://x-access-token:${GH_PAT}@github.com/Inzainos/The-shadow-Node-Theory.git \
+            "${{ github.event.inputs.target_branch }}"
+
+      - name: Summary
+        run: |
+          echo "## ✅ Copia completada" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Archivos copiados al repo **The-shadow-Node-Theory** en \`delta/\`:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`delta/agent.py\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`delta/__init__.py\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`delta/jupyter_launcher.ipynb\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`delta/requirements_jupyter.txt\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`delta/notebooks_README.md\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Rama destino:** \`${{ github.event.inputs.target_branch }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "👉 Abre el PR en: https://github.com/Inzainos/The-shadow-Node-Theory/compare/${{ github.event.inputs.target_branch }}" >> $GITHUB_STEP_SUMMARY
