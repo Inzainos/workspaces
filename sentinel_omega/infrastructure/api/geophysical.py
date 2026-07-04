@@ -13,7 +13,7 @@ from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
-import requests
+from sentinel_omega.infrastructure.api._http import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def fetch_lod_series(days: int = 90) -> Optional[pd.DataFrame]:
     LOD is the deviation of day length from 86400 SI seconds (in ms).
     """
     try:
-        resp = requests.get(IERS_FINALS_URL, timeout=TIMEOUT)
+        resp = get_session().get(IERS_FINALS_URL, timeout=TIMEOUT)
         resp.raise_for_status()
 
         lines = resp.text.strip().split("\n")

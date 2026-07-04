@@ -15,7 +15,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-import requests
+from sentinel_omega.infrastructure.api._http import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ def fetch_weather(
         "units": "metric",
     }
     try:
-        resp = requests.get(url, params=params, timeout=TIMEOUT)
+        resp = get_session().get(url, params=params, timeout=TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
 
@@ -156,7 +156,7 @@ def fetch_air_quality(
         "appid": api_key,
     }
     try:
-        resp = requests.get(OWM_AIR_BASE, params=params, timeout=TIMEOUT)
+        resp = get_session().get(OWM_AIR_BASE, params=params, timeout=TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
 

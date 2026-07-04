@@ -40,9 +40,9 @@ def _mock_response(json_data, status_code=200):
 
 class TestNOAAConnectors:
 
-    @patch("sentinel_omega.infrastructure.api.noaa.requests.get")
+    @patch("sentinel_omega.infrastructure.api.noaa.get_session")
     def test_fetch_kp_index(self, mock_get):
-        mock_get.return_value = _mock_response([
+        mock_get.return_value.get.return_value = _mock_response([
             {"time_tag": "2024-01-01 00:00:00", "kp_index": "3.00"},
             {"time_tag": "2024-01-01 03:00:00", "kp_index": "4.33"},
         ])
@@ -52,9 +52,9 @@ class TestNOAAConnectors:
         assert "kp_index" in df.columns
         assert "time_tag" in df.columns
 
-    @patch("sentinel_omega.infrastructure.api.noaa.requests.get")
+    @patch("sentinel_omega.infrastructure.api.noaa.get_session")
     def test_fetch_goes_xray(self, mock_get):
-        mock_get.return_value = _mock_response([
+        mock_get.return_value.get.return_value = _mock_response([
             {"time_tag": "2024-01-01T00:00:00Z", "flux": "1.5e-6", "energy": "0.1-0.8nm"},
             {"time_tag": "2024-01-01T00:01:00Z", "flux": "2.0e-6", "energy": "0.1-0.8nm"},
         ])
@@ -62,25 +62,26 @@ class TestNOAAConnectors:
         assert df is not None
         assert "flux" in df.columns
 
-    @patch("sentinel_omega.infrastructure.api.noaa.requests.get")
+    @patch("sentinel_omega.infrastructure.api.noaa.get_session")
     def test_fetch_solar_wind(self, mock_get):
-        mock_get.return_value = _mock_response([
+        mock_get.return_value.get.return_value = _mock_response([
             {"time_tag": "2024-01-01T00:00:00Z", "proton_speed": "400.5", "proton_density": "5.2"},
         ])
         df = fetch_solar_wind()
         assert df is not None
 
-    @patch("sentinel_omega.infrastructure.api.noaa.requests.get")
+    @patch("sentinel_omega.infrastructure.api.noaa.get_session")
     def test_fetch_mag_field(self, mock_get):
-        mock_get.return_value = _mock_response([
+        mock_get.return_value.get.return_value = _mock_response([
             {"time_tag": "2024-01-01T00:00:00Z", "bz_gsm": "-3.5"},
         ])
         df = fetch_mag_field()
         assert df is not None
         assert "bz_gsm" in df.columns
 
-    @patch("sentinel_omega.infrastructure.api.noaa.requests.get", side_effect=ConnectionError)
+    @patch("sentinel_omega.infrastructure.api.noaa.get_session")
     def test_fetch_kp_network_error(self, mock_get):
+        mock_get.return_value.get.side_effect = ConnectionError("Network error")
         assert fetch_kp_index() is None
 
 
@@ -89,31 +90,31 @@ class TestNOAAConnectors:
 
 class TestCryptoConnectors:
 
-    @patch("sentinel_omega.infrastructure.api.crypto.requests.get")
+    @patch("sentinel_omega.infrastructure.api.crypto.get_session")
     def test_fetch_coingecko_dominance(self, mock_get):
-        mock_get.return_value = _mock_response({
+        mock_get.return_value.get.return_value = _mock_response({
             "data": {"market_cap_percentage": {"btc": 54.3, "eth": 17.2}}
         })
         result = fetch_coingecko_dominance()
         assert result is not None
         assert result["btc"] == 54.3
 
-    @patch("sentinel_omega.infrastructure.api.crypto.requests.get")
+    @patch("sentinel_omega.infrastructure.api.crypto.get_session")
     def test_fetch_binance_klines(self, mock_get):
         kline = [
             1704067200000, "42000.0", "42500.0", "41800.0", "42300.0", "1500.0",
             1704153599999, "63000000.0", 50000, "750.0", "31500000.0", "0",
         ]
-        mock_get.return_value = _mock_response([kline])
+        mock_get.return_value.get.return_value = _mock_response([kline])
         df = fetch_binance_klines("BTCUSDT", limit=1)
         assert df is not None
         assert len(df) == 1
         assert "close" in df.columns
         assert df["close"].iloc[0] == pytest.approx(42300.0)
 
-    @patch("sentinel_omega.infrastructure.api.crypto.requests.get")
+    @patch("sentinel_omega.infrastructure.api.crypto.get_session")
     def test_fetch_fear_greed(self, mock_get):
-        mock_get.return_value = _mock_response({
+        mock_get.return_value.get.return_value = _mock_response({
             "data": [{"value": "25", "value_classification": "Extreme Fear", "timestamp": "1704067200"}]
         })
         result = fetch_fear_greed_index()
@@ -121,17 +122,18 @@ class TestCryptoConnectors:
         assert result["value"] == 25
         assert result["classification"] == "Extreme Fear"
 
-    @patch("sentinel_omega.infrastructure.api.crypto.requests.get")
+    @patch("sentinel_omega.infrastructure.api.crypto.get_session")
     def test_fetch_coingecko_chart(self, mock_get):
-        mock_get.return_value = _mock_response({
+        mock_get.return_value.get.return_value = _mock_response({
             "prices": [[1704067200000, 42000.0], [1704153600000, 42500.0]]
         })
         df = fetch_coingecko_market_chart("bitcoin", days=2)
         assert df is not None
         assert len(df) == 2
 
-    @patch("sentinel_omega.infrastructure.api.crypto.requests.get", side_effect=ConnectionError)
+    @patch("sentinel_omega.infrastructure.api.crypto.get_session")
     def test_fetch_dominance_network_error(self, mock_get):
+        mock_get.return_value.get.side_effect = ConnectionError("Network error")
         assert fetch_coingecko_dominance() is None
 
 
@@ -140,9 +142,9 @@ class TestCryptoConnectors:
 
 class TestUSGSConnector:
 
-    @patch("sentinel_omega.infrastructure.api.usgs.requests.get")
+    @patch("sentinel_omega.infrastructure.api.usgs.get_session")
     def test_fetch_earthquakes(self, mock_get):
-        mock_get.return_value = _mock_response({
+        mock_get.return_value.get.return_value = _mock_response({
             "features": [
                 {
                     "properties": {"time": 1704067200000, "mag": 5.2, "place": "Alaska", "type": "earthquake"},
@@ -160,8 +162,9 @@ class TestUSGSConnector:
         assert "magnitude" in df.columns
         assert "latitude" in df.columns
 
-    @patch("sentinel_omega.infrastructure.api.usgs.requests.get", side_effect=ConnectionError)
+    @patch("sentinel_omega.infrastructure.api.usgs.get_session")
     def test_fetch_earthquakes_network_error(self, mock_get):
+        mock_get.return_value.get.side_effect = ConnectionError("Network error")
         assert fetch_earthquakes() is None
 
 
@@ -170,9 +173,9 @@ class TestUSGSConnector:
 
 class TestBolsaConnectors:
 
-    @patch("sentinel_omega.infrastructure.api.bolsa.requests.get")
+    @patch("sentinel_omega.infrastructure.api.bolsa.get_session")
     def test_fetch_yahoo_quote(self, mock_get):
-        mock_get.return_value = _mock_response({
+        mock_get.return_value.get.return_value = _mock_response({
             "chart": {"result": [{
                 "timestamp": [1704067200, 1704153600],
                 "indicators": {"quote": [{
@@ -189,6 +192,7 @@ class TestBolsaConnectors:
         assert len(df) == 2
         assert "close" in df.columns
 
-    @patch("sentinel_omega.infrastructure.api.bolsa.requests.get", side_effect=ConnectionError)
+    @patch("sentinel_omega.infrastructure.api.bolsa.get_session")
     def test_fetch_yahoo_network_error(self, mock_get):
+        mock_get.return_value.get.side_effect = ConnectionError("Network error")
         assert fetch_yahoo_quote("AAPL") is None

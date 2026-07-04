@@ -14,7 +14,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-import requests
+from sentinel_omega.infrastructure.api._http import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ def fetch_neo_hazard_summary(date: Optional[str] = None) -> Optional[Dict[str, A
     params = {"start_date": day, "end_date": day, "api_key": api_key}
 
     try:
-        resp = requests.get(NEO_FEED_URL, params=params, timeout=TIMEOUT)
+        resp = get_session().get(NEO_FEED_URL, params=params, timeout=TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
 

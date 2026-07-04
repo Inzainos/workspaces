@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-import requests
+from sentinel_omega.infrastructure.api._http import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ def fetch_yahoo_chart(
         f"?period1={period1}&period2={period2}&interval={interval}"
     )
     try:
-        resp = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "SentinelOmega/2.0"})
+        resp = get_session().get(url, timeout=TIMEOUT, headers={"User-Agent": "SentinelOmega/2.0"})
         resp.raise_for_status()
         data = resp.json()
 
@@ -72,7 +72,7 @@ def fetch_coingecko_market_chart(
         f"?vs_currency={vs_currency}&days={days}"
     )
     try:
-        resp = requests.get(url, timeout=TIMEOUT)
+        resp = get_session().get(url, timeout=TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
 
@@ -93,7 +93,7 @@ def fetch_coingecko_dominance() -> Optional[Dict[str, float]]:
     """Fetch BTC and ETH dominance percentages from CoinGecko."""
     url = "https://api.coingecko.com/api/v3/global"
     try:
-        resp = requests.get(url, timeout=TIMEOUT)
+        resp = get_session().get(url, timeout=TIMEOUT)
         resp.raise_for_status()
         data = resp.json().get("data", {}).get("market_cap_percentage", {})
         logger.info(f"CoinGecko dominance: BTC={data.get('btc', 0):.1f}%")
@@ -111,7 +111,7 @@ def fetch_binance_klines(
     """Fetch klines (OHLCV) from Binance public API."""
     url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
     try:
-        resp = requests.get(url, timeout=TIMEOUT)
+        resp = get_session().get(url, timeout=TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
 
@@ -134,7 +134,7 @@ def fetch_fear_greed_index() -> Optional[Dict]:
     """Fetch Crypto Fear & Greed Index (alternative.me, public)."""
     url = "https://api.alternative.me/fng/?limit=30&format=json"
     try:
-        resp = requests.get(url, timeout=TIMEOUT)
+        resp = get_session().get(url, timeout=TIMEOUT)
         resp.raise_for_status()
         data = resp.json().get("data", [])
         if data:
