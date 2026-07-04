@@ -570,3 +570,45 @@ class TestBarridoDiario:
         niveles = [r[0] for r in conn.execute("SELECT nivel_riesgo FROM TBL_CICLOS")]
         assert "CRITICAL" in niveles
         assert "LOW" not in niveles
+
+
+class TestCorrelacionesPadre:
+    """El Padre correlaciona: patrón cruzado -> conteo, solo lo significativo."""
+
+    def test_cuenta_y_descarta_cola(self, db):
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            construir_correlaciones_padre, _patron_padre,
+        )
+        # patrón dominante (calma solar + sísmico) repetido -> significativo
+        dom = _features_base(kp_max=0.1, kp_max_72h=0.1, bz_min=0.5,
+                             sismo_count_win=5.0, sismo_max_mag_win=5.0)
+        for i in range(60):
+            conn.execute(
+                "INSERT INTO TBL_FIRMAS (bot_name, event_class, id_nodo, "
+                "features_json, recurrencia, estado, ventana_horas) "
+                "VALUES ('padre','SISMO_M5',45,?,1,'consolidada',336)",
+                (__import__("json").dumps(dom),),
+            )
+        # un patrón raro, una sola vez -> cae bajo el umbral, se descarta
+        raro = _features_base(kp_max=9.0, bz_min=-20.0, proton_max=500.0,
+                              sismo_count_win=0.0, sismo_max_mag_win=0.0)
+        conn.execute(
+            "INSERT INTO TBL_FIRMAS (bot_name, event_class, id_nodo, "
+            "features_json, recurrencia, estado, ventana_horas) "
+            "VALUES ('padre','SISMO_M7',9,?,1,'consolidada',336)",
+            (__import__("json").dumps(raro),),
+        )
+        conn.commit()
+        res = construir_correlaciones_padre(path, min_n=50)
+        assert res["significativos"] >= 1
+        assert res["descartados"] >= 1
+        # el patrón dominante quedó con su conteo acumulado
+        n = conn.execute(
+            "SELECT n FROM tbl_correlaciones_padre WHERE event_class='SISMO_M5'"
+        ).fetchone()
+        assert n is not None and n[0] == 60
+        # el raro (n=1) no sobrevive
+        assert conn.execute(
+            "SELECT COUNT(*) FROM tbl_correlaciones_padre WHERE event_class='SISMO_M7'"
+        ).fetchone()[0] == 0

@@ -111,5 +111,86 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
 
     conn.commit()
     conn.close()
+
+    # El Padre correlaciona todo: reconstruye su tabla de correlaciones con los
+    # conteos al día (patrón cruzado -> cuántas veces), quedándose con lo
+    # significativo. Aprender la esencia, soltar el detalle.
+    stats["correlaciones_padre"] = construir_correlaciones_padre(db_path)
+
     logger.info(f"Barrido diario: {stats}")
+    return stats
+
+
+# ── Tabla de correlaciones del Padre ─────────────────────────────────────────
+# El Padre correlaciona TODO entre familias. En vez de anotar cada evento como
+# una firma de vector completo (miles de filas), se colapsa el conocimiento en
+# una tabla de correlaciones que solo CUENTA: patrón cruzado visto otra vez, +1.
+# Nos quedamos con lo significativo (patrones recurrentes); la cola se deshace.
+
+CORRELACION_MIN_N = 50  # cuenta mínima para que una correlación sea significativa
+
+
+def _patron_padre(f: dict) -> str:
+    """Discretiza el vector cruzado del Padre en qué DOMINIOS estaban activos."""
+    flags = []
+    kp = max(f.get("kp_max", 0) or 0, f.get("kp_max_72h", 0) or 0)
+    bz = f.get("bz_min", 0) or 0
+    prot = f.get("proton_max", 0) or 0
+    if kp >= 4 or bz <= -8 or prot >= 100:
+        flags.append("SOLAR")
+    elif kp < 2 and abs(bz) < 3:
+        flags.append("CALMA")  # Silent Trigger: calma solar precursora
+    if (f.get("sismo_count_win", 0) or 0) >= 3 or \
+       (f.get("sismo_max_mag_win", 0) or 0) >= 4.5:
+        flags.append("SISMICO")
+    if (f.get("so2_kt_win", 0) or 0) > 0 or (f.get("erupciones_win", 0) or 0) > 0:
+        flags.append("DESGAS")
+    if (f.get("btc_volatilidad", 0) or 0) >= 5 or \
+       (f.get("btc_vol_max", 0) or 0) >= 15:
+        flags.append("FINANCIERO")
+    return "+".join(flags) if flags else "DIFUSO"
+
+
+def construir_correlaciones_padre(db_path: str, min_n: int = CORRELACION_MIN_N) -> Dict:
+    """Colapsa las firmas del Padre en una tabla de correlaciones con conteos.
+
+    patrón (dominios activos) × clase de evento -> cuántas veces se ha visto.
+    Solo se conservan las correlaciones significativas (n >= min_n).
+    """
+    import json as _json
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_correlaciones_padre ("
+        "patron TEXT, event_class TEXT, n INTEGER, fuerza REAL, "
+        "actualizada_at TEXT DEFAULT (datetime('now')), "
+        "PRIMARY KEY (patron, event_class))"
+    )
+
+    conteo: Dict[tuple, int] = {}
+    for feats_json, clase, rec in conn.execute(
+        "SELECT features_json, event_class, recurrencia "
+        "FROM TBL_FIRMAS WHERE bot_name = 'padre'"
+    ):
+        try:
+            patron = _patron_padre(_json.loads(feats_json))
+        except Exception:
+            continue
+        conteo[(patron, clase)] = conteo.get((patron, clase), 0) + (rec or 1)
+
+    total = sum(conteo.values()) or 1
+    conn.execute("DELETE FROM tbl_correlaciones_padre")
+    filas = [
+        (p, c, n, round(n / total, 4))
+        for (p, c), n in conteo.items() if n >= min_n
+    ]
+    conn.executemany(
+        "INSERT INTO tbl_correlaciones_padre (patron, event_class, n, fuerza) "
+        "VALUES (?,?,?,?)", filas,
+    )
+    conn.commit()
+    conn.close()
+    stats = {"patrones_totales": len(conteo), "significativos": len(filas),
+             "descartados": len(conteo) - len(filas)}
+    logger.info(f"Correlaciones del Padre: {stats}")
     return stats
