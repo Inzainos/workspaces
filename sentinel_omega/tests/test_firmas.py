@@ -435,3 +435,82 @@ class TestPesos:
         # demote the ALERT — consensus still escalates.
         assert res.final_signal == SignalType.ALERT
         assert res.consensus_reached is True
+
+
+# ── Disciplina de trasfondo (castigo desde abajo) ────────────────────
+
+
+class TestDisciplinaTrasfondo:
+    """Disciplina rolling contra sismos menores: tabla temporal + pesos."""
+
+    def _preparar(self, conn, path, monkeypatch, features):
+        from sentinel_omega.infrastructure.pipeline import entrenamiento as E
+        _seed_backcast(conn, n_eventos=6)          # firmas consolidadas en nodo 45
+        entrenar_reconocimiento(path)
+        # nodo 45 ≈ (40.18, -161.06): eventos menores que mapean ahí
+        eventos = [("2010-10-25 00:00", 40.2, -161.0, 3.2 + i * 0.1)
+                   for i in range(8)]
+        monkeypatch.setattr(E, "_fetch_sismos_menores", lambda *a, **k: eventos)
+        monkeypatch.setattr(E, "extraer_features_ventana", lambda *a, **k: features)
+        return E
+
+    def test_puebla_tabla_temporal_y_acota_pesos(self, db, monkeypatch):
+        conn, path = db
+        E = self._preparar(conn, path, monkeypatch, _features_base())
+        pre = dict(conn.execute(
+            "SELECT bot_name, peso FROM TBL_PESOS_BOTS").fetchall())
+        res = E.disciplina_trasfondo(path, anio=2010, max_eventos=8)
+
+        assert res["eventos"] == 8
+        # La memoria permanente NO se toca; las menores van a su tabla temporal
+        n_menores = conn.execute(
+            "SELECT COUNT(*) FROM tbl_firmas_menores").fetchone()[0]
+        assert n_menores > 0
+        # Pesos dentro de límites y movidos a lo más MAX_AJUSTES pasos
+        from sentinel_omega.core.juez.pesos import (
+            PESO_MIN, PESO_MAX, CASTIGO_PADRE, REFUERZO,
+        )
+        post = dict(conn.execute(
+            "SELECT bot_name, peso FROM TBL_PESOS_BOTS").fetchall())
+        for bot, peso in post.items():
+            assert PESO_MIN <= peso <= PESO_MAX
+            # cota: nunca más allá de MAX_AJUSTES castigos del Padre (el más duro)
+            piso = pre.get(bot, 1.0) * (CASTIGO_PADRE ** E.DISCIPLINA_MAX_AJUSTES)
+            assert peso >= piso - 1e-9
+
+    def test_ceguera_local_castiga(self, db, monkeypatch):
+        conn, path = db
+        # features MUY distintas a la firma aprendida -> no reconoce -> castigo
+        distintas = _features_base(
+            bz_mean=99.0, bz_min=99.0, viento_avg=9999.0, viento_max=9999.0,
+            kp_mean=0.0, kp_max=0.0, proton_max=0.0,
+        )
+        E = self._preparar(conn, path, monkeypatch, distintas)
+        res = E.disciplina_trasfondo(path, anio=2010, max_eventos=8)
+        # Con ceguera local, al menos un bot recibe castigo
+        total_castigos = sum(a["castigos"] for a in res["ajustes"].values())
+        assert total_castigos >= 1
+
+    def test_poda_rolling_por_edad(self, db, monkeypatch):
+        conn, path = db
+        E = self._preparar(conn, path, monkeypatch, _features_base())
+        # Fila vieja artificial (más allá de la retención)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tbl_firmas_menores ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, bot_name TEXT, "
+            "event_class TEXT, id_nodo INTEGER, mag REAL, features_json TEXT, "
+            "ts_evento TEXT, creada_at TEXT DEFAULT (datetime('now')))"
+        )
+        conn.execute(
+            "INSERT INTO tbl_firmas_menores "
+            "(bot_name, event_class, id_nodo, mag, features_json, ts_evento, "
+            " creada_at) VALUES ('alfa1','SISMO_M3',45,3.1,'{}','x',"
+            "datetime('now','-200 days'))"
+        )
+        conn.commit()
+        E.disciplina_trasfondo(path, anio=2010, max_eventos=8)
+        # La fila de hace 200 días quedó fuera (retención 90 días)
+        viejas = conn.execute(
+            "SELECT COUNT(*) FROM tbl_firmas_menores "
+            "WHERE creada_at < datetime('now','-90 days')").fetchone()[0]
+        assert viejas == 0
