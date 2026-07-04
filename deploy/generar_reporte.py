@@ -435,6 +435,42 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     except sqlite3.OperationalError:
         pass
 
+    # ── Sesgo de aprendizaje: realidad vs fantasía ──
+    try:
+        sesgo = conn.execute(
+            "SELECT bot, recon_insample, recon_causal, sesgo FROM "
+            "tbl_sesgo_aprendizaje ORDER BY sesgo DESC"
+        ).fetchall()
+        if sesgo:
+            lineas += [
+                "## 🪞 Realidad vs fantasía — el sesgo de aprendizaje",
+                "",
+                "> La asertividad histórica alta es *in-sample*: el bot reconoce "
+                "las firmas con las que se entrenó (comodidad). La columna "
+                "**Causal (real)** mide lo honesto: ¿reconoció el evento con la "
+                "memoria que ya tenía **antes** de que ocurriera? El **sesgo** "
+                "es la diferencia — cuánto de esa competencia era fantasía. "
+                "Aunque el número real sea más bajo, es la verdad.",
+                "",
+                "| Bot | In-sample | **Causal (real)** | Sesgo (fantasía) |",
+                "|---|---|---|---|",
+            ]
+            for b in sesgo:
+                flag = " ⚠️" if b[3] > 0.20 else (" ✅" if b[3] < 0.05 else "")
+                lineas.append(
+                    f"| {b[0]} | {b[1]:.1%} | **{b[2]:.1%}** | "
+                    f"{b[3]:+.1%}{flag} |"
+                )
+            lineas += [
+                "",
+                "*Sesgo < 5% = el bot generaliza de verdad. Sesgo alto = su "
+                "competencia era comodidad in-sample; su decisión real es más "
+                "floja de lo que aparentaba.*",
+                "",
+            ]
+    except sqlite3.OperationalError:
+        pass
+
     # ── Auditoría del Juez ──
     juez = conn.execute(
         "SELECT resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "

@@ -514,3 +514,137 @@ class TestDisciplinaTrasfondo:
             "SELECT COUNT(*) FROM tbl_firmas_menores "
             "WHERE creada_at < datetime('now','-90 days')").fetchone()[0]
         assert viejas == 0
+
+
+# ── Barrido diario (mantenimiento del historial operativo) ───────────
+
+
+class TestBarridoDiario:
+    """El barrido se queda con lo significante y bota el bulto."""
+
+    def _seed_operativo(self, conn):
+        from datetime import datetime, timezone, timedelta
+        base = datetime.now(timezone.utc) - timedelta(days=20)  # días ya cerrados
+        for cyc in range(6):
+            ts = (base + timedelta(hours=cyc)).timestamp()
+            nivel = "CRITICAL" if cyc == 0 else "LOW"
+            breach = 1 if cyc == 0 else 0
+            conn.execute(
+                "INSERT INTO TBL_CICLOS (timestamp, geo_signal, geo_confidence, "
+                "fantasma, nivel_riesgo, muro_breach, muro_walls_active) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (ts, "watch", 0.4, 40.0 if cyc == 0 else 3.0, nivel, breach, 3),
+            )
+            # las mismas 2 detecciones repetidas cada ciclo (bulto)
+            for tipo in ("SCHUMANN", "TSUNAMI"):
+                conn.execute(
+                    "INSERT INTO TBL_DETECCIONES (timestamp, tipo, display_name, "
+                    "confidence, wall_name) VALUES (?,?,?,?,?)",
+                    (ts, tipo, tipo, 0.7, "SOLAR"),
+                )
+        conn.commit()
+
+    def test_colapsa_detecciones_y_resume_dia(self, db):
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import barrido_diario
+        self._seed_operativo(conn)
+        assert conn.execute("SELECT COUNT(*) FROM TBL_DETECCIONES").fetchone()[0] == 12
+        res = barrido_diario(path, dias_full=7)
+        # 6 ciclos × 2 detecciones -> una por (día, tipo, muro) = 2
+        assert conn.execute("SELECT COUNT(*) FROM TBL_DETECCIONES").fetchone()[0] == 2
+        assert res["detecciones_colapsadas"] == 10
+        # el día quedó resumido
+        assert res["dias_resumidos"] == 1
+        fila = conn.execute(
+            "SELECT n_ciclos, fantasma_max, nivel_max, breaches FROM tbl_resumen_diario"
+        ).fetchone()
+        assert fila[0] == 6 and fila[1] == 40.0 and fila[2] == "CRITICAL" and fila[3] == 1
+
+    def test_conserva_significativos_bota_calma(self, db):
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import barrido_diario
+        self._seed_operativo(conn)
+        barrido_diario(path, dias_full=7)
+        # los ciclos de calma (LOW, sin breach) anteriores al corte se botan;
+        # el CRITICAL con breach se conserva
+        niveles = [r[0] for r in conn.execute("SELECT nivel_riesgo FROM TBL_CICLOS")]
+        assert "CRITICAL" in niveles
+        assert "LOW" not in niveles
+
+
+class TestCorrelacionesPadre:
+    """El Padre correlaciona: patrón cruzado -> conteo, solo lo significativo."""
+
+    def test_cuenta_y_descarta_cola(self, db):
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            construir_correlaciones_padre, _patron_padre,
+        )
+        # patrón dominante (calma solar + sísmico) repetido -> significativo
+        dom = _features_base(kp_max=0.1, kp_max_72h=0.1, bz_min=0.5,
+                             sismo_count_win=5.0, sismo_max_mag_win=5.0)
+        for i in range(60):
+            conn.execute(
+                "INSERT INTO TBL_FIRMAS (bot_name, event_class, id_nodo, "
+                "features_json, recurrencia, estado, ventana_horas) "
+                "VALUES ('padre','SISMO_M5',45,?,1,'consolidada',336)",
+                (__import__("json").dumps(dom),),
+            )
+        # un patrón raro, una sola vez -> cae bajo el umbral, se descarta
+        raro = _features_base(kp_max=9.0, bz_min=-20.0, proton_max=500.0,
+                              sismo_count_win=0.0, sismo_max_mag_win=0.0)
+        conn.execute(
+            "INSERT INTO TBL_FIRMAS (bot_name, event_class, id_nodo, "
+            "features_json, recurrencia, estado, ventana_horas) "
+            "VALUES ('padre','SISMO_M7',9,?,1,'consolidada',336)",
+            (__import__("json").dumps(raro),),
+        )
+        conn.commit()
+        res = construir_correlaciones_padre(path, min_n=50)
+        assert res["significativos"] >= 1
+        assert res["descartados"] >= 1
+        # el patrón dominante quedó con su conteo acumulado
+        n = conn.execute(
+            "SELECT n FROM tbl_correlaciones_padre WHERE event_class='SISMO_M5'"
+        ).fetchone()
+        assert n is not None and n[0] == 60
+        # el raro (n=1) no sobrevive
+        assert conn.execute(
+            "SELECT COUNT(*) FROM tbl_correlaciones_padre WHERE event_class='SISMO_M7'"
+        ).fetchone()[0] == 0
+
+
+class TestSesgoAprendizaje:
+    """Realidad (causal) vs fantasía (in-sample); el Padre paga si es fantasía."""
+
+    def test_causal_menor_que_insample_y_castiga_padre(self, db):
+        conn, path = db
+        import json as _json
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            evaluar_sesgo_aprendizaje,
+        )
+        _seed_backcast(conn, n_eventos=6)  # eventos M6.4 en nodo 45, 2010-06+
+        # firma del PADRE consolidada cuya memoria nace DESPUÉS de los eventos
+        # -> in-sample la reconoce, pero causalmente no existía antes -> sesgo
+        feats = _features_base(sismo_count_win=5.0, sismo_max_mag_win=6.4)
+        conn.execute(
+            "INSERT INTO TBL_FIRMAS (bot_name, event_class, id_nodo, "
+            "features_json, eventos_json, recurrencia, estado, ventana_horas) "
+            "VALUES ('padre','SISMO_M6',45,?,?,9,'consolidada',336)",
+            (_json.dumps(feats),
+             _json.dumps(["2020-01-01 00:00|nodo45|M6.4"])),  # memoria de 2020
+        )
+        conn.commit()
+        res = evaluar_sesgo_aprendizaje(path, muestra=50)
+        p = res["por_bot"].get("padre")
+        assert p is not None
+        # causal <= in-sample (la memoria de 2020 no existia en 2010)
+        assert p["causal"] <= p["insample"]
+        # con sesgo real, al Padre le toca castigo
+        if p["causal"] < 1.0:
+            assert p["castigos"] >= 1
+        fila = conn.execute(
+            "SELECT recon_insample, recon_causal FROM tbl_sesgo_aprendizaje "
+            "WHERE bot='padre'"
+        ).fetchone()
+        assert fila is not None

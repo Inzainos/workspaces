@@ -166,6 +166,14 @@ def run(args):
         resultado = disciplina_trasfondo(str(db_path))
         logger.info(f"Background discipline complete: {resultado}")
 
+    if args.barrido:
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            barrido_diario,
+        )
+        logger.info("Running daily maintenance sweep (barrido diario)...")
+        resultado = barrido_diario(str(db_path))
+        logger.info(f"Daily sweep complete: {resultado}")
+
     dashboard_proc = None
     if args.dashboard:
         dashboard_proc = _launch_dashboard()
@@ -500,6 +508,10 @@ def parse_args():
     parser.add_argument(
         "--disciplina", action="store_true",
         help="Run background discipline on minor quakes (castigo desde abajo)",
+    )
+    parser.add_argument(
+        "--barrido", action="store_true",
+        help="Run daily maintenance sweep (compact history, keep significant)",
     )
     return parser.parse_args()
 
