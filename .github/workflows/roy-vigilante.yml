@@ -80,8 +80,10 @@ jobs:
           # ajusta los pesos (acotado). El resto de corridas lo saltan.
           if [ "$(date -u +%H)" = "07" ]; then
             python sentinel_omega/launcher.py --disciplina
+            # Barrido: compacta el historial del día, se queda con lo significante
+            python sentinel_omega/launcher.py --barrido
           else
-            echo "skip — la disciplina de trasfondo corre 1×/día (07 UTC)"
+            echo "skip — la disciplina y el barrido corren 1×/día (07 UTC)"
           fi
 
       - name: Guardar memoria

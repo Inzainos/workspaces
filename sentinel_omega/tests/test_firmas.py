@@ -514,3 +514,59 @@ class TestDisciplinaTrasfondo:
             "SELECT COUNT(*) FROM tbl_firmas_menores "
             "WHERE creada_at < datetime('now','-90 days')").fetchone()[0]
         assert viejas == 0
+
+
+# ── Barrido diario (mantenimiento del historial operativo) ───────────
+
+
+class TestBarridoDiario:
+    """El barrido se queda con lo significante y bota el bulto."""
+
+    def _seed_operativo(self, conn):
+        from datetime import datetime, timezone, timedelta
+        base = datetime.now(timezone.utc) - timedelta(days=20)  # días ya cerrados
+        for cyc in range(6):
+            ts = (base + timedelta(hours=cyc)).timestamp()
+            nivel = "CRITICAL" if cyc == 0 else "LOW"
+            breach = 1 if cyc == 0 else 0
+            conn.execute(
+                "INSERT INTO TBL_CICLOS (timestamp, geo_signal, geo_confidence, "
+                "fantasma, nivel_riesgo, muro_breach, muro_walls_active) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (ts, "watch", 0.4, 40.0 if cyc == 0 else 3.0, nivel, breach, 3),
+            )
+            # las mismas 2 detecciones repetidas cada ciclo (bulto)
+            for tipo in ("SCHUMANN", "TSUNAMI"):
+                conn.execute(
+                    "INSERT INTO TBL_DETECCIONES (timestamp, tipo, display_name, "
+                    "confidence, wall_name) VALUES (?,?,?,?,?)",
+                    (ts, tipo, tipo, 0.7, "SOLAR"),
+                )
+        conn.commit()
+
+    def test_colapsa_detecciones_y_resume_dia(self, db):
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import barrido_diario
+        self._seed_operativo(conn)
+        assert conn.execute("SELECT COUNT(*) FROM TBL_DETECCIONES").fetchone()[0] == 12
+        res = barrido_diario(path, dias_full=7)
+        # 6 ciclos × 2 detecciones -> una por (día, tipo, muro) = 2
+        assert conn.execute("SELECT COUNT(*) FROM TBL_DETECCIONES").fetchone()[0] == 2
+        assert res["detecciones_colapsadas"] == 10
+        # el día quedó resumido
+        assert res["dias_resumidos"] == 1
+        fila = conn.execute(
+            "SELECT n_ciclos, fantasma_max, nivel_max, breaches FROM tbl_resumen_diario"
+        ).fetchone()
+        assert fila[0] == 6 and fila[1] == 40.0 and fila[2] == "CRITICAL" and fila[3] == 1
+
+    def test_conserva_significativos_bota_calma(self, db):
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import barrido_diario
+        self._seed_operativo(conn)
+        barrido_diario(path, dias_full=7)
+        # los ciclos de calma (LOW, sin breach) anteriores al corte se botan;
+        # el CRITICAL con breach se conserva
+        niveles = [r[0] for r in conn.execute("SELECT nivel_riesgo FROM TBL_CICLOS")]
+        assert "CRITICAL" in niveles
+        assert "LOW" not in niveles
