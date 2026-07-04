@@ -73,6 +73,17 @@ jobs:
           rm -f sentinel_omega/data/sentinel_omega.pid
           python sentinel_omega/launcher.py --once
 
+      - name: Disciplina de trasfondo (castigo desde abajo, 1×/día)
+        run: |
+          # El cron dispara al minuto :07 cada 2h (horas impares). A las 07 UTC
+          # corre una vez al día: baja sismos menores del bloque reciente y
+          # ajusta los pesos (acotado). El resto de corridas lo saltan.
+          if [ "$(date -u +%H)" = "07" ]; then
+            python sentinel_omega/launcher.py --disciplina
+          else
+            echo "skip — la disciplina de trasfondo corre 1×/día (07 UTC)"
+          fi
+
       - name: Guardar memoria
         if: always()
         uses: actions/cache/save@v4

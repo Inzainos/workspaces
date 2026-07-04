@@ -158,6 +158,14 @@ def run(args):
         resultado = entrenar(str(db_path))
         logger.info(f"Training complete: {resultado}")
 
+    if args.disciplina:
+        from sentinel_omega.infrastructure.pipeline.entrenamiento import (
+            disciplina_trasfondo,
+        )
+        logger.info("Running background discipline (castigo desde abajo)...")
+        resultado = disciplina_trasfondo(str(db_path))
+        logger.info(f"Background discipline complete: {resultado}")
+
     dashboard_proc = None
     if args.dashboard:
         dashboard_proc = _launch_dashboard()
@@ -488,6 +496,10 @@ def parse_args():
     parser.add_argument(
         "--entrenar", action="store_true",
         help="Run signature training over the backcast (Fase 1 + Fase 2)",
+    )
+    parser.add_argument(
+        "--disciplina", action="store_true",
+        help="Run background discipline on minor quakes (castigo desde abajo)",
     )
     return parser.parse_args()
 

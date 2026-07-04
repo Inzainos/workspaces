@@ -16,14 +16,17 @@ Fase 2 (backtest disciplinario):
 Run via: python sentinel_omega/launcher.py --entrenar
 """
 
+import json
 import logging
 import sqlite3
+from datetime import datetime
 from typing import Dict, List, Optional
 
 from sentinel_omega.core.firmas.signature_engine import (
     SIMILARITY_ALERT,
     FirmaMemoria,
     extraer_features_ventana,
+    similitud,
 )
 from sentinel_omega.core.juez.juez import Juez
 
@@ -464,3 +467,146 @@ def analizar_factores_lag(db_path: str) -> Dict:
         },
         "top_factores": top,
     }
+
+
+# ── Disciplina de trasfondo — "castigo desde abajo" ──────────────────────────
+# Los bots ALERTAN y guardan firmas PERMANENTES desde M4.5 (memoria de 32 años).
+# Pero para que no se duerman con los precursores chiquitos, se les disciplina
+# cada cierto tiempo contra sismos MENORES (M2.5–4.49) de un bloque reciente de
+# años. Esas firmas viven en una tabla TEMPORAL que se poda por edad — solo
+# sobreviven los PESOS neuronales. El ajuste de peso por corrida está ACOTADO
+# para no cráterizar la credibilidad de un bot de un golpe.
+MAG_MENOR_MIN = 2.5
+MAG_MENOR_MAX = MIN_MAGNITUD_FIRMA          # 4.5 — justo por debajo del piso de alerta
+DISCIPLINA_MAX_EVENTOS = 300                # muestreo acotado por corrida
+DISCIPLINA_RETENCION_DIAS = 90             # poda rolling de la tabla temporal
+DISCIPLINA_MAX_AJUSTES = 3                  # pasos de peso por bot por corrida
+
+
+def _fetch_sismos_menores(anio: int, mag_min: float, mag_max: float,
+                          max_results: int = 20000) -> List[tuple]:
+    """USGS por rango de fecha+magnitud (bloque histórico, no ventana viva)."""
+    import requests
+    url = "https://earthquake.usgs.gov/fdsnws/event/1/query"
+    params = {
+        "format": "geojson",
+        "starttime": f"{anio}-01-01",
+        "endtime": f"{anio}-12-31T23:59:59",
+        "minmagnitude": mag_min,
+        "maxmagnitude": mag_max,
+        "limit": max_results,
+        "orderby": "time",
+    }
+    try:
+        r = requests.get(url, params=params, timeout=90)
+        r.raise_for_status()
+        out = []
+        for f in r.json().get("features", []):
+            props = f.get("properties", {})
+            coords = (f.get("geometry") or {}).get("coordinates", [None, None, None])
+            mag, lon, lat, t = props.get("mag"), coords[0], coords[1], props.get("time")
+            if mag is None or lat is None or lon is None or t is None:
+                continue
+            ts = datetime.utcfromtimestamp(t / 1000).strftime("%Y-%m-%d %H:%M")
+            out.append((ts, lat, lon, float(mag)))
+        return out
+    except Exception as e:
+        logger.warning(f"Disciplina de trasfondo: fetch USGS falló: {e}")
+        return []
+
+
+def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
+                         max_eventos: int = DISCIPLINA_MAX_EVENTOS) -> Dict:
+    """Castigo desde abajo — disciplina rolling contra sismos menores.
+
+    No toca la memoria permanente (TBL_FIRMAS): las firmas menores van a
+    tbl_firmas_menores (temporal, podada por edad). Solo persisten los pesos.
+    """
+    from sentinel_omega.core.juez.pesos import castigar, reforzar
+    from sentinel_omega.core.shared.geometria_uvg import nodo_mas_cercano
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_firmas_menores ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, bot_name TEXT, event_class TEXT, "
+        "id_nodo INTEGER, mag REAL, features_json TEXT, ts_evento TEXT, "
+        "creada_at TEXT DEFAULT (datetime('now')))"
+    )
+    # Poda rolling: fuera las firmas menores más viejas que la retención.
+    conn.execute(
+        "DELETE FROM tbl_firmas_menores WHERE creada_at < datetime('now', ?)",
+        (f"-{DISCIPLINA_RETENCION_DIAS} days",),
+    )
+    conn.commit()
+
+    # Bloque reciente = último año con contexto en el backcast.
+    if anio is None:
+        maxblk = conn.execute(
+            "SELECT MAX(timestamp_blk) FROM tbl_clima_espacial_raw"
+        ).fetchone()[0]
+        anio = int(maxblk[:4]) if maxblk else datetime.utcnow().year - 1
+
+    eventos = _fetch_sismos_menores(anio, MAG_MENOR_MIN, MAG_MENOR_MAX)
+    if not eventos:
+        conn.close()
+        return {"anio": anio, "eventos": 0, "nota": "sin datos de sismos menores"}
+    if len(eventos) > max_eventos:                 # muestreo uniforme
+        paso = len(eventos) / max_eventos
+        eventos = [eventos[int(i * paso)] for i in range(max_eventos)]
+
+    memoria = FirmaMemoria(conn)
+    consolidadas = {b: memoria.consolidadas(b) for b in BOT_FEATURES}
+    conteo = {b: {"evaluadas": 0, "reconocidas": 0} for b in BOT_FEATURES}
+
+    for ts, lat, lon, mag in eventos:
+        nodo = nodo_mas_cercano(lat, lon)["id"]
+        feats = extraer_features_ventana(conn, ts, nodo)
+        if feats is None:
+            continue
+        clase = f"SISMO_M{int(mag)}"               # M2 / M3 / M4 (menores)
+        for bot, keys in BOT_FEATURES.items():
+            firmas_bot = consolidadas.get(bot) or []
+            if not firmas_bot:
+                continue
+            sub = feats if keys is None else {k: feats[k] for k in keys if k in feats}
+            if not sub:
+                continue
+            # Reconocimiento ESPACIAL: ¿la memoria del bot PARA ESE NODO
+            # anticipó el chiquito ahí? Sin firma en el nodo = ceguera local.
+            firmas_nodo = [f for f in firmas_bot if f["id_nodo"] == nodo]
+            best = max((similitud(sub, f["features"]) for f in firmas_nodo),
+                       default=0.0)
+            conteo[bot]["evaluadas"] += 1
+            if best >= SIMILARITY_ALERT:
+                conteo[bot]["reconocidas"] += 1
+            conn.execute(
+                "INSERT INTO tbl_firmas_menores "
+                "(bot_name, event_class, id_nodo, mag, features_json, ts_evento) "
+                "VALUES (?,?,?,?,?,?)",
+                (bot, clase, nodo, mag, json.dumps(sub), ts),
+            )
+
+    # Ajuste de pesos ACOTADO por bot: más ceguera a los chiquitos → más castigo
+    # (hasta DISCIPLINA_MAX_AJUSTES pasos), el resto se convierte en refuerzo.
+    ajustes = {}
+    for bot, c in conteo.items():
+        if c["evaluadas"] == 0:
+            continue
+        tasa = c["reconocidas"] / c["evaluadas"]
+        n_castigos = min(DISCIPLINA_MAX_AJUSTES,
+                         round((1.0 - tasa) * DISCIPLINA_MAX_AJUSTES))
+        n_refuerzos = DISCIPLINA_MAX_AJUSTES - n_castigos
+        es_padre = bot == "padre"
+        for _ in range(n_castigos):
+            castigar(conn, bot, es_padre=es_padre, gravedad=1.0)
+        for _ in range(n_refuerzos):
+            reforzar(conn, bot)
+        ajustes[bot] = {"reconocimiento": round(tasa, 3),
+                        "castigos": n_castigos, "refuerzos": n_refuerzos}
+    conn.commit()
+    conn.close()
+    logger.info(
+        f"Disciplina de trasfondo ({anio}, M{MAG_MENOR_MIN}-{MAG_MENOR_MAX}, "
+        f"{len(eventos)} eventos): {ajustes}"
+    )
+    return {"anio": anio, "eventos": len(eventos), "ajustes": ajustes}
