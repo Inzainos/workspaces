@@ -11,7 +11,7 @@ import logging
 import os
 from typing import Optional
 
-import requests
+from sentinel_omega.infrastructure.api._http import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def send_alert(message: str, parse_mode: str = "HTML") -> bool:
         "parse_mode": parse_mode,
     }
     try:
-        resp = requests.post(url, json=payload, timeout=TIMEOUT)
+        resp = get_session().post(url, json=payload, timeout=TIMEOUT)
         resp.raise_for_status()
         logger.info("Telegram alert sent successfully")
         return True

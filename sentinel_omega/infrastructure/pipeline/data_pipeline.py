@@ -78,12 +78,21 @@ class GeodynamicPipeline:
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._cache_ts: Dict[str, float] = {}
 
+    _LOCF_STALE_S = 86_400  # warn when cache is older than 24 h
+
     def _locf_get(self, key: str) -> Dict[str, Any]:
         """Return last cached value for a given pipeline stage."""
         cached = self._cache.get(key)
         if cached:
             age_s = time.time() - self._cache_ts.get(key, 0)
-            logger.info(f"LOCF active for {key} (age={age_s:.0f}s)")
+            if age_s > self._LOCF_STALE_S:
+                logger.warning(
+                    f"LOCF stale for {key} (age={age_s / 3600:.1f}h — data older than 24h)"
+                )
+            else:
+                logger.info(f"LOCF active for {key} (age={age_s:.0f}s)")
+        else:
+            logger.warning(f"LOCF miss for {key} — no prior data; returning empty dict")
         return cached or {}
 
     def _locf_set(self, key: str, data: Dict[str, Any]):
@@ -336,7 +345,7 @@ class GeodynamicPipeline:
         if sector_caps:
             result["sector_market_caps"] = sector_caps
 
-        if not result or result.get("fear_greed") == 50.0 and "vix" not in result:
+        if not result or (result.get("fear_greed") == 50.0 and "vix" not in result):
             cached = self._locf_get("delta")
             if cached:
                 return cached

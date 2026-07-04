@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import numpy as np
-import requests
+from sentinel_omega.infrastructure.api._http import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def fetch_schumann_spectrogram(
 ) -> Optional[str]:
     """Download today's Schumann spectrogram from Tomsk Observatory."""
     try:
-        resp = requests.get(TOMSK_URL, timeout=TIMEOUT)
+        resp = get_session().get(TOMSK_URL, timeout=TIMEOUT)
         resp.raise_for_status()
 
         if save_dir:

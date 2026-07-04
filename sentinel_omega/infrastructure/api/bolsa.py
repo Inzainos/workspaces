@@ -8,7 +8,7 @@ import time as _time
 from typing import Dict, List, Optional
 
 import pandas as pd
-import requests
+from sentinel_omega.infrastructure.api._http import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def fetch_yahoo_quote(
         f"?period1={start}&period2={now}&interval={interval}"
     )
     try:
-        resp = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "SentinelOmega/2.0"})
+        resp = get_session().get(url, timeout=TIMEOUT, headers={"User-Agent": "SentinelOmega/2.0"})
         resp.raise_for_status()
         data = resp.json()
 

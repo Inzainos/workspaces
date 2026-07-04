@@ -7,7 +7,7 @@ import logging
 from typing import Optional
 
 import pandas as pd
-import requests
+from sentinel_omega.infrastructure.api._http import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ def fetch_earthquakes(
         "&orderby=time"
     )
     try:
-        resp = requests.get(url, timeout=TIMEOUT)
+        resp = get_session().get(url, timeout=TIMEOUT)
         resp.raise_for_status()
         features = resp.json().get("features", [])
 

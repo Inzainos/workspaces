@@ -360,15 +360,15 @@ class TestLegacyDataLoader:
 
 class TestSchumannConnector:
 
-    @patch("sentinel_omega.infrastructure.api.schumann.requests.get")
-    def test_fetch_spectrogram(self, mock_get):
+    @patch("sentinel_omega.infrastructure.api.schumann.get_session")
+    def test_fetch_spectrogram(self, mock_get_session):
         from sentinel_omega.infrastructure.api.schumann import fetch_schumann_spectrogram
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.content = b"\xff\xd8\xff\xe0" + b"\x00" * 100
         mock_resp.raise_for_status = MagicMock()
-        mock_get.return_value = mock_resp
+        mock_get_session.return_value.get.return_value = mock_resp
 
         path = fetch_schumann_spectrogram()
         assert path is not None
@@ -376,11 +376,11 @@ class TestSchumannConnector:
         assert os.path.exists(path)
         os.remove(path)
 
-    @patch("sentinel_omega.infrastructure.api.schumann.requests.get")
-    def test_fetch_spectrogram_failure(self, mock_get):
+    @patch("sentinel_omega.infrastructure.api.schumann.get_session")
+    def test_fetch_spectrogram_failure(self, mock_get_session):
         from sentinel_omega.infrastructure.api.schumann import fetch_schumann_spectrogram
 
-        mock_get.side_effect = Exception("Network error")
+        mock_get_session.return_value.get.side_effect = Exception("Network error")
         path = fetch_schumann_spectrogram()
         assert path is None
 
@@ -425,8 +425,8 @@ class TestSchumannConnector:
 
 class TestGeophysicalConnector:
 
-    @patch("sentinel_omega.infrastructure.api.geophysical.requests.get")
-    def test_fetch_lod_series(self, mock_get):
+    @patch("sentinel_omega.infrastructure.api.geophysical.get_session")
+    def test_fetch_lod_series(self, mock_get_session):
         from sentinel_omega.infrastructure.api.geophysical import fetch_lod_series
 
         csv_lines = ["MJD;LOD"]
@@ -439,7 +439,7 @@ class TestGeophysicalConnector:
         mock_resp.status_code = 200
         mock_resp.text = "\n".join(csv_lines)
         mock_resp.raise_for_status = MagicMock()
-        mock_get.return_value = mock_resp
+        mock_get_session.return_value.get.return_value = mock_resp
 
         df = fetch_lod_series(days=30)
         assert df is not None
@@ -447,11 +447,11 @@ class TestGeophysicalConnector:
         assert "date" in df.columns
         assert len(df) == 30
 
-    @patch("sentinel_omega.infrastructure.api.geophysical.requests.get")
-    def test_fetch_lod_failure(self, mock_get):
+    @patch("sentinel_omega.infrastructure.api.geophysical.get_session")
+    def test_fetch_lod_failure(self, mock_get_session):
         from sentinel_omega.infrastructure.api.geophysical import fetch_lod_series
 
-        mock_get.side_effect = Exception("Network error")
+        mock_get_session.return_value.get.side_effect = Exception("Network error")
         df = fetch_lod_series()
         assert df is None
 
@@ -582,9 +582,9 @@ class TestOpenWeatherMapConnector:
         assert r.pressure_hpa == 1012.0
         assert r.temp_c == 22.5
 
-    @patch("sentinel_omega.infrastructure.api.openweathermap.requests.get")
+    @patch("sentinel_omega.infrastructure.api.openweathermap.get_session")
     @patch.dict("os.environ", {"OPENWEATHERMAP_KEY": "test_key"})
-    def test_fetch_weather(self, mock_get):
+    def test_fetch_weather(self, mock_get_session):
         from sentinel_omega.infrastructure.api.openweathermap import fetch_weather
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
@@ -594,7 +594,7 @@ class TestOpenWeatherMapConnector:
             "visibility": 8000,
         }
         mock_resp.raise_for_status = MagicMock()
-        mock_get.return_value = mock_resp
+        mock_get_session.return_value.get.return_value = mock_resp
 
         reading = fetch_weather(19.31, -98.24, "tlaxcala")
         assert reading is not None
@@ -608,9 +608,9 @@ class TestOpenWeatherMapConnector:
         reading = fetch_weather(19.31, -98.24)
         assert reading is None
 
-    @patch("sentinel_omega.infrastructure.api.openweathermap.requests.get")
+    @patch("sentinel_omega.infrastructure.api.openweathermap.get_session")
     @patch.dict("os.environ", {"OPENWEATHERMAP_KEY": "test_key"})
-    def test_fetch_air_quality(self, mock_get):
+    def test_fetch_air_quality(self, mock_get_session):
         from sentinel_omega.infrastructure.api.openweathermap import fetch_air_quality
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
@@ -620,7 +620,7 @@ class TestOpenWeatherMapConnector:
             }],
         }
         mock_resp.raise_for_status = MagicMock()
-        mock_get.return_value = mock_resp
+        mock_get_session.return_value.get.return_value = mock_resp
 
         aq = fetch_air_quality(19.31, -98.24)
         assert aq is not None
@@ -669,22 +669,22 @@ class TestTelegramConnector:
         result = send_alert("Test message")
         assert result is False
 
-    @patch("sentinel_omega.infrastructure.api.telegram.requests.post")
+    @patch("sentinel_omega.infrastructure.api.telegram.get_session")
     @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "test:token", "TELEGRAM_CHAT_ID": "12345"})
-    def test_send_alert_success(self, mock_post):
+    def test_send_alert_success(self, mock_get_session):
         from sentinel_omega.infrastructure.api.telegram import send_alert
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_post.return_value = mock_resp
+        mock_get_session.return_value.post.return_value = mock_resp
 
         result = send_alert("Test alert")
         assert result is True
-        mock_post.assert_called_once()
+        mock_get_session.return_value.post.assert_called_once()
 
-    @patch("sentinel_omega.infrastructure.api.telegram.requests.post")
+    @patch("sentinel_omega.infrastructure.api.telegram.get_session")
     @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "test:token", "TELEGRAM_CHAT_ID": "12345"})
-    def test_send_alert_failure(self, mock_post):
+    def test_send_alert_failure(self, mock_get_session):
         from sentinel_omega.infrastructure.api.telegram import send_alert
-        mock_post.side_effect = Exception("Network error")
+        mock_get_session.return_value.post.side_effect = Exception("Network error")
         result = send_alert("Test alert")
         assert result is False

@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-import requests
+from sentinel_omega.infrastructure.api._http import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ def fetch_active_hurricanes() -> List[TropicalCyclone]:
     """Fetch active tropical cyclones from NOAA NHC GeoJSON."""
     url = "https://www.nhc.noaa.gov/CurrentSurges.json"
     try:
-        resp = requests.get(url, timeout=TIMEOUT)
+        resp = get_session().get(url, timeout=TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
 
@@ -100,7 +100,7 @@ def fetch_historical_tsunamis(
         "minEqMagnitude": min_magnitude,
     }
     try:
-        resp = requests.get(TSUNAMI_EVENTS_URL, params=params, timeout=TIMEOUT)
+        resp = get_session().get(TSUNAMI_EVENTS_URL, params=params, timeout=TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
 
