@@ -239,7 +239,7 @@ def _compute_score(
     cross: Optional[CrossResult],
     geo: Optional[GeophysicalContext],
     trends_stress: Optional[float],
-) -> tuple[float, float]:
+) -> "Tuple[float, float]":
     """Return (composite_score, confidence) in [0,1]."""
     score = 0.0
     conf_parts: List[float] = []

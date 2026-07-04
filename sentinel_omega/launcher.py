@@ -18,6 +18,7 @@ import signal
 import subprocess
 import sys
 import time
+from datetime import datetime as _dt
 from pathlib import Path
 
 # Ensure the workspace root is importable when run as a script
@@ -325,7 +326,6 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
         try:
             alfa2_data = getattr(runner, "_last_alfa2_data", None)
             if alfa2_data and alfa2_data.get("zone_coverages"):
-                from datetime import datetime as _dt
                 ts_blk = _dt.utcnow().strftime("%Y-%m-%d %H:00:00")
                 for zona, cov in alfa2_data["zone_coverages"].items():
                     cloud_covers = cov.get("s2_cloud_covers", [])
@@ -354,7 +354,6 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
         try:
             delta_cache = getattr(runner.pipeline, "_cache", {}).get("delta") or {}
             if delta_cache.get("cross_coupling") is not None:
-                from datetime import datetime as _dt
                 ts_blk = _dt.utcnow().strftime("%Y-%m-%d %H:00:00")
                 repo.insert_delta_cross(
                     timestamp_blk=ts_blk,

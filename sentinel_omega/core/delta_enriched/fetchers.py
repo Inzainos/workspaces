@@ -30,6 +30,12 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
+from sentinel_omega.core.delta_enriched.market_mapping import (
+    CRYPTO_TICKERS,
+    EQUITY_TICKERS,
+    ALL_TICKERS,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -84,26 +90,6 @@ class FetchedData:
     space_weather: Optional[SpaceWeather] = None
     schumann: Optional[SchumannData] = None
     trends: Optional[TrendsData] = None
-
-
-# ---------------------------------------------------------------------------
-# Financial data — yfinance
-# ---------------------------------------------------------------------------
-
-# Core tickers fetched by default
-CRYPTO_TICKERS = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD"]
-EQUITY_TICKERS = [
-    "SPY",    # S&P 500 ETF
-    "QQQ",    # Nasdaq-100 ETF
-    "^VIX",   # CBOE Volatility Index
-    "^MXX",   # IPC México
-    "GLD",    # Gold ETF
-    "TLT",    # 20-yr US Treasury ETF (yield proxy)
-    "XLF",    # Financials sector
-    "XLE",    # Energy sector
-    "XLK",    # Technology sector
-]
-ALL_TICKERS = CRYPTO_TICKERS + EQUITY_TICKERS
 
 
 def fetch_prices(days: int = 30) -> Optional[PriceSeries]:
