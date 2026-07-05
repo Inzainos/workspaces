@@ -33,6 +33,8 @@ from sentinel_omega.core.precursor.precursor_types import (
     detect_tsunami_potential,
     detect_seismic_cluster,
     detect_volcanic_precursor,
+    compute_precipitacion_potencial,
+    detect_precipitacion_potencial,
 )
 
 
@@ -866,3 +868,137 @@ class TestTelegramPrecursorFormat:
         assert "72h" in msg
         assert "48h" in msg
         assert "Tlaxcala" in msg
+
+
+# ── Precipitation potential (Schumann-modular formula) ───────────────────────
+
+
+class TestPrecipitacionPotencial:
+    """
+    Formula: Π_i(t) = μ_i(t) · (Φ_i(t) mod Φ_S(t))
+      μ_i  = humidity_pct / 100
+      Φ_i  = temp_c * (clouds_pct / 100) + 273.15   (K-scale)
+      Φ_S  = schumann_hz * 10.0                      (K-scale)
+    Threshold: 30.0
+    """
+
+    def test_formula_clear_day_below_threshold(self):
+        """Low humidity, few clouds → small residual × low μ → not triggered."""
+        pi = compute_precipitacion_potencial(
+            humidity_pct=50.0, temp_c=20.0, clouds_pct=10.0, schumann_hz=7.83
+        )
+        assert pi < 30.0
+        assert not detect_precipitacion_potencial(50.0, 20.0, 10.0, 7.83)
+
+    def test_formula_heavy_rain_triggered(self):
+        """High humidity, heavy clouds, warm → large Π_i → triggered."""
+        pi = compute_precipitacion_potencial(
+            humidity_pct=85.0, temp_c=28.0, clouds_pct=90.0, schumann_hz=8.2
+        )
+        assert pi >= 30.0
+        assert detect_precipitacion_potencial(85.0, 28.0, 90.0, 8.2)
+
+    def test_formula_overcast_triggered(self):
+        """Overcast rain scenario: humidity=90, clouds=95."""
+        pi = compute_precipitacion_potencial(
+            humidity_pct=90.0, temp_c=18.0, clouds_pct=95.0, schumann_hz=7.9
+        )
+        assert pi >= 30.0
+
+    def test_dry_desert_not_triggered(self):
+        """Very low humidity, minimal clouds → no precipitation."""
+        assert not detect_precipitacion_potencial(15.0, 35.0, 5.0, 7.83)
+
+    def test_zero_schumann_returns_zero(self):
+        """Guard: Φ_S ≤ 0 must not raise and must return 0."""
+        pi = compute_precipitacion_potencial(90.0, 25.0, 100.0, schumann_hz=0.0)
+        assert pi == 0.0
+
+    def test_custom_threshold(self):
+        """detect_ respects the threshold parameter."""
+        pi = compute_precipitacion_potencial(70.0, 22.0, 60.0, 7.83)
+        assert detect_precipitacion_potencial(70.0, 22.0, 60.0, 7.83, threshold=pi - 0.01)
+        assert not detect_precipitacion_potencial(70.0, 22.0, 60.0, 7.83, threshold=pi + 0.01)
+
+    def test_profile_registered(self):
+        """PRECIPITACION must appear in PRECURSOR_PROFILES and PRECURSOR_DISPLAY_NAMES."""
+        assert PrecursorType.PRECIPITACION in PRECURSOR_PROFILES
+        assert PrecursorType.PRECIPITACION in PRECURSOR_DISPLAY_NAMES
+        profile = PRECURSOR_PROFILES[PrecursorType.PRECIPITACION]
+        assert "humidity_pct" in profile.variables
+        assert "schumann_hz" in profile.variables
+        assert "pi_i" in profile.variables
+
+    def test_humidity_drives_result(self):
+        """Doubling humidity (below saturation) roughly doubles Π_i."""
+        pi_low = compute_precipitacion_potencial(40.0, 25.0, 80.0, 7.83)
+        pi_high = compute_precipitacion_potencial(80.0, 25.0, 80.0, 7.83)
+        assert abs(pi_high / pi_low - 2.0) < 0.01
+
+
+class TestScannerPrecipitacion:
+
+    def _make_scanner(self):
+        from sentinel_omega.core.precursor.scanner import PrecursorScanner
+        return PrecursorScanner()
+
+    def _beta1_with_schumann(self, hz: float = 8.2) -> dict:
+        return {"schumann_frequency": hz, "schumann_activity": 150.0}
+
+    def test_heavy_rain_reading_detected(self):
+        scanner = self._make_scanner()
+        atm = [{"station": "Xalapa", "lat": 19.5, "lon": -96.9,
+                "humidity_pct": 88.0, "temp_c": 26.0, "clouds_pct": 92.0,
+                "pressure_hpa": 1010.0, "weather_id": 800}]
+        delta = {"atmospheric_readings": atm, "air_quality": {}}
+        detections = scanner.scan({}, self._beta1_with_schumann(8.2), delta)
+        prec = [d for d in detections if d.tipo == PrecursorType.PRECIPITACION]
+        assert len(prec) == 1
+        assert prec[0].station == "Xalapa"
+        assert prec[0].values["pi_i"] >= 30.0
+        assert prec[0].confidence >= 0.5
+
+    def test_clear_day_no_detection(self):
+        scanner = self._make_scanner()
+        atm = [{"station": "node_A", "humidity_pct": 45.0, "temp_c": 22.0,
+                "clouds_pct": 10.0, "pressure_hpa": 1015.0, "weather_id": 800}]
+        delta = {"atmospheric_readings": atm, "air_quality": {}}
+        detections = scanner.scan({}, self._beta1_with_schumann(7.83), delta)
+        prec = [d for d in detections if d.tipo == PrecursorType.PRECIPITACION]
+        assert len(prec) == 0
+
+    def test_missing_schumann_no_detection(self):
+        """If beta1 does not supply schumann_frequency, no precipitation scan."""
+        scanner = self._make_scanner()
+        atm = [{"station": "node_B", "humidity_pct": 95.0, "temp_c": 28.0,
+                "clouds_pct": 100.0, "pressure_hpa": 1005.0, "weather_id": 500}]
+        delta = {"atmospheric_readings": atm, "air_quality": {}}
+        detections = scanner.scan({}, {}, delta)
+        prec = [d for d in detections if d.tipo == PrecursorType.PRECIPITACION]
+        assert len(prec) == 0
+
+    def test_multiple_readings_multiple_detections(self):
+        """Each rainy reading produces its own PrecursorDetection."""
+        scanner = self._make_scanner()
+        atm = [
+            {"station": "A", "humidity_pct": 90.0, "temp_c": 25.0, "clouds_pct": 90.0,
+             "pressure_hpa": 1008.0, "weather_id": 500},
+            {"station": "B", "humidity_pct": 85.0, "temp_c": 27.0, "clouds_pct": 88.0,
+             "pressure_hpa": 1007.0, "weather_id": 500},
+        ]
+        delta = {"atmospheric_readings": atm, "air_quality": {}}
+        detections = scanner.scan({}, self._beta1_with_schumann(8.0), delta)
+        prec = [d for d in detections if d.tipo == PrecursorType.PRECIPITACION]
+        assert len(prec) == 2
+
+    def test_high_pi_boosts_confidence(self):
+        """A very high Π_i (≥ 45) should push confidence above 0.7."""
+        scanner = self._make_scanner()
+        atm = [{"station": "Veracruz", "lat": 19.18, "lon": -96.14,
+                "humidity_pct": 92.0, "temp_c": 30.0, "clouds_pct": 95.0,
+                "pressure_hpa": 1005.0, "weather_id": 500}]
+        delta = {"atmospheric_readings": atm, "air_quality": {}}
+        detections = scanner.scan({}, self._beta1_with_schumann(8.2), delta)
+        prec = [d for d in detections if d.tipo == PrecursorType.PRECIPITACION]
+        if prec:
+            assert prec[0].confidence >= 0.70
