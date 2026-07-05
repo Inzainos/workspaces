@@ -29,9 +29,20 @@ from sentinel_omega.core.precursor.precursor_types import (
     detect_sprite_rojo,
     detect_hurricane_proximity,
     detect_tsunami_potential,
+    compute_precipitacion_potencial,
+    detect_precipitacion_potencial,
 )
 
 logger = logging.getLogger(__name__)
+
+# Precipitation scanner confidence thresholds
+_PREC_HUMIDITY_HIGH = 80.0
+_PREC_CLOUDS_HIGH = 70.0
+_PREC_PI_VERY_HIGH = 45.0
+_PREC_CONF_BASE = 0.50
+_PREC_CONF_HUMIDITY_BOOST = 0.15
+_PREC_CONF_CLOUDS_BOOST = 0.10
+_PREC_CONF_PI_BOOST = 0.10
 
 
 @dataclass
@@ -93,6 +104,7 @@ class PrecursorScanner:
         detections.extend(self._scan_tsunami(seismic_mags, delta_data))
         detections.extend(self._scan_hurricanes(hurricane_data or {}))
         detections.extend(self._scan_financial_correlation(financial_data or {}))
+        detections.extend(self._scan_precipitacion(atmospheric, schumann_hz))
 
         self.last_detections = detections
         if detections:
@@ -485,3 +497,58 @@ class PrecursorScanner:
                 "active_financial_signals": active_signals,
             },
         )]
+
+    def _scan_precipitacion(
+        self,
+        atmospheric: List[Dict[str, Any]],
+        schumann_hz: Optional[float],
+    ) -> List[PrecursorDetection]:
+        """
+        Detect anomalous precipitation potential via the Schumann-modular formula:
+
+            Π_i(t) = μ_i(t) · ( Φ_i(t)  mod  Φ_S(t) )
+
+        where μ_i is local humidity, Φ_i is the regional atmospheric energy
+        flux proxy, and Φ_S is the Schumann modal reference scale.
+        A high Π_i means large residual energy (not absorbed by the global
+        resonator) is available to couple with moisture and reorganise as
+        precipitation.
+        """
+        if schumann_hz is None or schumann_hz <= 0:
+            return []
+
+        results = []
+        for reading in atmospheric:
+            humidity = reading.get("humidity_pct", 50.0)
+            temp_c = reading.get("temp_c", 20.0)
+            clouds = reading.get("clouds_pct", 0.0)
+
+            if not detect_precipitacion_potencial(humidity, temp_c, clouds, schumann_hz):
+                continue
+
+            pi_i = compute_precipitacion_potencial(humidity, temp_c, clouds, schumann_hz)
+
+            confidence = _PREC_CONF_BASE
+            if humidity >= _PREC_HUMIDITY_HIGH:
+                confidence += _PREC_CONF_HUMIDITY_BOOST
+            if clouds >= _PREC_CLOUDS_HIGH:
+                confidence += _PREC_CONF_CLOUDS_BOOST
+            if pi_i >= _PREC_PI_VERY_HIGH:
+                confidence += _PREC_CONF_PI_BOOST
+
+            results.append(PrecursorDetection(
+                tipo=PrecursorType.PRECIPITACION,
+                display_name=PRECURSOR_DISPLAY_NAMES[PrecursorType.PRECIPITACION],
+                station=reading.get("station", "unknown"),
+                lat=reading.get("lat"),
+                lon=reading.get("lon"),
+                confidence=min(confidence, 0.95),
+                values={
+                    "humidity_pct": humidity,
+                    "temp_c": temp_c,
+                    "clouds_pct": clouds,
+                    "schumann_hz": schumann_hz,
+                    "pi_i": round(pi_i, 3),
+                },
+            ))
+        return results

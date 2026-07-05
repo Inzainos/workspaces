@@ -11,7 +11,7 @@ which is rate-limited but functional).
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from sentinel_omega.infrastructure.api._http import get_session
@@ -29,7 +29,7 @@ def fetch_neo_hazard_summary(date: Optional[str] = None) -> Optional[Dict[str, A
     or None if the API is unreachable.
     """
     api_key = os.environ.get("NASA_API_KEY", "DEMO_KEY")
-    day = date or datetime.utcnow().strftime("%Y-%m-%d")
+    day = date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     params = {"start_date": day, "end_date": day, "api_key": api_key}
 
     try:

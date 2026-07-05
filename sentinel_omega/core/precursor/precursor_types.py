@@ -34,6 +34,7 @@ class PrecursorType(Enum):
     VOLCANICO = "VOLCANICO"
     FANTASMA = "FANTASMA"
     CORRELACION_FINANCIERA = "CORRELACION_FINANCIERA"
+    PRECIPITACION = "PRECIPITACION"
 
 
 @dataclass
@@ -167,6 +168,19 @@ PRECURSOR_PROFILES = {
         radius_degrees=180.0,
         variables=("fear_greed", "vix", "btc_change_pct", "market_signal"),
     ),
+    PrecursorType.PRECIPITACION: PrecursorProfile(
+        tipo=PrecursorType.PRECIPITACION,
+        description=(
+            "Precipitation potential — Schumann-modular coupling: "
+            "Π_i(t) = μ_i(t)·(Φ_i(t) mod Φ_S(t)); "
+            "residual atmospheric energy not absorbed by Schumann modes, "
+            "weighted by local condensation availability"
+        ),
+        validation_window_hours=48.0,
+        min_magnitude_usgs=0.0,
+        radius_degrees=5.0,
+        variables=("humidity_pct", "temp_c", "clouds_pct", "schumann_hz", "pi_i"),
+    ),
 }
 
 
@@ -186,6 +200,7 @@ PRECURSOR_DISPLAY_NAMES = {
     PrecursorType.VOLCANICO: "Precursor Volcánico",
     PrecursorType.FANTASMA: "Índice Fantasma (V32)",
     PrecursorType.CORRELACION_FINANCIERA: "Correlación Financiera",
+    PrecursorType.PRECIPITACION: "Precipitación Potencial (Schumann-Modular)",
 }
 
 
@@ -234,3 +249,61 @@ def detect_tsunami_potential(
     magnitude: float, depth_km: float
 ) -> bool:
     return magnitude >= 7.0 and depth_km < 70.0
+
+
+# ── Precipitation potential — Schumann-modular formula ───────────────────────
+#
+# Variant 3 (node theory):
+#   Π_i(t) = μ_i(t) · ( Φ_i(t)  mod  Φ_S(t) )
+#
+#   μ_i(t)  — condensation availability  = humidity_pct / 100
+#   Φ_i(t)  — regional atmospheric energy flux proxy (K-scale)
+#             = temp_c × (clouds_pct / 100) + 273.15
+#             (temperature weighted by cloud loading; Kelvin baseline keeps
+#              the value above zero and in the same order of magnitude as Φ_S)
+#   Φ_S(t)  — Schumann modal reference scale (K-scale)
+#             = schumann_hz × 10.0
+#             (converts Hz to K-equivalent; standard 7.83 Hz → 78.3 K-scale)
+#
+# Physical interpretation: the residual (Φ_i mod Φ_S) represents atmospheric
+# energy that does NOT project cleanly onto the Schumann resonant mode.  When
+# this "structured surplus" couples with sufficient moisture (μ_i), the system
+# reorganises as precipitation.  A large residual + high humidity → Π_i high.
+
+_PRECIPITACION_THRESHOLD: float = 30.0
+
+
+def compute_precipitacion_potencial(
+    humidity_pct: float,
+    temp_c: float,
+    clouds_pct: float,
+    schumann_hz: float,
+) -> float:
+    """
+    Compute regional precipitation potential Π_i(t).
+
+    Returns a dimensionless value (K-scale) — values ≥ 30 indicate an
+    anomalous coupling between residual atmospheric energy and Schumann modes.
+    """
+    mu_i = humidity_pct / 100.0
+    phi_i = temp_c * (clouds_pct / 100.0) + 273.15
+    phi_s = schumann_hz * 10.0
+
+    if phi_s < 1e-6:
+        return 0.0
+
+    residual = phi_i % phi_s
+    return float(mu_i * residual)
+
+
+def detect_precipitacion_potencial(
+    humidity_pct: float,
+    temp_c: float,
+    clouds_pct: float,
+    schumann_hz: float,
+    threshold: float = _PRECIPITACION_THRESHOLD,
+) -> bool:
+    """Return True when the Schumann-modular precipitation potential exceeds threshold."""
+    return compute_precipitacion_potencial(
+        humidity_pct, temp_c, clouds_pct, schumann_hz
+    ) >= threshold

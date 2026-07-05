@@ -18,6 +18,11 @@ SCHUMANN_HARMONICS_HZ: Tuple[float, ...] = (7.83, 14.3, 20.8, 27.3, 33.8)
 
 HARMONIC_TOLERANCE = 0.15
 
+# Maximum LOD reference (ms) used to normalise rotacion_tierra to [0, 1].
+# Historical IERS data shows LOD rarely exceeds ±3 ms; we use 3.0 as the
+# upper bound so that a day 3 ms longer than nominal maps to rotacion = 0.
+LOD_REF_MS: float = 3.0
+
 
 def schumann_harmonic_filter(
     power_spectrum: np.ndarray,
@@ -112,6 +117,62 @@ class Beta1Agent(BaseAgent):
         self._schumann_activity = data.get("schumann_activity", 0.0)
         self.logger.info("Beta-1 data ingested")
 
+    def _compute_tl_features(self) -> Dict[str, float]:
+        """
+        Compute individual and combined Tierra-Luna (TL) features.
+
+        Returns a dict with:
+          fase_luna        – current lunar phase fraction [0, 1]
+                             (0 = new moon, 0.5 = full moon, 1 = new moon again)
+          rotacion_tierra  – normalised Earth rotation proxy [0, 1]
+                             derived from the last LOD value:
+                             rotacion_tierra = 1 – clamp(lod_ms / LOD_REF_MS, 0, 1)
+                             A value of 1 means nominal rotation speed; lower values
+                             indicate the tidal brake is stronger.
+          correlacion_TL   – Pearson correlation between the lunar-phase series and
+                             the LOD series (aligned to the shorter one).  NaN → 0.
+          estado_TL        – fase_luna × rotacion_tierra.  Captures the combined
+                             tidal-rotational state: high when the Moon is at a
+                             syzygy-aligned phase AND the rotational braking is low.
+        """
+        # --- fase_luna (scalar from end of series) ---
+        if self._lunar_phase is not None and len(self._lunar_phase) > 0:
+            fase_luna = float(np.clip(self._lunar_phase[-1], 0.0, 1.0))
+        else:
+            fase_luna = 0.5  # default: mid-cycle / unknown
+
+        # --- rotacion_tierra (normalised LOD) ---
+        if self._lod_ms is not None and len(self._lod_ms) > 0:
+            lod_last = float(self._lod_ms[-1])
+            rotacion_tierra = float(np.clip(1.0 - lod_last / LOD_REF_MS, 0.0, 1.0))
+        else:
+            rotacion_tierra = 1.0  # default: nominal rotation
+
+        # --- correlacion_TL (Pearson r between the two series) ---
+        correlacion_TL = 0.0
+        if (
+            self._lunar_phase is not None and len(self._lunar_phase) >= 2
+            and self._lod_ms is not None and len(self._lod_ms) >= 2
+        ):
+            n = min(len(self._lunar_phase), len(self._lod_ms))
+            lp = self._lunar_phase[-n:].astype(float)
+            ld = self._lod_ms[-n:].astype(float)
+            # Pearson r is undefined when either series has zero variance
+            if np.std(lp) > 1e-10 and np.std(ld) > 1e-10:
+                correlacion_TL = float(np.corrcoef(lp, ld)[0, 1])
+            if not np.isfinite(correlacion_TL):
+                correlacion_TL = 0.0
+
+        # --- estado_TL (combined product) ---
+        estado_TL = round(fase_luna * rotacion_tierra, 6)
+
+        return {
+            "fase_luna": round(fase_luna, 4),
+            "rotacion_tierra": round(rotacion_tierra, 4),
+            "correlacion_TL": round(correlacion_TL, 4),
+            "estado_TL": estado_TL,
+        }
+
     def _apply_schumann_filter(
         self, power_spectrum: np.ndarray
     ) -> Dict[str, Any]:
@@ -146,6 +207,7 @@ class Beta1Agent(BaseAgent):
         schumann_excited = self._schumann_activity > self.SCHUMANN_EXCITATION_THRESHOLD
         schumann_coherence = sch_filter["coherence"]
 
+        tl = self._compute_tl_features()
         signal_data = {
             "dominant_period_h": float(dominant_period),
             "high_freq_ratio": float(high_freq_ratio),
@@ -155,6 +217,11 @@ class Beta1Agent(BaseAgent):
             "schumann_activity_pct": float(self._schumann_activity),
             "schumann_coherence": float(schumann_coherence),
             "schumann_resonant_bins": sch_filter["resonant_bins"],
+            # Tierra-Luna tidal coupling features
+            "fase_luna": tl["fase_luna"],
+            "rotacion_tierra": tl["rotacion_tierra"],
+            "correlacion_TL": tl["correlacion_TL"],
+            "estado_TL": tl["estado_TL"],
         }
 
         coherence_boost = schumann_coherence > 0.3

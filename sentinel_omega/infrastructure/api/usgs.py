@@ -20,9 +20,9 @@ def fetch_earthquakes(
     max_results: int = 500,
 ) -> Optional[pd.DataFrame]:
     """Fetch recent earthquakes from USGS FDSN."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    end = datetime.utcnow()
+    end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
 
     url = (

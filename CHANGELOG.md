@@ -6,6 +6,89 @@ conventions. Dates are UTC-6 (local time of the author).
 
 ---
 
+## [Unreleased] — 2026-07-05
+
+### Added
+
+#### Entrenamiento multi-evento — Fase 1b y correlaciones (`sentinel_omega/infrastructure/pipeline/entrenamiento.py`)
+- **`derivar_eventos_no_sismicos(conn)`** — Deriva un catálogo de eventos no
+  sísmicos directamente de las tablas de backcast existentes:
+  - Erupciones volcánicas (VEI ≥ 3) desde `tbl_desgasificacion_raw` →
+    clases `ERUPCION_VEI3/4/5`.
+  - Tormentas solares (Kp ≥ 6, primer bloque horario tras calma) desde
+    `tbl_clima_espacial_raw` → clases `TORMENTA_Kp6/7/9`.
+  - Almacena en `tbl_eventos_no_sismicos`. Idempotente (INSERT OR IGNORE).
+- **`entrenar_reconocimiento_no_sismico(db_path, ...)`** — **Fase 1b**: entrena
+  firmas a partir de los eventos no sísmicos derivados. Usa la misma extracción
+  de features y la misma ventana de 14 días que la Fase 1 sísmica, de modo que
+  los bots aprenden qué precede a erupciones y tormentas, no solo a sismos.
+- **`calcular_correlaciones_evento(db_path)`** — Calcula la matriz
+  feature × event_class desde `TBL_FIRMAS`. Para cada par
+  `(tipo_evento, variable)` guarda la media y el ratio vs. la media global en
+  `tbl_patrones_correlacion`. Ratio > 1 = la variable está elevada antes de ese
+  tipo de evento. Re-ejecutar es seguro (INSERT OR REPLACE).
+- **Helpers**:
+  - `_event_class_volcanico(vei)` — Clasifica eventos volcánicos por VEI.
+  - `_event_class_solar(kp_max)` — Clasifica tormentas solares por Kp (proxy
+    escala G de NOAA).
+  - `_table_exists(conn, name)` — Verifica existencia de tabla en SQLite.
+
+#### Actualización de `entrenar()` (`entrenamiento.py`)
+- `entrenar()` ahora ejecuta: Fase 1 (sísmica) → **Fase 1b** (no sísmica) →
+  Fase 2 (disciplina) → lags → **correlaciones**.
+- Retorna `{"fase1": …, "fase1b": …, "fase2": …, "lags": …, "correlaciones": …}`.
+
+#### Nuevas features de acoplamiento geofísico-financiero (`sentinel_omega/core/firmas/signature_engine.py`)
+- `FEATURE_KEYS` extendido con `delta_cross_coupling`, `delta_geo_coupling`,
+  `delta_schumann_coupling` (acoplamiento geofísico-financiero cruzado desde
+  `tbl_delta_cross`; live-only, NaN durante backcast).
+- `extraer_features_ventana()` consulta `tbl_delta_cross` para la ventana de
+  14 días antes de cada evento. Error silencioso si la tabla no existe.
+
+#### Esquema de base de datos v6 (`sentinel_omega/infrastructure/database/schema.py`)
+- `SCHEMA_VERSION` bumpeado de 5 → 6.
+- **`tbl_eventos_no_sismicos`** — Catálogo de erupciones volcánicas y tormentas
+  solares derivadas de backcast. Clave primaria compuesta:
+  `(timestamp_blk, id_nodo, event_class)`. Índices en `event_class` y
+  `timestamp_blk`.
+- **`tbl_patrones_correlacion`** — Matriz feature × event_class: `event_class`,
+  `feature`, `media`, `global_media`, `ratio`, `n_firmas`, `updated_at`.
+  Clave primaria compuesta: `(event_class, feature)`. Índice en `event_class`.
+- Ambas tablas registradas en `EXPECTED_COLUMNS` para migración forward-only.
+
+#### Reporte ampliado (`deploy/generar_reporte.py`)
+- **Mapa de calor de correlaciones** — Nueva sección `## 🗺 Correlaciones
+  aprendidas` con tabla Markdown de los 8 features más discriminadores por tipo
+  de evento. Iconos de color: 🔴≥2× · 🟠≥1.5× · 🟡≥1.2× · ⬜~normal · 🔵↓bajo.
+- **Top 10 patrones del sistema** — Nueva sección `## 🏆 Top 10 patrones del
+  sistema`: firmas con mayor recurrencia (consolidadas/recurrentes) de todos los
+  bots, con zona, estado y tiempo de aviso típico.
+- **Top 5 por clase de evento** — Nueva sección `## 📊 Patrones por tipo de
+  evento`: para cada `event_class` aprendida, las 5 firmas más consolidadas.
+- Nuevas entradas en `NOMBRES_LLANOS`: `delta_cross_coupling`,
+  `delta_geo_coupling`, `delta_schumann_coupling`.
+
+### Fixed (`entrenamiento.py`)
+- Imports de `sqlite3`, `json`, `FirmaMemoria`, `FEATURE_KEYS` movidos al nivel
+  de módulo (antes estaban dentro de funciones).
+- Chequeo NaN corregido de `v != v` explícito (evita comparación incorrecta).
+- Contador de inserciones en `derivar_eventos` corregido (incrementa solo cuando
+  el INSERT efectivamente ocurre).
+
+### Notes & Known Limitations
+
+- **Fase 1b cold start**: Si `tbl_desgasificacion_raw` y
+  `tbl_clima_espacial_raw` no tienen datos (backcast no cargado), la Fase 1b
+  finaliza con `eventos: 0` sin error.
+- **delta_cross features**: Durante el backcast histórico estas features son NaN
+  (tabla `tbl_delta_cross` vacía). El sistema las aprende incrementalmente desde
+  los ciclos en vivo; el módulo `similitud()` las ignora automáticamente.
+- **Correlaciones**: La primera ejecución de `calcular_correlaciones_evento()`
+  requiere que `TBL_FIRMAS` tenga datos (Fase 1 o 1b completada). Si está vacía,
+  retorna `{}` sin error.
+
+---
+
 ## [Unreleased] — 2026-07-04
 
 ### Added

@@ -45,7 +45,7 @@ python -m pytest sentinel_omega/tests/test_firmas.py -v
 python sentinel_omega/launcher.py                  # ciclo continuo (default 300s)
 python sentinel_omega/launcher.py --once           # un ciclo y salir
 python sentinel_omega/launcher.py --backcast        # carga histórica 1994-2025 (one-time)
-python sentinel_omega/launcher.py --entrenar        # entrenamiento de firmas (2 fases)
+python sentinel_omega/launcher.py --entrenar        # entrenamiento de firmas (3 fases: sísmica + no sísmica + disciplina)
 python sentinel_omega/shutdown.py                  # parar (SIGTERM, 30s → SIGKILL)
 python sentinel_omega/reboot.py                    # stop + relaunch
 
@@ -91,9 +91,10 @@ streamlit run sentinel_omega/infrastructure/dashboard/app.py
 - **Firmas:** memoria de patrones por bot de la ventana de 14 días previa a cada
   evento. Estados `nueva → observada → recurrente → consolidada`; solo las
   consolidadas son exigibles.
-- **Entrenamiento en 2 fases:** Fase 1 reconocimiento (sin castigo) → Fase 2
+- **Entrenamiento en 3 fases:** Fase 1 reconocimiento sísmico (sin castigo) → Fase 1b reconocimiento no sísmico (erupciones VEI≥3 + tormentas solares Kp≥6) → Fase 2
   disciplina (el Padre castiga; el Juez audita con severidad asimétrica —
-  omitir un evento pesa 10× más que una falsa alarma).
+  omitir un evento pesa 10× más que una falsa alarma). Tras las fases calcula la
+  **matriz de correlaciones** feature × event_class.
 - **Pérdida asimétrica:** el sistema prefiere sobre-alertar a sub-alertar.
 
 ## Git y PRs
