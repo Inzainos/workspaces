@@ -207,6 +207,7 @@ class Beta1Agent(BaseAgent):
         schumann_excited = self._schumann_activity > self.SCHUMANN_EXCITATION_THRESHOLD
         schumann_coherence = sch_filter["coherence"]
 
+        tl = self._compute_tl_features()
         signal_data = {
             "dominant_period_h": float(dominant_period),
             "high_freq_ratio": float(high_freq_ratio),
@@ -216,6 +217,11 @@ class Beta1Agent(BaseAgent):
             "schumann_activity_pct": float(self._schumann_activity),
             "schumann_coherence": float(schumann_coherence),
             "schumann_resonant_bins": sch_filter["resonant_bins"],
+            # Tierra-Luna tidal coupling features
+            "fase_luna": tl["fase_luna"],
+            "rotacion_tierra": tl["rotacion_tierra"],
+            "correlacion_TL": tl["correlacion_TL"],
+            "estado_TL": tl["estado_TL"],
         }
 
         coherence_boost = schumann_coherence > 0.3

@@ -234,6 +234,13 @@ class TestEntrenamiento:
         assert _event_class(5.2) == "SISMO_M5"
         assert _event_class(6.4) == "SISMO_M6"
         assert _event_class(7.8) == "SISMO_M7"
+        # enforcement floor: M4.5 is still "SISMO_M4" (exigible)
+        assert _event_class(4.5) == "SISMO_M4"
+        assert _event_class(4.9) == "SISMO_M4"
+        # sub-threshold observation classes (non-exigible)
+        assert _event_class(4.0) == "SISMO_M4_obs"
+        assert _event_class(3.5) == "SISMO_M3_obs"
+        assert _event_class(2.7) == "SISMO_M2_obs"
 
     def test_fase1_learns_and_promotes(self, db):
         conn, path = db

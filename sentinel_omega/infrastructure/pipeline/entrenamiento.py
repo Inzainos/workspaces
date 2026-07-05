@@ -39,6 +39,11 @@ logger = logging.getLogger(__name__)
 # arriba: ese es el piso de firmas exigibles y de disciplina del Juez.
 MIN_MAGNITUD_FIRMA = 4.5
 
+# Mínimo observado en Fase 1: los bots registran firmas desde esta magnitud.
+# Eventos M2.5–4.49 generan firmas pero NO activan disciplina (castigo/Juez
+# solo punish) — solo alimentan el ACIERTO histórico del Juez.
+MIN_MAGNITUD_OBSERVAR = 2.5
+
 # Feature domain per bot — each bot only remembers what it measures.
 # Padre keeps the full cross-domain vector (patterns within patterns).
 BOT_FEATURES: Dict[str, Optional[List[str]]] = {
@@ -83,7 +88,13 @@ def _event_class(mag: float) -> str:
         return "SISMO_M6"
     if mag >= 5.0:
         return "SISMO_M5"
-    return "SISMO_M4"  # 4.5–4.99: piso de alerta/castigo
+    if mag >= 4.5:
+        return "SISMO_M4"      # 4.5–4.99: piso de alerta/castigo (exigible)
+    if mag >= 4.0:
+        return "SISMO_M4_obs"  # 4.0–4.49: observado, no exigible
+    if mag >= 3.0:
+        return "SISMO_M3_obs"  # 3.0–3.99: observado, no exigible
+    return "SISMO_M2_obs"      # 2.5–2.99: observado, no exigible
 
 
 def _event_class_volcanico(vei: float) -> str:
@@ -192,13 +203,23 @@ def entrenar_reconocimiento(
     max_eventos: Optional[int] = None,
     bots: Optional[List[str]] = None,
 ) -> Dict:
-    """Fase 1 — learn signatures from every significant historical event.
+    """Fase 1 — learn signatures from every observed historical event.
+
+    Observes ALL magnitudes >= MIN_MAGNITUD_OBSERVAR (2.5): bots register
+    firma patterns for every size of event so that small precursors are
+    captured. The Juez logs an ACIERTO for every successful registration —
+    this builds the positive pattern-history used by resumen_por_bot() even
+    before Fase 2 discipline runs.
+
+    Events below MIN_MAGNITUD_FIRMA (4.5) are non-enforceable: they generate
+    firmas and Juez ACIERTOs but never trigger discipline (castigo).
 
     bots: restrict registration to these bots (e.g. ["beta2", "delta"] for
     an incremental training pass without inflating other bots' recurrence).
     """
     conn = sqlite3.connect(db_path)
     memoria = FirmaMemoria(conn)
+    juez = Juez(conn)
     bots_activos = {
         b: k for b, k in BOT_FEATURES.items() if bots is None or b in bots
     }
@@ -214,21 +235,24 @@ def entrenar_reconocimiento(
         "FROM tbl_historico_sismico_raw "
         "WHERE sismo_max_mag >= ? "
     )
-    params: tuple = (MIN_MAGNITUD_FIRMA,)
+    params: tuple = (MIN_MAGNITUD_OBSERVAR,)
     if desde_global:
         query += "AND timestamp_blk >= ? "
-        params = (MIN_MAGNITUD_FIRMA, desde_global)
+        params = (MIN_MAGNITUD_OBSERVAR, desde_global)
     query += "ORDER BY timestamp_blk"
     eventos = conn.execute(query, params).fetchall()
     if max_eventos:
         eventos = eventos[:max_eventos]
 
     logger.info(
-        f"=== FASE 1 RECONOCIMIENTO: {len(eventos)} eventos M{MIN_MAGNITUD_FIRMA}+ ==="
+        f"=== FASE 1 RECONOCIMIENTO: {len(eventos)} eventos "
+        f"M{MIN_MAGNITUD_OBSERVAR}+ (exigibles desde M{MIN_MAGNITUD_FIRMA}) ==="
     )
 
     stats = {"eventos": len(eventos), "firmas_nuevas": 0, "recurrencias": 0,
-             "sin_datos": 0}
+             "sin_datos": 0, "juez_aciertos": 0}
+
+    import time as _time
 
     for idx, (ts_evento, id_nodo, mag) in enumerate(eventos):
         if idx % 1000 == 0 and idx > 0:
@@ -244,6 +268,7 @@ def entrenar_reconocimiento(
 
         clase = _event_class(mag)
         evento_ref = f"{ts_evento}|nodo{id_nodo}|M{mag:.1f}"
+        bots_registrados: List[str] = []
 
         for bot, keys in bots_activos.items():
             # alfa2 (y cualquier bot live-only) NO tiene datos en el backcast;
@@ -266,6 +291,33 @@ def entrenar_reconocimiento(
                 stats["firmas_nuevas"] += 1
             else:
                 stats["recurrencias"] += 1
+            bots_registrados.append(bot)
+
+        # Juez: log ACIERTO for every bot that successfully registered a firma.
+        # Uses ventana_h=0 so records resolve immediately (event is already known).
+        # This builds the positive audit history from the learning phase onward.
+        for bot in bots_registrados:
+            juez.registrar_prediccion(
+                bot_name=bot,
+                prediccion="alert",
+                confianza=1.0,
+                ventana_h=0,
+                detalles={
+                    "fase": "reconocimiento",
+                    "clase": clase,
+                    "evento": evento_ref,
+                    "mag": round(float(mag), 1),
+                    "exigible": float(mag) >= MIN_MAGNITUD_FIRMA,
+                },
+                timestamp=_time.time(),
+            )
+        if bots_registrados:
+            juez.evaluar_pendientes(
+                evento_ocurrido=True,
+                verdad=evento_ref,
+                firma_conocida=False,  # Fase 1 is learning, not enforcement
+            )
+            stats["juez_aciertos"] += len(bots_registrados)
 
     stats["memoria"] = memoria.stats()
     logger.info(f"Fase 1 completa: {stats}")
@@ -277,11 +329,14 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
     """Fase 2 — el Padre castiga.
 
     Re-presents the member events of every consolidated signature:
-      - Bot fails to recognize enforceable knowledge -> castigo hijo (x1):
-        its credibility weight drops and the Juez records the FALLO.
+      - Bot recognizes the pattern -> ACIERTO logged to Juez + mild refuerzo.
+      - Bot fails to recognize enforceable knowledge (mag >= MIN_MAGNITUD_FIRMA)
+        -> castigo hijo (x1): weight drops and the Juez records FALLO.
       - The Padre's own meta-signature fails -> castigo Padre (x2): double
         weight decay and double Juez severity (base_geo protocol).
-      - Recognition earns mild weight reinforcement.
+      - Events below MIN_MAGNITUD_FIRMA are observed but NOT disciplined: Juez
+        still records the FALLO pattern for audit, but castigar() is skipped so
+        sub-threshold misses do not erode a bot's credibility weight.
     The adjusted weights persist in TBL_PESOS_BOTS and the Padre uses them
     to weigh each bot's vote in live consensus.
     """
@@ -298,12 +353,14 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
 
     stats = {"firmas_evaluadas": 0, "reconocidas": 0, "fallos": 0,
              "castigos_hijo": 0, "castigos_padre": 0,
-             "atencion_redistribuida": 0}
+             "atencion_redistribuida": 0, "juez_aciertos": 0}
 
     from sentinel_omega.core.firmas.signature_engine import similitud
     from sentinel_omega.core.juez.pesos import (
         PESO_MAX, castigar, reforzar, cargar_pesos,
     )
+
+    import time as _time
 
     # evento_ref -> {bot: reconoció} — needed for attention redistribution
     resultados_por_evento: Dict[str, Dict[str, bool]] = {}
@@ -322,13 +379,16 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
             try:
                 ts_evento, nodo_part, mag_part = ref.split("|")
                 id_nodo = int(nodo_part.replace("nodo", ""))
-                magnitud = float(mag_part.replace("M", ""))
-            except ValueError:
+                # mag_part may be "M6.4" (seismic) or "ERUPCION_VEI4:4.0" (non-seismic)
+                mag_str = mag_part.replace("M", "").split(":")[0]
+                magnitud = float(mag_str)
+            except (ValueError, IndexError):
                 continue
 
-            # base_geo: gravity of the error scales with event size
-            # (M5 -> 1, M6 -> 2, M7 -> 3)
+            # base_geo: gravity scales with event size above the enforcement floor
+            # (M5 -> 1, M6 -> 2, M7 -> 3); sub-threshold events stay at 1.0
             gravedad = 1.0 + max(0.0, magnitud - MIN_MAGNITUD_FIRMA)
+            es_exigible = magnitud >= MIN_MAGNITUD_FIRMA
 
             features = extraer_features_ventana(conn, ts_evento, id_nodo)
             if features is None:
@@ -347,13 +407,39 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
             if reconocio:
                 stats["reconocidas"] += 1
                 reforzar(conn, bot)
+                # Log ACIERTO so resumen_por_bot() and asertividad reflect
+                # successful recognitions, not just failures.
+                juez.registrar_prediccion(
+                    bot_name=bot,
+                    prediccion="alert",
+                    confianza=round(sim, 3),
+                    ventana_h=0,
+                    detalles={
+                        "fase": "backtest",
+                        "firma_id": firma["firma_id"],
+                        "evento": ref,
+                        "similitud": round(sim, 3),
+                        "gravedad": round(gravedad, 2),
+                    },
+                    timestamp=_time.time(),
+                )
+                juez.evaluar_pendientes(
+                    evento_ocurrido=True,
+                    verdad=ref,
+                    firma_conocida=es_exigible,
+                )
+                stats["juez_aciertos"] += 1
             else:
                 stats["fallos"] += 1
-                castigar(conn, bot, es_padre=es_padre, gravedad=gravedad)
-                if es_padre:
-                    stats["castigos_padre"] += 1
-                else:
-                    stats["castigos_hijo"] += 1
+                # Only discipline (weight penalty) for enforceable events.
+                # Sub-threshold misses are recorded for auditing but do not
+                # erode the bot's credibility.
+                if es_exigible:
+                    castigar(conn, bot, es_padre=es_padre, gravedad=gravedad)
+                    if es_padre:
+                        stats["castigos_padre"] += 1
+                    else:
+                        stats["castigos_hijo"] += 1
 
                 juez.registrar_prediccion(
                     bot_name=bot,
@@ -366,12 +452,13 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
                         "evento": ref,
                         "similitud": round(sim, 3),
                         "gravedad": round(gravedad, 2),
+                        "exigible": es_exigible,
                     },
                 )
                 juez.evaluar_pendientes(
                     evento_ocurrido=True,
                     verdad=ref,
-                    firma_conocida=True,
+                    firma_conocida=es_exigible,
                     multiplicador=2.0 if es_padre else 1.0,
                     gravedad=gravedad,
                 )
@@ -817,11 +904,19 @@ def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
 
     No toca la memoria permanente (TBL_FIRMAS): las firmas menores van a
     tbl_firmas_menores (temporal, podada por edad). Solo persisten los pesos.
+
+    El Juez registra un ACIERTO o FALLO por cada par bot × evento evaluado,
+    para que su historial refleje también la vigilancia de precursores pequeños.
+    Esos registros llevan fase="trasfondo" y NO se podan al terminar —
+    son parte del historial de patrones del Juez.
     """
     from sentinel_omega.core.juez.pesos import castigar, reforzar
     from sentinel_omega.core.shared.geometria_uvg import nodo_mas_cercano
 
+    import time as _time
+
     conn = sqlite3.connect(db_path)
+    juez = Juez(conn)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_firmas_menores ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, bot_name TEXT, event_class TEXT, "
@@ -860,6 +955,10 @@ def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
         if feats is None:
             continue
         clase = f"SISMO_M{int(mag)}"               # M2 / M3 / M4 (menores)
+        evento_ref = f"{ts}|nodo{nodo}|M{mag:.1f}"
+        bots_acierto: List[str] = []
+        bots_fallo: List[str] = []
+
         for bot, keys in BOT_FEATURES.items():
             # alfa2 no tiene backcast → sus firmas consolidadas estarán vacías
             # durante el entrenamiento inicial; saltarlo evita falsos cero.
@@ -879,11 +978,39 @@ def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
             conteo[bot]["evaluadas"] += 1
             if best >= SIMILARITY_ALERT:
                 conteo[bot]["reconocidas"] += 1
+                bots_acierto.append(bot)
+            else:
+                bots_fallo.append(bot)
             conn.execute(
                 "INSERT INTO tbl_firmas_menores "
                 "(bot_name, event_class, id_nodo, mag, features_json, ts_evento) "
                 "VALUES (?,?,?,?,?,?)",
                 (bot, clase, nodo, mag, json.dumps(sub), ts),
+            )
+
+        # Juez: log per-bot verdict for this minor event.
+        now = _time.time()
+        for bot in bots_acierto:
+            juez.registrar_prediccion(
+                bot_name=bot, prediccion="alert", confianza=1.0,
+                ventana_h=0,
+                detalles={"fase": "trasfondo", "clase": clase,
+                          "evento": evento_ref, "mag": round(float(mag), 1)},
+                timestamp=now,
+            )
+        for bot in bots_fallo:
+            juez.registrar_prediccion(
+                bot_name=bot, prediccion="no_signal", confianza=0.0,
+                ventana_h=0,
+                detalles={"fase": "trasfondo", "clase": clase,
+                          "evento": evento_ref, "mag": round(float(mag), 1)},
+                timestamp=now,
+            )
+        if bots_acierto or bots_fallo:
+            juez.evaluar_pendientes(
+                evento_ocurrido=True,
+                verdad=evento_ref,
+                firma_conocida=False,  # minor events are never enforceable
             )
 
     # Ajuste de pesos ACOTADO por bot: más ceguera a los chiquitos → más castigo
