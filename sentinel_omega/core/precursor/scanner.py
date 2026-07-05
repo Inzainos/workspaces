@@ -35,6 +35,15 @@ from sentinel_omega.core.precursor.precursor_types import (
 
 logger = logging.getLogger(__name__)
 
+# Precipitation scanner confidence thresholds
+_PREC_HUMIDITY_HIGH = 80.0
+_PREC_CLOUDS_HIGH = 70.0
+_PREC_PI_VERY_HIGH = 45.0
+_PREC_CONF_BASE = 0.50
+_PREC_CONF_HUMIDITY_BOOST = 0.15
+_PREC_CONF_CLOUDS_BOOST = 0.10
+_PREC_CONF_PI_BOOST = 0.10
+
 
 @dataclass
 class PrecursorDetection:
@@ -519,13 +528,13 @@ class PrecursorScanner:
 
             pi_i = compute_precipitacion_potencial(humidity, temp_c, clouds, schumann_hz)
 
-            confidence = 0.5
-            if humidity >= 80:
-                confidence += 0.15
-            if clouds >= 70:
-                confidence += 0.10
-            if pi_i >= 45.0:
-                confidence += 0.10
+            confidence = _PREC_CONF_BASE
+            if humidity >= _PREC_HUMIDITY_HIGH:
+                confidence += _PREC_CONF_HUMIDITY_BOOST
+            if clouds >= _PREC_CLOUDS_HIGH:
+                confidence += _PREC_CONF_CLOUDS_BOOST
+            if pi_i >= _PREC_PI_VERY_HIGH:
+                confidence += _PREC_CONF_PI_BOOST
 
             results.append(PrecursorDetection(
                 tipo=PrecursorType.PRECIPITACION,

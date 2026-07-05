@@ -933,6 +933,7 @@ class TestPrecipitacionPotencial:
         """Doubling humidity (below saturation) roughly doubles Π_i."""
         pi_low = compute_precipitacion_potencial(40.0, 25.0, 80.0, 7.83)
         pi_high = compute_precipitacion_potencial(80.0, 25.0, 80.0, 7.83)
+        assert pi_low > 0, "baseline Π_i must be positive for this ratio test"
         assert abs(pi_high / pi_low - 2.0) < 0.01
 
 
