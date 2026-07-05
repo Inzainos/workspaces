@@ -18,11 +18,13 @@ Run via: python sentinel_omega/launcher.py --entrenar
 
 import json
 import logging
+import math
 import sqlite3
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from sentinel_omega.core.firmas.signature_engine import (
+    FEATURE_KEYS,
     SIMILARITY_ALERT,
     FirmaMemoria,
     extraer_features_ventana,
@@ -112,12 +114,16 @@ def derivar_eventos_no_sismicos(conn: sqlite3.Connection) -> int:
     """Derive non-seismic event catalog from existing backcast tables.
 
     Volcanic: rows in tbl_desgasificacion_raw with vei >= 3.
-    Solar storms: onset hours in tbl_clima_espacial_raw where kp_max >= 6
-    (detected as the first hour above threshold after at least one hour
-    of calm — avoids re-registering the same storm repeatedly).
+    Solar storms: onset rows in tbl_clima_espacial_raw where kp_max >= 6.
+    An onset is the first row in a consecutive block above the threshold;
+    i.e., the previous row in the ordered dataset was NOT a storm. This
+    relies on the hourly resolution of tbl_clima_espacial_raw — rows are
+    consecutive 1-hour samples. If the data has gaps, the onset detection
+    may still fire at the start of each gap-separated burst, which is
+    acceptable (each burst is a distinct storm event).
 
     Stores to tbl_eventos_no_sismicos. Idempotent (INSERT OR IGNORE).
-    Returns the total number of events inserted.
+    Returns the number of rows actually inserted (not total attempts).
     """
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_eventos_no_sismicos "
@@ -136,13 +142,14 @@ def derivar_eventos_no_sismicos(conn: sqlite3.Connection) -> int:
         ).fetchall()
         for ts, id_nodo, vei in erupciones:
             clase = _event_class_volcanico(float(vei))
+            before = conn.total_changes
             conn.execute(
                 "INSERT OR IGNORE INTO tbl_eventos_no_sismicos "
                 "(timestamp_blk, id_nodo, event_class, fuente, intensidad) "
                 "VALUES (?, ?, ?, 'tbl_desgasificacion_raw', ?)",
                 (ts, id_nodo, clase, float(vei)),
             )
-            total += 1
+            total += conn.total_changes - before
         logger.info(f"  Eventos volcánicos derivados: {len(erupciones)}")
     except sqlite3.OperationalError:
         logger.info("  tbl_desgasificacion_raw sin datos VEI — saltando volcánicos")
@@ -293,7 +300,6 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
              "castigos_hijo": 0, "castigos_padre": 0,
              "atencion_redistribuida": 0}
 
-    import json as _json
     from sentinel_omega.core.firmas.signature_engine import similitud
     from sentinel_omega.core.juez.pesos import (
         PESO_MAX, castigar, reforzar, cargar_pesos,
@@ -310,7 +316,7 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
             "SELECT eventos_json FROM TBL_FIRMAS WHERE firma_id = ?",
             (firma["firma_id"],),
         ).fetchone()
-        eventos = _json.loads(row[0]) if row else []
+        eventos = json.loads(row[0]) if row else []
 
         for ref in eventos:
             try:
@@ -429,7 +435,6 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
     before the event, the system had ~7 days of warning. Persisted to
     tbl_lag_anticipacion for the report.
     """
-    import json as _json
     from datetime import datetime as _dt, timedelta as _td
     from sentinel_omega.core.firmas.signature_engine import similitud
 
@@ -457,7 +462,7 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
             "SELECT eventos_json FROM TBL_FIRMAS WHERE firma_id = ?",
             (firma["firma_id"],),
         ).fetchone()
-        eventos = _json.loads(row[0]) if row else []
+        eventos = json.loads(row[0]) if row else []
 
         lags_firma: List[float] = []
         for ref in eventos[:3]:  # sample per firma
@@ -525,8 +530,6 @@ def analizar_factores_lag(db_path: str) -> Dict:
     earlier — persisted to tbl_factores_lag for the report and, in time,
     for predicting a match's expected delay from its own features.
     """
-    import json as _json
-
     conn = sqlite3.connect(db_path)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_factores_lag ("
@@ -544,14 +547,12 @@ def analizar_factores_lag(db_path: str) -> Dict:
         return {}
 
     tercio = len(rows) // 3
-    rapidas = [_json.loads(r[0]) for r in rows[:tercio]]
-    lentas = [_json.loads(r[0]) for r in rows[-tercio:]]
+    rapidas = [json.loads(r[0]) for r in rows[:tercio]]
+    lentas = [json.loads(r[0]) for r in rows[-tercio:]]
 
     def _media(grupo: List[Dict], key: str) -> Optional[float]:
         vals = [g[key] for g in grupo if key in g]
         return sum(vals) / len(vals) if len(vals) >= max(3, len(grupo) // 3) else None
-
-    from sentinel_omega.core.firmas.signature_engine import FEATURE_KEYS
 
     factores = []
     for key in FEATURE_KEYS:
@@ -699,9 +700,6 @@ def calcular_correlaciones_evento(db_path: str) -> Dict:
     the report generator to render the correlation heatmap. Re-running is safe
     (INSERT OR REPLACE).
     """
-    import json as _json
-    from sentinel_omega.core.firmas.signature_engine import FEATURE_KEYS
-
     conn = sqlite3.connect(db_path)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_patrones_correlacion "
@@ -722,13 +720,13 @@ def calcular_correlaciones_evento(db_path: str) -> Dict:
 
     for event_class, features_json in rows:
         try:
-            feats = _json.loads(features_json)
+            feats = json.loads(features_json)
         except Exception:
             continue
         cf = class_feat.setdefault(event_class, {k: [] for k in FEATURE_KEYS})
         for feat in FEATURE_KEYS:
             v = feats.get(feat)
-            if v is None or v != v:  # None or NaN
+            if v is None or math.isnan(float(v)) if isinstance(v, (int, float)) else True:
                 continue
             cf[feat].append(float(v))
             global_feat[feat].append(float(v))
