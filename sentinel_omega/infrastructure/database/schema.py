@@ -120,6 +120,9 @@ CREATE INDEX IF NOT EXISTS idx_detecciones_tipo
     ON TBL_DETECCIONES(tipo);
 CREATE INDEX IF NOT EXISTS idx_detecciones_cycle
     ON TBL_DETECCIONES(cycle_id);
+-- Composite: covers the barrido_diario collapse query (timestamp + tipo + wall_name)
+CREATE INDEX IF NOT EXISTS idx_detecciones_colapso
+    ON TBL_DETECCIONES(timestamp, tipo, wall_name);
 
 -- ─── Ciclos del Orquestador ────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS TBL_CICLOS (
@@ -140,6 +143,9 @@ CREATE TABLE IF NOT EXISTS TBL_CICLOS (
 
 CREATE INDEX IF NOT EXISTS idx_ciclos_ts
     ON TBL_CICLOS(timestamp);
+-- Composite: covers barrido_diario DELETE (muro_breach=0 AND nivel_riesgo NOT IN ...)
+CREATE INDEX IF NOT EXISTS idx_ciclos_barrido
+    ON TBL_CICLOS(timestamp, muro_breach, nivel_riesgo);
 
 -- ─── Muro de los 5 Eventos ────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS TBL_MURO_EVENTOS (
@@ -195,6 +201,9 @@ CREATE TABLE IF NOT EXISTS tbl_historico_sismico_raw (
     sismo_max_mag   REAL DEFAULT 0.0,
     PRIMARY KEY (timestamp_blk, id_nodo)
 );
+-- Index for magnitude filter used heavily in training and sesgo evaluation
+CREATE INDEX IF NOT EXISTS idx_sismico_raw_mag
+    ON tbl_historico_sismico_raw(sismo_max_mag);
 
 CREATE TABLE IF NOT EXISTS tbl_psique_financiera (
     timestamp_blk    TEXT PRIMARY KEY,
@@ -258,6 +267,8 @@ CREATE TABLE IF NOT EXISTS TBL_FIRMAS (
 CREATE INDEX IF NOT EXISTS idx_firmas_bot ON TBL_FIRMAS(bot_name);
 CREATE INDEX IF NOT EXISTS idx_firmas_estado ON TBL_FIRMAS(estado);
 CREATE INDEX IF NOT EXISTS idx_firmas_class ON TBL_FIRMAS(event_class);
+-- Composite: covers common queries (bot_name + estado) used in firmas lookups
+CREATE INDEX IF NOT EXISTS idx_firmas_bot_estado ON TBL_FIRMAS(bot_name, estado);
 
 -- ─── Juez (auditoría disciplinaria, separado del Padre) ──────────
 CREATE TABLE IF NOT EXISTS TBL_JUEZ_AUDITORIA (
@@ -447,6 +458,9 @@ def init_database(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA synchronous=NORMAL")   # safe with WAL; faster than FULL
+    conn.execute("PRAGMA cache_size=-8000")      # 8 MB page cache
+    conn.execute("PRAGMA temp_store=MEMORY")     # temp tables/indexes in RAM
 
     conn.executescript(SCHEMA_SQL)
     _migrate_add_missing_columns(conn)

@@ -524,7 +524,11 @@ class TestBarridoDiario:
 
     def _seed_operativo(self, conn):
         from datetime import datetime, timezone, timedelta
-        base = datetime.now(timezone.utc) - timedelta(days=20)  # días ya cerrados
+        # Normalize to start-of-day so all 6 hourly cycles fall on the same UTC day
+        # regardless of when the test runs (avoids midnight-boundary flakiness).
+        base = (datetime.now(timezone.utc) - timedelta(days=20)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         for cyc in range(6):
             ts = (base + timedelta(hours=cyc)).timestamp()
             nivel = "CRITICAL" if cyc == 0 else "LOW"
