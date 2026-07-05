@@ -13,6 +13,7 @@ llano y barras visuales donde ayuda.
 import json
 import sqlite3
 import sys
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -48,6 +49,9 @@ NOMBRES_LLANOS = {
     "erupciones_win": "Erupciones registradas en la ventana",
     "so2_kt_90d": "Gas volcánico SO₂ (90 días)",
     "erupciones_90d": "Erupciones (90 días)",
+    "delta_cross_coupling": "Acoplamiento geofísico-financiero cruzado",
+    "delta_geo_coupling": "Acoplamiento campo magnético-mercado",
+    "delta_schumann_coupling": "Acoplamiento Schumann-mercado",
 }
 
 
@@ -468,6 +472,184 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 "floja de lo que aparentaba.*",
                 "",
             ]
+    except sqlite3.OperationalError:
+        pass
+
+    # ── Mapa de calor de correlaciones aprendidas ──
+    try:
+        corr_rows = conn.execute(
+            "SELECT event_class, feature, ratio, n_firmas "
+            "FROM tbl_patrones_correlacion ORDER BY event_class, feature"
+        ).fetchall()
+        if corr_rows:
+            event_classes = sorted(set(r[0] for r in corr_rows))
+            # Pick top 8 most discriminating features by max deviation from 1.0
+            feat_dev: dict = {}
+            for _, feat, ratio, _ in corr_rows:
+                d = abs(ratio - 1.0)
+                if d > feat_dev.get(feat, 0.0):
+                    feat_dev[feat] = d
+            top_feats = [f for f, _ in
+                         sorted(feat_dev.items(), key=lambda x: -x[1])[:8]]
+
+            lookup = {(r[0], r[1]): r[2] for r in corr_rows}
+
+            def _celda(ratio):
+                if ratio is None:
+                    return "  —  "
+                if ratio >= 2.0:
+                    return f"🔴{ratio:.1f}"
+                if ratio >= 1.5:
+                    return f"🟠{ratio:.1f}"
+                if ratio >= 1.2:
+                    return f"🟡{ratio:.1f}"
+                if ratio >= 0.8:
+                    return f"⬜{ratio:.1f}"
+                return f"🔵{ratio:.1f}"
+
+            lineas += [
+                "## 🗺 Correlaciones aprendidas — qué precede a cada evento",
+                "",
+                "> Mapa de calor: qué tan elevada está cada variable en los "
+                "**14 días previos** a cada tipo de evento comparado con su nivel "
+                "habitual. 🔴≥2× · 🟠≥1.5× · 🟡≥1.2× · ⬜~normal · 🔵↓bajo. "
+                "Un 🔴 en 'SO₂' para 'ERUPCION_VEI4' significa que justo antes "
+                "de esas erupciones el SO₂ estaba el doble de lo normal. "
+                "Un 🔵 en 'Kp' para 'SISMO_M7' confirma el Silent Trigger: "
+                "los grandes sismos a veces ocurren en calma geomagnética.",
+                "",
+            ]
+
+            # Header row
+            short = {
+                ec: ec.replace("SISMO_M", "M").replace("ERUPCION_", "🌋VEI")
+                       .replace("TORMENTA_", "☀️Kp")
+                for ec in event_classes
+            }
+            header = "| Variable |" + "".join(
+                f" {short[ec]} |" for ec in event_classes
+            )
+            sep = "|---|" + "---|" * len(event_classes)
+            lineas += [header, sep]
+
+            for feat in top_feats:
+                nombre = NOMBRES_LLANOS.get(feat, feat)[:38]
+                row = f"| {nombre} |"
+                for ec in event_classes:
+                    row += f" {_celda(lookup.get((ec, feat)))} |"
+                lineas.append(row)
+            lineas.append("")
+    except sqlite3.OperationalError:
+        pass
+
+    # ── Top 10 patrones del sistema ──
+    try:
+        top_firmas = conn.execute(
+            "SELECT firma_id, bot_name, event_class, id_nodo, recurrencia, "
+            "estado, lag_promedio_h FROM TBL_FIRMAS "
+            "WHERE estado IN ('consolidada','recurrente') "
+            "ORDER BY recurrencia DESC LIMIT 10"
+        ).fetchall()
+        if top_firmas:
+            nodos_top = {
+                r[0]: r[1]
+                for r in conn.execute(
+                    "SELECT node_id, nombre FROM TBL_NODOS_TOPOLOGIA"
+                ).fetchall()
+            }
+            lineas += [
+                "## 🏆 Top 10 patrones del sistema",
+                "",
+                "> Los **patrones más vistos** en 32 años de historia: firmas "
+                "que el sistema reconoció más veces antes de un evento. "
+                "Cuantas más repeticiones, más confiable es el patrón como señal. "
+                "El **aviso** es el tiempo de anticipación típico que esa firma "
+                "da antes del evento.",
+                "",
+                "| # | Evento | Bot | Zona / Nodo | Veces | Estado | Aviso |",
+                "|---|---|---|---|---|---|---|",
+            ]
+            estado_icon = {"consolidada": "✅", "recurrente": "🔁"}
+            event_icon = {
+                "SISMO": "🌎", "ERUPCION": "🌋", "TORMENTA": "☀️",
+                "HURACAN": "🌀", "TSUNAMI": "🌊",
+            }
+            for i, (fid, bot, ec, nodo_id, rec, estado, lag_h) in \
+                    enumerate(top_firmas, 1):
+                zona = (nodos_top.get(nodo_id) or f"nodo {nodo_id}") \
+                    if nodo_id else "global"
+                lag_txt = f"~{lag_h/24:.0f}d" if lag_h else "—"
+                eicon = next(
+                    (v for k, v in event_icon.items() if ec.startswith(k)), "📍"
+                )
+                lineas.append(
+                    f"| {i} | {eicon} **{ec}** | {bot} | {zona} | "
+                    f"{rec:,} | {estado_icon.get(estado, '🆕')} {estado} | "
+                    f"{lag_txt} |"
+                )
+            lineas.append("")
+    except sqlite3.OperationalError:
+        pass
+
+    # ── Patrones por tipo de evento — top 5 por clase ──
+    try:
+        event_classes_all = [
+            r[0] for r in conn.execute(
+                "SELECT DISTINCT event_class FROM TBL_FIRMAS ORDER BY event_class"
+            ).fetchall()
+        ]
+        if event_classes_all:
+            nodos_ev = {
+                r[0]: (r[1], r[2], r[3])
+                for r in conn.execute(
+                    "SELECT node_id, nombre, lat, lon FROM TBL_NODOS_TOPOLOGIA"
+                ).fetchall()
+            }
+            lineas += [
+                "## 📊 Patrones por tipo de evento — top 5 por clase",
+                "",
+                "> Para cada tipo de evento que el sistema ha aprendido, "
+                "las 5 firmas más consolidadas: los patrones más reconocibles "
+                "que preceden a ese tipo de evento. La **zona** es el nodo de "
+                "la malla UVG-125 donde se aprendió la firma.",
+                "",
+            ]
+            ev_icons = {
+                "SISMO": "🌎", "ERUPCION": "🌋", "TORMENTA": "☀️",
+                "HURACAN": "🌀", "TSUNAMI": "🌊",
+            }
+            estado_icon2 = {"consolidada": "✅", "recurrente": "🔁"}
+            for ec in event_classes_all:
+                firmas_ec = conn.execute(
+                    "SELECT bot_name, id_nodo, recurrencia, estado, lag_promedio_h "
+                    "FROM TBL_FIRMAS WHERE event_class = ? "
+                    "ORDER BY recurrencia DESC LIMIT 5",
+                    (ec,),
+                ).fetchall()
+                if not firmas_ec:
+                    continue
+                eicon = next(
+                    (v for k, v in ev_icons.items() if ec.startswith(k)), "📍"
+                )
+                lineas += [
+                    f"### {eicon} {ec}",
+                    "",
+                    "| Bot | Zona (nodo de la malla) | Veces vista | Estado | Aviso típico |",
+                    "|---|---|---|---|---|",
+                ]
+                for bot, nodo_id, rec, estado, lag_h in firmas_ec:
+                    if nodo_id and nodo_id in nodos_ev:
+                        n = nodos_ev[nodo_id]
+                        zona = f"{n[0]} ({n[1]:.1f}, {n[2]:.1f})"
+                    else:
+                        zona = f"nodo {nodo_id}" if nodo_id else "global"
+                    lag_txt = f"~{lag_h/24:.0f} días" if lag_h else "—"
+                    lineas.append(
+                        f"| {bot} | {zona} | {rec:,} | "
+                        f"{estado_icon2.get(estado, '🆕')} {estado} | "
+                        f"{lag_txt} |"
+                    )
+                lineas.append("")
     except sqlite3.OperationalError:
         pass
 

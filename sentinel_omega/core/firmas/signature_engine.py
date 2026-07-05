@@ -41,6 +41,8 @@ FEATURE_KEYS = [
     "bz_mean_72h", "kp_max_72h", "sismo_count_72h",
     # alfa2: cobertura satelital ESA Sentinel (live-only, acumulado desde ciclos)
     "satellite_coverage_score", "satellite_thermal_anomalies", "satellite_clear_passes",
+    # delta_enriched: acoplamiento geofísico-financiero (live-only, desde tbl_delta_cross)
+    "delta_cross_coupling", "delta_geo_coupling", "delta_schumann_coupling",
 ]
 
 VENTANA_HORAS = 336  # 14 days
@@ -250,6 +252,27 @@ def extraer_features_ventana(
                 features["satellite_clear_passes"] = float(sum(clear_p))
     except Exception:
         pass  # tabla no existe aún → features de alfa2 ausentes (NaN en vector)
+
+    # Delta cross-correlation coupling (tbl_delta_cross).
+    # Populated in live operation by the delta_enriched pipeline.
+    # During backcast training these values are absent (NaN in vector) —
+    # the system learns them incrementally from live cycles.
+    try:
+        dc = conn.execute(
+            "SELECT AVG(cross_coupling), AVG(geomagnetic_coupling), "
+            "AVG(schumann_coupling) "
+            "FROM tbl_delta_cross "
+            "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?)",
+            (ts_evento, ts_evento, f"-{VENTANA_HORAS} hours"),
+        ).fetchone()
+        if dc and dc[0] is not None:
+            features["delta_cross_coupling"] = float(dc[0])
+        if dc and dc[1] is not None:
+            features["delta_geo_coupling"] = float(dc[1])
+        if dc and dc[2] is not None:
+            features["delta_schumann_coupling"] = float(dc[2])
+    except Exception:
+        pass  # tabla no existe aún → features delta_cross ausentes (NaN en vector)
 
     return features
 

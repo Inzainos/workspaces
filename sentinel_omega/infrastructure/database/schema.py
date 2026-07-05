@@ -22,7 +22,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA_SQL = """
 -- ─── Precursores Cósmicos ──────────────────────────────────────────
@@ -327,6 +327,43 @@ CREATE TABLE IF NOT EXISTS tbl_delta_cross (
     geo_schumann_deviation   REAL
 );
 
+-- ─── Eventos No Sísmicos (volcánicos + tormentas solares) ────────
+-- Catálogo derivado de tbl_desgasificacion_raw (VEI≥3) y
+-- tbl_clima_espacial_raw (Kp≥6 onset). Alimenta el entrenamiento
+-- multi-evento para que los bots aprendan firmas de erupciones y
+-- tormentas solares, no solo sismos.
+CREATE TABLE IF NOT EXISTS tbl_eventos_no_sismicos (
+    timestamp_blk TEXT    NOT NULL,
+    id_nodo       INTEGER NOT NULL,
+    event_class   TEXT    NOT NULL,
+    fuente        TEXT    DEFAULT '',
+    intensidad    REAL    DEFAULT 0.0,
+    PRIMARY KEY (timestamp_blk, id_nodo, event_class)
+);
+CREATE INDEX IF NOT EXISTS idx_eventos_no_sismicos_class
+    ON tbl_eventos_no_sismicos(event_class);
+CREATE INDEX IF NOT EXISTS idx_eventos_no_sismicos_ts
+    ON tbl_eventos_no_sismicos(timestamp_blk);
+
+-- ─── Patrones de correlación (mapa de calor) ──────────────────
+-- Matriz feature × event_class calculada tras el entrenamiento.
+-- Para cada par (tipo_evento, variable), guarda el valor medio de
+-- esa variable en las firmas de ese tipo y cuántas veces supera
+-- (ratio) el promedio global. ratio > 1 = la variable está elevada
+-- antes de ese tipo de evento.
+CREATE TABLE IF NOT EXISTS tbl_patrones_correlacion (
+    event_class   TEXT    NOT NULL,
+    feature       TEXT    NOT NULL,
+    media         REAL    DEFAULT 0.0,
+    global_media  REAL    DEFAULT 0.0,
+    ratio         REAL    DEFAULT 1.0,
+    n_firmas      INTEGER DEFAULT 0,
+    updated_at    TEXT    DEFAULT (datetime('now')),
+    PRIMARY KEY (event_class, feature)
+);
+CREATE INDEX IF NOT EXISTS idx_patrones_corr_class
+    ON tbl_patrones_correlacion(event_class);
+
 -- ─── Schema Version ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS TBL_SCHEMA_VERSION (
     version     INTEGER PRIMARY KEY,
@@ -369,6 +406,17 @@ EXPECTED_COLUMNS = {
         "geo_kp_max_3d": "REAL",
         "geo_storm_active": "INTEGER DEFAULT 0",
         "geo_schumann_deviation": "REAL",
+    },
+    # v6: eventos no sísmicos y matriz de correlaciones
+    "tbl_eventos_no_sismicos": {
+        "fuente": "TEXT DEFAULT ''",
+        "intensidad": "REAL DEFAULT 0.0",
+    },
+    "tbl_patrones_correlacion": {
+        "media": "REAL DEFAULT 0.0",
+        "global_media": "REAL DEFAULT 0.0",
+        "ratio": "REAL DEFAULT 1.0",
+        "n_firmas": "INTEGER DEFAULT 0",
     },
 }
 
