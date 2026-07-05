@@ -213,7 +213,7 @@ Se aplica a:
 
 ### Tablas Operacionales
 
-6 tablas en `SENTINEL_OMEGA_PRO.db` con modo WAL y foreign keys:
+6 tablas en `SENTINEL_OMEGA_PRO.db` con modo WAL y foreign keys (schema v6):
 
 | Tabla                    | Registros   | Propósito                                              |
 |--------------------------|-------------|--------------------------------------------------------|
@@ -226,12 +226,20 @@ Se aplica a:
 
 ### Tablas de Aprendizaje y Auditoría
 
-| Tabla                | Propósito                                                        |
-|----------------------|-------------------------------------------------------------------|
-| TBL_FIRMAS           | Memoria de patrones por bot. Estado: nueva → observada → recurrente → consolidada (por recurrencia). Solo las consolidadas son conocimiento exigible. |
-| TBL_JUEZ_AUDITORIA   | Ledger disciplinario del Juez: ACIERTO / FALLO / FALSO_POSITIVO con severidad asimétrica (omitir firma conocida = 20 base, omisión = 10, falsa alarma = 1) escalada por reincidencia. |
+| Tabla                      | Propósito                                                        |
+|----------------------------|-------------------------------------------------------------------|
+| TBL_FIRMAS                 | Memoria de patrones por bot. Estado: nueva → observada → recurrente → consolidada (por recurrencia). Solo las consolidadas son conocimiento exigible. |
+| TBL_JUEZ_AUDITORIA         | Ledger disciplinario del Juez: ACIERTO / FALLO / FALSO_POSITIVO con severidad asimétrica (omitir firma conocida = 20 base, omisión = 10, falsa alarma = 1) escalada por reincidencia. |
+| tbl_eventos_no_sismicos    | Catálogo derivado de erupciones volcánicas (VEI≥3) y tormentas solares (Kp≥6 onset). Alimenta la Fase 1b de entrenamiento multi-evento. |
+| tbl_patrones_correlacion   | Matriz feature × event_class calculada tras el entrenamiento. Para cada par guarda media, media global y ratio; ratio > 1 significa que la variable está elevada en los 14 días previos a ese tipo de evento. |
 
-**Entrenamiento en dos fases** (`--entrenar`): Fase 1 (reconocimiento, sin castigo) extrae la ventana de 14 días previa a cada evento M5+ del backcast y la registra como firma por bot sobre su dominio de variables; la recurrencia promueve firmas. Fase 2 (disciplina) re-presenta las firmas consolidadas y el Juez castiga si el sistema ya no las reconoce. En operación, cada ciclo compara el estado vivo contra las firmas consolidadas ("el estado actual se parece 87% al que precedió el M7 del nodo 45").
+**Entrenamiento en tres fases** (`--entrenar`):
+- **Fase 1** — Reconocimiento sísmico (sin castigo): extrae la ventana de 14 días previa a cada evento M5+ del backcast y la registra como firma por bot.
+- **Fase 1b** — Reconocimiento no sísmico: igual proceso sobre erupciones volcánicas (VEI≥3) y tormentas solares (Kp≥6) derivadas de las tablas de backcast. Los bots aprenden qué precede a estos eventos además de los sísmicos.
+- **Fase 2** — Disciplina: re-presenta las firmas consolidadas; el Juez castiga si el sistema ya no las reconoce.
+- Al finalizar, calcula la **matriz de correlaciones** (feature × event_class) y la almacena en `tbl_patrones_correlacion` para el reporte de mapa de calor.
+
+En operación, cada ciclo compara el estado vivo contra las firmas consolidadas ("el estado actual se parece 87% al que precedió el M7 del nodo 45").
 
 ### Tablas de Backcast Histórico (resolución 1H, 1994-2025)
 
@@ -243,6 +251,13 @@ Se aplica a:
 | tbl_psique_financiera      | timestamp_blk           | BTC precio, volatilidad (2014+)              |
 | tbl_enjambre_telemetria    | (timestamp_blk, id_nodo)| Resonancia Schumann por nodo                 |
 | tbl_nodo_estado_dinamico   | (timestamp_blk, id_nodo)| Carga/tensión por nodo (cap 1.0 vía trigger) |
+
+### Tablas de Live-Only (acumuladas desde ciclos en vivo)
+
+| Tabla                   | Clave Primaria            | Propósito                                         |
+|-------------------------|---------------------------|---------------------------------------------------|
+| tbl_cobertura_satelital | id (autoincrement)        | Cobertura satelital ESA Sentinel-2 por zona/ciclo |
+| tbl_delta_cross         | id (autoincrement)        | Resultados de correlación cruzada geofísico-financiera por ciclo |
 
 **Protocolo de backcast**: CERO datos sintéticos. Faltante = NULL. LOCF solo desde registros reales.
 
@@ -411,7 +426,7 @@ python sentinel_omega/launcher.py --once
 # Carga histórica (one-time, 1994-2025)
 python sentinel_omega/launcher.py --backcast
 
-# Entrenamiento de firmas sobre el backcast (Fase 1 reconocimiento + Fase 2 disciplina)
+# Entrenamiento de firmas sobre el backcast (Fase 1 sísmica + Fase 1b no sísmica + Fase 2 disciplina)
 python sentinel_omega/launcher.py --entrenar
 
 # Detener gracefully (SIGTERM -> espera 30s)
