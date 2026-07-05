@@ -84,6 +84,102 @@ def _event_class(mag: float) -> str:
     return "SISMO_M4"  # 4.5–4.99: piso de alerta/castigo
 
 
+def _event_class_volcanico(vei: float) -> str:
+    """Volcanic event class by VEI (Volcanic Explosivity Index)."""
+    if vei >= 5.0:
+        return "ERUPCION_VEI5"
+    if vei >= 4.0:
+        return "ERUPCION_VEI4"
+    return "ERUPCION_VEI3"
+
+
+def _event_class_solar(kp_max: float) -> str:
+    """Solar storm event class by Kp index (NOAA G-scale proxy)."""
+    if kp_max >= 9.0:
+        return "TORMENTA_Kp9"   # G5 extreme
+    if kp_max >= 7.0:
+        return "TORMENTA_Kp7"   # G3 strong
+    return "TORMENTA_Kp6"       # G2 moderate
+
+
+def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    return bool(conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone())
+
+
+def derivar_eventos_no_sismicos(conn: sqlite3.Connection) -> int:
+    """Derive non-seismic event catalog from existing backcast tables.
+
+    Volcanic: rows in tbl_desgasificacion_raw with vei >= 3.
+    Solar storms: onset hours in tbl_clima_espacial_raw where kp_max >= 6
+    (detected as the first hour above threshold after at least one hour
+    of calm — avoids re-registering the same storm repeatedly).
+
+    Stores to tbl_eventos_no_sismicos. Idempotent (INSERT OR IGNORE).
+    Returns the total number of events inserted.
+    """
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_eventos_no_sismicos "
+        "(timestamp_blk TEXT NOT NULL, id_nodo INTEGER NOT NULL, "
+        " event_class TEXT NOT NULL, fuente TEXT DEFAULT '', "
+        " intensidad REAL DEFAULT 0.0, "
+        " PRIMARY KEY (timestamp_blk, id_nodo, event_class))"
+    )
+    total = 0
+
+    # ── Volcanic events ──────────────────────────────────────────────
+    try:
+        erupciones = conn.execute(
+            "SELECT timestamp_blk, id_nodo, vei FROM tbl_desgasificacion_raw "
+            "WHERE vei >= 3 ORDER BY timestamp_blk"
+        ).fetchall()
+        for ts, id_nodo, vei in erupciones:
+            clase = _event_class_volcanico(float(vei))
+            conn.execute(
+                "INSERT OR IGNORE INTO tbl_eventos_no_sismicos "
+                "(timestamp_blk, id_nodo, event_class, fuente, intensidad) "
+                "VALUES (?, ?, ?, 'tbl_desgasificacion_raw', ?)",
+                (ts, id_nodo, clase, float(vei)),
+            )
+            total += 1
+        logger.info(f"  Eventos volcánicos derivados: {len(erupciones)}")
+    except sqlite3.OperationalError:
+        logger.info("  tbl_desgasificacion_raw sin datos VEI — saltando volcánicos")
+
+    # ── Solar storm onset events (global → node 0) ───────────────────
+    try:
+        solar_rows = conn.execute(
+            "SELECT timestamp_blk, kp_max FROM tbl_clima_espacial_raw "
+            "WHERE kp_max IS NOT NULL ORDER BY timestamp_blk"
+        ).fetchall()
+        prev_storm = False
+        n_solar = 0
+        for ts, kp in solar_rows:
+            if kp is None:
+                prev_storm = False
+                continue
+            is_storm = float(kp) >= 6.0
+            if is_storm and not prev_storm:
+                clase = _event_class_solar(float(kp))
+                conn.execute(
+                    "INSERT OR IGNORE INTO tbl_eventos_no_sismicos "
+                    "(timestamp_blk, id_nodo, event_class, fuente, intensidad) "
+                    "VALUES (?, 0, ?, 'tbl_clima_espacial_raw', ?)",
+                    (ts, clase, float(kp)),
+                )
+                n_solar += 1
+                total += 1
+            prev_storm = is_storm
+        logger.info(f"  Tormentas solares derivadas (onset): {n_solar}")
+    except sqlite3.OperationalError:
+        logger.info("  tbl_clima_espacial_raw sin datos Kp — saltando tormentas solares")
+
+    conn.commit()
+    logger.info(f"Eventos no sísmicos derivados total: {total}")
+    return total
+
+
 def entrenar_reconocimiento(
     db_path: str,
     max_eventos: Optional[int] = None,
@@ -309,11 +405,14 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
 
 
 def entrenar(db_path: str, max_eventos: Optional[int] = None) -> Dict:
-    """Full training run: Fase 1 then Fase 2."""
+    """Full training run: Fase 1 (seismic) + Fase 1b (non-seismic) + Fase 2 + lags + correlaciones."""
     fase1 = entrenar_reconocimiento(db_path, max_eventos=max_eventos)
+    fase1b = entrenar_reconocimiento_no_sismico(db_path, max_eventos=max_eventos)
     fase2 = backtest_disciplinario(db_path)
     lags = calcular_lags_anticipacion(db_path)
-    return {"fase1": fase1, "fase2": fase2, "lags": lags}
+    correlaciones = calcular_correlaciones_evento(db_path)
+    return {"fase1": fase1, "fase1b": fase1b, "fase2": fase2, "lags": lags,
+            "correlaciones": correlaciones}
 
 
 # Offsets probados: la ventana de la firma termina N horas ANTES del evento.
@@ -497,6 +596,175 @@ def analizar_factores_lag(db_path: str) -> Dict:
         },
         "top_factores": top,
     }
+
+
+def entrenar_reconocimiento_no_sismico(
+    db_path: str,
+    max_eventos: Optional[int] = None,
+    bots: Optional[List[str]] = None,
+) -> Dict:
+    """Fase 1b — learn signatures from non-seismic natural events.
+
+    Trains on volcanic eruptions (VEI≥3, from tbl_desgasificacion_raw) and
+    solar storm onsets (Kp≥6, from tbl_clima_espacial_raw). Both are derived
+    from existing backcast tables via derivar_eventos_no_sismicos() and stored
+    in tbl_eventos_no_sismicos before the training loop runs.
+
+    Uses the same feature extraction and firma registration as Fase 1 —
+    the same 14-day pre-event window — so bots learn what precedes eruptions
+    and solar storms, not just earthquakes.
+
+    The Padre's full-vector signatures will now capture financial (Delta) and
+    atmospheric (Beta-2) patterns that precede these events too, enabling
+    the correlation heatmap to reveal cross-domain relationships.
+    """
+    conn = sqlite3.connect(db_path)
+
+    # Derive if table is absent or empty
+    n_previos = 0
+    if _table_exists(conn, "tbl_eventos_no_sismicos"):
+        n_previos = conn.execute(
+            "SELECT COUNT(*) FROM tbl_eventos_no_sismicos"
+        ).fetchone()[0]
+    if n_previos == 0:
+        derivar_eventos_no_sismicos(conn)
+
+    eventos = conn.execute(
+        "SELECT timestamp_blk, id_nodo, event_class, intensidad "
+        "FROM tbl_eventos_no_sismicos ORDER BY timestamp_blk"
+    ).fetchall()
+    if max_eventos:
+        eventos = eventos[:max_eventos]
+
+    memoria = FirmaMemoria(conn)
+    bots_activos = {
+        b: k for b, k in BOT_FEATURES.items() if bots is None or b in bots
+    }
+
+    logger.info(
+        f"=== FASE 1b RECONOCIMIENTO NO SÍSMICO: {len(eventos)} eventos ==="
+    )
+    stats = {"eventos": len(eventos), "firmas_nuevas": 0, "recurrencias": 0,
+             "sin_datos": 0}
+
+    for idx, (ts_evento, id_nodo, event_class, intensidad) in enumerate(eventos):
+        if idx % 500 == 0 and idx > 0:
+            logger.info(
+                f"  Fase 1b progreso: {idx}/{len(eventos)} "
+                f"({stats['firmas_nuevas']} firmas, "
+                f"{stats['recurrencias']} recurrencias)"
+            )
+        features = extraer_features_ventana(conn, ts_evento, id_nodo)
+        if features is None:
+            stats["sin_datos"] += 1
+            continue
+
+        evento_ref = f"{ts_evento}|nodo{id_nodo}|{event_class}:{intensidad:.1f}"
+
+        for bot, keys in bots_activos.items():
+            if bot in BOTS_LIVE_ONLY:
+                continue
+            desde = BOT_DESDE.get(bot)
+            if desde and ts_evento < desde:
+                continue
+            sub = (
+                features if keys is None
+                else {k: v for k, v in features.items() if k in keys}
+            )
+            if len(sub) < MIN_FEATURES_POR_BOT[bot]:
+                continue
+            _, _, es_nueva = memoria.registrar(
+                bot, event_class, id_nodo, sub, evento_ref, ts_evento
+            )
+            if es_nueva:
+                stats["firmas_nuevas"] += 1
+            else:
+                stats["recurrencias"] += 1
+
+    stats["memoria"] = memoria.stats()
+    logger.info(f"Fase 1b completa: {stats}")
+    conn.close()
+    return stats
+
+
+def calcular_correlaciones_evento(db_path: str) -> Dict:
+    """Compute feature × event_class correlation matrix from TBL_FIRMAS.
+
+    For every (event_class, feature) pair, computes the mean feature value
+    across all firmas of that class and normalises by the global mean across
+    ALL classes. A ratio > 1 means the feature tends to be elevated in the
+    14-day window before that event type; a ratio < 1 means it is suppressed.
+
+    The resulting matrix is stored in tbl_patrones_correlacion and is used by
+    the report generator to render the correlation heatmap. Re-running is safe
+    (INSERT OR REPLACE).
+    """
+    import json as _json
+    from sentinel_omega.core.firmas.signature_engine import FEATURE_KEYS
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_patrones_correlacion "
+        "(event_class TEXT NOT NULL, feature TEXT NOT NULL, "
+        " media REAL DEFAULT 0.0, global_media REAL DEFAULT 0.0, "
+        " ratio REAL DEFAULT 1.0, n_firmas INTEGER DEFAULT 0, "
+        " updated_at TEXT DEFAULT (datetime('now')), "
+        " PRIMARY KEY (event_class, feature))"
+    )
+
+    rows = conn.execute(
+        "SELECT event_class, features_json FROM TBL_FIRMAS"
+    ).fetchall()
+
+    # Aggregate per (event_class, feature) and globally
+    class_feat: Dict[str, Dict[str, list]] = {}
+    global_feat: Dict[str, list] = {k: [] for k in FEATURE_KEYS}
+
+    for event_class, features_json in rows:
+        try:
+            feats = _json.loads(features_json)
+        except Exception:
+            continue
+        cf = class_feat.setdefault(event_class, {k: [] for k in FEATURE_KEYS})
+        for feat in FEATURE_KEYS:
+            v = feats.get(feat)
+            if v is None or v != v:  # None or NaN
+                continue
+            cf[feat].append(float(v))
+            global_feat[feat].append(float(v))
+
+    global_means = {
+        feat: sum(vals) / len(vals)
+        for feat, vals in global_feat.items() if vals
+    }
+
+    resultado: Dict[str, Dict[str, float]] = {}
+    for event_class, feat_lists in class_feat.items():
+        resultado[event_class] = {}
+        for feat, vals in feat_lists.items():
+            if not vals:
+                continue
+            media = sum(vals) / len(vals)
+            gm = global_means.get(feat, 0.0)
+            ratio = media / gm if abs(gm) > 1e-9 else 1.0
+            conn.execute(
+                "INSERT OR REPLACE INTO tbl_patrones_correlacion "
+                "(event_class, feature, media, global_media, ratio, "
+                " n_firmas, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
+                (event_class, feat, round(media, 4), round(gm, 4),
+                 round(ratio, 3), len(vals)),
+            )
+            resultado[event_class][feat] = round(ratio, 3)
+
+    conn.commit()
+    conn.close()
+    n_classes = len(resultado)
+    n_pairs = sum(len(v) for v in resultado.values())
+    logger.info(
+        f"Correlaciones calculadas: {n_classes} event classes, {n_pairs} pares"
+    )
+    return resultado
 
 
 # ── Disciplina de trasfondo — "castigo desde abajo" ──────────────────────────
