@@ -9,6 +9,8 @@ Usage:
     python sentinel_omega/launcher.py --once          # Single cycle, then exit
     python sentinel_omega/launcher.py --dashboard     # Launch dashboard alongside
     python sentinel_omega/launcher.py --dry-run       # No Telegram alerts
+    python sentinel_omega/launcher.py --entrenar --reporte  # Train then report
+    python sentinel_omega/launcher.py --reporte       # Report only (no training)
 """
 
 import argparse
@@ -105,6 +107,53 @@ def _print_banner(config):
     print()
 
 
+def _run_reportes(db_path: str) -> None:
+    """
+    Genera el reporte general y el reporte del Padre en stdout.
+    Guarda también ambos reportes en data/reporte_<timestamp>.txt
+    para revisión posterior.
+
+    Se invoca automáticamente después de --entrenar si se pasa --reporte,
+    o de forma independiente con solo --reporte.
+    """
+    from sentinel_omega.infrastructure.pipeline.reporte_sentinel import (
+        reporte_general,
+        reporte_padre,
+    )
+
+    ts = _dt.utcnow().strftime("%Y%m%d_%H%M%S")
+    out_dir = Path(db_path).parent
+    general_path = out_dir / f"reporte_general_{ts}.txt"
+    padre_path = out_dir / f"reporte_padre_{ts}.txt"
+
+    # ── Reporte General ──────────────────────────────────────────────────────
+    logger.info("Generando reporte general...")
+    try:
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            reporte_general(db_path)
+        texto_general = buf.getvalue()
+        print(texto_general)
+        general_path.write_text(texto_general, encoding="utf-8")
+        logger.info(f"Reporte general guardado en: {general_path}")
+    except Exception as e:
+        logger.error(f"reporte_general() falló: {e}", exc_info=True)
+
+    # ── Reporte del Padre ────────────────────────────────────────────────────
+    logger.info("Generando reporte del Padre...")
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            reporte_padre(db_path)
+        texto_padre = buf.getvalue()
+        print(texto_padre)
+        padre_path.write_text(texto_padre, encoding="utf-8")
+        logger.info(f"Reporte del Padre guardado en: {padre_path}")
+    except Exception as e:
+        logger.error(f"reporte_padre() falló: {e}", exc_info=True)
+
+
 def run(args):
     global _shutdown_requested
 
@@ -174,6 +223,14 @@ def run(args):
         logger.info("Running daily maintenance sweep (barrido diario)...")
         resultado = barrido_diario(str(db_path))
         logger.info(f"Daily sweep complete: {resultado}")
+
+    # ── Reportes (después de cualquier operación batch) ──────────────────────
+    if args.reporte:
+        _run_reportes(str(db_path))
+        # Si solo se pidió el reporte (sin ciclos continuos), salir limpio.
+        if not getattr(args, "_continuar_ciclos", True):
+            _clear_pid()
+            return
 
     dashboard_proc = None
     if args.dashboard:
@@ -306,6 +363,7 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
             detections = getattr(geo, "precursor_detections", None) or []
             for det in detections:
                 try:
+
                     repo.insert_deteccion(
                         tipo=det.tipo.value,
                         display_name=det.display_name,
@@ -430,11 +488,6 @@ def _build_live_features(runner) -> dict:
         features["fase_lunar"] = float(lunar[-1])
 
     # ── beta2: desgasificación volcánica (proxy OWM) ──────────────
-    # so2_kt_win / erupciones_win se aprenden del catálogo NASA MSVOLSO2L4
-    # (kilotones). En tiempo real no hay esa fuente; usamos el global_node_scan
-    # de OpenWeatherMap como proxy: nodos VOLCAN/TECTONICO con SO2 elevado.
-    # Factor empírico 1e-4: normaliza μg/m³ a orden de magnitud de kt para
-    # que la función similitud vea "calma=0" y "actividad>0" correctamente.
     _SO2_SCALE = 1e-4
     beta2 = cache.get("beta2") or {}
     node_scan = beta2.get("global_node_scan", [])
@@ -454,8 +507,6 @@ def _build_live_features(runner) -> dict:
                 so2_sum += excess
         features["erupciones_win"] = float(erupciones_proxy)
         features["so2_kt_win"] = round(so2_sum * _SO2_SCALE, 6)
-        # 90-day context: si no tenemos historial, aproximar con la misma
-        # ventana escalada (conservador — subestima la carga de fondo).
         features["erupciones_90d"] = float(erupciones_proxy)
         features["so2_kt_90d"] = round(so2_sum * _SO2_SCALE, 6)
 
@@ -465,9 +516,7 @@ def _build_live_features(runner) -> dict:
         if key in delta:
             features[key] = float(delta[key])
 
-    # ── alfa2: cobertura satelital (features acumulados en vivo) ──
-    # Las firmas de alfa2 se acumulan desde tbl_cobertura_satelital (ciclos vivos).
-    # La feature principal es composite_coverage_score [0,1] por zona.
+    # ── alfa2: cobertura satelital ────────────────────────────────
     alfa2_data = getattr(runner, "_last_alfa2_data", None)
     if alfa2_data and alfa2_data.get("zone_coverages"):
         scores = []
@@ -509,7 +558,6 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         if features:
             matches = memoria.match_estado_actual(features)
             for m in matches[:5]:
-                # Ubicación del nodo, no solo el número
                 try:
                     nodo = conn.execute(
                         "SELECT nombre, lat, lon, region FROM "
@@ -524,12 +572,8 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                 except Exception:
                     pass
             for m in matches[:3]:
-                # Referente de anticipación: cuánto suele tardar en
-                # presentarse este tipo de evento tras verse la firma.
                 ventana = ""
                 try:
-                    # Preferir el lag propio de ESTA firma; si no lo tiene,
-                    # caer al promedio de su clase de evento.
                     lag_firma = conn.execute(
                         "SELECT lag_promedio_h, lag_n FROM TBL_FIRMAS "
                         "WHERE firma_id = ? AND lag_promedio_h IS NOT NULL",
@@ -563,7 +607,6 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                     f"vista {m['recurrencia']} veces){ventana}"
                 )
 
-        # Muro de Lags: ¿varias firmas convergen en las mismas fechas?
         muro_lags = {}
         try:
             from sentinel_omega.core.precursor.muro_lags import (
@@ -584,12 +627,9 @@ def _auditar_ciclo(geo, repo, runner) -> None:
             detalles={"firma_matches": matches[:5], "muro_lags": muro_lags},
         )
 
-        # Resolve predictions whose 72h window closed, against USGS truth.
         from sentinel_omega.infrastructure.api.usgs import fetch_earthquakes
         eq = fetch_earthquakes(min_magnitude=4.5, days=4)
         evento_ocurrido = eq is not None and len(eq) > 0
-        # Gravedad = escala el castigo con la magnitud más fuerte que ocurrió
-        # (M4.5 -> 1.0, M7 -> 3.5). Mismo anclaje que el backtest.
         mag_max = float(eq["magnitude"].max()) if evento_ocurrido else 0.0
         gravedad = 1.0 + max(0.0, mag_max - 4.5) if evento_ocurrido else 1.0
         verdad = (
@@ -639,6 +679,13 @@ def parse_args():
     parser.add_argument(
         "--barrido", action="store_true",
         help="Run daily maintenance sweep (compact history, keep significant)",
+    )
+    parser.add_argument(
+        "--reporte", action="store_true",
+        help=(
+            "Generate post-training reports (reporte_general + reporte_padre). "
+            "Can be combined with --entrenar (runs after training) or standalone."
+        ),
     )
     return parser.parse_args()
 
