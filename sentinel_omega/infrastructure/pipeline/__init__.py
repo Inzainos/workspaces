@@ -9,7 +9,6 @@ from sentinel_omega.infrastructure.pipeline.reporte_sentinel import (
     reporte_padre,
     reporte_omega,
 )
-from sentinel_omega.infrastructure.pipeline.scheduler_reportes import ReporteScheduler
 from sentinel_omega.infrastructure.pipeline.mantenimiento import (
     barrido_diario,
     construir_correlaciones_padre,
