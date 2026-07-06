@@ -78,8 +78,7 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
         )
         stats["dias_resumidos"] += 1
 
-    # ── 2) Botar ciclos de calma anteriores al corte (los significativos se
-    #        quedan: HIGH/CRITICAL o con breach) ──
+    # ── 2) Botar ciclos de calma anteriores al corte ──
     stats["ciclos_botados"] = conn.execute(
         "DELETE FROM TBL_CICLOS WHERE timestamp < ? "
         "AND muro_breach = 0 AND nivel_riesgo NOT IN ('HIGH','CRITICAL')",
@@ -90,8 +89,7 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
         (corte_ts,),
     )
 
-    # ── 3) Colapsar detecciones repetidas de días ya cerrados: una por
-    #        (día, tipo, muro) con la confianza más alta ──
+    # ── 3) Colapsar detecciones repetidas de días ya cerrados ──
     dets = conn.execute(
         "SELECT id, timestamp, tipo, wall_name, confidence "
         "FROM TBL_DETECCIONES WHERE timestamp < ?", (hoy_ts,)
@@ -112,13 +110,9 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
     conn.commit()
     conn.close()
 
-    # El Padre correlaciona todo: reconstruye su tabla de correlaciones con los
-    # conteos al día (patrón cruzado -> cuántas veces), quedándose con lo
-    # significativo. Aprender la esencia, soltar el detalle.
+    # Correlaciones del Padre y Omega, sesgo de todos los bots
     stats["correlaciones_padre"] = construir_correlaciones_padre(db_path)
-
-    # Realidad vs fantasía: mide el sesgo de aprendizaje (in-sample vs causal)
-    # y castiga al Padre si su decisión real no mejora.
+    stats["correlaciones_omega"] = construir_correlaciones_omega(db_path)
     stats["sesgo_aprendizaje"] = evaluar_sesgo_aprendizaje(db_path)
 
     logger.info(f"Barrido diario: {stats}")
@@ -126,12 +120,8 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
 
 
 # ── Tabla de correlaciones del Padre ─────────────────────────────────────────
-# El Padre correlaciona TODO entre familias. En vez de anotar cada evento como
-# una firma de vector completo (miles de filas), se colapsa el conocimiento en
-# una tabla de correlaciones que solo CUENTA: patrón cruzado visto otra vez, +1.
-# Nos quedamos con lo significativo (patrones recurrentes); la cola se deshace.
 
-CORRELACION_MIN_N = 50  # cuenta mínima para que una correlación sea significativa
+CORRELACION_MIN_N = 50
 
 
 def _patron_padre(f: dict) -> str:
@@ -143,7 +133,7 @@ def _patron_padre(f: dict) -> str:
     if kp >= 4 or bz <= -8 or prot >= 100:
         flags.append("SOLAR")
     elif kp < 2 and abs(bz) < 3:
-        flags.append("CALMA")  # Silent Trigger: calma solar precursora
+        flags.append("CALMA")
     if (f.get("sismo_count_win", 0) or 0) >= 3 or \
        (f.get("sismo_max_mag_win", 0) or 0) >= 4.5:
         flags.append("SISMICO")
@@ -156,10 +146,8 @@ def _patron_padre(f: dict) -> str:
 
 
 def construir_correlaciones_padre(db_path: str, min_n: int = CORRELACION_MIN_N) -> Dict:
-    """Colapsa las firmas del Padre en una tabla de correlaciones con conteos.
-
-    patrón (dominios activos) × clase de evento -> cuántas veces se ha visto.
-    Solo se conservan las correlaciones significativas (n >= min_n).
+    """Colapsa las firmas del Padre en correlaciones patrón×clase con conteos.
+    Solo se conservan correlaciones significativas (n >= min_n).
     """
     import json as _json
 
@@ -200,14 +188,98 @@ def construir_correlaciones_padre(db_path: str, min_n: int = CORRELACION_MIN_N) 
     return stats
 
 
-# ── Sesgo de aprendizaje: realidad vs fantasía por comodidad ─────────────────
-# La asertividad histórica (~99.9%) es una FANTASÍA: los bots reconocen las
-# firmas con las que se entrenaron (in-sample). La REALIDAD es causal: ¿reconoce
-# el evento la memoria que YA existía ANTES de ese evento? Medimos la diferencia
-# (el sesgo). Aunque el número real baje, es honesto. Y al Padre le toca su
-# castigo si su decisión real no mejora.
+# ── Tabla de correlaciones de Omega ──────────────────────────────────────────
+# Omega tiene su propia tabla de correlaciones, completamente independiente
+# del Padre y de los otros bots. Esto permite evaluar su autonomía real.
+
+CORRELACION_OMEGA_MIN_N = 30  # umbral más bajo: Omega es nuevo, necesita menos evidencia
+
+
+def _patron_omega(f: dict) -> str:
+    """
+    Discretiza el vector de Omega en dominios activos.
+    Omega observa el vector completo, igual que el Padre,
+    pero su tabla de correlaciones es independiente.
+    """
+    flags = []
+    kp = max(f.get("kp_max", 0) or 0, f.get("kp_max_72h", 0) or 0)
+    bz = f.get("bz_min", 0) or 0
+    prot = f.get("proton_max", 0) or 0
+    sch = f.get("schumann_mean", 0) or 0
+    if kp >= 4 or bz <= -8 or prot >= 100:
+        flags.append("SOLAR")
+    elif kp < 2 and abs(bz) < 3:
+        flags.append("CALMA")
+    if sch > 8.5:
+        flags.append("SCHUMANN")  # resonancia Schumann elevada
+    if (f.get("sismo_count_win", 0) or 0) >= 3 or \
+       (f.get("sismo_max_mag_win", 0) or 0) >= 4.5:
+        flags.append("SISMICO")
+    if (f.get("so2_kt_win", 0) or 0) > 0 or (f.get("erupciones_win", 0) or 0) > 0:
+        flags.append("DESGAS")
+    if (f.get("btc_volatilidad", 0) or 0) >= 5:
+        flags.append("FINANCIERO")
+    fase = f.get("fase_lunar", -1) or -1
+    if 0 <= fase <= 0.1 or fase >= 0.9:  # luna nueva
+        flags.append("LUNA_NUEVA")
+    elif 0.45 <= fase <= 0.55:           # luna llena
+        flags.append("LUNA_LLENA")
+    return "+".join(flags) if flags else "DIFUSO"
+
+
+def construir_correlaciones_omega(db_path: str, min_n: int = CORRELACION_OMEGA_MIN_N) -> Dict:
+    """
+    Colapsa las firmas de Omega en su propia tabla de correlaciones.
+    Es el equivalente de construir_correlaciones_padre pero SOLO para Omega.
+    Se distingue por:
+      - Umbral más bajo (min_n=30 vs 50 del Padre: Omega es nuevo).
+      - Patrón incluye fase lunar y resonancia Schumann.
+      - Tabla separada: tbl_correlaciones_omega.
+    """
+    import json as _json
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_correlaciones_omega ("
+        "patron TEXT, event_class TEXT, n INTEGER, fuerza REAL, "
+        "actualizada_at TEXT DEFAULT (datetime('now')), "
+        "PRIMARY KEY (patron, event_class))"
+    )
+
+    conteo: Dict[tuple, int] = {}
+    for feats_json, clase, rec in conn.execute(
+        "SELECT features_json, event_class, recurrencia "
+        "FROM TBL_FIRMAS WHERE bot_name = 'omega'"
+    ):
+        try:
+            patron = _patron_omega(_json.loads(feats_json))
+        except Exception:
+            continue
+        conteo[(patron, clase)] = conteo.get((patron, clase), 0) + (rec or 1)
+
+    total = sum(conteo.values()) or 1
+    conn.execute("DELETE FROM tbl_correlaciones_omega")
+    filas = [
+        (p, c, n, round(n / total, 4))
+        for (p, c), n in conteo.items() if n >= min_n
+    ]
+    conn.executemany(
+        "INSERT INTO tbl_correlaciones_omega (patron, event_class, n, fuerza) "
+        "VALUES (?,?,?,?)", filas,
+    )
+    conn.commit()
+    conn.close()
+    stats = {"patrones_totales": len(conteo), "significativos": len(filas),
+             "descartados": len(conteo) - len(filas)}
+    logger.info(f"Correlaciones de Omega: {stats}")
+    return stats
+
+
+# ── Sesgo de aprendizaje ──────────────────────────────────────────────────────
+
 SESGO_MUESTRA = 400
 SESGO_MAX_CASTIGOS_PADRE = 3
+SESGO_MAX_CASTIGOS_OMEGA = 3  # mismo límite; Omega también se castiga si no aprende causal
 
 
 def evaluar_sesgo_aprendizaje(db_path: str, muestra: int = SESGO_MUESTRA) -> Dict:
@@ -225,7 +297,13 @@ def evaluar_sesgo_aprendizaje(db_path: str, muestra: int = SESGO_MUESTRA) -> Dic
         "sesgo REAL, castigos INTEGER, evaluada_at TEXT DEFAULT (datetime('now')))"
     )
 
-    # Firmas consolidadas por bot + el timestamp más temprano de su memoria.
+    # Incluye 'omega' en el dominio de evaluación aunque no esté en BOT_FEATURES
+    # (Omega usa None como keys → vector completo)
+    bots_evaluar = dict(BOT_FEATURES)
+    if "omega" not in bots_evaluar:
+        bots_evaluar["omega"] = None  # None → vector completo (igual que el Padre)
+
+    # Firmas consolidadas por bot + timestamp más temprano de su memoria
     firmas: Dict[str, list] = {}
     for bot, feats, evs in conn.execute(
         "SELECT bot_name, features_json, eventos_json FROM TBL_FIRMAS "
@@ -239,7 +317,7 @@ def evaluar_sesgo_aprendizaje(db_path: str, muestra: int = SESGO_MUESTRA) -> Dic
             continue
         firmas.setdefault(bot, []).append((f, t0))
 
-    # Muestra de eventos repartida por toda la línea de tiempo.
+    # Muestra de eventos repartida por toda la línea de tiempo
     todos = conn.execute(
         "SELECT timestamp_blk, id_nodo FROM tbl_historico_sismico_raw "
         "WHERE sismo_max_mag >= 4.5 ORDER BY timestamp_blk"
@@ -250,12 +328,12 @@ def evaluar_sesgo_aprendizaje(db_path: str, muestra: int = SESGO_MUESTRA) -> Dic
     paso = max(1, len(todos) // muestra)
     eventos = todos[::paso]
 
-    conteo = {b: {"n": 0, "insample": 0, "causal": 0} for b in BOT_FEATURES}
+    conteo = {b: {"n": 0, "insample": 0, "causal": 0} for b in bots_evaluar}
     for ts, nodo in eventos:
         feats = extraer_features_ventana(conn, ts, nodo)
         if not feats:
             continue
-        for bot, keys in BOT_FEATURES.items():
+        for bot, keys in bots_evaluar.items():
             fs = firmas.get(bot)
             if not fs:
                 continue
@@ -263,7 +341,6 @@ def evaluar_sesgo_aprendizaje(db_path: str, muestra: int = SESGO_MUESTRA) -> Dic
             if not sub:
                 continue
             best_all = max((similitud(sub, f) for f, _ in fs), default=0.0)
-            # Causal: solo firmas cuya memoria existía ANTES de este evento.
             best_causal = max(
                 (similitud(sub, f) for f, t0 in fs if t0 and t0 < ts), default=0.0
             )
@@ -281,13 +358,13 @@ def evaluar_sesgo_aprendizaje(db_path: str, muestra: int = SESGO_MUESTRA) -> Dic
         insample = c["insample"] / c["n"]
         causal = c["causal"] / c["n"]
         sesgo = insample - causal
-        # Al Padre le toca castigo si su decisión REAL (causal) es floja —
-        # acotado, y proporcional a qué tan lejos está de reconocer de verdad.
         castigos = 0
-        if bot == "padre":
-            castigos = min(SESGO_MAX_CASTIGOS_PADRE, round((1.0 - causal) * SESGO_MAX_CASTIGOS_PADRE))
+        # Padre y Omega se castigan si su reconocimiento causal es bajo
+        if bot in ("padre", "omega"):
+            max_cast = SESGO_MAX_CASTIGOS_PADRE if bot == "padre" else SESGO_MAX_CASTIGOS_OMEGA
+            castigos = min(max_cast, round((1.0 - causal) * max_cast))
             for _ in range(castigos):
-                castigar(conn, bot, es_padre=True, gravedad=1.0)
+                castigar(conn, bot, es_padre=(bot == "padre"), gravedad=1.0)
         conn.execute(
             "INSERT OR REPLACE INTO tbl_sesgo_aprendizaje "
             "(bot, n, recon_insample, recon_causal, sesgo, castigos) "
