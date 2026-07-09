@@ -25,10 +25,15 @@ def fetch_earthquakes(
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
 
+    # FDSN espera ISO8601 sin microsegundos ni offset (+00:00 → 400 Bad Request).
+    _fdsn_fmt = "%Y-%m-%dT%H:%M:%S"
+    starttime = start.strftime(_fdsn_fmt)
+    endtime = end.strftime(_fdsn_fmt)
+
     url = (
         "https://earthquake.usgs.gov/fdsnws/event/1/query"
-        f"?format=geojson&starttime={start.isoformat()}"
-        f"&endtime={end.isoformat()}"
+        f"?format=geojson&starttime={starttime}"
+        f"&endtime={endtime}"
         f"&minmagnitude={min_magnitude}&limit={max_results}"
         "&orderby=time"
     )
