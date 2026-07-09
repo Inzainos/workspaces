@@ -11,7 +11,7 @@ pip install --quiet -r sentinel_omega/requirements.txt 2>/dev/null || \
   pip install --quiet requests ephem numpy pandas scikit-learn 2>/dev/null
 
 # ── Backcast + Entrenamiento inicial ───────────────────────────
-DB_PATH="sentinel_omega/data/sentinel.db"
+DB_PATH="sentinel_omega/data/SENTINEL_OMEGA_PRO.db"
 mkdir -p sentinel_omega/data
 
 if [ ! -f "$DB_PATH" ] || [ ! -s "$DB_PATH" ]; then

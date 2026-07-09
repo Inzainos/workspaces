@@ -28,7 +28,11 @@ _WORKSPACE_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 if str(_WORKSPACE_ROOT) not in sys.path:
     sys.path.insert(0, str(_WORKSPACE_ROOT))
 
-DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "sentinel.db"
+# La DB real del sistema (misma que config.databases.geodynamic_db)
+DB_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / "data" / "SENTINEL_OMEGA_PRO.db"
+)
 LOG_DIR = DB_PATH.parent
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 

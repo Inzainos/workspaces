@@ -29,14 +29,14 @@ SNT (Shadow Node Theory) se usa **solo como framework matemático**
 sentinel_omega/     El sistema (6 agentes + Padre + Juez, pipeline, DB, dashboard)
 deploy/             Operación: generar_reporte.py, systemd/Windows, atajo iOS, .env.example
 estado/             Reportes publicados: REPORTE.md (último) + historial/AAAA/MM/ (versionado)
-.github/workflows/  roy-vigilante.yml — corre un ciclo cada 3h en GitHub Actions (serverless)
+.github/workflows/  roy-vigilante.yml — corre un ciclo cada 2h en GitHub Actions (serverless)
 ```
 
 ## Comandos
 
 ```bash
 # Tests — SIEMPRE desde la raíz del workspace, nunca desde dentro de sentinel_omega/
-python -m pytest sentinel_omega/tests/ -q          # 335 tests
+python -m pytest sentinel_omega/tests/ -q          # 355 tests
 
 # Un solo archivo
 python -m pytest sentinel_omega/tests/test_firmas.py -v
