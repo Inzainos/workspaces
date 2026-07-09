@@ -227,10 +227,21 @@ def run(args):
     # ── Reportes (después de cualquier operación batch) ──────────────────────
     if args.reporte:
         _run_reportes(str(db_path))
-        # Si solo se pidió el reporte (sin ciclos continuos), salir limpio.
-        if not getattr(args, "_continuar_ciclos", True):
-            _clear_pid()
-            return
+
+    # ── Modo tarea: ejecutar y salir ─────────────────────────────────────────
+    # Los flags batch (--backcast/--entrenar/--disciplina/--barrido/--reporte)
+    # sin --once NO deben caer al loop continuo de vigilancia: el vigilante los
+    # invoca como pasos one-shot y el loop dejaba el job colgado indefinidamente
+    # (la disciplina corría 3s y luego ciclaba 2h+ hasta cancelarse a mano).
+    # Con --once se conserva el comportamiento de bootstrap: tareas + UN ciclo.
+    tarea_batch = (
+        args.backcast or args.entrenar or args.disciplina
+        or args.barrido or args.reporte
+    )
+    if tarea_batch and not args.once:
+        logger.info("Batch task(s) complete — exiting (no --once/continuous).")
+        _clear_pid()
+        return
 
     # Los modos batch de mantenimiento/disciplina no entran al ciclo de
     # vigilancia continuo: ejecutan su trabajo y salen limpiamente. Sin esto,

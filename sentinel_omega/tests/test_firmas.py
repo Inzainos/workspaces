@@ -659,3 +659,47 @@ class TestSesgoAprendizaje:
             "WHERE bot='padre'"
         ).fetchone()
         assert fila is not None
+
+
+class TestSesgoEnEntrenamiento:
+    """El sesgo se mide en el pre y el post del entrenamiento."""
+
+    def test_linea_base_no_castiga(self, db):
+        conn, path = db
+        import json as _json
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            evaluar_sesgo_aprendizaje,
+        )
+        _seed_backcast(conn, n_eventos=6)
+        # firma del padre con memoria posterior a los eventos -> causal bajo
+        feats = _features_base(sismo_count_win=5.0, sismo_max_mag_win=6.4)
+        conn.execute(
+            "INSERT INTO TBL_FIRMAS (bot_name, event_class, id_nodo, "
+            "features_json, eventos_json, recurrencia, estado, ventana_horas) "
+            "VALUES ('padre','SISMO_M6',45,?,?,9,'consolidada',336)",
+            (_json.dumps(feats), _json.dumps(["2020-01-01 00:00|nodo45|M6.4"])),
+        )
+        conn.commit()
+        peso_antes = conn.execute(
+            "SELECT peso FROM TBL_PESOS_BOTS WHERE bot_name='padre'"
+        ).fetchone()
+        res = evaluar_sesgo_aprendizaje(path, muestra=30, aplicar_castigo=False)
+        peso_despues = conn.execute(
+            "SELECT peso FROM TBL_PESOS_BOTS WHERE bot_name='padre'"
+        ).fetchone()
+        # línea base: castigos reportados en 0 y el peso NO se mueve
+        p = res["por_bot"].get("padre", {})
+        assert p.get("castigos", 0) == 0
+        assert (peso_antes or (1.0,)) == (peso_despues or (1.0,))
+
+    def test_entrenar_reporta_pre_post_y_mejora(self, db):
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.entrenamiento import entrenar
+        _seed_backcast(conn, n_eventos=6)
+        res = entrenar(path)
+        assert "sesgo_pre" in res and "sesgo_post" in res
+        assert "mejora_causal" in res
+        # tras entrenar sobre eventos idénticos, el post debe reconocer
+        if res["sesgo_post"]:
+            for bot, d in res["sesgo_post"].items():
+                assert 0.0 <= d["causal"] <= 1.0

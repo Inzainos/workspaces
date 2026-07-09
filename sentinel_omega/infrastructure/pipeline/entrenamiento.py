@@ -499,14 +499,51 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
 
 
 def entrenar(db_path: str, max_eventos: Optional[int] = None) -> Dict:
-    """Full training run: Fase 1 (seismic) + Fase 1b (non-seismic) + Fase 2 + lags + correlaciones."""
+    """Full training run: Fase 1 (seismic) + Fase 1b (non-seismic) + Fase 2 + lags + correlaciones.
+
+    Envuelto en la medición del sesgo de aprendizaje (realidad vs fantasía):
+    se mide ANTES del pre-entrenamiento (línea base, sin castigo) y DESPUÉS
+    de la disciplina (con castigo si la decisión real sigue floja), y se
+    reporta cuánto mejoró el reconocimiento CAUSAL de cada bot con esta
+    corrida — la diferencia entre las decisiones antes y después de aprender.
+    """
+    from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+        evaluar_sesgo_aprendizaje,
+    )
+
+    # PRE: línea base sin disciplinar (¿qué tan real era su competencia antes?)
+    sesgo_pre = {}
+    try:
+        sesgo_pre = evaluar_sesgo_aprendizaje(db_path, aplicar_castigo=False)
+        logger.info(f"Sesgo PRE-entrenamiento (línea base): {sesgo_pre.get('por_bot')}")
+    except Exception as e:
+        logger.warning(f"Sesgo pre-entrenamiento no disponible: {e}")
+
     fase1 = entrenar_reconocimiento(db_path, max_eventos=max_eventos)
     fase1b = entrenar_reconocimiento_no_sismico(db_path, max_eventos=max_eventos)
     fase2 = backtest_disciplinario(db_path)
     lags = calcular_lags_anticipacion(db_path)
     correlaciones = calcular_correlaciones_evento(db_path)
+
+    # POST: medición disciplinaria (castiga al Padre/Omega si lo real no mejora)
+    sesgo_post = {}
+    mejora = {}
+    try:
+        sesgo_post = evaluar_sesgo_aprendizaje(db_path, aplicar_castigo=True)
+        pre_bots = sesgo_pre.get("por_bot", {})
+        for bot, d in sesgo_post.get("por_bot", {}).items():
+            antes = pre_bots.get(bot, {}).get("causal")
+            if antes is not None:
+                mejora[bot] = round(d["causal"] - antes, 4)
+        logger.info(f"Mejora causal por bot (post - pre): {mejora}")
+    except Exception as e:
+        logger.warning(f"Sesgo post-entrenamiento no disponible: {e}")
+
     return {"fase1": fase1, "fase1b": fase1b, "fase2": fase2, "lags": lags,
-            "correlaciones": correlaciones}
+            "correlaciones": correlaciones,
+            "sesgo_pre": sesgo_pre.get("por_bot", {}),
+            "sesgo_post": sesgo_post.get("por_bot", {}),
+            "mejora_causal": mejora}
 
 
 # Offsets probados: la ventana de la firma termina N horas ANTES del evento.
