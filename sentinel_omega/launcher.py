@@ -243,6 +243,14 @@ def run(args):
         _clear_pid()
         return
 
+    # Los modos batch de mantenimiento/disciplina no entran al ciclo de
+    # vigilancia continuo: ejecutan su trabajo y salen limpiamente. Sin esto,
+    # `--disciplina` / `--barrido` caían en el loop de "Next cycle in Ns...".
+    if args.disciplina or args.barrido:
+        _clear_pid()
+        logger.info("Batch operation complete — exiting without watch loop.")
+        return
+
     dashboard_proc = None
     if args.dashboard:
         dashboard_proc = _launch_dashboard()
