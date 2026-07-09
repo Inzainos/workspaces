@@ -24,6 +24,9 @@ Orchestrator → GeodynamicLayerRunner → 6 Agents → Padre Consensus
 │
 ├── Delta  (Crypto + Bolsa + humor de la tierra) — 10yr training
 │
+├── Omega  (Memoria/correlación: ritmo cósmico — luna, Schumann, envolvente
+│           solar, acoplamiento Schumann↔mercado) — 30yr, NO es agente en vivo
+│
 └── Padre  (Hierarchical cross-family validator)
         ├── TITAN V32 Fantasma Risk Index
         ├── Precursor Scanner (15 types)
