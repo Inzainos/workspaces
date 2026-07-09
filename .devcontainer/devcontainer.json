@@ -1,6 +1,7 @@
 {
   "name": "Sentinel Omega",
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "postCreateCommand": "bash .devcontainer/postCreate.sh",
   "postStartCommand": "bash .devcontainer/postStart.sh",
   "customizations": {
     "vscode": {

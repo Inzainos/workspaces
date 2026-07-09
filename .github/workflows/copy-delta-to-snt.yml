@@ -17,6 +17,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify jupyter-setup branch exists on origin
+        run: |
+          if ! git ls-remote --exit-code --heads origin jupyter-setup > /dev/null 2>&1; then
+            echo "::error::La rama 'jupyter-setup' no existe en origin. El export de Delta depende de ella para tomar el código del agente y los notebooks. Aborta para no copiar código incorrecto a The-shadow-Node-Theory."
+            exit 1
+          fi
+          echo "Rama 'origin/jupyter-setup' encontrada — se procede con el fetch/worktree."
+
       - name: Checkout jupyter-setup files into temp dir
         run: |
           git fetch origin jupyter-setup

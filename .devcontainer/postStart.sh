@@ -28,18 +28,28 @@ fi
 
 # ── Scheduler de reportes en background (2h/6h) ──────────────────
 echo "[3/5] Arrancando scheduler de reportes (2h/6h)..."
-nohup python sentinel_omega/infrastructure/pipeline/scheduler_reportes.py \
-  >> sentinel_omega/data/scheduler_reportes.log 2>&1 &
-SCHEDULER_PID=$!
-echo "  Scheduler ONLINE (PID $SCHEDULER_PID)"
+if pgrep -f "scheduler_reportes.py" > /dev/null; then
+  SCHEDULER_PID=$(pgrep -f "scheduler_reportes.py" | head -n1)
+  echo "  Scheduler YA ACTIVO (PID $SCHEDULER_PID) — no se relanza"
+else
+  nohup python sentinel_omega/infrastructure/pipeline/scheduler_reportes.py \
+    >> sentinel_omega/data/scheduler_reportes.log 2>&1 &
+  SCHEDULER_PID=$!
+  echo "  Scheduler ONLINE (PID $SCHEDULER_PID)"
+fi
 echo "  Log: sentinel_omega/data/scheduler_reportes.log"
 
 # ── Arrancar ciclos live continuos en background ──────────────────
 echo "[4/5] Arrancando ciclos live continuos..."
-nohup python sentinel_omega/launcher.py \
-  >> sentinel_omega/data/sentinel_omega.log 2>&1 &
-LAUNCHER_PID=$!
-echo "  Sentinel Omega ONLINE (PID $LAUNCHER_PID)"
+if pgrep -f "launcher.py" > /dev/null; then
+  LAUNCHER_PID=$(pgrep -f "launcher.py" | head -n1)
+  echo "  Sentinel Omega YA ACTIVO (PID $LAUNCHER_PID) — no se relanza"
+else
+  nohup python sentinel_omega/launcher.py \
+    >> sentinel_omega/data/sentinel_omega.log 2>&1 &
+  LAUNCHER_PID=$!
+  echo "  Sentinel Omega ONLINE (PID $LAUNCHER_PID)"
+fi
 
 # ── Resumen final ────────────────────────────────────────────────
 echo "[5/5] Sistema completo."
