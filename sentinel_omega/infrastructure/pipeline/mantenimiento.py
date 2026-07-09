@@ -282,7 +282,13 @@ SESGO_MAX_CASTIGOS_PADRE = 3
 SESGO_MAX_CASTIGOS_OMEGA = 3  # mismo límite; Omega también se castiga si no aprende causal
 
 
-def evaluar_sesgo_aprendizaje(db_path: str, muestra: int = SESGO_MUESTRA) -> Dict:
+def evaluar_sesgo_aprendizaje(
+    db_path: str,
+    muestra: int = SESGO_MUESTRA,
+    aplicar_castigo: bool = True,
+) -> Dict:
+    """aplicar_castigo=False para mediciones de LÍNEA BASE (p. ej. el 'pre'
+    del entrenamiento): mide realidad vs fantasía sin disciplinar al Padre."""
     import json as _json
     from sentinel_omega.core.firmas.signature_engine import (
         SIMILARITY_ALERT, extraer_features_ventana, similitud,
@@ -360,7 +366,8 @@ def evaluar_sesgo_aprendizaje(db_path: str, muestra: int = SESGO_MUESTRA) -> Dic
         sesgo = insample - causal
         castigos = 0
         # Padre y Omega se castigan si su reconocimiento causal es bajo
-        if bot in ("padre", "omega"):
+        # (solo en evaluaciones disciplinarias, no en líneas base 'pre')
+        if aplicar_castigo and bot in ("padre", "omega"):
             max_cast = SESGO_MAX_CASTIGOS_PADRE if bot == "padre" else SESGO_MAX_CASTIGOS_OMEGA
             castigos = min(max_cast, round((1.0 - causal) * max_cast))
             for _ in range(castigos):

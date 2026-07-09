@@ -25,10 +25,14 @@ def fetch_earthquakes(
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
 
+    # FDSN rechaza isoformat() con offset: el '+' de '+00:00' sin codificar
+    # se interpreta como espacio en la URL (400 Bad Request). Formato limpio
+    # sin microsegundos ni offset — FDSN asume UTC.
+    fmt = "%Y-%m-%dT%H:%M:%S"
     url = (
         "https://earthquake.usgs.gov/fdsnws/event/1/query"
-        f"?format=geojson&starttime={start.isoformat()}"
-        f"&endtime={end.isoformat()}"
+        f"?format=geojson&starttime={start.strftime(fmt)}"
+        f"&endtime={end.strftime(fmt)}"
         f"&minmagnitude={min_magnitude}&limit={max_results}"
         "&orderby=time"
     )
