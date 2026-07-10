@@ -73,6 +73,12 @@ jobs:
           rm -f sentinel_omega/data/sentinel_omega.pid
           python sentinel_omega/launcher.py --once
 
+      - name: Bootstrap Omega (una vez — puebla las firmas del bot nuevo)
+        run: |
+          # Si la DB cacheada se entrenó antes del mapeo de Omega, sus firmas
+          # están en 0: entrenamiento incremental SOLO de omega (una vez).
+          python deploy/bootstrap_omega.py
+
       - name: Disciplina de trasfondo (castigo desde abajo, 1×/día)
         run: |
           # El cron dispara al minuto :07 cada 2h (horas impares). A las 07 UTC
@@ -82,8 +88,10 @@ jobs:
             python sentinel_omega/launcher.py --disciplina
             # Barrido: compacta el historial del día, se queda con lo significante
             python sentinel_omega/launcher.py --barrido
+            # Reporte ejecutivo (plantilla extendida, Omega integrado) — 1×/día
+            python deploy/reporte_ejecutivo.py
           else
-            echo "skip — la disciplina y el barrido corren 1×/día (07 UTC)"
+            echo "skip — disciplina, barrido y reporte ejecutivo corren 1×/día (07 UTC)"
           fi
 
       - name: Guardar memoria

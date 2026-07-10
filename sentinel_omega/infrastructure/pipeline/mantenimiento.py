@@ -115,6 +115,10 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
     stats["correlaciones_omega"] = construir_correlaciones_omega(db_path)
     stats["sesgo_aprendizaje"] = evaluar_sesgo_aprendizaje(db_path)
 
+    # El Padre también ve el ORDEN en que se presentaron los precursores y
+    # discierne si la secuencia importa o es indiferente (contando).
+    stats["orden_precursores"] = analizar_orden_precursores(db_path)
+
     logger.info(f"Barrido diario: {stats}")
     return stats
 
@@ -384,3 +388,142 @@ def evaluar_sesgo_aprendizaje(
     conn.close()
     logger.info(f"Sesgo de aprendizaje (realidad vs fantasía): {resultado}")
     return {"eventos": len(eventos), "por_bot": resultado}
+
+
+# ── Orden de los precursores — ¿la secuencia importa? ────────────────────────
+# El Padre ahora también ve el ORDEN en que se presentaron los dominios en la
+# víspera de cada evento (p. ej. SOLAR→SISMICO→DESGAS vs DESGAS→SISMICO) y
+# discierne, contando, si el orden hace diferencia o es indiferente: si para
+# un mismo conjunto de dominios una secuencia domina claramente, el orden
+# IMPORTA; si las permutaciones se reparten parejo, es INDIFERENTE.
+ORDEN_MUESTRA = 300
+ORDEN_MIN_N = 30          # conjunto con menos casos no alcanza veredicto
+ORDEN_FRAC_DOMINANTE = 0.6  # una secuencia con ≥60% del conjunto = dominante
+ORDEN_SEGMENTOS = 4       # la ventana de 14 días se parte en 4 tramos de 3.5d
+
+
+def _orden_evento(conn, ts_evento: str, id_nodo: int) -> str:
+    """Orden de activación de dominios en los 4 tramos de la víspera.
+
+    Devuelve 'SOLAR→SISMICO' (activación secuencial), 'SOLAR+SISMICO'
+    (mismo tramo) o '' si ningún dominio se activó.
+    """
+    horas_tramo = 336 // ORDEN_SEGMENTOS
+    activacion = {}
+    for seg in range(ORDEN_SEGMENTOS):
+        ini = f"-{336 - seg * horas_tramo} hours"
+        fin = f"-{336 - (seg + 1) * horas_tramo} hours"
+        # SOLAR: tormenta geomagnética en el tramo
+        kp = conn.execute(
+            "SELECT MAX(kp_max) FROM tbl_clima_espacial_raw "
+            "WHERE timestamp_blk >= datetime(?, ?) AND timestamp_blk < datetime(?, ?)",
+            (ts_evento, ini, ts_evento, fin)).fetchone()[0]
+        if kp is not None and kp >= 4 and "SOLAR" not in activacion:
+            activacion["SOLAR"] = seg
+        # SISMICO: actividad en el nodo del evento
+        sis = conn.execute(
+            "SELECT COUNT(*) FROM tbl_historico_sismico_raw WHERE id_nodo = ? "
+            "AND timestamp_blk >= datetime(?, ?) AND timestamp_blk < datetime(?, ?)",
+            (id_nodo, ts_evento, ini, ts_evento, fin)).fetchone()[0]
+        if sis and "SISMICO" not in activacion:
+            activacion["SISMICO"] = seg
+        # DESGAS: erupción/SO2 global en el tramo
+        des = conn.execute(
+            "SELECT COUNT(*) FROM tbl_desgasificacion_raw "
+            "WHERE timestamp_blk >= datetime(?, ?) AND timestamp_blk < datetime(?, ?)",
+            (ts_evento, ini, ts_evento, fin)).fetchone()[0]
+        if des and "DESGAS" not in activacion:
+            activacion["DESGAS"] = seg
+        # FINANCIERO: volatilidad BTC elevada en el tramo
+        vol = conn.execute(
+            "SELECT MAX(volatilidad_24h) FROM tbl_psique_financiera "
+            "WHERE timestamp_blk >= datetime(?, ?) AND timestamp_blk < datetime(?, ?)",
+            (ts_evento, ini, ts_evento, fin)).fetchone()[0]
+        if vol is not None and vol >= 5 and "FINANCIERO" not in activacion:
+            activacion["FINANCIERO"] = seg
+    if not activacion:
+        return ""
+    por_seg: Dict[int, list] = {}
+    for dom, seg in activacion.items():
+        por_seg.setdefault(seg, []).append(dom)
+    return "→".join(
+        "+".join(sorted(por_seg[s])) for s in sorted(por_seg)
+    )
+
+
+def analizar_orden_precursores(db_path: str, muestra: int = ORDEN_MUESTRA) -> Dict:
+    """Cuenta secuencias de activación y emite veredictos por conjunto.
+
+    tbl_orden_precursores: (orden, event_class) -> n  (contar, no anotar)
+    tbl_orden_veredictos:  conjunto -> ¿el orden importa o es indiferente?
+    """
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_orden_precursores ("
+        "orden TEXT, event_class TEXT, n INTEGER, "
+        "PRIMARY KEY (orden, event_class))")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_orden_veredictos ("
+        "conjunto TEXT PRIMARY KEY, n_total INTEGER, orden_dominante TEXT, "
+        "frac_dominante REAL, veredicto TEXT, "
+        "actualizada_at TEXT DEFAULT (datetime('now')))")
+
+    eventos = conn.execute(
+        "SELECT timestamp_blk, id_nodo, sismo_max_mag "
+        "FROM tbl_historico_sismico_raw WHERE sismo_max_mag >= 4.5 "
+        "ORDER BY timestamp_blk").fetchall()
+    if not eventos:
+        conn.close()
+        return {"eventos": 0}
+    paso = max(1, len(eventos) // muestra)
+    eventos = eventos[::paso]
+
+    conteo: Dict[tuple, int] = {}
+    for ts, nodo, mag in eventos:
+        orden = _orden_evento(conn, ts, nodo)
+        if not orden:
+            continue
+        clase = ("SISMO_M7" if mag >= 7 else "SISMO_M6" if mag >= 6
+                 else "SISMO_M5" if mag >= 5 else "SISMO_M4")
+        conteo[(orden, clase)] = conteo.get((orden, clase), 0) + 1
+
+    conn.execute("DELETE FROM tbl_orden_precursores")
+    conn.executemany(
+        "INSERT INTO tbl_orden_precursores (orden, event_class, n) VALUES (?,?,?)",
+        [(o, c, n) for (o, c), n in conteo.items()])
+
+    # Veredicto por CONJUNTO de dominios: ¿domina una secuencia?
+    por_conjunto: Dict[str, Dict[str, int]] = {}
+    for (orden, _), n in conteo.items():
+        doms = frozenset(orden.replace("→", "+").split("+"))
+        clave = "+".join(sorted(doms))
+        por_conjunto.setdefault(clave, {})
+        por_conjunto[clave][orden] = por_conjunto[clave].get(orden, 0) + n
+
+    conn.execute("DELETE FROM tbl_orden_veredictos")
+    veredictos = {}
+    for conjunto, ordenes in por_conjunto.items():
+        total = sum(ordenes.values())
+        dominante, n_dom = max(ordenes.items(), key=lambda kv: kv[1])
+        frac = n_dom / total
+        if total < ORDEN_MIN_N:
+            ver = "SIN VEREDICTO (pocos casos)"
+        elif len(ordenes) == 1:
+            ver = "ORDEN UNICO OBSERVADO"
+        elif frac >= ORDEN_FRAC_DOMINANTE:
+            ver = "EL ORDEN IMPORTA"
+        else:
+            ver = "INDIFERENTE"
+        conn.execute(
+            "INSERT INTO tbl_orden_veredictos "
+            "(conjunto, n_total, orden_dominante, frac_dominante, veredicto) "
+            "VALUES (?,?,?,?,?)",
+            (conjunto, total, dominante, round(frac, 3), ver))
+        veredictos[conjunto] = {"n": total, "dominante": dominante,
+                                "frac": round(frac, 3), "veredicto": ver}
+    conn.commit()
+    conn.close()
+    logger.info(f"Orden de precursores: {len(conteo)} secuencias, "
+                f"veredictos: { {k: v['veredicto'] for k, v in veredictos.items()} }")
+    return {"eventos": len(eventos), "secuencias": len(conteo),
+            "veredictos": veredictos}

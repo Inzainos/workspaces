@@ -653,6 +653,37 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     except sqlite3.OperationalError:
         pass
 
+    # ── Orden de los precursores: ¿la secuencia importa? ──
+    try:
+        ordenes = conn.execute(
+            "SELECT conjunto, n_total, orden_dominante, frac_dominante, "
+            "veredicto FROM tbl_orden_veredictos "
+            "WHERE veredicto NOT LIKE 'SIN VEREDICTO%' "
+            "ORDER BY n_total DESC LIMIT 6"
+        ).fetchall()
+        if ordenes:
+            lineas += [
+                "## 🔀 Orden de los precursores — ¿importa la secuencia?",
+                "",
+                "> El Padre también observa el **orden** en que se activaron "
+                "los dominios en la víspera de cada evento (¿primero el gas y "
+                "luego los sismos, o al revés?) y discierne contando: si una "
+                "secuencia domina claramente, el orden IMPORTA; si las "
+                "permutaciones se reparten parejo, es INDIFERENTE — lo que "
+                "pesa es la convergencia, no la coreografía.",
+                "",
+                "| Conjunto de dominios | Casos | Secuencia dominante | % | Veredicto |",
+                "|---|---:|---|---:|---|",
+            ]
+            for o in ordenes:
+                lineas.append(
+                    f"| {o[0]} | {o[1]:,} | {o[2]} | {o[3]:.0%} | "
+                    f"**{o[4]}** |"
+                )
+            lineas.append("")
+    except sqlite3.OperationalError:
+        pass
+
     # ── Auditoría del Juez ──
     juez = conn.execute(
         "SELECT resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "

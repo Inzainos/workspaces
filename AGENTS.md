@@ -83,6 +83,7 @@ streamlit run sentinel_omega/infrastructure/dashboard/app.py
 | `alfa2` | Satélites ESA Sentinel | 14 años |
 | `beta2` | Desgasificación volcánica / atmósfera (SO₂ sobre baseline natural) | 14 años |
 | `delta` | Bolsa + cripto + tendencias | 10 años |
+| `omega` | El ritmo cósmico: fase lunar/sicigias + Schumann + envolvente solar + acoplamiento Schumann↔mercado | 30 años |
 | `padre` | Consenso jerárquico cruzado entre familias (aplica pesos) | — |
 
 - **Familias:** `space_weather` (alfa1/alfa2), `schumann_cymatics` (beta1/beta2),
@@ -94,7 +95,15 @@ streamlit run sentinel_omega/infrastructure/dashboard/app.py
 - **Entrenamiento en 3 fases:** Fase 1 reconocimiento sísmico (sin castigo) → Fase 1b reconocimiento no sísmico (erupciones VEI≥3 + tormentas solares Kp≥6) → Fase 2
   disciplina (el Padre castiga; el Juez audita con severidad asimétrica —
   omitir un evento pesa 10× más que una falsa alarma). Tras las fases calcula la
-  **matriz de correlaciones** feature × event_class.
+  **matriz de correlaciones** feature × event_class, y el **sesgo de
+  aprendizaje** se mide antes (línea base, sin castigo) y después
+  (disciplinario) para reportar la mejora causal por bot.
+- **Omega** no es un agente en vivo (no está en `layers/`): es un bot de
+  memoria/correlación como contrapeso del Padre. Sus campos están mapeados de
+  la telemetría existente en `BOT_FEATURES["omega"]` (sin fetchers propios);
+  entrena en las mismas fases que los demás, y sus correlaciones viven en
+  `tbl_correlaciones_omega` (umbral n≥30, patrón con Schumann y fase lunar),
+  independientes de las del Padre. Reporte propio: `reporte_omega()`.
 - **Pérdida asimétrica:** el sistema prefiere sobre-alertar a sub-alertar.
 
 ## Git y PRs

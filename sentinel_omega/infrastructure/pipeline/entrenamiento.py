@@ -60,11 +60,18 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     # Las firmas de alfa2 empiezan en 0 y crecen con el tiempo operativo.
     "alfa2": ["satellite_coverage_score", "satellite_thermal_anomalies",
               "satellite_clear_passes"],
+    # Omega — el ritmo cósmico: fase lunar/sicigias + resonancia Schumann +
+    # envolvente solar + acoplamiento Schumann↔mercado. Todo mapeado de la
+    # telemetría existente (sin fetchers nuevos). Sus correlaciones viven en
+    # tbl_correlaciones_omega, independientes de las del Padre.
+    "omega": ["fase_lunar", "es_sicigia", "schumann_mean", "schumann_std",
+              "kp_max", "kp_max_72h", "bz_min", "proton_max",
+              "delta_schumann_coupling"],
     "padre": None,  # full vector
 }
 
 MIN_FEATURES_POR_BOT = {"alfa1": 3, "beta1": 3, "beta2": 4, "delta": 4,
-                         "alfa2": 2, "padre": 5}
+                         "alfa2": 2, "omega": 4, "padre": 5}
 
 # Each bot only trains inside its own historical window (data availability):
 # beta2 = desde 2012 (catálogo volcánico NASA MSVOLSO2L4)

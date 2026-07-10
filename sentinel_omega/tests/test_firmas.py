@@ -703,3 +703,77 @@ class TestSesgoEnEntrenamiento:
         if res["sesgo_post"]:
             for bot, d in res["sesgo_post"].items():
                 assert 0.0 <= d["causal"] <= 1.0
+
+
+class TestOrdenPrecursores:
+    """El Padre discierne si el orden de los precursores importa."""
+
+    def test_secuencia_y_veredicto(self, db):
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            analizar_orden_precursores,
+        )
+        from datetime import datetime, timedelta
+        base = datetime(2010, 6, 1)
+        # 40 eventos con la MISMA secuencia: SOLAR en tramo 1 (kp alto solo al
+        # inicio de la víspera), SISMICO después -> el orden debe dominar
+        for ev in range(40):
+            tse = base + timedelta(days=20 * ev)
+            for h in range(336):
+                ts = tse - timedelta(hours=336 - h)
+                kp = 6.0 if h < 84 else 1.0   # tramo 1 tormentoso, luego calma
+                conn.execute(
+                    "INSERT OR IGNORE INTO tbl_clima_espacial_raw "
+                    "(timestamp_blk, bz_promedio, bz_min, kp_max, kp_promedio) "
+                    "VALUES (?,?,?,?,?)",
+                    (ts.strftime("%Y-%m-%d %H:%M"), -2.0, -5.0, kp, kp * 0.6),
+                )
+            # actividad sísmica solo en el último tramo (h>=252)
+            previo = tse - timedelta(hours=40)
+            conn.execute(
+                "INSERT OR IGNORE INTO tbl_historico_sismico_raw "
+                "(timestamp_blk, id_nodo, sismo_count, sismo_max_mag) "
+                "VALUES (?, 45, 1, 3.0)", (previo.strftime("%Y-%m-%d %H:%M"),))
+            conn.execute(
+                "INSERT OR IGNORE INTO tbl_historico_sismico_raw "
+                "(timestamp_blk, id_nodo, sismo_count, sismo_max_mag) "
+                "VALUES (?, 45, 1, 5.5)", (tse.strftime("%Y-%m-%d %H:%M"),))
+        conn.commit()
+        res = analizar_orden_precursores(path, muestra=100)
+        assert res["eventos"] > 0 and res["secuencias"] >= 1
+        # el conjunto SISMICO+SOLAR debe existir con SOLAR->SISMICO dominante
+        v = res["veredictos"].get("SISMICO+SOLAR")
+        assert v is not None
+        assert v["dominante"].startswith("SOLAR")
+        assert v["veredicto"] in ("EL ORDEN IMPORTA", "ORDEN UNICO OBSERVADO")
+        # persistido
+        n = conn.execute("SELECT COUNT(*) FROM tbl_orden_veredictos").fetchone()[0]
+        assert n >= 1
+
+
+class TestOmegaMapeado:
+    """Omega está mapeado a la telemetría existente y entrena como los demás."""
+
+    def test_omega_en_bot_features(self):
+        from sentinel_omega.infrastructure.pipeline.entrenamiento import (
+            BOT_FEATURES, MIN_FEATURES_POR_BOT,
+        )
+        from sentinel_omega.core.firmas.signature_engine import FEATURE_KEYS
+        assert "omega" in BOT_FEATURES and "omega" in MIN_FEATURES_POR_BOT
+        # todos sus campos existen en la telemetría (sin fetchers nuevos)
+        for k in BOT_FEATURES["omega"]:
+            assert k in FEATURE_KEYS, f"campo {k} no existe en FEATURE_KEYS"
+
+    def test_omega_aprende_firmas(self, db):
+        conn, path = db
+        _seed_backcast(conn, n_eventos=6)
+        stats = entrenar_reconocimiento(path, bots=["omega"])
+        n = conn.execute(
+            "SELECT COUNT(*) FROM TBL_FIRMAS WHERE bot_name='omega'"
+        ).fetchone()[0]
+        assert n >= 1
+        # incremental: no infla a los demás bots
+        otros = conn.execute(
+            "SELECT COUNT(*) FROM TBL_FIRMAS WHERE bot_name!='omega'"
+        ).fetchone()[0]
+        assert otros == 0
