@@ -121,6 +121,151 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             "",
         ]
 
+    # ── 🚦 Semáforo: reglas duras de nivel de riesgo ──
+    # Con los números del bloque principal cualquier lector infiere el nivel
+    # sin interpretación subjetiva. Mismos umbrales que el reporte ejecutivo.
+    mejor_sim = None
+    try:
+        _m = conn.execute(
+            "SELECT detalles_json FROM TBL_JUEZ_AUDITORIA "
+            "WHERE bot_name='padre' AND detalles_json LIKE '%firma_matches%' "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if _m:
+            _fm = json.loads(_m[0]).get("firma_matches", [])
+            mejor_sim = max((x.get("similitud", 0) for x in _fm), default=None)
+    except sqlite3.OperationalError:
+        pass
+    if ciclo:
+        f_, m_, b_ = ciclo[3] or 0, ciclo[7] or 0, bool(ciclo[8])
+        s_ = mejor_sim or 0
+        if b_ and f_ >= 30:
+            nivel_sem = "🔴 ROJO"
+        elif b_ or (f_ >= 15 and s_ >= 0.85):
+            nivel_sem = "🟠 NARANJA"
+        elif f_ >= 5 or s_ >= 0.80:
+            nivel_sem = "🟡 AMARILLO"
+        elif f_ > 0 or m_ > 0:
+            nivel_sem = "🔵 AZUL"
+        else:
+            nivel_sem = "🟢 VERDE"
+        lineas += [
+            "## 🚦 Semáforo — reglas fijas del nivel de riesgo",
+            "",
+            "> Estas reglas son **cuantitativas y fijas** (revisables por "
+            "versión, no por ciclo): con los números de arriba cualquiera "
+            "puede inferir el nivel sin interpretación subjetiva. La fila "
+            "marcada ➡ es la que dispara hoy.",
+            "",
+            "| Nivel | Regla (se evalúa de abajo hacia arriba) | Acción interna |",
+            "|---|---|---|",
+        ]
+        filas_sem = [
+            ("🔴 ROJO", "Muro ≥3/5 (breach) **y** Fantasma ≥30", "Escalamiento interno"),
+            ("🟠 NARANJA", "Muro ≥3/5 (breach) **o** (Fantasma ≥15 y firma ≥85%)", "Revisión manual inmediata"),
+            ("🟡 AMARILLO", "Fantasma 5–15 **o** firma ≥80%", "Vigilancia reforzada"),
+            ("🔵 AZUL", "Fantasma <5 con detecciones o muros 1–2", "Seguimiento ampliado"),
+            ("🟢 VERDE", "Fantasma <5, muro 0/5, sin firmas ≥80%", "Monitoreo base"),
+        ]
+        for nombre, regla, accion in filas_sem:
+            marca = "➡ " if nombre == nivel_sem else ""
+            lineas.append(f"| {marca}{nombre} | {regla} | {accion} |")
+        lineas += [
+            "",
+            f"**Nivel del corte: {nivel_sem}** — con Fantasma {f_:.1f}, "
+            f"muro {m_}/5{' (breach)' if b_ else ''} y firma máxima "
+            f"{f'{s_:.0%}' if mejor_sim else '—'}.",
+            "",
+        ]
+
+    # ── 📈 Operación reciente: hoy vs cómo solía estar ──
+    # No solo la foto: la posición contra las últimas semanas del propio
+    # sistema en vivo (medias 7/30 días + percentil).
+    try:
+        ahora_ts = ahora.timestamp()
+        c7 = conn.execute(
+            "SELECT fantasma, muro_walls_active, precursor_types "
+            "FROM TBL_CICLOS WHERE timestamp >= ?", (ahora_ts - 7 * 86400,)
+        ).fetchall()
+        c30 = conn.execute(
+            "SELECT fantasma, muro_walls_active, precursor_types "
+            "FROM TBL_CICLOS WHERE timestamp >= ?", (ahora_ts - 30 * 86400,)
+        ).fetchall()
+        # Días viejos ya compactados por el barrido → usar el resumen diario
+        d30 = conn.execute(
+            "SELECT fantasma_media, fantasma_max FROM tbl_resumen_diario "
+            "WHERE dia >= date('now', '-30 days')"
+        ).fetchall()
+
+        f7 = [r[0] for r in c7 if r[0] is not None]
+        f30 = ([r[0] for r in c30 if r[0] is not None]
+               + [r[0] for r in d30 if r[0] is not None])
+        fmax30 = ([r[0] for r in c30 if r[0] is not None]
+                  + [r[1] for r in d30 if r[1] is not None])
+        m7 = [r[1] for r in c7 if r[1] is not None]
+        m30 = [r[1] for r in c30 if r[1] is not None]
+        st7 = [1 if (r[2] and "SILENT" in r[2]) else 0 for r in c7]
+        st30 = [1 if (r[2] and "SILENT" in r[2]) else 0 for r in c30]
+
+        def _prom(xs, dec=1):
+            return f"{sum(xs)/len(xs):.{dec}f}" if xs else "—"
+
+        def _pctl(v, serie):
+            serie = [s for s in serie if s is not None]
+            if v is None or not serie:
+                return "—"
+            return f"P{round(100 * sum(1 for s in serie if s <= v) / len(serie))}"
+
+        # Asertividad viva acumulada y de 7 días
+        viva_q = (
+            "SELECT resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
+            "WHERE resultado != 'PENDIENTE' "
+            "AND detalles_json NOT LIKE '%\"fase\"%' {extra} "
+            "GROUP BY resultado")
+
+        def _viva(extra="", params=()):
+            t = dict(conn.execute(viva_q.format(extra=extra), params).fetchall())
+            tot = sum(t.values())
+            return (t.get("ACIERTO", 0) / tot) if tot else None
+
+        viva_total = _viva()
+        viva_7d = _viva("AND timestamp >= ?", (ahora_ts - 7 * 86400,))
+
+        if ciclo and (f7 or f30):
+            f_act = ciclo[3]
+            st_act = 1 if (ciclo[6] and "SILENT" in ciclo[6]) else 0
+            lineas += [
+                "## 📈 Operación reciente — hoy vs cómo solía estar",
+                "",
+                "> La foto de arriba, puesta en contexto: ¿este corte está "
+                "por encima, en el promedio o por debajo de la actividad "
+                "usual de las últimas semanas? El **percentil** dice qué "
+                "fracción de los cortes recientes fue igual o menor que hoy "
+                "(P75 = hoy es más alto que el 75% del último mes).",
+                "",
+                "| Métrica | Actual | Prom. 7d | Prom. 30d | Máx 30d | Percentil |",
+                "|---|---:|---:|---:|---:|---:|",
+                f"| Fantasma | {f_act:.1f} | {_prom(f7)} | {_prom(f30)} | "
+                f"{max(fmax30):.1f} | {_pctl(f_act, f30)} |"
+                if fmax30 else
+                f"| Fantasma | {f_act:.1f} | {_prom(f7)} | — | — | — |",
+                f"| Muro de los 5 | {ciclo[7]} | {_prom(m7)} | {_prom(m30)} | "
+                f"{max(m30) if m30 else '—'} | {_pctl(ciclo[7], m30)} |",
+                f"| Silent Trigger | {'activo' if st_act else 'inactivo'} | "
+                f"{_prom([x*100 for x in st7], 0)}% ciclos | "
+                f"{_prom([x*100 for x in st30], 0)}% ciclos | — | — |",
+                f"| Asertividad viva | "
+                f"{f'{viva_total:.0%}' if viva_total is not None else '—'} | "
+                f"{f'{viva_7d:.0%}' if viva_7d is not None else '—'} | — | — | — |",
+                "",
+                "*Los promedios de 30 días combinan los ciclos conservados y "
+                "el resumen diario del barrido (lo compactado no se pierde, "
+                "se resume).*",
+                "",
+            ]
+    except sqlite3.OperationalError:
+        pass
+
     # ── Detecciones recientes ──
     dets = conn.execute(
         "SELECT tipo, display_name, confidence, station FROM TBL_DETECCIONES "
@@ -352,7 +497,7 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
         viva_q = (
             "SELECT bot_name, resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
             "WHERE resultado != 'PENDIENTE' "
-            "AND detalles_json NOT LIKE '%\"fase\": \"backtest\"%' {extra} "
+            "AND detalles_json NOT LIKE '%\"fase\"%' {extra} "
             "GROUP BY bot_name, resultado"
         )
 
@@ -716,6 +861,119 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             f"{pendientes:,}"
         )
         lineas.append("")
+
+    # ── 🧾 Bitácora del sistema: versión, cambios y salud entre cortes ──
+    # Cada corte guarda su instantánea en tbl_salud_sistema y se compara con
+    # el corte anterior: así el reporte deja traza de la evolución del propio
+    # Sentinel (¿el 43% vivo de hoy es mejor o peor que hace 10 ciclos?) y
+    # permite post-mortems robustos.
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tbl_salud_sistema ("
+            "ts REAL PRIMARY KEY, version TEXT, fantasma REAL, viva REAL, "
+            "aciertos INTEGER, fallos INTEGER, pendientes INTEGER, "
+            "pesos_json TEXT, creada_at TEXT DEFAULT (datetime('now')))"
+        )
+        version_modelo = "—"
+        try:
+            import sys as _sys
+            _sys.path.insert(0, str(Path(__file__).parent.parent))
+            from sentinel_omega.config.sentinel_config import SentinelOmegaConfig
+            version_modelo = SentinelOmegaConfig().version
+        except Exception:
+            pass
+
+        pesos_now = dict(conn.execute(
+            "SELECT bot_name, peso FROM TBL_PESOS_BOTS").fetchall())
+        juez_now = dict(conn.execute(
+            "SELECT resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
+            "WHERE detalles_json NOT LIKE '%\"fase\"%' "
+            "GROUP BY resultado").fetchall())
+        aciertos_now = juez_now.get("ACIERTO", 0)
+        fallos_now = juez_now.get("FALLO", 0)
+        pend_now = juez_now.get("PENDIENTE", 0)
+        _tot = aciertos_now + fallos_now + juez_now.get("FALSO_POSITIVO", 0)
+        viva_now = (aciertos_now / _tot) if _tot else None
+        fant_now = ciclo[3] if ciclo else None
+
+        previo_salud = conn.execute(
+            "SELECT ts, version, fantasma, viva, aciertos, fallos, pendientes, "
+            "pesos_json FROM tbl_salud_sistema ORDER BY ts DESC LIMIT 1"
+        ).fetchone()
+        historia = conn.execute(
+            "SELECT viva FROM tbl_salud_sistema ORDER BY ts DESC LIMIT 5"
+        ).fetchall()
+
+        lineas += [
+            "## 🧾 Bitácora del sistema — versión, cambios y salud",
+            "",
+            "> No solo el planeta: el propio Sentinel deja traza. Cada corte "
+            "registra versión, pesos y métricas, y se compara con el corte "
+            "anterior — así se ve si un cambio mejoró o empeoró el "
+            "comportamiento, y los post-mortems tienen base.",
+            "",
+            f"| Campo | Este corte | Corte anterior | Cambio |",
+            f"|---|---|---|---|",
+        ]
+
+        def _delta(a, b, fmt="{:+.1f}"):
+            if a is None or b is None:
+                return "—"
+            return fmt.format(a - b)
+
+        prev_ver = previo_salud[1] if previo_salud else None
+        lineas.append(
+            f"| Versión del modelo | {version_modelo} | {prev_ver or '—'} | "
+            f"{'sin cambio' if prev_ver == version_modelo else ('**CAMBIÓ**' if prev_ver else '—')} |")
+        lineas.append(
+            f"| Asertividad viva | "
+            f"{f'{viva_now:.1%}' if viva_now is not None else '—'} | "
+            f"{f'{previo_salud[3]:.1%}' if previo_salud and previo_salud[3] is not None else '—'} | "
+            f"{_delta(viva_now, previo_salud[3] if previo_salud else None, '{:+.1%}')} |")
+        lineas.append(
+            f"| Aciertos / Fallos (vivos) | {aciertos_now:,} / {fallos_now:,} | "
+            f"{f'{previo_salud[4]:,} / {previo_salud[5]:,}' if previo_salud else '—'} | "
+            f"{_delta(float(aciertos_now), float(previo_salud[4]) if previo_salud else None, '{:+.0f}') } aciertos |")
+        lineas.append(
+            f"| Pendientes de auditoría | {pend_now:,} | "
+            f"{f'{previo_salud[6]:,}' if previo_salud else '—'} | "
+            f"{_delta(float(pend_now), float(previo_salud[6]) if previo_salud else None, '{:+.0f}')} |")
+
+        # Movimiento de pesos por bot (disciplina en acción)
+        if previo_salud and previo_salud[7]:
+            pesos_prev = json.loads(previo_salud[7])
+            movidos = []
+            for bot, p in sorted(pesos_now.items()):
+                pp = pesos_prev.get(bot)
+                if pp is not None and abs(p - pp) > 0.001:
+                    movidos.append(f"{bot} {pp:.2f}→{p:.2f}")
+            lineas.append(
+                f"| Pesos de bots | {len(pesos_now)} bots | — | "
+                f"{'; '.join(movidos) if movidos else 'sin movimiento'} |")
+        else:
+            lineas.append(
+                f"| Pesos de bots | "
+                f"{', '.join(f'{b} {p:.2f}' for b, p in sorted(pesos_now.items()))} "
+                f"| — | primera bitácora |")
+
+        if len(historia) > 1:
+            trend = " → ".join(
+                f"{h[0]:.0%}" if h[0] is not None else "—"
+                for h in reversed(historia))
+            lineas.append("")
+            lineas.append(f"*Asertividad viva, últimos cortes: {trend}*")
+        lineas.append("")
+
+        # Guardar la instantánea de ESTE corte (al final, para comparar el próximo)
+        conn.execute(
+            "INSERT OR REPLACE INTO tbl_salud_sistema "
+            "(ts, version, fantasma, viva, aciertos, fallos, pendientes, pesos_json) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (ahora.timestamp(), version_modelo, fant_now, viva_now,
+             aciertos_now, fallos_now, pend_now, json.dumps(pesos_now)))
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
 
     total_ciclos = conn.execute("SELECT COUNT(*) FROM TBL_CICLOS").fetchone()[0]
     lineas += [
