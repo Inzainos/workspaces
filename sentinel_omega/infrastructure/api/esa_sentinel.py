@@ -86,8 +86,6 @@ def search_sentinel2(
         max_cloud_cover: maximum cloud cover percentage
         limit: max results to return
     """
-    dag = _get_dag()
-
     now = datetime.now(timezone.utc)
     if not start:
         start = (now - timedelta(days=30)).strftime("%Y-%m-%d")
@@ -100,6 +98,7 @@ def search_sentinel2(
     }
 
     try:
+        dag = _get_dag()
         results = dag.search(
             collection="S2_MSI_L2A",
             provider=PROVIDER,
@@ -152,8 +151,6 @@ def search_sentinel1_sar(
     Search Sentinel-1 SAR GRD imagery over a bounding box.
     SAR is not affected by cloud cover — works day/night, all weather.
     """
-    dag = _get_dag()
-
     now = datetime.now(timezone.utc)
     if not start:
         start = (now - timedelta(days=30)).strftime("%Y-%m-%d")
@@ -166,6 +163,7 @@ def search_sentinel1_sar(
     }
 
     try:
+        dag = _get_dag()
         results = dag.search(
             collection="S1_SAR_GRD",
             provider=PROVIDER,
