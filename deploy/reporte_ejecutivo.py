@@ -135,7 +135,7 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
 
     juez = {r[0]: r[1] for r in _q(
         conn, "SELECT resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
-              "WHERE detalles_json NOT LIKE '%\"fase\": \"backtest\"%' "
+              "WHERE detalles_json NOT LIKE '%\"fase\"%' "
               "GROUP BY resultado")}
     pendientes = juez.get("PENDIENTE", 0)
     aciertos_v = juez.get("ACIERTO", 0)
