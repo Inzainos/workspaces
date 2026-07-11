@@ -902,6 +902,50 @@ class TestSecuenciaNodos:
         ).fetchone()[0]
         assert n >= 1
 
+    def test_incluye_eventos_no_sismicos(self, db):
+        # Todo evento natural es liberación de energía: una ruta que precede a
+        # un SISMO y a un VOLCÁN es cimática global cruzando dominios.
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            analizar_secuencia_nodos,
+        )
+        from datetime import datetime, timedelta
+        base = datetime(2011, 1, 1)
+        dia = 0
+        # ruta 12>45 antes de sismos M5
+        for _ in range(4):
+            self._sembrar(conn, base, [12, 45], 5.4, dia); dia += 20
+        # misma ruta 12>45 antes de erupciones (catálogo no sísmico)
+        for _ in range(4):
+            tse = base + timedelta(days=dia)
+            for i, nodo in enumerate([12]):
+                t = tse - timedelta(hours=60 - i * 12)
+                conn.execute(
+                    "INSERT OR IGNORE INTO tbl_historico_sismico_raw "
+                    "(timestamp_blk, id_nodo, sismo_count, sismo_max_mag) "
+                    "VALUES (?, ?, 1, 3.1)", (t.strftime("%Y-%m-%d %H:%M"), nodo))
+            conn.execute(
+                "INSERT OR IGNORE INTO tbl_eventos_no_sismicos "
+                "(timestamp_blk, id_nodo, event_class, fuente, intensidad) "
+                "VALUES (?, 45, 'ERUPCION_VEI4', 'test', 4.0)",
+                (tse.strftime("%Y-%m-%d %H:%M"),))
+            dia += 20
+        conn.commit()
+
+        res = analizar_secuencia_nodos(path, muestra=200)
+        # la ruta 12>45 precede a SISMO_M5 y a ERUPCION_VEI4 -> GLOBAL cruzando
+        # dominios (sísmico + volcánico)
+        v = res["veredictos"]
+        cross = next((s for s, d in v.items()
+                      if d["alcance"] == "GLOBAL" and "nodo12>nodo45" in s), None)
+        assert cross is not None, "la ruta cruza-dominios debe ser GLOBAL"
+        clases = conn.execute(
+            "SELECT event_class FROM tbl_secuencia_nodos WHERE secuencia = ?",
+            (cross,)).fetchall()
+        nombres = {c[0] for c in clases}
+        assert "SISMO_M5" in nombres
+        assert "ERUPCION_VEI4" in nombres
+
 
 class TestOmegaMapeado:
     """Omega está mapeado a la telemetría existente y entrena como los demás."""

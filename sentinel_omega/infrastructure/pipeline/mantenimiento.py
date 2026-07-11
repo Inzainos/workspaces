@@ -488,10 +488,9 @@ def analizar_orden_precursores(db_path: str, muestra: int = ORDEN_MUESTRA) -> Di
         "frac_dominante REAL, veredicto TEXT, "
         "actualizada_at TEXT DEFAULT (datetime('now')))")
 
-    eventos = conn.execute(
-        "SELECT timestamp_blk, id_nodo, sismo_max_mag "
-        "FROM tbl_historico_sismico_raw WHERE sismo_max_mag >= 4.5 "
-        "ORDER BY timestamp_blk").fetchall()
+    # TODOS los eventos naturales (no solo sismos): cada uno es una liberación
+    # de energía cuya coreografía de precursores queremos leer.
+    eventos = _catalogo_eventos_energia(conn)
     if not eventos:
         conn.close()
         return {"eventos": 0}
@@ -499,12 +498,10 @@ def analizar_orden_precursores(db_path: str, muestra: int = ORDEN_MUESTRA) -> Di
     eventos = eventos[::paso]
 
     conteo: Dict[tuple, int] = {}
-    for ts, nodo, mag in eventos:
+    for ts, nodo, clase in eventos:
         orden = _orden_evento(conn, ts, nodo)
         if not orden:
             continue
-        clase = ("SISMO_M7" if mag >= 7 else "SISMO_M6" if mag >= 6
-                 else "SISMO_M5" if mag >= 5 else "SISMO_M4")
         conteo[(orden, clase)] = conteo.get((orden, clase), 0) + 1
 
     conn.execute("DELETE FROM tbl_orden_precursores")
@@ -565,6 +562,36 @@ SEC_NODOS_MAX_LEN = 5        # ruta acotada (primeros nodos en activarse)
 SEC_NODOS_MIN_FREC = 3       # una ruta con menos apariciones no es recurrente
 
 
+def _catalogo_eventos_energia(conn) -> list:
+    """TODO evento natural es una liberación de energía: sismos + volcanes +
+    tormentas solares (y cualquier no-sísmico catalogado — blue jets/sprites
+    entran cuando el escáner los persista históricamente). Devuelve
+    [(timestamp_blk, id_nodo, event_class), ...] ordenado en el tiempo.
+
+    Analizar la cimática de TODOS los tipos —y no solo sismos— es lo que deja
+    ver rutas de propagación que cruzan dominios (una ruta que precede a un
+    sismo Y a una erupción es una cimática global, no una coincidencia local).
+    """
+    eventos: list = []
+    for ts, nodo, mag in conn.execute(
+        "SELECT timestamp_blk, id_nodo, sismo_max_mag "
+        "FROM tbl_historico_sismico_raw WHERE sismo_max_mag >= 4.5"
+    ):
+        clase = ("SISMO_M7" if mag >= 7 else "SISMO_M6" if mag >= 6
+                 else "SISMO_M5" if mag >= 5 else "SISMO_M4")
+        eventos.append((ts, nodo, clase))
+    try:
+        for ts, nodo, clase in conn.execute(
+            "SELECT timestamp_blk, id_nodo, event_class "
+            "FROM tbl_eventos_no_sismicos"
+        ):
+            eventos.append((ts, nodo, clase))
+    except sqlite3.OperationalError:
+        pass   # catálogo no-sísmico aún no derivado
+    eventos.sort(key=lambda e: e[0])
+    return eventos
+
+
 def _secuencia_nodos_evento(conn, ts_evento: str, id_nodo_evento: int) -> str:
     """Ruta de nodos que se activaron en la víspera, en orden temporal.
 
@@ -608,10 +635,8 @@ def analizar_secuencia_nodos(db_path: str, muestra: int = SEC_NODOS_MUESTRA) -> 
         "n_clases INTEGER, n_nodos INTEGER, alcance TEXT, interpretacion TEXT, "
         "actualizada_at TEXT DEFAULT (datetime('now')))")
 
-    eventos = conn.execute(
-        "SELECT timestamp_blk, id_nodo, sismo_max_mag "
-        "FROM tbl_historico_sismico_raw WHERE sismo_max_mag >= 4.5 "
-        "ORDER BY timestamp_blk").fetchall()
+    # TODOS los eventos naturales (sismo, volcán, tormenta solar…), no solo sismos
+    eventos = _catalogo_eventos_energia(conn)
     if not eventos:
         conn.close()
         return {"eventos": 0}
@@ -619,12 +644,10 @@ def analizar_secuencia_nodos(db_path: str, muestra: int = SEC_NODOS_MUESTRA) -> 
     eventos = eventos[::paso]
 
     conteo: Dict[tuple, int] = {}
-    for ts, nodo, mag in eventos:
+    for ts, nodo, clase in eventos:
         seq = _secuencia_nodos_evento(conn, ts, nodo)
         if not seq:
             continue
-        clase = ("SISMO_M7" if mag >= 7 else "SISMO_M6" if mag >= 6
-                 else "SISMO_M5" if mag >= 5 else "SISMO_M4")
         conteo[(seq, clase)] = conteo.get((seq, clase), 0) + 1
 
     conn.execute("DELETE FROM tbl_secuencia_nodos")
