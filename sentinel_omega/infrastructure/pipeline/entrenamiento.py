@@ -43,7 +43,7 @@ MIN_MAGNITUD_FIRMA = 4.5
 # Mínimo observado en Fase 1: los bots registran firmas desde esta magnitud.
 # Eventos M2.5–4.49 generan firmas pero NO activan disciplina (castigo/Juez
 # solo punish) — solo alimentan el ACIERTO histórico del Juez.
-MIN_MAGNITUD_OBSERVAR = 2.0   # el sistema MIDE desde M2; solo alerta desde 4.5
+MIN_MAGNITUD_OBSERVAR = 3.3   # piso de medición (= piso real del backcast); solo alerta desde 4.5
 
 # Feature domain per bot — each bot only remembers what it measures.
 # Padre keeps the full cross-domain vector (patterns within patterns).
@@ -213,7 +213,7 @@ def entrenar_reconocimiento(
 ) -> Dict:
     """Fase 1 — learn signatures from every observed historical event.
 
-    Observes ALL magnitudes >= MIN_MAGNITUD_OBSERVAR (2.0): bots register
+    Observes ALL magnitudes >= MIN_MAGNITUD_OBSERVAR (3.3): bots register
     firma patterns for every size of event so that small precursors are
     captured. The Juez logs an ACIERTO for every successful registration —
     this builds the positive pattern-history used by resumen_por_bot() even
@@ -915,11 +915,11 @@ def calcular_correlaciones_evento(db_path: str) -> Dict:
 # ── Disciplina de trasfondo — "castigo desde abajo" ──────────────────────────
 # Los bots ALERTAN y guardan firmas PERMANENTES desde M4.5 (memoria de 32 años).
 # Pero para que no se duerman con los precursores chiquitos, se les disciplina
-# cada cierto tiempo contra sismos MENORES (M2.0–4.49) de un bloque reciente de
+# cada cierto tiempo contra sismos MENORES (M3.3–4.49) de un bloque reciente de
 # años. Esas firmas viven en una tabla TEMPORAL que se poda por edad — solo
 # sobreviven los PESOS neuronales. El ajuste de peso por corrida está ACOTADO
 # para no cráterizar la credibilidad de un bot de un golpe.
-MAG_MENOR_MIN = 2.0   # el sistema mide desde M2 (alerta solo desde 4.5)
+MAG_MENOR_MIN = 3.3   # piso de medición vivo, alineado al backcast (alerta solo desde 4.5)
 MAG_MENOR_MAX = MIN_MAGNITUD_FIRMA          # 4.5 — justo por debajo del piso de alerta
 DISCIPLINA_MAX_EVENTOS = 300                # muestreo acotado por corrida
 DISCIPLINA_RETENCION_DIAS = 90             # poda rolling de la tabla temporal
