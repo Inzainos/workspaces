@@ -119,6 +119,16 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
     # discierne si la secuencia importa o es indiferente (contando).
     stats["orden_precursores"] = analizar_orden_precursores(db_path)
 
+    # Poda cimática: la línea base es TODA la telemetría, pero el patrón
+    # que tras su gracia nunca se asoció a un evento es ruido → se elimina.
+    try:
+        from sentinel_omega.core.firmas.cimatica import poda_cimatica
+        conn_poda = sqlite3.connect(db_path)
+        stats["cimatica_podados"] = poda_cimatica(conn_poda)
+        conn_poda.close()
+    except Exception as e:
+        logger.warning(f"Poda cimática falló (non-blocking): {e}")
+
     logger.info(f"Barrido diario: {stats}")
     return stats
 

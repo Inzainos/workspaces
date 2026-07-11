@@ -91,6 +91,14 @@ def verificar_juez(
         fase="viva",
     )
 
+    # Retro-etiquetado cimático: los eventos reales le dicen a cada patrón
+    # de la víspera QUÉ desató (lo que importa es el evento, no la telemetría)
+    try:
+        from sentinel_omega.core.firmas.cimatica import retroetiquetar_patrones
+        retroetiquetar_patrones(conn, eventos)
+    except Exception as e:
+        logger.warning(f"Retro-etiquetado cimático falló (non-blocking): {e}")
+
     # Resumen real vs predicción de esta pasada
     conteo: Dict[str, int] = {}
     for r in resueltos:

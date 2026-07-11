@@ -113,6 +113,56 @@ class TestRegistrarSnapshot:
         assert pid == 0
 
 
+class TestRetroetiquetadoYPoda:
+
+    def test_evento_real_etiqueta_la_vispera(self, db):
+        # El patrón se graba ANTES de saber qué desata; el evento lo etiqueta
+        import time as _t
+        registrar_snapshot(db, FEATURES)   # sin evento (ciclo vivo en calma)
+        eventos = [{"epoch": _t.time() + 3600, "magnitude": 5.3}]
+        from sentinel_omega.core.firmas.cimatica import retroetiquetar_patrones
+        n = retroetiquetar_patrones(db, eventos)
+        assert n == 1
+        ec = db.execute(
+            "SELECT event_class FROM tbl_cimatica_patrones").fetchone()[0]
+        assert ec == "SISMO_M5"
+
+    def test_evento_menor_no_etiqueta(self, db):
+        import time as _t
+        registrar_snapshot(db, FEATURES)
+        from sentinel_omega.core.firmas.cimatica import retroetiquetar_patrones
+        n = retroetiquetar_patrones(
+            db, [{"epoch": _t.time() + 3600, "magnitude": 3.0}])
+        assert n == 0
+
+    def test_poda_elimina_ruido_conserva_lo_que_resalta(self, db):
+        from sentinel_omega.core.firmas.cimatica import poda_cimatica
+        # Ruido: viejo y sin evento asociado
+        registrar_snapshot(db, FEATURES)
+        db.execute(
+            "UPDATE tbl_cimatica_patrones "
+            "SET primera_vez = datetime('now', '-45 days')")
+        # Lo que resalta: asociado a evento (igual de viejo)
+        lejos = dict(FEATURES, bz_mean=12.0, kp_max=1.0)
+        registrar_snapshot(db, lejos, event_class="SISMO_M5")
+        db.execute(
+            "UPDATE tbl_cimatica_patrones "
+            "SET primera_vez = datetime('now', '-45 days') "
+            "WHERE event_class IS NOT NULL")
+        db.commit()
+
+        podados = poda_cimatica(db)
+        assert podados == 1
+        restantes = db.execute(
+            "SELECT event_class FROM tbl_cimatica_patrones").fetchall()
+        assert restantes == [("SISMO_M5",)]
+
+    def test_poda_respeta_la_gracia(self, db):
+        from sentinel_omega.core.firmas.cimatica import poda_cimatica
+        registrar_snapshot(db, FEATURES)   # recién nacido, sin evento
+        assert poda_cimatica(db) == 0      # dentro de la gracia — se queda
+
+
 class TestEntrenarCimatica:
 
     def test_graba_patrones_del_historico(self, db, tmp_path):

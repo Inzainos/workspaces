@@ -201,10 +201,83 @@ def patrones_consistentes(
     min_frecuencia: int = FRECUENCIA_CONSISTENTE,
     limite: int = 20,
 ) -> list:
-    """Patrones con frecuencia significativa, para reportes y el Padre."""
+    """Patrones que RESALTAN: primero los asociados a un evento (lo que
+    importa es qué desatan), luego por frecuencia."""
     return conn.execute(
         "SELECT patron_id, ambito, id_nodo, event_class, frecuencia, "
         "primera_vez, ultima_vez FROM tbl_cimatica_patrones "
-        "WHERE frecuencia >= ? ORDER BY frecuencia DESC LIMIT ?",
+        "WHERE frecuencia >= ? "
+        "ORDER BY (event_class IS NOT NULL) DESC, frecuencia DESC LIMIT ?",
         (min_frecuencia, limite),
     ).fetchall()
+
+
+# Ventana de víspera para retro-etiquetar (h) y gracia antes de podar (días)
+VISPERA_H = 72
+DIAS_GRACIA_PODA = 30
+
+
+def retroetiquetar_patrones(
+    conn: sqlite3.Connection,
+    eventos: list,
+    ventana_h: int = VISPERA_H,
+) -> int:
+    """Cuando ocurre un evento REAL, etiqueta los patrones sin evento cuya
+    última aparición cayó en su víspera de 72 h.
+
+    En vivo el snapshot se graba ANTES de saber qué desata; el evento llega
+    después. Esto cierra el lazo: lo que importa no es la telemetría, es el
+    evento — y esta función le dice a cada patrón qué desató.
+
+    eventos: [{"epoch": s, "magnitude": ..}, ...] (los del Juez).
+    """
+    from datetime import datetime, timezone
+
+    etiquetados = 0
+    for ev in eventos:
+        epoch = ev.get("epoch")
+        mag = ev.get("magnitude") or 0.0
+        if epoch is None or mag < 4.5:
+            continue
+        clase = f"SISMO_M{int(mag)}" if mag < 7 else "SISMO_M7"
+        ini = datetime.fromtimestamp(
+            epoch - ventana_h * 3600, tz=timezone.utc
+        ).strftime("%Y-%m-%d %H:%M:%S")
+        fin = datetime.fromtimestamp(epoch, tz=timezone.utc).strftime(
+            "%Y-%m-%d %H:%M:%S")
+        etiquetados += conn.execute(
+            "UPDATE tbl_cimatica_patrones SET event_class = ? "
+            "WHERE event_class IS NULL AND ultima_vez BETWEEN ? AND ?",
+            (clase, ini, fin),
+        ).rowcount
+    if etiquetados:
+        conn.commit()
+        logger.info(
+            f"CIMÁTICA: {etiquetados} patrones retro-etiquetados con el "
+            f"evento que desataron"
+        )
+    return etiquetados
+
+
+def poda_cimatica(
+    conn: sqlite3.Connection,
+    dias_gracia: int = DIAS_GRACIA_PODA,
+) -> int:
+    """Poda del ruido, con base en los eventos.
+
+    La línea base es TODA la telemetría, pero el patrón que tras su periodo
+    de gracia nunca se asoció a un evento es ruido: no desata nada y se
+    elimina. Lo que resalta (asociado a eventos) se queda para siempre.
+    """
+    podados = conn.execute(
+        "DELETE FROM tbl_cimatica_patrones WHERE event_class IS NULL "
+        "AND primera_vez < datetime('now', ?)",
+        (f"-{dias_gracia} days",),
+    ).rowcount
+    if podados:
+        conn.commit()
+        logger.info(
+            f"CIMÁTICA: poda de ruido — {podados} patrones sin evento "
+            f"asociado tras {dias_gracia} días de gracia eliminados"
+        )
+    return podados
