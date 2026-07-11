@@ -448,6 +448,21 @@ CREATE TABLE IF NOT EXISTS tbl_correo_salida (
 CREATE INDEX IF NOT EXISTS idx_correo_estado
     ON tbl_correo_salida(estado);
 
+-- ─── Schumann en vivo (serie acumulada, no hay backcast) ──────────
+-- La resonancia Schumann de Tomsk se mide por WPC (White Pixel Count =
+-- "conteo de bits en blanco" del espectrograma) en CADA corrida de 2 h, en
+-- tiempo real cuando el Padre corre. No existe backcast de 30 años, así que
+-- —igual que alfa2— la serie se ACUMULA en vivo aquí y con el tiempo alimenta
+-- los cruces (dominio SCHUMANN del orden de precursores) cuando ya hay datos.
+CREATE TABLE IF NOT EXISTS tbl_schumann_vivo (
+    timestamp_blk     TEXT PRIMARY KEY,
+    schumann_hz       REAL,
+    schumann_activity REAL,       -- % de excitación medido (WPC)
+    creada_at         TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_schumann_vivo_ts
+    ON tbl_schumann_vivo(timestamp_blk);
+
 -- ─── Schema Version ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS TBL_SCHEMA_VERSION (
     version     INTEGER PRIMARY KEY,

@@ -325,13 +325,15 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
         )
 
         try:
+            _b1 = getattr(orch._runner.pipeline, "_cache", {}).get("beta1") or {}
+            _sch_hz = _b1.get("schumann_frequency")
             repo.insert_precursor_cosmico(
                 bz=risk.components.get("bz_nT", 0),
                 viento=risk.components.get("wind_kms", 0),
                 protones=0.0,
                 kp=risk.components.get("kp", 0),
                 lod_ms=risk.components.get("lod_ms", 0),
-                schumann_hz=7.83,
+                schumann_hz=_sch_hz if _sch_hz is not None else 7.83,
                 schumann_activity=risk.components.get("schumann_wpc", 0) * 100,
                 presion_hpa=risk.components.get("pressure_hpa", 1013),
                 fantasma=risk.fantasma,
@@ -571,6 +573,28 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         conn = repo._conn
         memoria = FirmaMemoria(conn)
         juez = Juez(conn)
+
+        # Serie viva de Schumann: la lectura en tiempo real de esta corrida
+        # (WPC de Tomsk) se acumula con su bloque horario. Con el tiempo esta
+        # serie alimenta el dominio SCHUMANN de los cruces (no hay backcast).
+        try:
+            import time as _t
+            beta1_cache = getattr(runner.pipeline, "_cache", {}).get("beta1") or {}
+            sch_hz = beta1_cache.get("schumann_frequency")
+            sch_act = beta1_cache.get("schumann_activity")
+            if sch_hz is not None or sch_act is not None:
+                ts_blk = _t.strftime("%Y-%m-%d %H:00", _t.gmtime())
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS tbl_schumann_vivo ("
+                    "timestamp_blk TEXT PRIMARY KEY, schumann_hz REAL, "
+                    "schumann_activity REAL, creada_at TEXT DEFAULT (datetime('now')))")
+                conn.execute(
+                    "INSERT OR REPLACE INTO tbl_schumann_vivo "
+                    "(timestamp_blk, schumann_hz, schumann_activity) VALUES (?,?,?)",
+                    (ts_blk, sch_hz, sch_act))
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Persistencia Schumann viva falló (non-blocking): {e}")
 
         matches = []
         features = _build_live_features(runner)

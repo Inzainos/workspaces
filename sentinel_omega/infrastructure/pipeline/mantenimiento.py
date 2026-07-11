@@ -468,6 +468,20 @@ def _orden_evento(conn, ts_evento: str, id_nodo: int) -> str:
             (ts_evento, ini, ts_evento, fin)).fetchone()[0]
         if vol is not None and vol >= 5 and "FINANCIERO" not in activacion:
             activacion["FINANCIERO"] = seg
+        # SCHUMANN (beta1): excitación medida (WPC) en la serie viva acumulada.
+        # No hay backcast, así que solo dispara para eventos recientes con
+        # datos — la serie crece en cada corrida de 2 h y con el tiempo cubre
+        # más. El latido de la Tierra entra al cruce en cuanto hay medición.
+        try:
+            sch = conn.execute(
+                "SELECT MAX(schumann_activity) FROM tbl_schumann_vivo "
+                "WHERE timestamp_blk >= datetime(?, ?) "
+                "AND timestamp_blk < datetime(?, ?)",
+                (ts_evento, ini, ts_evento, fin)).fetchone()[0]
+            if sch is not None and sch >= 30 and "SCHUMANN" not in activacion:
+                activacion["SCHUMANN"] = seg
+        except sqlite3.OperationalError:
+            pass   # serie viva aún no existe
         # COSMICO (omega): sicigia (luna nueva/llena alineada) o fase lunar
         # extrema en el tramo — el ritmo cósmico como precursor de marea.
         cos = conn.execute(

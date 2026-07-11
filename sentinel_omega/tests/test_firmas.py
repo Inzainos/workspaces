@@ -847,6 +847,32 @@ class TestOrdenPrecursores:
         n = conn.execute("SELECT COUNT(*) FROM tbl_orden_veredictos").fetchone()[0]
         assert n >= 1
 
+    def test_dominio_schumann_desde_serie_viva(self, db):
+        # El latido (beta1) entra al cruce en cuanto hay medición viva.
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            analizar_orden_precursores,
+        )
+        from datetime import datetime, timedelta
+        base = datetime(2020, 6, 1)
+        for ev in range(35):
+            tse = base + timedelta(days=15 * ev)
+            for h in range(0, 336, 3):
+                ts = tse - timedelta(hours=336 - h)
+                conn.execute(
+                    "INSERT OR IGNORE INTO tbl_schumann_vivo "
+                    "(timestamp_blk, schumann_hz, schumann_activity) "
+                    "VALUES (?, 7.9, 45.0)", (ts.strftime("%Y-%m-%d %H:00"),))
+            conn.execute(
+                "INSERT OR IGNORE INTO tbl_historico_sismico_raw "
+                "(timestamp_blk, id_nodo, sismo_count, sismo_max_mag) "
+                "VALUES (?, 45, 1, 5.5)", (tse.strftime("%Y-%m-%d %H:%M"),))
+        conn.commit()
+        res = analizar_orden_precursores(path, muestra=100)
+        # algún orden debe incluir SCHUMANN
+        assert any("SCHUMANN" in o for (o, _) in
+                   conn.execute("SELECT orden, event_class FROM tbl_orden_precursores"))
+
 
 class TestSecuenciaNodos:
     """La ruta de nodos por la que se propaga la energía: global vs local."""
