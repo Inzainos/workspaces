@@ -582,12 +582,29 @@ def _auditar_ciclo(geo, repo, runner) -> None:
             beta1_cache = getattr(runner.pipeline, "_cache", {}).get("beta1") or {}
             sch_hz = beta1_cache.get("schumann_frequency")
             sch_act = beta1_cache.get("schumann_activity")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS tbl_schumann_vivo ("
+                "timestamp_blk TEXT PRIMARY KEY, schumann_hz REAL, "
+                "schumann_activity REAL, creada_at TEXT DEFAULT (datetime('now')))")
+            # LOCF (Last Observation Carried Forward): si la API de Tomsk se
+            # cortó (activity == 0.0 exacto = descarga fallida, no calma real),
+            # arrastramos el último valor conocido en vez de escribir un cero
+            # falso. Tomsk solo sirve la imagen ACTUAL (no hay histórico que
+            # rebobinar), así que el LOCF cubre el hueco; las APIs que sí sirven
+            # historia (USGS days=7, NOAA) ya rellenan su ventana solas.
+            señal_viva = sch_act is not None and sch_act != 0.0
+            if not señal_viva:
+                ult = conn.execute(
+                    "SELECT schumann_hz, schumann_activity FROM tbl_schumann_vivo "
+                    "ORDER BY timestamp_blk DESC LIMIT 1").fetchone()
+                if ult:
+                    sch_hz = sch_hz or ult[0]
+                    sch_act = ult[1]   # arrastra el último medido
+                    logger.info(
+                        f"Schumann: API sin señal — LOCF del último valor "
+                        f"({sch_act}%)")
             if sch_hz is not None or sch_act is not None:
                 ts_blk = _t.strftime("%Y-%m-%d %H:00", _t.gmtime())
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS tbl_schumann_vivo ("
-                    "timestamp_blk TEXT PRIMARY KEY, schumann_hz REAL, "
-                    "schumann_activity REAL, creada_at TEXT DEFAULT (datetime('now')))")
                 conn.execute(
                     "INSERT OR REPLACE INTO tbl_schumann_vivo "
                     "(timestamp_blk, schumann_hz, schumann_activity) VALUES (?,?,?)",

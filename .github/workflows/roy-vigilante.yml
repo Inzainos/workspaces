@@ -144,6 +144,24 @@ jobs:
             echo "skip — aún no es el último día del mes"
           fi
 
+      - name: Tuning diario de la base (fin de día MX, ANALYZE)
+        if: github.event.schedule == '7 */2 * * *'
+        run: |
+          # 05 UTC ≈ 11pm MX (cierre del día): ANALYZE + optimize, ligero.
+          H=$(date -u +%-H)
+          if [ "$H" = "5" ]; then
+            python deploy/tuning_db.py --diario
+          else
+            echo "skip — tuning diario al cierre del día MX (05 UTC)"
+          fi
+
+      - name: Tuning mensual (fin de mes, VACUUM rebuild)
+        if: github.event.schedule == '30 18 28-31 * *'
+        run: |
+          if [ "$(date -u -d tomorrow +%d)" = "01" ]; then
+            python deploy/tuning_db.py --mensual
+          fi
+
       - name: Despacho de correo (alertas + reportes del outbox)
         if: always()
         run: python deploy/enviar_correos.py
