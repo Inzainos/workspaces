@@ -106,43 +106,65 @@ class Juez:
         en 4 días" es cierto casi siempre y convierte la asertividad en el
         modelo nulo de Molchan (alertar-siempre gana). Con `eventos`, la
         vara es honesta: ventana propia + geografía monitoreada.
+
+        Especificidad por nodo: si la fila trae `nodos` en su detalles_json
+        ([{"id":.., "lat":.., "lon":..}] — los nodos de las firmas que
+        motivaron la predicción), la verdad de ESA fila se evalúa SOLO
+        contra esos nodos, no contra toda la malla. Un aviso solo vale si
+        acierta DÓNDE avisó — así se le gana al modelo nulo.
         """
         now = ahora or time.time()
         if fase is not None:
             pendientes = self._conn.execute(
-                "SELECT id, timestamp, bot_name, prediccion, confianza, ventana_h "
+                "SELECT id, timestamp, bot_name, prediccion, confianza, "
+                "ventana_h, detalles_json "
                 "FROM TBL_JUEZ_AUDITORIA WHERE resultado = 'PENDIENTE' "
                 "AND fase = ?", (fase,)
             ).fetchall()
         else:
             pendientes = self._conn.execute(
-                "SELECT id, timestamp, bot_name, prediccion, confianza, ventana_h "
+                "SELECT id, timestamp, bot_name, prediccion, confianza, "
+                "ventana_h, detalles_json "
                 "FROM TBL_JUEZ_AUDITORIA WHERE resultado = 'PENDIENTE'"
             ).fetchall()
 
         resueltos = []
-        for pid, ts, bot, pred, conf, ventana_h in pendientes:
+        for pid, ts, bot, pred, conf, ventana_h, det_json in pendientes:
             if now - ts < ventana_h * 3600:
                 continue  # window still open
 
             if eventos is not None:
+                zonas_fila = zonas
+                es_zona_propia = False
+                try:
+                    nodos_pred = (json.loads(det_json or "{}")).get("nodos") or []
+                    propias = [
+                        (n["lat"], n["lon"]) for n in nodos_pred
+                        if n.get("lat") is not None and n.get("lon") is not None
+                    ]
+                    if propias:
+                        zonas_fila = propias
+                        es_zona_propia = True
+                except (json.JSONDecodeError, TypeError):
+                    pass
                 matches = self._eventos_en_ventana(
-                    eventos, ts, ventana_h, zonas, radio_deg
+                    eventos, ts, ventana_h, zonas_fila, radio_deg
                 )
                 evento_ocurrido = bool(matches)
+                ambito = (
+                    "nodos de la predicción" if es_zona_propia
+                    else ("zonas monitoreadas" if zonas_fila else "global")
+                )
                 if matches:
                     mag_max = max(m.get("magnitude", 0.0) or 0.0 for m in matches)
                     gravedad = 1.0 + max(0.0, mag_max - 4.5)
                     verdad = (
                         f"{len(matches)} eventos en ventana de {ventana_h}h "
-                        f"(máx M{mag_max:.1f})"
+                        f"(máx M{mag_max:.1f}, {ambito})"
                     )
                 else:
                     gravedad = 1.0
-                    verdad = (
-                        f"sin eventos en ventana de {ventana_h}h"
-                        + (" (zonas monitoreadas)" if zonas else "")
-                    )
+                    verdad = f"sin eventos en ventana de {ventana_h}h ({ambito})"
 
             predijo_evento = pred.lower() in ALERT_SIGNALS
             if predijo_evento and evento_ocurrido:

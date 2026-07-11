@@ -47,12 +47,27 @@
 | H9 | Bz se busca **por nombre de columna**; sin `bz_gsm` el agente lo dice y queda NEUTRAL; el vector ONNX se alinea por nombre al orden canónico de features. | ✅ |
 | H10 | USGS caído → resolución **pospuesta** (queda PENDIENTE para el siguiente ciclo), nunca "sin eventos" inventado. | ✅ |
 | H11 | **Línea base de Molchan**: `core/precursor/baseline.py` (modelo nulo alertar-siempre, misma geometría 5°/72 h), hook `validate_with_baseline()` en assertivity, y sección "¿Le ganamos a alertar siempre?" en el reporte general con la **ganancia** (sistema ÷ tasa base). | ✅ |
-| H12 | Documentado aquí; conectarlo en operación queda como mejora futura (la vara operativa hoy es `viva_real` + Molchan del reporte). | 📋 |
+| H12 | **Conectado**: el launcher ahora alimenta el `AssertivityTracker` cada ciclo (avisos anclados a sus nodos + eventos USGS) y loguea la **ganancia de Molchan en vivo** vía `validate_with_baseline()`. | ✅ |
 | H13 | Documentado; sin cambio de semántica de castigo (decisión consciente: el castigo duro es de diseño). | 📋 |
 
 Además, del fix list original: **C1** (columna `fase` real + vista `viva_real` + auditoría viva append-only + resolución filtrada por fase) y **C2** (las tres tuberías de reporte unificadas sobre `viva_real`) quedaron aplicados y verificados sobre la base real.
 
 ---
+
+### ⚔️ El ataque al 0.37× — predicciones específicas por nodo
+
+La razón por la que el modelo nulo gana es que un aviso global se validaba
+contra **toda** la malla (50 nodos a 5° ≈ casi siempre hay un sismo cerca de
+alguno). Ahora:
+
+- El Padre registra **los nodos de las firmas que motivaron su aviso**
+  (`nodos` en detalles) — el aviso dice *dónde*.
+- El Juez valida cada fila **solo contra sus propios nodos**: acertar es
+  acertar donde avisaste; un sismo en Japón ya no valida un aviso en
+  Guerrero. Los silencios (`no_signal`) se siguen juzgando contra toda la
+  malla — callar sí se mide contra todo lo monitoreado.
+- Con la vara espacial estrecha, la tasa base por aviso baja de ~100% a la
+  sismicidad real del nodo señalado — ahí sí se puede (y se debe) ganar >1×.
 
 ## 3. El número honesto de hoy
 

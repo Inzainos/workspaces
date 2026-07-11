@@ -638,12 +638,22 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         except Exception as e:
             logger.warning(f"Muro de lags failed (non-blocking): {e}")
 
+        # Nodos DE la predicción: un aviso solo vale si acierta DÓNDE avisó.
+        # El Juez valida esta fila solo contra estos nodos (no toda la malla)
+        # — sin esto, el modelo nulo de Molchan gana siempre.
+        nodos_pred = [
+            {"id": m["id_nodo"], "lat": m.get("nodo_lat"),
+             "lon": m.get("nodo_lon")}
+            for m in matches[:5]
+            if m.get("nodo_lat") is not None
+        ]
         juez.registrar_prediccion(
             bot_name="padre",
             prediccion=geo.final_signal.value,
             confianza=geo.confidence,
             ventana_h=72,
-            detalles={"firma_matches": matches[:5], "muro_lags": muro_lags},
+            detalles={"firma_matches": matches[:5], "muro_lags": muro_lags,
+                      "nodos": nodos_pred},
             fase="viva",  # operación real — la única que puntúa asertividad viva
         )
 
@@ -683,6 +693,35 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                 firma_conocida=bool(matches),
                 fase="viva",  # el launcher solo resuelve las suyas
             )
+
+            # AssertivityTracker vivo + ganancia de Molchan por ciclo: los
+            # avisos se anclan a SUS nodos y se miden contra alertar-siempre.
+            try:
+                tracker = getattr(runner, "assertivity", None)
+                if tracker is not None:
+                    if geo.final_signal.value in ("alert", "watch"):
+                        for m in matches[:3]:
+                            if m.get("nodo_lat") is not None:
+                                tracker.record_prediction(
+                                    m["nodo_lat"], m["nodo_lon"],
+                                    risk_level=geo.final_signal.value.upper(),
+                                    fantasma=float(geo.confidence),
+                                    source=f"nodo{m['id_nodo']}",
+                                )
+                    if eventos and tracker.prediction_count:
+                        tracker.ingest_events([
+                            {"latitude": e["lat"], "longitude": e["lon"],
+                             "magnitude": e["magnitude"], "time": e["epoch"]}
+                            for e in eventos
+                        ])
+                        res_a, base_a = tracker.validate_with_baseline()
+                        logger.info(
+                            f"Molchan vivo: hit={res_a.hit_rate:.0%} "
+                            f"base={base_a.base_rate:.0%} "
+                            f"ganancia={base_a.gain} — {base_a.veredicto}"
+                        )
+            except Exception as e:
+                logger.warning(f"Assertivity viva falló (non-blocking): {e}")
         if resueltos:
             logger.info(f"Juez resolvió {len(resueltos)} predicciones pendientes")
     except Exception as e:

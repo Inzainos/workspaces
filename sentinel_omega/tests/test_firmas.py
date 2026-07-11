@@ -239,6 +239,39 @@ class TestJuez:
         )
         assert res[0]["resultado"] == "FALSO_POSITIVO"
 
+    def test_nodos_propios_ganan_a_zonas_globales(self, db):
+        # La fila trae SUS nodos: un evento cerca de otra parte de la malla
+        # global NO valida el aviso — solo cuenta donde avisó.
+        import time as _t
+        conn, _ = db
+        juez = Juez(conn)
+        ts = _t.time() - 10 * 3600
+        juez.registrar_prediccion(
+            "padre", "watch", 0.7, ventana_h=1, timestamp=ts,
+            detalles={"nodos": [{"id": 14, "lat": 17.0, "lon": -99.5}]},
+        )
+        eventos = [{"epoch": ts + 1800, "lat": 35.0, "lon": 139.0,
+                    "magnitude": 5.5}]   # lejos del nodo avisado
+        res = juez.evaluar_pendientes(
+            evento_ocurrido=False, eventos=eventos,
+            zonas=[(17.0, -99.5), (35.0, 139.0)],   # malla global lo cubre
+        )
+        assert res[0]["resultado"] == "FALSO_POSITIVO"
+
+    def test_nodos_propios_acierto_en_su_nodo(self, db):
+        import time as _t
+        conn, _ = db
+        juez = Juez(conn)
+        ts = _t.time() - 10 * 3600
+        juez.registrar_prediccion(
+            "padre", "watch", 0.7, ventana_h=1, timestamp=ts,
+            detalles={"nodos": [{"id": 14, "lat": 17.0, "lon": -99.5}]},
+        )
+        eventos = [{"epoch": ts + 1800, "lat": 16.6, "lon": -99.1,
+                    "magnitude": 5.5}]   # a <5° del nodo avisado
+        res = juez.evaluar_pendientes(evento_ocurrido=False, eventos=eventos)
+        assert res[0]["resultado"] == "ACIERTO"
+
     def test_eventos_zona_cercana_cuenta(self, db):
         import time as _t
         conn, _ = db
