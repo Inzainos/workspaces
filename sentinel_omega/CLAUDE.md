@@ -147,14 +147,43 @@ sentinel_omega/
 ## Environment variables
 
 ```
-TELEGRAM_BOT_TOKEN    — Telegram alert dispatch
-TELEGRAM_CHAT_ID      — Target chat for alerts
+SMTP_USER             — Cuenta emisora de correo (app password de Gmail)
+SMTP_PASS             — Contraseña de aplicación SMTP
+SMTP_HOST / SMTP_PORT — Opcionales (default smtp.gmail.com:587)
+CORREO_DESTINO        — Destinatario (default elan.zainos.corona@gmail.com)
+TELEGRAM_BOT_TOKEN    — Telegram alert dispatch (en pausa: el canal es correo)
+TELEGRAM_CHAT_ID      — Target chat for alerts (en pausa)
 OPENWEATHERMAP_KEY    — Atmospheric data
 BITSO_API_KEY         — Bitso exchange
 BITSO_API_SECRET      — Bitso exchange
 COINGECKO_API_KEY     — Market data
 ALPHA_VANTAGE_KEY     — Stock market data
 ```
+
+## Rutinas 24/7 (Roy Vigilante — GitHub Actions, hora MX = UTC-6)
+
+- **Cada 2 h** — ciclo del Padre: status, registro de predicción viva
+  (con SUS nodos) y snapshot cimático.
+- **Cada 4 h** — el Juez verifica real vs predicción contra USGS (verdad
+  por fila; ritmo auto-impuesto en `pipeline/verificacion.py`).
+- **Cada 6 h** — reporte ejecutivo (se encola por correo).
+- **12am y 12pm MX** — comparativo contra el día anterior (con gráfica).
+- **Domingo 12:15pm MX** — reporte semanal (gráficas de fantasma/alertas/breaches).
+- **Fin de mes 12:30pm MX** — reporte mensual.
+- **Cada corrida** — despacho del outbox de correo (`deploy/enviar_correos.py`).
+
+## Cimática y correo (sin Telegram)
+
+- `tbl_cimatica_patrones` — snapshot del sistema por ciclo: patrón NUEVO →
+  telemetría completa guardada; patrón existente → frecuencia+1 (contar,
+  no anotar). Ámbito `general` o `nodo`; `event_class` cuando se conoce.
+  Todo alta/incremento dispara la revisión del Padre; patrón nuevo con
+  Padre activo o frecuencia consistente (≥3) con evento asociado → alerta
+  por correo. Módulo: `core/firmas/cimatica.py`.
+- `tbl_correo_salida` — outbox de ALERTAS y REPORTES a
+  elan.zainos.corona@gmail.com. Envío SMTP fail-soft
+  (`infrastructure/api/correo.py`): sin credenciales queda PENDIENTE,
+  nunca se finge enviado.
 
 ## Database (SQLite)
 

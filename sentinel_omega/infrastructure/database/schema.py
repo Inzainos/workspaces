@@ -378,6 +378,52 @@ CREATE TABLE IF NOT EXISTS tbl_patrones_correlacion (
 CREATE INDEX IF NOT EXISTS idx_patrones_corr_class
     ON tbl_patrones_correlacion(event_class);
 
+-- ─── Cimática: snapshot de patrones de telemetría ─────────────────
+-- Cada ciclo toma un snapshot del sistema (huella discretizada de la
+-- telemetría). Si el patrón es NUEVO se guarda la telemetría completa;
+-- si ya existe solo se suma +1 a su frecuencia. Con el tiempo la
+-- frecuencia distingue la cimática consistente (por nodo o general)
+-- asociada a cada tipo de evento. Todo registro/actualización dispara
+-- la revisión del Padre (trigger en Python, no en SQL).
+CREATE TABLE IF NOT EXISTS tbl_cimatica_patrones (
+    patron_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    clave           TEXT    NOT NULL,
+    ambito          TEXT    NOT NULL DEFAULT 'general'
+                    CHECK(ambito IN ('general','nodo')),
+    id_nodo         INTEGER,
+    event_class     TEXT,
+    telemetria_json TEXT    NOT NULL DEFAULT '{}',
+    frecuencia      INTEGER NOT NULL DEFAULT 1,
+    primera_vez     TEXT    DEFAULT (datetime('now')),
+    ultima_vez      TEXT    DEFAULT (datetime('now')),
+    UNIQUE(clave, ambito, id_nodo)
+);
+CREATE INDEX IF NOT EXISTS idx_cimatica_clave
+    ON tbl_cimatica_patrones(clave);
+CREATE INDEX IF NOT EXISTS idx_cimatica_frecuencia
+    ON tbl_cimatica_patrones(frecuencia DESC);
+
+-- ─── Correo de salida (sin Telegram) ──────────────────────────────
+-- Outbox de alertas y reportes por email. El envío real usa SMTP con
+-- credenciales por variables de entorno; sin credenciales el correo
+-- queda PENDIENTE (fail-soft, nunca se pierde ni se finge enviado).
+CREATE TABLE IF NOT EXISTS tbl_correo_salida (
+    correo_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    destinatario  TEXT    NOT NULL DEFAULT 'elan.zainos.corona@gmail.com',
+    tipo          TEXT    NOT NULL DEFAULT 'ALERTA'
+                  CHECK(tipo IN ('ALERTA','REPORTE')),
+    asunto        TEXT    NOT NULL,
+    cuerpo        TEXT    NOT NULL,
+    adjuntos_json TEXT    DEFAULT '[]',
+    estado        TEXT    NOT NULL DEFAULT 'PENDIENTE'
+                  CHECK(estado IN ('PENDIENTE','ENVIADO','FALLIDO')),
+    intentos      INTEGER DEFAULT 0,
+    creado_at     TEXT    DEFAULT (datetime('now')),
+    enviado_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_correo_estado
+    ON tbl_correo_salida(estado);
+
 -- ─── Schema Version ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS TBL_SCHEMA_VERSION (
     version     INTEGER PRIMARY KEY,

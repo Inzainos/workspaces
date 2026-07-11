@@ -120,5 +120,17 @@ streamlit run sentinel_omega/infrastructure/dashboard/app.py
 NOAA SWPC · USGS FDSN · NASA OMNI2 (backcast) · NASA MSVOLSO2L4 (SO₂ volcánico) ·
 Tomsk (Schumann) · IERS (LOD) · Yahoo Finance (BTC, keyless) ·
 OpenWeatherMap (`OPENWEATHERMAP_KEY`) · NASA NEO (`NASA_API_KEY`, fallback DEMO_KEY) ·
-ESA Copernicus vía eodag. Telegram para alertas (`TELEGRAM_BOT_TOKEN` /
-`TELEGRAM_CHAT_ID`).
+ESA Copernicus vía eodag.
+
+## Alertas y reportes (canal: correo, Telegram en pausa)
+
+Alertas y reportes viajan por email a `elan.zainos.corona@gmail.com` vía el
+outbox `tbl_correo_salida` (fail-soft: sin `SMTP_USER`/`SMTP_PASS` quedan
+PENDIENTES, nunca se fingen enviados). Rutinas del vigilante (hora MX=UTC-6):
+ciclo del Padre cada 2 h · Juez verifica real vs predicción cada 4 h ·
+reporte ejecutivo cada 6 h · comparativo diario 12am/12pm · semanal domingo
+12:15pm · mensual fin de mes 12:30pm. La cimática
+(`tbl_cimatica_patrones`) toma un snapshot de telemetría por ciclo: patrón
+nuevo guarda todo, patrón repetido suma +1 a la frecuencia; cualquier
+alta/incremento dispara la revisión del Padre y, si amerita, alerta por
+correo.

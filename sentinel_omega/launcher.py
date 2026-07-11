@@ -657,73 +657,94 @@ def _auditar_ciclo(geo, repo, runner) -> None:
             fase="viva",  # operación real — la única que puntúa asertividad viva
         )
 
-        from sentinel_omega.infrastructure.api.usgs import fetch_earthquakes
-        # Verdad POR FILA: cada predicción se resuelve contra los eventos de
-        # SU ventana de 72 h y a <=5° de los nodos reales monitoreados. El
-        # criterio viejo ("hubo M4.5+ en la Tierra en 4 días") es cierto casi
-        # siempre — era el modelo nulo de Molchan puntuando como habilidad.
-        eq = fetch_earthquakes(min_magnitude=4.5, days=7)
-        if eq is None:
-            # USGS caído: NO resolver con "sin eventos" falso — se deja
-            # PENDIENTE y el siguiente ciclo lo intenta con datos reales.
-            logger.warning("USGS sin respuesta — resolución de pendientes pospuesta")
-            resueltos = []
-        else:
-            eventos = []
-            for _, ev in eq.iterrows():
-                try:
-                    eventos.append({
-                        "epoch": ev["time"].timestamp(),
-                        "lat": ev["latitude"],
-                        "lon": ev["longitude"],
-                        "magnitude": ev["magnitude"],
-                    })
-                except (KeyError, AttributeError, TypeError):
-                    continue
-            zonas = [
-                (z[0], z[1]) for z in juez._conn.execute(
-                    "SELECT lat, lon FROM TBL_NODOS_TOPOLOGIA "
-                    "WHERE tipo = 'real' AND activo = 1"
-                ).fetchall()
-            ]
-            resueltos = juez.evaluar_pendientes(
-                evento_ocurrido=False,      # ignorado: `eventos` manda por fila
-                eventos=eventos,
-                zonas=zonas or None,
-                firma_conocida=bool(matches),
-                fase="viva",  # el launcher solo resuelve las suyas
+        # ── Cimática: snapshot del sistema → patrón nuevo o frecuencia+1 ──
+        # Todo alta/incremento dispara la revisión del Padre; si el patrón
+        # es nuevo con el Padre activo, o se volvió consistente y está
+        # asociado a un tipo de evento, se encola la alerta por correo.
+        try:
+            from sentinel_omega.core.firmas.cimatica import (
+                FRECUENCIA_CONSISTENTE, registrar_snapshot,
             )
+            from sentinel_omega.infrastructure.api.correo import encolar_correo
 
-            # AssertivityTracker vivo + ganancia de Molchan por ciclo: los
-            # avisos se anclan a SUS nodos y se miden contra alertar-siempre.
-            try:
-                tracker = getattr(runner, "assertivity", None)
-                if tracker is not None:
-                    if geo.final_signal.value in ("alert", "watch"):
-                        for m in matches[:3]:
-                            if m.get("nodo_lat") is not None:
-                                tracker.record_prediction(
-                                    m["nodo_lat"], m["nodo_lon"],
-                                    risk_level=geo.final_signal.value.upper(),
-                                    fantasma=float(geo.confidence),
-                                    source=f"nodo{m['id_nodo']}",
-                                )
-                    if eventos and tracker.prediction_count:
-                        tracker.ingest_events([
-                            {"latitude": e["lat"], "longitude": e["lon"],
-                             "magnitude": e["magnitude"], "time": e["epoch"]}
-                            for e in eventos
-                        ])
-                        res_a, base_a = tracker.validate_with_baseline()
-                        logger.info(
-                            f"Molchan vivo: hit={res_a.hit_rate:.0%} "
-                            f"base={base_a.base_rate:.0%} "
-                            f"ganancia={base_a.gain} — {base_a.veredicto}"
+            if features:
+                ec_top = matches[0]["event_class"] if matches else None
+                snapshots = [(None, ec_top)] + [
+                    (m["id_nodo"], m["event_class"]) for m in matches[:3]
+                ]
+                padre_activo = geo.final_signal.value in ("alert", "watch")
+                for id_nodo, ec in snapshots:
+                    pid_c, es_nuevo, frec = registrar_snapshot(
+                        conn, features, id_nodo=id_nodo, event_class=ec,
+                    )
+                    if not pid_c:
+                        continue
+                    # Trigger: el Padre revisa cada alta/incremento
+                    logger.info(
+                        f"PADRE REVISA cimática: patrón {pid_c} "
+                        f"({'nuevo' if es_nuevo else f'frecuencia {frec}'}"
+                        f"{f', nodo {id_nodo}' if id_nodo else ', general'})"
+                    )
+                    if es_nuevo and padre_activo:
+                        encolar_correo(
+                            conn,
+                            asunto=(f"🌀 Sentinel Omega — patrón cimático "
+                                    f"NUEVO con Padre en "
+                                    f"{geo.final_signal.value.upper()}"),
+                            cuerpo=(
+                                f"Patrón de telemetría nunca visto "
+                                f"(id {pid_c}, "
+                                f"{'nodo ' + str(id_nodo) if id_nodo else 'general'}) "
+                                f"mientras el Padre está en "
+                                f"{geo.final_signal.value.upper()} "
+                                f"({geo.confidence:.0%}).\n"
+                                f"Telemetría completa guardada en "
+                                f"tbl_cimatica_patrones."
+                            ),
+                            tipo="ALERTA",
                         )
-            except Exception as e:
-                logger.warning(f"Assertivity viva falló (non-blocking): {e}")
-        if resueltos:
-            logger.info(f"Juez resolvió {len(resueltos)} predicciones pendientes")
+                    elif frec == FRECUENCIA_CONSISTENTE and ec:
+                        encolar_correo(
+                            conn,
+                            asunto=(f"🔁 Sentinel Omega — cimática "
+                                    f"CONSISTENTE para {ec}"),
+                            cuerpo=(
+                                f"El patrón {pid_c} "
+                                f"({'nodo ' + str(id_nodo) if id_nodo else 'general'}) "
+                                f"alcanzó frecuencia {frec} asociado a {ec}: "
+                                f"ya no es coincidencia, es cimática del "
+                                f"sistema. El Padre lo tiene en revisión."
+                            ),
+                            tipo="ALERTA",
+                        )
+        except Exception as e:
+            logger.warning(f"Cimática falló (non-blocking): {e}")
+
+        # AssertivityTracker: los avisos se anclan a SUS nodos al momento
+        # de emitirse (la validación + Molchan corre en la pasada del Juez).
+        tracker = getattr(runner, "assertivity", None)
+        if tracker is not None and geo.final_signal.value in ("alert", "watch"):
+            for m in matches[:3]:
+                if m.get("nodo_lat") is not None:
+                    tracker.record_prediction(
+                        m["nodo_lat"], m["nodo_lon"],
+                        risk_level=geo.final_signal.value.upper(),
+                        fantasma=float(geo.confidence),
+                        source=f"nodo{m['id_nodo']}",
+                    )
+
+        # El Juez pasa a verificar real vs predicción CADA 4 HORAS (ritmo
+        # auto-impuesto en verificacion.py): el ciclo del Padre solo
+        # registra; la confrontación con USGS es tarea del Juez.
+        from sentinel_omega.infrastructure.pipeline.verificacion import (
+            verificar_juez,
+        )
+        resultado_juez = verificar_juez(conn, tracker=tracker)
+        if resultado_juez.get("resueltas"):
+            logger.info(
+                f"Juez resolvió {resultado_juez['resueltas']} predicciones "
+                f"pendientes"
+            )
     except Exception as e:
         logger.warning(f"Audit step failed (non-blocking): {e}")
 

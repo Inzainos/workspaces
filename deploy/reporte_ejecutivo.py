@@ -706,6 +706,21 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     vfile.write_text(contenido, encoding="utf-8")
     print(f"Reporte ejecutivo: {out}")
     print(f"Versión guardada: {vfile}")
+
+    # Encolar por correo (outbox — sin Telegram, el correo es el canal)
+    try:
+        from sentinel_omega.infrastructure.api.correo import encolar_correo
+        conn2 = sqlite3.connect(db_path)
+        encolar_correo(
+            conn2,
+            asunto=(f"📊 Sentinel Omega — reporte ejecutivo "
+                    f"{local:%Y-%m-%d %H:%M} MX"),
+            cuerpo=contenido,
+            tipo="REPORTE",
+        )
+        conn2.close()
+    except Exception as e:
+        print(f"(aviso) no se pudo encolar el correo: {e}")
     return contenido
 
 

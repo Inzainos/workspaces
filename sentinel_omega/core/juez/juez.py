@@ -133,11 +133,13 @@ class Juez:
             if now - ts < ventana_h * 3600:
                 continue  # window still open
 
+            fk_fila = firma_conocida
             if eventos is not None:
                 zonas_fila = zonas
                 es_zona_propia = False
                 try:
-                    nodos_pred = (json.loads(det_json or "{}")).get("nodos") or []
+                    det = json.loads(det_json or "{}")
+                    nodos_pred = det.get("nodos") or []
                     propias = [
                         (n["lat"], n["lon"]) for n in nodos_pred
                         if n.get("lat") is not None and n.get("lon") is not None
@@ -145,6 +147,9 @@ class Juez:
                     if propias:
                         zonas_fila = propias
                         es_zona_propia = True
+                    # firma_conocida POR FILA: si la propia predicción traía
+                    # firmas matcheadas, un fallo es fallo de firma conocida.
+                    fk_fila = fk_fila or bool(det.get("firma_matches"))
                 except (json.JSONDecodeError, TypeError):
                     pass
                 matches = self._eventos_en_ventana(
@@ -175,7 +180,7 @@ class Juez:
                 resultado = "FALLO"
                 base = (
                     SEVERIDAD_FALLO_FIRMA_CONOCIDA
-                    if firma_conocida
+                    if fk_fila
                     else SEVERIDAD_FALLO_BASE
                 )
                 reincid = self.reincidencia(bot)
