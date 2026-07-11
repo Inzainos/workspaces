@@ -75,6 +75,25 @@ alguno). Ahora:
 - **Asertividad del sistema: 36.6%** → **ganancia 0.37×** → 🔴 SIN ganancia: alertar a ciegas habría rendido mejor.
 - Conclusión operativa: con 50 nodos reales y radio de 5°, casi toda ventana de 72 h tiene un sismo "cerca de algún nodo". Para ganar de verdad, las predicciones tendrán que volverse **específicas por nodo**, no globales. Ese es el siguiente escalón del proyecto, y ahora el reporte lo mide en cada corte.
 
+## 3.5 Cambios posteriores al informe (mismo PR)
+
+- **Sistema 24/7** (Roy Vigilante): Padre cada 2 h · Juez cada 4 h (ritmo
+  auto-impuesto) · ejecutivo cada 6 h · comparativo 12am/12pm MX · semanal
+  domingo 12:15pm · mensual fin de mes 12:30pm · correo cada corrida.
+  De paso: el gate viejo de disciplina (07 UTC) nunca disparaba (cron en
+  horas pares) — corregido.
+- **Cimática** (`tbl_cimatica_patrones`): snapshot de telemetría por ciclo
+  (nuevo = telemetría completa; repetido = frecuencia+1), entrenada también
+  desde el histórico de 30 años (`entrenar_cimatica`), **retro-etiquetada**
+  por los eventos reales que confirma el Juez y **podada** por ruido (30 días
+  de gracia sin evento asociado). Trigger del Padre en cada alta/incremento.
+- **Correo sin Telegram** (`tbl_correo_salida` + SMTP fail-soft): alertas
+  cimáticas y reportes con gráficas a elan.zainos.corona@gmail.com.
+- **Piso de medición en 3.3** (alineado al piso real del backcast, M3.38):
+  se mide y predice desde M3.3 con su clase de desastre; alerta solo ≥4.5.
+- Confirmado: el Juez disciplina en el ENTRENAMIENTO y el POST; el PRE mide
+  sin castigo (línea base pura).
+
 ## 4. Verificación
 
 - Suite completa: **371 tests en verde** (nuevos: 4 de verdad-por-fila del Juez, 9 de línea base Molchan, 2 de degradación proxy en alfa2, reescritura de 14 tests de beta1).

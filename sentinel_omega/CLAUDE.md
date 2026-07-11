@@ -49,7 +49,15 @@ If Schumann is perturbed alongside any other signal = precursor detected.
 - **Fantasma**: `(abs(bz)^2) + (viento*0.02) + (sch_wpc*1.5)` + pressure/Kp/LOD modifiers
 - **Risk levels**: LOW (<5), MODERATE (5-15), HIGH (15-30), CRITICAL (>=30)
 - **Asymmetric loss**: Miss penalty = 10x, False alarm = 1x
-- **Schumann coherence**: Ratio of resonant-bin energy to total energy. > 0.3 with excitation = WATCH signal
+- **Beta-1 (honesto)**: FFT PLANO del Kp (`kp_spectral_features`) + Schumann
+  MEDIDO de Tomsk (excitación >15% suma confianza; >30% con espectro calmo →
+  WATCH). El viejo "filtro armónico"/coherencia era numerología y se eliminó.
+- **Molchan**: ganancia = hit_rate ÷ tasa base (modelo nulo alertar-siempre,
+  `core/precursor/baseline.py`). Ganancia ≤ 1 = sin habilidad real.
+- **Pisos**: el sistema MIDE desde M3.3 (piso real del backcast); ALERTA solo
+  desde M4.5 (solo el Padre avisa). `MIN_MAGNITUD_FIRMA=4.5`.
+- **Vara de asertividad**: SOLO la vista `viva_real` (fase='viva', append-only);
+  verdad POR FILA — ventana propia de 72h + nodos de la propia predicción.
 
 ## Running tests
 
@@ -78,8 +86,21 @@ python sentinel_omega/launcher.py --once
 # Historical backcast (one-time, 1994-2025)
 python sentinel_omega/launcher.py --backcast
 
-# Signature training over the backcast (Fase 1 reconocimiento + Fase 2 disciplina)
+# Entrenamiento completo (sesgo PRE → Fase 1 + 1b → Fase 2 → lags →
+# correlaciones → cimática histórica → sesgo POST)
 python sentinel_omega/launcher.py --entrenar
+
+# Disciplina de trasfondo (menores M3.3-4.49) y barrido diario
+python sentinel_omega/launcher.py --disciplina
+python sentinel_omega/launcher.py --barrido
+# NOTA: los flags de tarea corren la tarea y SALEN (no entran al ciclo)
+
+# Pasada del Juez (real vs predicción, ritmo auto-impuesto 4h)
+python deploy/verificacion_juez.py
+
+# Reportes periódicos con gráficas + despacho de correo
+python deploy/reporte_periodico.py --comparativo   # (o --semanal / --mensual)
+python deploy/enviar_correos.py
 
 # Graceful shutdown (SIGTERM)
 python sentinel_omega/shutdown.py
@@ -131,7 +152,7 @@ sentinel_omega/
 │   ├── database/                # SQLite schema, repository, 125-node seed
 │   └── dashboard/               # Streamlit + Plotly dashboard (9 tabs)
 ├── data/                        # SQLite databases
-└── tests/                       # 335 tests
+└── tests/                       # 396 tests
 ```
 
 > El repositorio raíz tiene un `AGENTS.md` (estándar neutral para cualquier
@@ -197,7 +218,16 @@ Operational tables in `data/SENTINEL_OMEGA_PRO.db`:
 
 Learning/audit tables:
 - `TBL_FIRMAS` — per-bot signature memory. Estado: nueva → observada → recurrente → consolidada (by recurrence). Only consolidadas are enforceable knowledge.
-- `TBL_JUEZ_AUDITORIA` — Juez discipline ledger: ACIERTO / FALLO / FALSO_POSITIVO, asymmetric severity (miss of known firma = 20 base, miss = 10, false alarm = 1), recidivism-scaled.
+- `TBL_JUEZ_AUDITORIA` — Juez discipline ledger: ACIERTO / FALLO / FALSO_POSITIVO, asymmetric severity (miss of known firma = 20 base, miss = 10, false alarm = 1), recidivism-scaled. Columna `fase` ESTRICTA; fase viva append-only.
+- `viva_real` (vista) — vara canónica de asertividad: solo fase='viva'.
+- `TBL_PESOS_BOTS` — pesos de credibilidad [0.3, 1.5]; Padre paga doble.
+- `tbl_firmas_menores` — disciplina de trasfondo (M3.3-4.49, temporal 90d).
+- `tbl_correlaciones_padre` / `tbl_correlaciones_omega` — conteo patrón→evento (+1).
+- `tbl_orden_precursores` / `tbl_orden_veredictos` — ¿el orden importa o es indiferente?
+- `tbl_sesgo_aprendizaje` — realidad (causal) vs fantasía (in-sample) por bot.
+- `tbl_cimatica_patrones` — snapshot de telemetría por ciclo: nuevo=telemetría completa, repetido=frecuencia+1; retro-etiquetado por eventos reales, poda del ruido a 30 días.
+- `tbl_correo_salida` — outbox de alertas/reportes por email (fail-soft).
+- `tbl_salud_sistema` / `tbl_resumen_diario` — bitácora por corte y barrido diario.
 
 Backcast tables (1H resolution, 1994-2025):
 - `tbl_clima_espacial_raw` — NASA OMNI2 (Bz, solar wind, Kp, proton flux)
