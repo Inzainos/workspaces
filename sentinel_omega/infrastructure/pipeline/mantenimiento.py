@@ -423,7 +423,14 @@ ORDEN_SEGMENTOS = 4       # la ventana de 14 días se parte en 4 tramos de 3.5d
 
 
 def _orden_evento(conn, ts_evento: str, id_nodo: int) -> str:
-    """Orden de activación de dominios en los 4 tramos de la víspera.
+    """Orden de activación de dominios (bots) en los 4 tramos de la víspera.
+
+    Cruza TODOS los bots con histórico disponible — no solo el sísmico:
+      SOLAR (alfa1) · SISMICO (nodos) · DESGAS (beta2) · FINANCIERO (delta,
+      la psique humana que las tormentas solares agitan) · COSMICO (omega:
+      sicigias/fase lunar extrema). Beta1/Schumann no tiene backcast (tabla
+      vacía) — entra en el cruce EN VIVO vía el consenso del Padre y las
+      correlaciones de Omega (delta_schumann_coupling), no aquí.
 
     Devuelve 'SOLAR→SISMICO' (activación secuencial), 'SOLAR+SISMICO'
     (mismo tramo) o '' si ningún dominio se activó.
@@ -461,6 +468,19 @@ def _orden_evento(conn, ts_evento: str, id_nodo: int) -> str:
             (ts_evento, ini, ts_evento, fin)).fetchone()[0]
         if vol is not None and vol >= 5 and "FINANCIERO" not in activacion:
             activacion["FINANCIERO"] = seg
+        # COSMICO (omega): sicigia (luna nueva/llena alineada) o fase lunar
+        # extrema en el tramo — el ritmo cósmico como precursor de marea.
+        cos = conn.execute(
+            "SELECT MAX(es_sicigia), MIN(fase_lunar_pct), MAX(fase_lunar_pct) "
+            "FROM tbl_astronomia_cinematica "
+            "WHERE timestamp_blk >= datetime(?, ?) AND timestamp_blk < datetime(?, ?)",
+            (ts_evento, ini, ts_evento, fin)).fetchone()
+        if cos and cos[0] and "COSMICO" not in activacion:
+            activacion["COSMICO"] = seg
+        elif (cos and cos[1] is not None
+              and (cos[1] <= 0.05 or cos[2] >= 0.95)
+              and "COSMICO" not in activacion):
+            activacion["COSMICO"] = seg
     if not activacion:
         return ""
     por_seg: Dict[int, list] = {}
