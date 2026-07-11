@@ -67,6 +67,12 @@ streamlit run sentinel_omega/infrastructure/dashboard/app.py
 
 ## Reglas duras (no romper)
 
+0. **REGLA CERO — nunca asumas, siempre revisa.** No des nada por hecho ni por
+   conectado sin verificarlo contra el código y, cuando toque, **corriendo el
+   flujo de punta a punta** (no basta con que pasen los tests unitarios).
+   Antes de decir "ya está", compruébalo: ¿la tabla se pobló?, ¿el reporte lee
+   la sección?, ¿el script corre sin error de verdad? Si no lo verificaste, no
+   lo afirmes — di qué falta por comprobar. Esta regla manda sobre todas.
 1. **Secretos solo por entorno.** Nunca hardcodear API keys/tokens. Usa
    `os.environ.get("NOMBRE", "")`. Los `.env` están en `.gitignore`; en CI van
    como GitHub Secrets. Las claves se rotan según se usan.

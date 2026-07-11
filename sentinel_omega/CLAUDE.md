@@ -3,6 +3,15 @@
 Precursor detection platform for natural events.
 Author: Elan Zainos Corona (Fractal Core Research)
 
+## ⛔ REGLA #0 — nunca asumas, siempre revisa
+
+No des nada por hecho ni por "conectado" sin verificarlo contra el código y,
+cuando aplique, **corriendo el flujo de punta a punta** — que pasen los tests
+unitarios NO prueba que el pipeline completo quede conectado. Antes de decir
+"ya está": ¿la tabla se pobló?, ¿el reporte lee la sección?, ¿el script corre
+sin error real? Si no lo verificaste, no lo afirmes; di qué falta comprobar.
+Esta regla manda sobre todo lo demás.
+
 ## What this project does
 
 Sentinel Omega detects **precursors of natural events** (earthquakes, volcanic activity, solar storms, tsunamis, etc.) using real-time geophysical data from NOAA, USGS, ESA, and other sources. It uses Shadow Node Theory (SNT) **only as the mathematical framework** (power law R(t) = a·t^b), not as the system's core purpose.
