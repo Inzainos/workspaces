@@ -536,6 +536,16 @@ def entrenar(db_path: str, max_eventos: Optional[int] = None) -> Dict:
     lags = calcular_lags_anticipacion(db_path)
     correlaciones = calcular_correlaciones_evento(db_path)
 
+    # Entrenamiento cimático: graba en tbl_cimatica_patrones la telemetría
+    # de la víspera de cada evento histórico con frecuencias ya contadas —
+    # la cimática viva no empieza de cero.
+    cimatica_stats = {}
+    try:
+        from sentinel_omega.core.firmas.cimatica import entrenar_cimatica
+        cimatica_stats = entrenar_cimatica(db_path, max_eventos=max_eventos)
+    except Exception as e:
+        logger.warning(f"Entrenamiento cimático no disponible: {e}")
+
     # POST: medición disciplinaria (castiga al Padre/Omega si lo real no mejora)
     sesgo_post = {}
     mejora = {}
@@ -552,6 +562,7 @@ def entrenar(db_path: str, max_eventos: Optional[int] = None) -> Dict:
 
     return {"fase1": fase1, "fase1b": fase1b, "fase2": fase2, "lags": lags,
             "correlaciones": correlaciones,
+            "cimatica": cimatica_stats,
             "sesgo_pre": sesgo_pre.get("por_bot", {}),
             "sesgo_post": sesgo_post.get("por_bot", {}),
             "mejora_causal": mejora}

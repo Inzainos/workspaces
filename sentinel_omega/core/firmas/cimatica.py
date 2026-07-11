@@ -63,9 +63,14 @@ def registrar_snapshot(
     features: Dict[str, Any],
     id_nodo: Optional[int] = None,
     event_class: Optional[str] = None,
+    commit: bool = True,
+    silencioso: bool = False,
 ) -> Tuple[int, bool, int]:
     """Registra el snapshot: alta con telemetría completa si es nuevo,
     frecuencia+1 si ya existe. Devuelve (patron_id, es_nuevo, frecuencia).
+
+    commit=False y silencioso=True para barridos masivos (entrenamiento
+    histórico): el llamador controla el commit y no se inunda el log.
     """
     clave = clave_patron(features)
     if not clave:
@@ -86,12 +91,14 @@ def registrar_snapshot(
             (clave, ambito, id_nodo, event_class,
              json.dumps(features, default=float)),
         )
-        conn.commit()
-        logger.info(
-            f"CIMÁTICA: patrón NUEVO ({ambito}"
-            f"{f', nodo {id_nodo}' if id_nodo else ''}) — telemetría completa "
-            f"guardada"
-        )
+        if commit:
+            conn.commit()
+        if not silencioso:
+            logger.info(
+                f"CIMÁTICA: patrón NUEVO ({ambito}"
+                f"{f', nodo {id_nodo}' if id_nodo else ''}) — telemetría "
+                f"completa guardada"
+            )
         return (cur.lastrowid, True, 1)
 
     patron_id, frecuencia, ec_previa = fila
@@ -102,15 +109,91 @@ def registrar_snapshot(
         "event_class = ?, ultima_vez = datetime('now') WHERE patron_id = ?",
         (nueva_ec, patron_id),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     frecuencia += 1
-    if frecuencia == FRECUENCIA_CONSISTENTE:
+    if frecuencia == FRECUENCIA_CONSISTENTE and not silencioso:
         logger.warning(
             f"CIMÁTICA CONSISTENTE: patrón {patron_id} ({ambito}) alcanzó "
             f"frecuencia {frecuencia}"
             + (f" — asociado a {nueva_ec}" if nueva_ec else "")
         )
     return (patron_id, False, frecuencia)
+
+
+def entrenar_cimatica(
+    db_path: str,
+    max_eventos: Optional[int] = None,
+) -> Dict[str, int]:
+    """Entrenamiento cimático: graba en tbl_cimatica_patrones la telemetría
+    de la víspera de CADA evento histórico (sísmico y no sísmico), con las
+    frecuencias ya contadas — para no esperar meses de ciclos vivos.
+
+    Usa exactamente la misma extracción de features de la Fase 1
+    (extraer_features_ventana): la cimática histórica y la viva hablan el
+    mismo idioma y caen en las mismas claves.
+    """
+    import sqlite3 as _sq
+    from sentinel_omega.core.firmas.signature_engine import (
+        extraer_features_ventana,
+    )
+    from sentinel_omega.infrastructure.pipeline.entrenamiento import (
+        MIN_MAGNITUD_OBSERVAR, _event_class,
+    )
+
+    conn = _sq.connect(db_path)
+    eventos = conn.execute(
+        "SELECT timestamp_blk, id_nodo, sismo_max_mag "
+        "FROM tbl_historico_sismico_raw WHERE sismo_max_mag >= ? "
+        "ORDER BY timestamp_blk", (MIN_MAGNITUD_OBSERVAR,),
+    ).fetchall()
+    no_sismicos = []
+    try:
+        no_sismicos = conn.execute(
+            "SELECT timestamp_blk, id_nodo, event_class "
+            "FROM tbl_eventos_no_sismicos ORDER BY timestamp_blk"
+        ).fetchall()
+    except _sq.OperationalError:
+        pass
+    if max_eventos:
+        eventos = eventos[:max_eventos]
+
+    stats = {"eventos": 0, "patrones_nuevos": 0, "incrementos": 0,
+             "sin_datos": 0}
+    logger.info(
+        f"=== ENTRENAMIENTO CIMÁTICO: {len(eventos)} eventos sísmicos + "
+        f"{len(no_sismicos)} no sísmicos ==="
+    )
+
+    def _procesar(ts, id_nodo, clase):
+        features = extraer_features_ventana(conn, ts, id_nodo)
+        if features is None:
+            stats["sin_datos"] += 1
+            return
+        stats["eventos"] += 1
+        for nodo_reg in (None, id_nodo):     # general + por nodo
+            _, es_nuevo, _ = registrar_snapshot(
+                conn, features, id_nodo=nodo_reg, event_class=clase,
+                commit=False, silencioso=True,
+            )
+            stats["patrones_nuevos" if es_nuevo else "incrementos"] += 1
+        if stats["eventos"] % 1000 == 0:
+            conn.commit()
+            logger.info(
+                f"  Cimática: {stats['eventos']} eventos — "
+                f"{stats['patrones_nuevos']} patrones nuevos, "
+                f"{stats['incrementos']} incrementos"
+            )
+
+    for ts, id_nodo, mag in eventos:
+        _procesar(ts, id_nodo, _event_class(mag))
+    for ts, id_nodo, clase in no_sismicos:
+        _procesar(ts, id_nodo, clase)
+
+    conn.commit()
+    logger.info(f"Entrenamiento cimático completo: {stats}")
+    conn.close()
+    return stats
 
 
 def patrones_consistentes(

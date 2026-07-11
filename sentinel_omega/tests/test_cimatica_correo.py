@@ -113,6 +113,41 @@ class TestRegistrarSnapshot:
         assert pid == 0
 
 
+class TestEntrenarCimatica:
+
+    def test_graba_patrones_del_historico(self, db, tmp_path):
+        # Sembrar un mini-backcast: bloques 1H + un evento significativo
+        # (fixture de test — la regla cero-sintético aplica a producción)
+        from datetime import datetime, timedelta
+        db_path = str(tmp_path / "test_cimatica.db")
+
+        base = datetime(2010, 6, 15)
+        for h in range(336):
+            ts = (base - timedelta(hours=336 - h)).strftime("%Y-%m-%d %H:%M")
+            db.execute(
+                "INSERT OR IGNORE INTO tbl_clima_espacial_raw "
+                "(timestamp_blk, bz_promedio, bz_min, bz_derivada, "
+                " viento_solar_avg, viento_solar_max, kp_max, kp_promedio, "
+                " proton_flux_10mev) VALUES (?,?,?,?,?,?,?,?,?)",
+                (ts, -3.0, -11.0, 0.4, 430.0, 600.0, 5.5, 3.0, 12.0))
+        ts_evento = base.strftime("%Y-%m-%d %H:%M")
+        db.execute(
+            "INSERT INTO tbl_historico_sismico_raw "
+            "(timestamp_blk, id_nodo, sismo_count, sismo_max_mag) "
+            "VALUES (?, 14, 3, 5.2)", (ts_evento,))
+        db.commit()
+
+        from sentinel_omega.core.firmas.cimatica import entrenar_cimatica
+        stats = entrenar_cimatica(db_path)
+        assert stats["eventos"] >= 1
+        assert stats["patrones_nuevos"] >= 2   # general + nodo
+        conn2 = __import__("sqlite3").connect(db_path)
+        filas = conn2.execute(
+            "SELECT ambito, event_class FROM tbl_cimatica_patrones").fetchall()
+        assert ("general", "SISMO_M5") in filas
+        assert ("nodo", "SISMO_M5") in filas
+
+
 class TestCorreo:
 
     def test_encolar(self, db):
