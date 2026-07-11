@@ -269,6 +269,12 @@ CREATE INDEX IF NOT EXISTS idx_firmas_estado ON TBL_FIRMAS(estado);
 CREATE INDEX IF NOT EXISTS idx_firmas_class ON TBL_FIRMAS(event_class);
 -- Composite: covers common queries (bot_name + estado) used in firmas lookups
 CREATE INDEX IF NOT EXISTS idx_firmas_bot_estado ON TBL_FIRMAS(bot_name, estado);
+-- Composite HOT PATH: FirmaMemoria.registrar() filtra por (bot_name, event_class)
+-- en CADA evento del entrenamiento. Sin este índice, SQLite trae todas las
+-- firmas del bot y filtra la clase a mano (para el Padre son miles de filas por
+-- evento) — es el costo que crece a medida que la memoria engorda. Con el
+-- compuesto salta directo al bucket exacto.
+CREATE INDEX IF NOT EXISTS idx_firmas_bot_class ON TBL_FIRMAS(bot_name, event_class);
 
 -- ─── Juez (auditoría disciplinaria, separado del Padre) ──────────
 CREATE TABLE IF NOT EXISTS TBL_JUEZ_AUDITORIA (
