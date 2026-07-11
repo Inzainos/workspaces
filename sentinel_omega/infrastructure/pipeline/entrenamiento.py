@@ -378,11 +378,14 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
         bot = firma["bot_name"]
         es_padre = bot == "padre"
 
-        row = conn.execute(
-            "SELECT eventos_json FROM TBL_FIRMAS WHERE firma_id = ?",
-            (firma["firma_id"],),
-        ).fetchone()
-        eventos = json.loads(row[0]) if row else []
+        # Eventos desde la tabla hija normalizada (1NF).
+        eventos = [
+            r[0] for r in conn.execute(
+                "SELECT evento_ref FROM tbl_firma_eventos "
+                "WHERE firma_id = ? ORDER BY orden",
+                (firma["firma_id"],),
+            )
+        ]
 
         for ref in eventos:
             try:
@@ -605,14 +608,17 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
         clase = firma["event_class"]
         if evaluados_por_clase.get(clase, 0) >= LAG_MUESTRA_POR_CLASE:
             continue
-        row = conn.execute(
-            "SELECT eventos_json FROM TBL_FIRMAS WHERE firma_id = ?",
-            (firma["firma_id"],),
-        ).fetchone()
-        eventos = json.loads(row[0]) if row else []
+        # Muestra de 3 eventos desde la tabla hija (no cargamos el array entero).
+        eventos = [
+            r[0] for r in conn.execute(
+                "SELECT evento_ref FROM tbl_firma_eventos "
+                "WHERE firma_id = ? ORDER BY orden LIMIT 3",
+                (firma["firma_id"],),
+            )
+        ]
 
         lags_firma: List[float] = []
-        for ref in eventos[:3]:  # sample per firma
+        for ref in eventos:  # muestra por firma (ya viene limitada a 3)
             if evaluados_por_clase.get(clase, 0) >= LAG_MUESTRA_POR_CLASE:
                 break
             try:

@@ -323,16 +323,21 @@ def evaluar_sesgo_aprendizaje(
     if "omega" not in bots_evaluar:
         bots_evaluar["omega"] = None  # None → vector completo (igual que el Padre)
 
-    # Firmas consolidadas por bot + timestamp más temprano de su memoria
+    # Firmas consolidadas por bot + timestamp más temprano de su memoria.
+    # El t0 (primer avistamiento) sale de MIN(ts_evento) en la tabla hija —
+    # antes se parseaba el array eventos_json entero solo para el mínimo.
     firmas: Dict[str, list] = {}
-    for bot, feats, evs in conn.execute(
-        "SELECT bot_name, features_json, eventos_json FROM TBL_FIRMAS "
+    for firma_id, bot, feats in conn.execute(
+        "SELECT firma_id, bot_name, features_json FROM TBL_FIRMAS "
         "WHERE estado = 'consolidada'"
     ):
         try:
             f = _json.loads(feats)
-            refs = _json.loads(evs) if evs else []
-            t0 = min((r.split("|")[0] for r in refs), default=None)
+            row = conn.execute(
+                "SELECT MIN(ts_evento) FROM tbl_firma_eventos WHERE firma_id = ?",
+                (firma_id,),
+            ).fetchone()
+            t0 = row[0] if row else None
         except Exception:
             continue
         firmas.setdefault(bot, []).append((f, t0))

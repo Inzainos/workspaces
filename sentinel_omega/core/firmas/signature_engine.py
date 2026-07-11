@@ -338,8 +338,6 @@ class FirmaMemoria:
         if best_id is not None and best_sim >= SIMILARITY_MATCH:
             old_features = json.loads(best_row[1])
             recurrencia = best_row[2] + 1
-            eventos = json.loads(best_row[3])
-            eventos.append(evento_ref)
             # Running mean over shared keys; keep keys only one side has.
             merged = dict(old_features)
             for k, v in features.items():
@@ -350,10 +348,15 @@ class FirmaMemoria:
             estado = _estado(recurrencia)
             self._conn.execute(
                 "UPDATE TBL_FIRMAS SET features_json = ?, recurrencia = ?, "
-                "estado = ?, ultima_vista = ?, eventos_json = ? "
-                "WHERE firma_id = ?",
-                (json.dumps(merged), recurrencia, estado, ts_evento,
-                 json.dumps(eventos), best_id),
+                "estado = ?, ultima_vista = ? WHERE firma_id = ?",
+                (json.dumps(merged), recurrencia, estado, ts_evento, best_id),
+            )
+            # 1NF: el evento es una FILA en la hija (append O(1)), no un append
+            # a un array reescrito entero (que era O(n²)).
+            self._conn.execute(
+                "INSERT OR IGNORE INTO tbl_firma_eventos "
+                "(firma_id, evento_ref, ts_evento, orden) VALUES (?, ?, ?, ?)",
+                (best_id, evento_ref, ts_evento, recurrencia),
             )
             self._conn.commit()
             return best_id, estado, False
@@ -361,13 +364,19 @@ class FirmaMemoria:
         cur = self._conn.execute(
             "INSERT INTO TBL_FIRMAS "
             "(bot_name, event_class, id_nodo, features_json, ventana_horas, "
-            " recurrencia, estado, primera_vista, ultima_vista, eventos_json) "
-            "VALUES (?, ?, ?, ?, ?, 1, 'nueva', ?, ?, ?)",
+            " recurrencia, estado, primera_vista, ultima_vista) "
+            "VALUES (?, ?, ?, ?, ?, 1, 'nueva', ?, ?)",
             (bot_name, event_class, id_nodo, json.dumps(features),
-             VENTANA_HORAS, ts_evento, ts_evento, json.dumps([evento_ref])),
+             VENTANA_HORAS, ts_evento, ts_evento),
+        )
+        firma_id = cur.lastrowid
+        self._conn.execute(
+            "INSERT OR IGNORE INTO tbl_firma_eventos "
+            "(firma_id, evento_ref, ts_evento, orden) VALUES (?, ?, ?, 1)",
+            (firma_id, evento_ref, ts_evento),
         )
         self._conn.commit()
-        return cur.lastrowid, "nueva", True
+        return firma_id, "nueva", True
 
     def consolidadas(self, bot_name: Optional[str] = None) -> List[Dict[str, Any]]:
         q = ("SELECT firma_id, bot_name, event_class, id_nodo, features_json, "

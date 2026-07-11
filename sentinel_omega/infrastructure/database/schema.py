@@ -15,6 +15,7 @@ v5 additions:
   tbl_delta_cross          — Resultados de correlación cruzada delta_enriched por ciclo.
 """
 
+import json
 import logging
 import sqlite3
 from pathlib import Path
@@ -276,6 +277,23 @@ CREATE INDEX IF NOT EXISTS idx_firmas_bot_estado ON TBL_FIRMAS(bot_name, estado)
 -- compuesto salta directo al bucket exacto.
 CREATE INDEX IF NOT EXISTS idx_firmas_bot_class ON TBL_FIRMAS(bot_name, event_class);
 
+-- ─── Normalización 1NF: eventos de cada firma (tabla hija) ────────
+-- El array `eventos_json` de TBL_FIRMAS era un grupo repetido (viola 1NF) y
+-- se reescribía ENTERO en cada recurrencia — costo O(n²) (la firma más
+-- recurrente llegó a 774 KB reescritos 24,719 veces). Aquí cada avistamiento
+-- es una FILA: append O(1), MIN(ts) por índice, muestra por LIMIT. La columna
+-- eventos_json queda como legado (se llena la hija y se deja de reescribir).
+CREATE TABLE IF NOT EXISTS tbl_firma_eventos (
+    firma_id    INTEGER NOT NULL,
+    evento_ref  TEXT    NOT NULL,
+    ts_evento   TEXT,
+    orden       INTEGER,
+    PRIMARY KEY (firma_id, evento_ref),
+    FOREIGN KEY (firma_id) REFERENCES TBL_FIRMAS(firma_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_firma_eventos_fid
+    ON tbl_firma_eventos(firma_id, ts_evento);
+
 -- ─── Juez (auditoría disciplinaria, separado del Padre) ──────────
 CREATE TABLE IF NOT EXISTS TBL_JUEZ_AUDITORIA (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -522,6 +540,50 @@ def _migrate_add_missing_columns(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_firma_eventos(conn: sqlite3.Connection) -> None:
+    """Normaliza el array legado eventos_json → tabla hija tbl_firma_eventos.
+
+    Idempotente y no destructivo del dato: rellena la hija para las firmas que
+    aún no tienen filas, luego vacía eventos_json (la hija pasa a ser la fuente
+    de verdad). El espacio de los arrays viejos se recupera con VACUUM aparte.
+    """
+    try:
+        pendientes = conn.execute(
+            "SELECT firma_id, eventos_json FROM TBL_FIRMAS "
+            "WHERE eventos_json IS NOT NULL AND eventos_json != '[]'"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return  # tabla aún no existe
+
+    migradas = 0
+    for fid, evs in pendientes:
+        ya = conn.execute(
+            "SELECT 1 FROM tbl_firma_eventos WHERE firma_id = ? LIMIT 1", (fid,)
+        ).fetchone()
+        if ya:
+            continue
+        try:
+            refs = json.loads(evs)
+        except (ValueError, TypeError):
+            continue
+        conn.executemany(
+            "INSERT OR IGNORE INTO tbl_firma_eventos "
+            "(firma_id, evento_ref, ts_evento, orden) VALUES (?, ?, ?, ?)",
+            [(fid, ref, ref.split("|")[0] if "|" in ref else None, i + 1)
+             for i, ref in enumerate(refs)],
+        )
+        conn.execute(
+            "UPDATE TBL_FIRMAS SET eventos_json = '[]' WHERE firma_id = ?", (fid,)
+        )
+        migradas += 1
+    if migradas:
+        conn.commit()
+        logger.info(
+            f"Migración 1NF: {migradas} firmas normalizadas a tbl_firma_eventos "
+            f"(corre VACUUM para recuperar espacio)"
+        )
+
+
 def init_database(db_path: str) -> sqlite3.Connection:
     """Initialize database with full schema. Idempotent (IF NOT EXISTS)."""
     path = Path(db_path)
@@ -536,6 +598,7 @@ def init_database(db_path: str) -> sqlite3.Connection:
 
     conn.executescript(SCHEMA_SQL)
     _migrate_add_missing_columns(conn)
+    _migrate_firma_eventos(conn)   # normaliza eventos_json → tabla hija (1NF)
 
     # Post-migración (la columna fase ya existe seguro): índice + vista
     # canónica de la operación viva. viva_real es la ÚNICA vara para la
@@ -547,6 +610,18 @@ def init_database(db_path: str) -> sqlite3.Connection:
     conn.execute(
         "CREATE VIEW viva_real AS "
         "SELECT * FROM TBL_JUEZ_AUDITORIA WHERE fase = 'viva'"
+    )
+
+    # Vista de compatibilidad: reconstruye la forma vieja `eventos_json` a
+    # partir de la tabla hija normalizada tbl_firma_eventos. Cualquier código
+    # o reporte que quiera el array completo lo obtiene aquí, sin que la tabla
+    # base cargue el grupo repetido.
+    conn.execute("DROP VIEW IF EXISTS v_firma_eventos_json")
+    conn.execute(
+        "CREATE VIEW v_firma_eventos_json AS "
+        "SELECT firma_id, json_group_array(evento_ref) AS eventos_json, "
+        "MIN(ts_evento) AS ts_primero, COUNT(*) AS n_eventos "
+        "FROM tbl_firma_eventos GROUP BY firma_id"
     )
     conn.commit()
 

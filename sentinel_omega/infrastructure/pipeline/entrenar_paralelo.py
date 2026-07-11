@@ -100,18 +100,36 @@ def entrenar_reconocimiento_paralelo(
                             "WHERE bot_name = ? AND fase = 'reconocimiento'",
                             (res["bot"],))
             origen = sqlite3.connect(res["copia"])
+            # Insertamos firma por firma para remapear firma_id (AUTOINCREMENT
+            # difiere entre la copia y el destino) y arrastrar sus eventos
+            # (tabla hija normalizada) con el id nuevo.
             filas = origen.execute(
-                "SELECT bot_name, event_class, id_nodo, features_json, "
-                "ventana_horas, recurrencia, estado, primera_vista, "
-                "ultima_vista, eventos_json FROM TBL_FIRMAS WHERE bot_name = ?",
+                "SELECT firma_id, bot_name, event_class, id_nodo, features_json, "
+                "ventana_horas, recurrencia, estado, primera_vista, ultima_vista "
+                "FROM TBL_FIRMAS WHERE bot_name = ?",
                 (res["bot"],),
             ).fetchall()
-            destino.executemany(
-                "INSERT INTO TBL_FIRMAS "
-                "(bot_name, event_class, id_nodo, features_json, ventana_horas, "
-                " recurrencia, estado, primera_vista, ultima_vista, eventos_json) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)", filas,
-            )
+            for fila in filas:
+                old_fid = fila[0]
+                cur = destino.execute(
+                    "INSERT INTO TBL_FIRMAS "
+                    "(bot_name, event_class, id_nodo, features_json, "
+                    " ventana_horas, recurrencia, estado, primera_vista, "
+                    " ultima_vista) VALUES (?,?,?,?,?,?,?,?,?)", fila[1:],
+                )
+                new_fid = cur.lastrowid
+                try:
+                    eventos = origen.execute(
+                        "SELECT evento_ref, ts_evento, orden FROM tbl_firma_eventos "
+                        "WHERE firma_id = ?", (old_fid,),
+                    ).fetchall()
+                    destino.executemany(
+                        "INSERT OR IGNORE INTO tbl_firma_eventos "
+                        "(firma_id, evento_ref, ts_evento, orden) VALUES (?,?,?,?)",
+                        [(new_fid, ev[0], ev[1], ev[2]) for ev in eventos],
+                    )
+                except sqlite3.OperationalError:
+                    pass
             total_firmas += len(filas)
             # Auditoría fase='reconocimiento' del Juez (disjunta por bot)
             try:
