@@ -51,6 +51,15 @@ SUBVENTANA_HORAS = 72
 SIMILARITY_MATCH = 0.85     # same firma family
 SIMILARITY_ALERT = 0.80     # operational "looks like" threshold
 
+# Cuántos avistamientos concretos se guardan por firma. Una firma que se
+# repite 24,719 veces son 24,719 eventos CASI IDÉNTICOS (por eso matchean la
+# misma firma) — guardarlos todos es puro bulto. Nos quedamos con una MUESTRA
+# (los primeros N, que en entrenamiento cronológico son los más viejos → el
+# min(ts) real se preserva) y el CONTEO fiel vive en `recurrencia`. Los tres
+# lectores solo necesitan: min(ts) [orden=1], primeros 3 [lags], y una muestra
+# para re-presentar [backtest] — todos cubiertos con N pequeño.
+CAP_EVENTOS_MUESTRA = 10
+
 ESTADO_POR_RECURRENCIA = [
     (5, "consolidada"),
     (3, "recurrente"),
@@ -351,13 +360,15 @@ class FirmaMemoria:
                 "estado = ?, ultima_vista = ? WHERE firma_id = ?",
                 (json.dumps(merged), recurrencia, estado, ts_evento, best_id),
             )
-            # 1NF: el evento es una FILA en la hija (append O(1)), no un append
-            # a un array reescrito entero (que era O(n²)).
-            self._conn.execute(
-                "INSERT OR IGNORE INTO tbl_firma_eventos "
-                "(firma_id, evento_ref, ts_evento, orden) VALUES (?, ?, ?, ?)",
-                (best_id, evento_ref, ts_evento, recurrencia),
-            )
+            # 1NF + muestreo: el evento es una FILA (append O(1)), y solo
+            # guardamos los primeros CAP_EVENTOS_MUESTRA — el conteo fiel es
+            # `recurrencia`. No escribimos la serie entera (era O(n²) y bulto).
+            if recurrencia <= CAP_EVENTOS_MUESTRA:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO tbl_firma_eventos "
+                    "(firma_id, evento_ref, ts_evento, orden) VALUES (?, ?, ?, ?)",
+                    (best_id, evento_ref, ts_evento, recurrencia),
+                )
             self._conn.commit()
             return best_id, estado, False
 

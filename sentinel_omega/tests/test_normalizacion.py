@@ -114,6 +114,51 @@ class TestMigracion:
         assert n == 1
 
 
+class TestMuestreo:
+
+    def test_solo_guarda_la_muestra_pero_cuenta_todo(self, conn):
+        from sentinel_omega.core.firmas.signature_engine import (
+            CAP_EVENTOS_MUESTRA,
+        )
+        mem = FirmaMemoria(conn)
+        f = _features()
+        fid, _, _ = mem.registrar("alfa1", "SISMO_M5", 45, f,
+                                  "2010-06-01 00:00|nodo45|M5.2", "2010-06-01 00:00")
+        # muchas recurrencias del mismo patrón
+        for i in range(50):
+            mem.registrar("alfa1", "SISMO_M5", 45, dict(f),
+                          f"2010-07-{i%28+1:02d} 00:00|nodo45|M5.1",
+                          f"2010-07-{i%28+1:02d} 00:00")
+        n_filas = conn.execute(
+            "SELECT COUNT(*) FROM tbl_firma_eventos WHERE firma_id = ?",
+            (fid,)).fetchone()[0]
+        rec = conn.execute(
+            "SELECT recurrencia FROM TBL_FIRMAS WHERE firma_id = ?",
+            (fid,)).fetchone()[0]
+        assert n_filas == CAP_EVENTOS_MUESTRA   # solo la muestra en disco
+        assert rec == 51                        # pero el conteo es fiel
+
+    def test_migracion_capa_la_muestra(self, conn):
+        from sentinel_omega.core.firmas.signature_engine import (
+            CAP_EVENTOS_MUESTRA,
+        )
+        refs = [f"2001-{i:02d}-01 00:00|nodo45|M5.0" for i in range(1, 25)]
+        conn.execute(
+            "INSERT INTO TBL_FIRMAS (bot_name, event_class, id_nodo, "
+            "features_json, recurrencia, estado, eventos_json) "
+            "VALUES ('alfa1','SISMO_M5',45,'{}',24,'recurrente',?)",
+            (json.dumps(refs),))
+        conn.commit()
+        _migrate_firma_eventos(conn)
+        n = conn.execute("SELECT COUNT(*) FROM tbl_firma_eventos").fetchone()[0]
+        assert n == CAP_EVENTOS_MUESTRA
+        # el más viejo se conserva (orden=1)
+        primero = conn.execute(
+            "SELECT evento_ref FROM tbl_firma_eventos ORDER BY orden LIMIT 1"
+        ).fetchone()[0]
+        assert primero == "2001-01-01 00:00|nodo45|M5.0"
+
+
 class TestVistaCompat:
 
     def test_vista_reconstruye_array(self, conn):

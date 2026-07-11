@@ -555,6 +555,10 @@ def _migrate_firma_eventos(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         return  # tabla aún no existe
 
+    # Solo se conserva una MUESTRA de eventos por firma (el conteo fiel vive
+    # en recurrencia). Importar CAP aquí evita duplicar la constante.
+    from sentinel_omega.core.firmas.signature_engine import CAP_EVENTOS_MUESTRA
+
     migradas = 0
     for fid, evs in pendientes:
         ya = conn.execute(
@@ -566,11 +570,12 @@ def _migrate_firma_eventos(conn: sqlite3.Connection) -> None:
             refs = json.loads(evs)
         except (ValueError, TypeError):
             continue
+        muestra = refs[:CAP_EVENTOS_MUESTRA]   # los primeros = los más viejos
         conn.executemany(
             "INSERT OR IGNORE INTO tbl_firma_eventos "
             "(firma_id, evento_ref, ts_evento, orden) VALUES (?, ?, ?, ?)",
             [(fid, ref, ref.split("|")[0] if "|" in ref else None, i + 1)
-             for i, ref in enumerate(refs)],
+             for i, ref in enumerate(muestra)],
         )
         conn.execute(
             "UPDATE TBL_FIRMAS SET eventos_json = '[]' WHERE firma_id = ?", (fid,)
@@ -578,10 +583,16 @@ def _migrate_firma_eventos(conn: sqlite3.Connection) -> None:
         migradas += 1
     if migradas:
         conn.commit()
-        logger.info(
-            f"Migración 1NF: {migradas} firmas normalizadas a tbl_firma_eventos "
-            f"(corre VACUUM para recuperar espacio)"
-        )
+        logger.info(f"Migración 1NF: {migradas} firmas normalizadas (muestra "
+                    f"de {CAP_EVENTOS_MUESTRA} + conteo en recurrencia)")
+        # Recuperar el espacio en disco de los arrays viejos (best-effort:
+        # VACUUM necesita ~tamaño de la base libre; si no hay, se omite sin
+        # romper el arranque).
+        try:
+            conn.execute("VACUUM")
+            logger.info("Migración 1NF: VACUUM completado — disco recuperado")
+        except sqlite3.OperationalError as e:
+            logger.warning(f"Migración 1NF: VACUUM omitido ({e})")
 
 
 def init_database(db_path: str) -> sqlite3.Connection:
