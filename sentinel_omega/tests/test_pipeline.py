@@ -585,6 +585,47 @@ class TestAlfa2Agent:
         agent.ingest({"zone_coverages": {"test": {"s2_count": 1}}})
         assert agent.health_check() is True
 
+    # ── self-learning baseline ("its own patterns") ──────────────────────
+
+    def _cycle(self, agent, lst_c):
+        agent.ingest({"zone_coverages": {"guerrero_gap": {"lst_c": lst_c}}})
+        return agent.analyze()
+
+    def test_learns_baseline_then_flags_deviation(self):
+        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+
+        agent = Alfa2Agent(state_path=None)  # in-memory, isolated
+        # Feed a stable thermal baseline for several cycles -> agent learns it.
+        for lst in [20.0, 20.2, 19.8, 20.1, 19.9, 20.0]:
+            sig = self._cycle(agent, lst)
+        # Within its learned baseline -> not an alert.
+        assert sig.signal_type in (SignalType.NEUTRAL, SignalType.WATCH)
+        # A large thermal excursion is now flagged as a learned-baseline anomaly.
+        spike = self._cycle(agent, 26.0)
+        assert spike.signal_type in (SignalType.WATCH, SignalType.ALERT)
+        assert spike.data["max_abs_z"] >= agent.Z_WATCH
+
+    def test_learning_phase_is_neutral(self):
+        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+
+        agent = Alfa2Agent(state_path=None)
+        sig = self._cycle(agent, 20.0)  # first cycle, no history yet
+        assert sig.signal_type == SignalType.NEUTRAL
+        assert sig.data["learning_zones"] == 1
+
+    def test_baseline_persists_across_instances(self, tmp_path):
+        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+
+        state = str(tmp_path / "alfa2.json")
+        a1 = Alfa2Agent(state_path=state)
+        for lst in [20.0, 20.1, 19.9, 20.0, 20.2, 19.8]:
+            self._cycle(a1, lst)
+        # A fresh instance reloads the learned baseline from disk.
+        a2 = Alfa2Agent(state_path=state)
+        assert a2._baselines["guerrero_gap"]["n"] >= a2.MIN_HISTORY
+        spike = self._cycle(a2, 27.0)
+        assert spike.data["max_abs_z"] >= a2.Z_WATCH
+
 
 # ── OpenWeatherMap ─────────────────────────────────────────────────
 
