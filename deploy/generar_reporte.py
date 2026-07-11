@@ -880,6 +880,41 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     except sqlite3.OperationalError:
         pass
 
+    # ── Secuencia de nodos: la ruta por la que se mueve la energía ──
+    try:
+        rutas = conn.execute(
+            "SELECT secuencia, frecuencia_total, n_clases, alcance, interpretacion "
+            "FROM tbl_secuencia_veredictos ORDER BY (alcance='GLOBAL') DESC, "
+            "frecuencia_total DESC LIMIT 8"
+        ).fetchall()
+        if rutas:
+            n_global = sum(1 for r in rutas if r[3] == "GLOBAL")
+            lineas += [
+                "## 🌐 Cimática: cómo se mueve la energía por la malla",
+                "",
+                "> Más allá de *qué* nodos se activan, importa **en qué orden** "
+                "espacial — la ruta por la que la energía se propaga antes de un "
+                "evento. Una ruta que se repite ante **distintos tipos** de "
+                "evento es **GLOBAL**: confirma una cimática organizada, un "
+                "sistema liberando energía con precursores y gatillos "
+                "identificables. Una ruta ligada a un solo tipo es **LOCAL** — "
+                "una causa específica de ese nodo o región.",
+                "",
+                f"**{n_global}** de las {len(rutas)} rutas recurrentes mostradas "
+                f"son globales (cimática organizada).",
+                "",
+                "| Ruta de propagación | Apariciones | Tipos de evento | Alcance |",
+                "|---|---:|---:|---|",
+            ]
+            for r in rutas:
+                marca = "🌐 **GLOBAL**" if r[3] == "GLOBAL" else "📍 LOCAL"
+                lineas.append(
+                    f"| {r[0]} | {r[1]:,} | {r[2]} | {marca} |"
+                )
+            lineas.append("")
+    except sqlite3.OperationalError:
+        pass
+
     # ── Auditoría del Juez — separada por fase (viva vs entrenamiento) ──
     try:
         juez_fases = conn.execute(

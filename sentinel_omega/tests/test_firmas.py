@@ -848,6 +848,61 @@ class TestOrdenPrecursores:
         assert n >= 1
 
 
+class TestSecuenciaNodos:
+    """La ruta de nodos por la que se propaga la energía: global vs local."""
+
+    def _sembrar(self, conn, base, nodos_ruta, mag, dia0):
+        from datetime import timedelta
+        tse = base + timedelta(days=dia0)
+        # cada nodo de la ruta se activa en un momento distinto de la víspera,
+        # en orden temporal (propagación espacial)
+        for i, nodo in enumerate(nodos_ruta[:-1]):
+            t = tse - timedelta(hours=60 - i * 12)
+            conn.execute(
+                "INSERT OR IGNORE INTO tbl_historico_sismico_raw "
+                "(timestamp_blk, id_nodo, sismo_count, sismo_max_mag) "
+                "VALUES (?, ?, 1, 3.2)", (t.strftime("%Y-%m-%d %H:%M"), nodo))
+        conn.execute(
+            "INSERT OR IGNORE INTO tbl_historico_sismico_raw "
+            "(timestamp_blk, id_nodo, sismo_count, sismo_max_mag) "
+            "VALUES (?, ?, 1, ?)",
+            (tse.strftime("%Y-%m-%d %H:%M"), nodos_ruta[-1], mag))
+
+    def test_ruta_global_vs_local(self, db):
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            analizar_secuencia_nodos,
+        )
+        from datetime import datetime
+        base = datetime(2010, 6, 1)
+        dia = 0
+        # RUTA GLOBAL: nodos 12>45 precede a M5 Y a M6 (distintos tipos)
+        for _ in range(5):
+            self._sembrar(conn, base, [12, 45], 5.5, dia); dia += 15
+        for _ in range(4):
+            self._sembrar(conn, base, [12, 45], 6.2, dia); dia += 15
+        # RUTA LOCAL: nodos 30>31 solo precede a M5
+        for _ in range(5):
+            self._sembrar(conn, base, [30, 31], 5.4, dia); dia += 15
+        conn.commit()
+
+        res = analizar_secuencia_nodos(path, muestra=200)
+        assert res["recurrentes"] >= 2
+        v = {s: d for s, d in res["veredictos"].items()}
+        # la ruta 12>45 aparece con M5 y M6 -> GLOBAL
+        global_seq = next((s for s, d in v.items()
+                           if d["alcance"] == "GLOBAL"), None)
+        assert global_seq is not None
+        assert "nodo12>nodo45" in global_seq
+        # la ruta 30>31 es de un solo tipo -> LOCAL
+        assert any(d["alcance"] == "LOCAL" for d in v.values())
+        # persistido
+        n = conn.execute(
+            "SELECT COUNT(*) FROM tbl_secuencia_veredictos WHERE alcance='GLOBAL'"
+        ).fetchone()[0]
+        assert n >= 1
+
+
 class TestOmegaMapeado:
     """Omega está mapeado a la telemetría existente y entrena como los demás."""
 
