@@ -133,10 +133,9 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     firmas_bot = {r[0]: r[1] for r in _q(
         conn, "SELECT bot_name, COUNT(*) FROM TBL_FIRMAS GROUP BY bot_name")}
 
+    # Vara canónica: solo filas de operación viva (columna fase estricta)
     juez = {r[0]: r[1] for r in _q(
-        conn, "SELECT resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
-              "WHERE detalles_json NOT LIKE '%\"fase\"%' "
-              "GROUP BY resultado")}
+        conn, "SELECT resultado, COUNT(*) FROM viva_real GROUP BY resultado")}
     pendientes = juez.get("PENDIENTE", 0)
     aciertos_v = juez.get("ACIERTO", 0)
     fallos_v = juez.get("FALLO", 0)

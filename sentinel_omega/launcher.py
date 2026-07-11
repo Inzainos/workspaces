@@ -644,23 +644,45 @@ def _auditar_ciclo(geo, repo, runner) -> None:
             confianza=geo.confidence,
             ventana_h=72,
             detalles={"firma_matches": matches[:5], "muro_lags": muro_lags},
+            fase="viva",  # operación real — la única que puntúa asertividad viva
         )
 
         from sentinel_omega.infrastructure.api.usgs import fetch_earthquakes
-        eq = fetch_earthquakes(min_magnitude=4.5, days=4)
-        evento_ocurrido = eq is not None and len(eq) > 0
-        mag_max = float(eq["magnitude"].max()) if evento_ocurrido else 0.0
-        gravedad = 1.0 + max(0.0, mag_max - 4.5) if evento_ocurrido else 1.0
-        verdad = (
-            f"{len(eq)} eventos M4.5+ en 4 dias (máx M{mag_max:.1f})"
-            if evento_ocurrido else "sin eventos M4.5+"
-        )
-        resueltos = juez.evaluar_pendientes(
-            evento_ocurrido=evento_ocurrido,
-            verdad=verdad,
-            firma_conocida=bool(matches),
-            gravedad=gravedad,
-        )
+        # Verdad POR FILA: cada predicción se resuelve contra los eventos de
+        # SU ventana de 72 h y a <=5° de los nodos reales monitoreados. El
+        # criterio viejo ("hubo M4.5+ en la Tierra en 4 días") es cierto casi
+        # siempre — era el modelo nulo de Molchan puntuando como habilidad.
+        eq = fetch_earthquakes(min_magnitude=4.5, days=7)
+        if eq is None:
+            # USGS caído: NO resolver con "sin eventos" falso — se deja
+            # PENDIENTE y el siguiente ciclo lo intenta con datos reales.
+            logger.warning("USGS sin respuesta — resolución de pendientes pospuesta")
+            resueltos = []
+        else:
+            eventos = []
+            for _, ev in eq.iterrows():
+                try:
+                    eventos.append({
+                        "epoch": ev["time"].timestamp(),
+                        "lat": ev["latitude"],
+                        "lon": ev["longitude"],
+                        "magnitude": ev["magnitude"],
+                    })
+                except (KeyError, AttributeError, TypeError):
+                    continue
+            zonas = [
+                (z[0], z[1]) for z in juez._conn.execute(
+                    "SELECT lat, lon FROM TBL_NODOS_TOPOLOGIA "
+                    "WHERE tipo = 'real' AND activo = 1"
+                ).fetchall()
+            ]
+            resueltos = juez.evaluar_pendientes(
+                evento_ocurrido=False,      # ignorado: `eventos` manda por fila
+                eventos=eventos,
+                zonas=zonas or None,
+                firma_conocida=bool(matches),
+                fase="viva",  # el launcher solo resuelve las suyas
+            )
         if resueltos:
             logger.info(f"Juez resolvió {len(resueltos)} predicciones pendientes")
     except Exception as e:

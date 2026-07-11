@@ -22,6 +22,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from sentinel_omega.core.precursor.baseline import AlwaysAlertBaseline, BaselineResult
+
 logger = logging.getLogger(__name__)
 
 
@@ -169,13 +171,42 @@ class AssertivityTracker:
         )
         return result
 
+    def validate_with_baseline(
+        self, min_magnitude: float = 4.5
+    ) -> Tuple[AssertivityResult, BaselineResult]:
+        """Valida y compara contra el modelo nulo alertar-siempre (Molchan).
+
+        La ganancia (hit_rate / tasa_base) es la métrica honesta: un hit-rate
+        alto en una zona que tiembla cada 72 h no es habilidad. Ganancia <= 1
+        significa que alertar a ciegas habría rendido igual o mejor.
+        """
+        result = self.validate(min_magnitude)
+        locations = [(p.latitude, p.longitude) for p in self._predictions]
+        baseline = AlwaysAlertBaseline(radius_degrees=self._radius)
+        baseline_result = baseline.evaluate(
+            locations,
+            self._events,
+            system_hit_rate=result.hit_rate,
+            window_days=self._window_days,
+            min_magnitude=min_magnitude,
+        )
+        logger.info(
+            f"Molchan baseline: base_rate={baseline_result.base_rate:.1%}, "
+            f"gain={baseline_result.gain} — {baseline_result.veredicto}"
+        )
+        return result, baseline_result
+
     def _prune_old(self) -> None:
         cutoff = time.time() - (self._window_days * 86400)
         self._predictions = [p for p in self._predictions if p.timestamp >= cutoff]
 
-    def format_report(self, result: AssertivityResult) -> str:
+    def format_report(
+        self,
+        result: AssertivityResult,
+        baseline: Optional[BaselineResult] = None,
+    ) -> str:
         """Format assertivity result for Telegram dispatch."""
-        return (
+        texto = (
             f"<b>ASSERTIVITY REPORT</b>\n\n"
             f"Window: <code>{result.evaluation_window_days}d</code>\n"
             f"Predictions: <code>{result.total_predictions}</code>\n"
@@ -184,3 +215,13 @@ class AssertivityTracker:
             f"Misses: <code>{result.misses}</code> ({result.miss_rate:.0%})\n"
             f"False Alarms: <code>{result.false_alarms}</code> ({result.false_alarm_rate:.0%})"
         )
+        if baseline is not None:
+            gain_txt = (
+                f"{baseline.gain:.2f}x" if baseline.gain is not None else "n/a"
+            )
+            texto += (
+                f"\n\nBase rate (alertar-siempre): <code>{baseline.base_rate:.1%}</code>\n"
+                f"Ganancia sobre modelo nulo: <code>{gain_txt}</code>\n"
+                f"{baseline.veredicto}"
+            )
+        return texto

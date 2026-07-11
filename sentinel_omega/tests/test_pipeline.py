@@ -529,7 +529,28 @@ class TestAlfa2Agent:
         assert signal.signal_type in SignalType
         assert signal.confidence >= 0.0
 
-    def test_analyze_with_anomalies(self):
+    def test_analyze_with_anomalies_backed_by_lst(self):
+        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+
+        agent = Alfa2Agent()
+        agent.ingest({
+            "zone_coverages": {
+                "guerrero_gap": {
+                    "s2_count": 8, "s1_count": 6, "total_passes": 14,
+                    "mean_revisit_days": 2.1,
+                    "s2_cloud_covers": [5.0, 8.0, 3.0, 12.0, 7.0, 10.0, 15.0, 4.0],
+                },
+            },
+            "thermal_anomaly_count": 4,
+            "lst_c": [38.2, 41.5, 39.8, 44.1],
+        })
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.ALERT
+        assert signal.confidence > 0.5
+        assert signal.data["lst_medida"] is True
+
+    def test_anomalies_without_lst_degraded_to_watch(self):
+        # Proxy-of-proxy: conteo térmico sin lst_c medida NO alcanza para ALERT
         from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
 
         agent = Alfa2Agent()
@@ -544,8 +565,9 @@ class TestAlfa2Agent:
             "thermal_anomaly_count": 4,
         })
         signal = agent.analyze()
-        assert signal.signal_type == SignalType.ALERT
-        assert signal.confidence > 0.5
+        assert signal.signal_type == SignalType.WATCH
+        assert signal.data["lst_medida"] is False
+        assert "proxy" in signal.reasoning
 
     def test_analyze_no_data(self):
         from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent

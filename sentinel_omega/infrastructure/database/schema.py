@@ -285,12 +285,15 @@ CREATE TABLE IF NOT EXISTS TBL_JUEZ_AUDITORIA (
     reincidencia    INTEGER DEFAULT 0,
     detalles_json   TEXT    DEFAULT '{}',
     resuelto_at     TEXT,
+    fase            TEXT    DEFAULT 'viva',
     created_at      TEXT    DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_juez_bot ON TBL_JUEZ_AUDITORIA(bot_name);
 CREATE INDEX IF NOT EXISTS idx_juez_resultado ON TBL_JUEZ_AUDITORIA(resultado);
 CREATE INDEX IF NOT EXISTS idx_juez_ts ON TBL_JUEZ_AUDITORIA(timestamp);
+-- El índice idx_juez_fase y la vista viva_real se crean en init_database
+-- DESPUÉS de la migración (la columna fase puede no existir aún en DBs viejas).
 
 -- ─── Pesos de credibilidad por bot (ajustados por el castigo) ─────
 -- El Padre pondera cada bot en el consenso con su peso. La Fase 2 del
@@ -395,6 +398,12 @@ EXPECTED_COLUMNS = {
         "lag_promedio_h": "REAL",
         "lag_n": "INTEGER DEFAULT 0",
     },
+    # v6: fase ESTRICTA de auditoría (columna real, no dentro del JSON).
+    # 'viva' = predicción en operación (la única que cuenta para asertividad
+    # viva); 'reconocimiento'/'backtest'/'observacion' = entrenamiento.
+    "TBL_JUEZ_AUDITORIA": {
+        "fase": "TEXT DEFAULT 'viva'",
+    },
     # v5: cobertura satelital — nueva tabla (creada por SCHEMA_SQL con IF NOT EXISTS;
     # se incluye aquí para que _migrate_add_missing_columns no falle en DBs antiguas
     # que no tengan la tabla — el try/except la ignora si no existe aún).
@@ -447,6 +456,17 @@ def _migrate_add_missing_columns(conn: sqlite3.Connection) -> None:
             if col_name not in existing_cols:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
                 logger.info(f"Migration: added {table}.{col_name}")
+                # Backfill de fase (v6): las filas viejas traen la fase dentro
+                # del JSON; reclasificarlas para que el DEFAULT 'viva' no
+                # contamine la vara viva con filas de entrenamiento.
+                if table == "TBL_JUEZ_AUDITORIA" and col_name == "fase":
+                    for tag in ("backtest", "reconocimiento", "observacion"):
+                        conn.execute(
+                            "UPDATE TBL_JUEZ_AUDITORIA SET fase = ? "
+                            "WHERE detalles_json LIKE ?",
+                            (tag, f'%"fase": "{tag}"%'),
+                        )
+                    logger.info("Migration: TBL_JUEZ_AUDITORIA.fase backfilled")
     conn.commit()
 
 
@@ -464,6 +484,19 @@ def init_database(db_path: str) -> sqlite3.Connection:
 
     conn.executescript(SCHEMA_SQL)
     _migrate_add_missing_columns(conn)
+
+    # Post-migración (la columna fase ya existe seguro): índice + vista
+    # canónica de la operación viva. viva_real es la ÚNICA vara para la
+    # asertividad viva — jamás incluye filas de entrenamiento.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_juez_fase ON TBL_JUEZ_AUDITORIA(fase)"
+    )
+    conn.execute("DROP VIEW IF EXISTS viva_real")
+    conn.execute(
+        "CREATE VIEW viva_real AS "
+        "SELECT * FROM TBL_JUEZ_AUDITORIA WHERE fase = 'viva'"
+    )
+    conn.commit()
 
     existing = conn.execute(
         "SELECT version FROM TBL_SCHEMA_VERSION ORDER BY version DESC LIMIT 1"

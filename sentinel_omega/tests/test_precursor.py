@@ -271,6 +271,115 @@ class TestAssertivityTracker:
         assert "25%" in report
 
 
+# ── Molchan Baseline (modelo nulo alertar-siempre) ───────────────────
+
+
+class TestMolchanBaseline:
+
+    def setup_method(self):
+        from sentinel_omega.core.precursor.baseline import AlwaysAlertBaseline
+        self.baseline = AlwaysAlertBaseline(radius_degrees=5.0, window_h=72)
+
+    def test_no_locations_zero_base_rate(self):
+        rate, hits, cells = self.baseline.base_rate([], [], window_days=30)
+        assert rate == 0.0
+        assert cells == 0
+
+    def test_no_events_zero_base_rate(self):
+        rate, hits, cells = self.baseline.base_rate(
+            [(17.0, -99.5)], [], window_days=30,
+        )
+        assert rate == 0.0
+        assert hits == 0
+        assert cells == 10   # 30d * 24h / 72h = 10 slots
+
+    def test_event_in_one_slot(self):
+        now = time.time()
+        events = [
+            {"latitude": 17.0, "longitude": -99.5, "magnitude": 5.0,
+             "time": now - 3600},   # último slot
+        ]
+        rate, hits, cells = self.baseline.base_rate(
+            [(17.0, -99.5)], events, window_days=30, now=now,
+        )
+        assert hits == 1
+        assert cells == 10
+        assert abs(rate - 0.1) < 1e-9
+
+    def test_usgs_milliseconds_accepted(self):
+        now = time.time()
+        events = [
+            {"latitude": 17.0, "longitude": -99.5, "magnitude": 5.0,
+             "time": (now - 3600) * 1000},   # ms estilo USGS FDSN
+        ]
+        rate, hits, _ = self.baseline.base_rate(
+            [(17.0, -99.5)], events, window_days=30, now=now,
+        )
+        assert hits == 1
+
+    def test_below_magnitude_ignored(self):
+        now = time.time()
+        events = [
+            {"latitude": 17.0, "longitude": -99.5, "magnitude": 3.0,
+             "time": now - 3600},
+        ]
+        rate, hits, _ = self.baseline.base_rate(
+            [(17.0, -99.5)], events, window_days=30, now=now,
+        )
+        assert hits == 0
+
+    def test_gain_computed(self):
+        now = time.time()
+        events = [
+            {"latitude": 17.0, "longitude": -99.5, "magnitude": 5.0,
+             "time": now - 3600},
+        ]
+        res = self.baseline.evaluate(
+            [(17.0, -99.5)], events, system_hit_rate=0.5,
+            window_days=30, now=now,
+        )
+        assert res.base_rate == pytest.approx(0.1)
+        assert res.gain == pytest.approx(5.0)
+        assert "GANANCIA REAL" in res.veredicto
+
+    def test_gain_undefined_without_events(self):
+        res = self.baseline.evaluate(
+            [(17.0, -99.5)], [], system_hit_rate=0.5, window_days=30,
+        )
+        assert res.gain is None
+        assert "indefinida" in res.veredicto
+
+    def test_no_gain_verdict(self):
+        now = time.time()
+        # Zona que tiembla en cada slot: la tasa base es 1.0
+        events = [
+            {"latitude": 17.0, "longitude": -99.5, "magnitude": 5.0,
+             "time": now - (s * 72 + 1) * 3600}
+            for s in range(10)
+        ]
+        res = self.baseline.evaluate(
+            [(17.0, -99.5)], events, system_hit_rate=0.9,
+            window_days=30, now=now,
+        )
+        assert res.base_rate == pytest.approx(1.0)
+        assert res.gain == pytest.approx(0.9)
+        assert "SIN ganancia" in res.veredicto
+
+    def test_tracker_hook(self):
+        tracker = AssertivityTracker(radius_degrees=5.0, window_days=30)
+        tracker.record_prediction(17.0, -99.5, "HIGH", 25.0)
+        tracker.ingest_events([
+            {"latitude": 16.5, "longitude": -99.0, "magnitude": 5.2,
+             "time": time.time()},
+        ])
+        result, baseline = tracker.validate_with_baseline()
+        assert result.hit_rate == 1.0
+        assert baseline.base_rate > 0
+        assert baseline.gain is not None
+        report = tracker.format_report(result, baseline)
+        assert "Ganancia sobre modelo nulo" in report
+
+
 # ── Integration: LayerRunner precursor risk ─────────────────────────
 
 

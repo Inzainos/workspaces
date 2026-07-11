@@ -192,6 +192,70 @@ class TestJuez:
         assert resumen["padre"]["ACIERTO"] == 1
         assert resumen["padre"]["asertividad"] == 1.0
 
+    def test_eventos_por_fila_dentro_de_ventana(self, db):
+        # Verdad POR FILA: el evento debe caer en la ventana de ESA predicción
+        import time as _t
+        conn, _ = db
+        juez = Juez(conn)
+        ts = _t.time() - 10 * 3600
+        juez.registrar_prediccion("padre", "watch", 0.7, ventana_h=1,
+                                  timestamp=ts)
+        eventos = [{"epoch": ts + 1800, "lat": 17.0, "lon": -99.5,
+                    "magnitude": 5.0}]
+        res = juez.evaluar_pendientes(
+            evento_ocurrido=False, eventos=eventos,
+        )
+        assert res[0]["resultado"] == "ACIERTO"
+
+    def test_eventos_por_fila_fuera_de_ventana(self, db):
+        # Evento fuera de la ventana temporal NO valida la predicción
+        import time as _t
+        conn, _ = db
+        juez = Juez(conn)
+        ts = _t.time() - 10 * 3600
+        juez.registrar_prediccion("padre", "watch", 0.7, ventana_h=1,
+                                  timestamp=ts)
+        eventos = [{"epoch": ts + 5 * 3600, "lat": 17.0, "lon": -99.5,
+                    "magnitude": 5.0}]
+        res = juez.evaluar_pendientes(
+            evento_ocurrido=True,   # ignorado: eventos manda
+            eventos=eventos,
+        )
+        assert res[0]["resultado"] == "FALSO_POSITIVO"
+
+    def test_eventos_filtrados_por_zona(self, db):
+        # Evento lejos de toda zona monitoreada no cuenta
+        import time as _t
+        conn, _ = db
+        juez = Juez(conn)
+        ts = _t.time() - 10 * 3600
+        juez.registrar_prediccion("padre", "watch", 0.7, ventana_h=1,
+                                  timestamp=ts)
+        eventos = [{"epoch": ts + 1800, "lat": 60.0, "lon": 30.0,
+                    "magnitude": 5.0}]
+        res = juez.evaluar_pendientes(
+            evento_ocurrido=False, eventos=eventos,
+            zonas=[(17.0, -99.5)], radio_deg=5.0,
+        )
+        assert res[0]["resultado"] == "FALSO_POSITIVO"
+
+    def test_eventos_zona_cercana_cuenta(self, db):
+        import time as _t
+        conn, _ = db
+        juez = Juez(conn)
+        ts = _t.time() - 10 * 3600
+        juez.registrar_prediccion("padre", "no_signal", 0.3, ventana_h=1,
+                                  timestamp=ts)
+        eventos = [{"epoch": ts + 1800, "lat": 16.5, "lon": -99.0,
+                    "magnitude": 5.6}]
+        res = juez.evaluar_pendientes(
+            evento_ocurrido=False, eventos=eventos,
+            zonas=[(17.0, -99.5)], radio_deg=5.0,
+        )
+        # calló y hubo evento en zona → FALLO con gravedad por magnitud
+        assert res[0]["resultado"] == "FALLO"
+        assert res[0]["severidad"] > 10.0
+
 
 # ── Entrenamiento sobre backcast sintetizado en test ────────────────
 

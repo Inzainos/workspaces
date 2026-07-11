@@ -324,6 +324,7 @@ def entrenar_reconocimiento(
                 evento_ocurrido=True,
                 verdad=evento_ref,
                 firma_conocida=False,  # Fase 1 is learning, not enforcement
+                fase="reconocimiento",  # NUNCA resolver las vivas del launcher
             )
             stats["juez_aciertos"] += len(bots_registrados)
 
@@ -435,6 +436,7 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
                     evento_ocurrido=True,
                     verdad=ref,
                     firma_conocida=es_exigible,
+                    fase="backtest",
                 )
                 stats["juez_aciertos"] += 1
             else:
@@ -469,6 +471,7 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
                     firma_conocida=es_exigible,
                     multiplicador=2.0 if es_padre else 1.0,
                     gravedad=gravedad,
+                    fase="backtest",
                 )
 
     # base_geo: when the Padre missed an event that a subordinate DID see,
@@ -493,9 +496,10 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
     # y se regeneran en cada entrenamiento. Ya cumplieron su función — nos
     # quedamos con lo significativo (los pesos + las predicciones VIVAS) y
     # podamos el registro del backtest para que el ledger no crezca sin fin.
+    # Por columna fase (estricta) — las filas 'viva' JAMÁS se tocan: la
+    # auditoría viva es append-only (PENDIENTE→resuelto, nunca DELETE).
     podados = conn.execute(
-        "DELETE FROM TBL_JUEZ_AUDITORIA "
-        "WHERE detalles_json LIKE '%\"fase\": \"backtest\"%'"
+        "DELETE FROM TBL_JUEZ_AUDITORIA WHERE fase = 'backtest'"
     ).rowcount
     conn.commit()
     stats["auditoria_backtest_podada"] = podados
@@ -1056,6 +1060,7 @@ def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
                 evento_ocurrido=True,
                 verdad=evento_ref,
                 firma_conocida=False,  # minor events are never enforceable
+                fase="trasfondo",
             )
 
     # Ajuste de pesos ACOTADO por bot: más ceguera a los chiquitos → más castigo

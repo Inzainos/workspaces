@@ -1,4 +1,10 @@
-"""Tests for the Fourier-Schumann harmonic filter and SQLite database."""
+"""Tests for beta1 spectral features + measured Schumann, and SQLite database.
+
+v2.5.1: el filtro "armónico Schumann" sobre Kp era físicamente inválido
+(7.83 Hz vs Nyquist ~4.6e-5 Hz) y fue eliminado. Estos tests cubren la
+nueva semántica: FFT plano del Kp + resonancia Schumann MEDIDA (Tomsk)
+como serie propia + correlación T-L con puerta de >=3 ciclos lunares.
+"""
 
 import json
 import os
@@ -11,9 +17,8 @@ import pytest
 
 from sentinel_omega.layers.geodynamic.beta1.agent import (
     Beta1Agent,
-    schumann_harmonic_filter,
-    SCHUMANN_HARMONICS_HZ,
-    HARMONIC_TOLERANCE,
+    kp_spectral_features,
+    MIN_CICLOS_LUNARES,
 )
 from sentinel_omega.core.shared.agent_base import SignalType
 from sentinel_omega.infrastructure.database.schema import (
@@ -26,86 +31,49 @@ from sentinel_omega.infrastructure.database.seed_nodos import SEED_NODOS, seed_t
 
 
 # ══════════════════════════════════════════════════════════════════
-# Fourier-Schumann Harmonic Filter
+# Kp spectral features (FFT plano — sin disfraz de resonancia)
 # ══════════════════════════════════════════════════════════════════
 
 
-class TestSchumannHarmonicFilter:
+class TestKpSpectralFeatures:
 
-    def test_empty_spectrum_returns_zero_coherence(self):
-        spectrum = np.zeros(10)
-        result = schumann_harmonic_filter(spectrum, sample_interval_s=3*3600)
-        assert result["coherence"] == 0.0
-        assert result["resonant_bins"] == 0
+    def test_empty_spectrum_returns_zeros(self):
+        result = kp_spectral_features(np.zeros(10), sample_interval_s=3 * 3600)
+        assert result["total_energy"] == 0.0
+        assert result["high_freq_ratio"] == 0.0
 
-    def test_filter_returns_required_keys(self):
-        spectrum = np.random.rand(25)
-        result = schumann_harmonic_filter(spectrum, sample_interval_s=3*3600)
-        assert "coherence" in result
-        assert "resonant_energy" in result
-        assert "total_energy" in result
-        assert "filtered_spectrum" in result
-        assert "resonant_bins" in result
-        assert "resonant_harmonics" in result
+    def test_returns_required_keys(self):
+        result = kp_spectral_features(np.random.rand(25) * 10,
+                                      sample_interval_s=3 * 3600)
+        for k in ("total_energy", "high_freq_ratio", "dominant_period_h"):
+            assert k in result
 
-    def test_filtered_spectrum_same_length(self):
-        spectrum = np.random.rand(25)
-        result = schumann_harmonic_filter(spectrum, sample_interval_s=3*3600)
-        assert len(result["filtered_spectrum"]) == len(spectrum)
+    def test_high_freq_ratio_bounded(self):
+        result = kp_spectral_features(np.random.rand(25) * 10,
+                                      sample_interval_s=3 * 3600)
+        assert 0.0 <= result["high_freq_ratio"] <= 1.0
 
-    def test_nonresonant_bins_attenuated(self):
-        spectrum = np.ones(25)
-        result = schumann_harmonic_filter(spectrum, sample_interval_s=3*3600)
-        filtered = result["filtered_spectrum"]
-        for i in range(1, len(filtered)):
-            assert filtered[i] <= 1.0
+    def test_dominant_period_positive(self):
+        # señal con estructura → algún periodo dominante en horas
+        kp = np.array([1.0 if i % 2 == 0 else 5.0 for i in range(48)])
+        spectrum = np.abs(np.fft.rfft(kp)) ** 2
+        result = kp_spectral_features(spectrum, sample_interval_s=3 * 3600)
+        assert result["dominant_period_h"] > 0
 
-    def test_dc_component_preserved(self):
-        spectrum = np.array([100.0] + [1.0] * 24)
-        result = schumann_harmonic_filter(spectrum, sample_interval_s=3*3600)
-        assert result["filtered_spectrum"][0] == 100.0
-
-    def test_coherence_between_zero_and_one(self):
-        spectrum = np.random.rand(25) * 10 + 0.1
-        result = schumann_harmonic_filter(spectrum, sample_interval_s=3*3600)
-        assert 0.0 <= result["coherence"] <= 1.0
-
-    def test_live_schumann_scales_harmonics(self):
-        spectrum = np.random.rand(25)
-        result_normal = schumann_harmonic_filter(
-            spectrum, sample_interval_s=3*3600, live_schumann_hz=7.83
-        )
-        result_excited = schumann_harmonic_filter(
-            spectrum, sample_interval_s=3*3600, live_schumann_hz=8.5
-        )
-        assert result_normal["resonant_bins"] != result_excited["resonant_bins"] or True
-
-    def test_higher_sample_rate_more_bins(self):
-        spectrum = np.random.rand(50)
-        result_slow = schumann_harmonic_filter(spectrum, sample_interval_s=3*3600)
-        result_fast = schumann_harmonic_filter(spectrum, sample_interval_s=60)
-        assert result_fast["resonant_bins"] >= 0
-        assert result_slow["resonant_bins"] >= 0
-
-    def test_all_schumann_harmonics_defined(self):
-        assert len(SCHUMANN_HARMONICS_HZ) == 5
-        assert SCHUMANN_HARMONICS_HZ[0] == pytest.approx(7.83, abs=0.01)
-        assert all(h > 0 for h in SCHUMANN_HARMONICS_HZ)
-        for i in range(1, len(SCHUMANN_HARMONICS_HZ)):
-            assert SCHUMANN_HARMONICS_HZ[i] > SCHUMANN_HARMONICS_HZ[i - 1]
-
-    def test_resonant_energy_leq_total(self):
-        spectrum = np.random.rand(25) * 100
-        result = schumann_harmonic_filter(spectrum, sample_interval_s=3*3600)
-        assert result["resonant_energy"] <= result["total_energy"] + 1e-10
+    def test_no_resonance_keys(self):
+        # la numerología quedó fuera: sin coherence ni resonant_bins
+        result = kp_spectral_features(np.random.rand(25),
+                                      sample_interval_s=3 * 3600)
+        assert "coherence" not in result
+        assert "resonant_bins" not in result
 
 
 # ══════════════════════════════════════════════════════════════════
-# Beta-1 Agent with Schumann Filter
+# Beta-1 con Schumann MEDIDO (Tomsk) como serie propia
 # ══════════════════════════════════════════════════════════════════
 
 
-class TestBeta1SchumannIntegration:
+class TestBeta1MeasuredSchumann:
 
     def _make_kp(self, n=48, pattern="flat"):
         if pattern == "flat":
@@ -116,7 +84,7 @@ class TestBeta1SchumannIntegration:
             return np.ones(n) * 0.5
         return np.random.rand(n) * 4
 
-    def test_analyze_includes_schumann_coherence(self):
+    def test_analyze_reports_measured_schumann(self):
         agent = Beta1Agent()
         agent.ingest({
             "kp_series": self._make_kp(48),
@@ -124,15 +92,16 @@ class TestBeta1SchumannIntegration:
             "schumann_activity": 10.0,
         })
         signal = agent.analyze()
-        assert "schumann_coherence" in signal.data
-        assert "schumann_resonant_bins" in signal.data
-        assert "filtered_energy" in signal.data
+        assert "schumann_activity_pct" in signal.data
+        assert "schumann_excited" in signal.data
+        # el filtro falso quedó fuera
+        assert "schumann_coherence" not in signal.data
+        assert "schumann_resonant_bins" not in signal.data
 
-    def test_schumann_excited_boosts_confidence(self):
+    def test_measured_excitation_boosts_confidence(self):
         agent_calm = Beta1Agent()
         agent_calm.ingest({
             "kp_series": self._make_kp(48, "high_freq"),
-            "schumann_frequency": 7.83,
             "schumann_activity": 5.0,
         })
         signal_calm = agent_calm.analyze()
@@ -140,40 +109,62 @@ class TestBeta1SchumannIntegration:
         agent_excited = Beta1Agent()
         agent_excited.ingest({
             "kp_series": self._make_kp(48, "high_freq"),
-            "schumann_frequency": 7.83,
             "schumann_activity": 50.0,
         })
         signal_excited = agent_excited.analyze()
+        if (signal_calm.signal_type == SignalType.ALERT
+                and signal_excited.signal_type == SignalType.ALERT):
+            assert signal_excited.confidence > signal_calm.confidence
 
-        if signal_calm.signal_type == SignalType.ALERT and signal_excited.signal_type == SignalType.ALERT:
-            assert signal_excited.confidence >= signal_calm.confidence
-
-    def test_filtered_energy_differs_from_raw(self):
-        agent = Beta1Agent()
-        agent.ingest({
-            "kp_series": self._make_kp(48, "high_freq"),
-            "schumann_frequency": 7.83,
-            "schumann_activity": 10.0,
-        })
-        signal = agent.analyze()
-        assert "spectral_energy" in signal.data
-        assert "filtered_energy" in signal.data
-
-    def test_watch_signal_on_coherent_excitation(self):
+    def test_watch_on_strong_measured_excitation(self):
         agent = Beta1Agent()
         agent.ingest({
             "kp_series": self._make_kp(48, "calm"),
-            "schumann_frequency": 7.83,
-            "schumann_activity": 50.0,
+            "schumann_activity": 50.0,   # > umbral fuerte (30)
         })
         signal = agent.analyze()
-        assert signal.signal_type in (SignalType.NEUTRAL, SignalType.WATCH)
+        assert signal.signal_type == SignalType.WATCH
+
+    def test_neutral_without_excitation(self):
+        agent = Beta1Agent()
+        agent.ingest({
+            "kp_series": self._make_kp(48, "calm"),
+            "schumann_activity": 5.0,
+        })
+        assert agent.analyze().signal_type == SignalType.NEUTRAL
+
+    def test_correlacion_tl_gated_short_window(self):
+        # ventana corta (sin 3 ciclos lunares) → None, jamás un r espurio
+        agent = Beta1Agent()
+        agent.ingest({
+            "kp_series": self._make_kp(48),
+            "lunar_phase": np.linspace(0.0, 0.4, 48),   # ni un ciclo
+            "lod_ms": np.linspace(1.0, 2.0, 48),
+        })
+        signal = agent.analyze()
+        assert signal.data["correlacion_TL"] is None
+        assert signal.data["ciclos_lunares_en_ventana"] < MIN_CICLOS_LUNARES
+
+    def test_correlacion_tl_with_enough_cycles(self):
+        # 4 ciclos lunares completos → correlación admisible
+        n = 400
+        fase = np.mod(np.linspace(0, 4.0, n), 1.0)   # 4 wraps
+        lod = np.sin(np.linspace(0, 8 * np.pi, n)) + 1.5
+        agent = Beta1Agent()
+        agent.ingest({
+            "kp_series": self._make_kp(48),
+            "lunar_phase": fase,
+            "lod_ms": lod,
+        })
+        signal = agent.analyze()
+        assert signal.data["ciclos_lunares_en_ventana"] >= MIN_CICLOS_LUNARES
+        assert signal.data["correlacion_TL"] is not None
+        assert -1.0 <= signal.data["correlacion_TL"] <= 1.0
 
     def test_no_signal_without_kp(self):
         agent = Beta1Agent()
         agent.ingest({"schumann_frequency": 8.0, "schumann_activity": 100.0})
-        signal = agent.analyze()
-        assert signal.signal_type == SignalType.NO_SIGNAL
+        assert agent.analyze().signal_type == SignalType.NO_SIGNAL
 
     def test_signal_type_watch_exists(self):
         assert hasattr(SignalType, "WATCH")
