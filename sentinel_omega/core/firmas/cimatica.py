@@ -58,6 +58,28 @@ def clave_patron(features: Dict[str, Any]) -> str:
     return "|".join(partes)
 
 
+def _ensure_tabla(conn: sqlite3.Connection) -> None:
+    """Crea tbl_cimatica_patrones si no existe (DDL espejo de schema.py) —
+    para conexiones que no pasaron por init_database (scripts, DB viejas)."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_cimatica_patrones ("
+        "patron_id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "clave TEXT NOT NULL, "
+        "ambito TEXT NOT NULL DEFAULT 'general' "
+        "CHECK(ambito IN ('general','nodo')), "
+        "id_nodo INTEGER, event_class TEXT, "
+        "telemetria_json TEXT NOT NULL DEFAULT '{}', "
+        "frecuencia INTEGER NOT NULL DEFAULT 1, "
+        "primera_vez TEXT DEFAULT (datetime('now')), "
+        "ultima_vez TEXT DEFAULT (datetime('now')), "
+        "UNIQUE(clave, ambito, id_nodo))"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cimatica_clave "
+        "ON tbl_cimatica_patrones(clave)"
+    )
+
+
 def registrar_snapshot(
     conn: sqlite3.Connection,
     features: Dict[str, Any],
@@ -75,6 +97,7 @@ def registrar_snapshot(
     clave = clave_patron(features)
     if not clave:
         return (0, False, 0)
+    _ensure_tabla(conn)
     ambito = "nodo" if id_nodo is not None else "general"
 
     fila = conn.execute(
@@ -142,6 +165,7 @@ def entrenar_cimatica(
     )
 
     conn = _sq.connect(db_path)
+    _ensure_tabla(conn)
     eventos = conn.execute(
         "SELECT timestamp_blk, id_nodo, sismo_max_mag "
         "FROM tbl_historico_sismico_raw WHERE sismo_max_mag >= ? "
