@@ -41,16 +41,25 @@ Modificadores post-core:
 | HIGH     | 15 - 30 | Precursores múltiples, alerta preventiva         |
 | CRITICAL | >= 30   | Correlación multi-dominio, alerta inmediata      |
 
-### 2. Filtro Fourier-Schumann (Innovación Beta-1)
+### 2. Espectro Kp plano + Schumann MEDIDO (Beta-1, honesto desde v2.5.1)
 
-El agente Beta-1 aplica un filtro armónico al espectro FFT de datos geomagnéticos (serie temporal de Kp):
+El agente Beta-1 combina dos observaciones independientes:
 
-- **Armónicos de Schumann**: 7.83, 14.3, 20.8, 27.3, 33.8 Hz
-- Los datos geofísicos se muestrean en intervalos de horas, no Hz directamente. El filtro identifica qué bins de frecuencia son **sub-armónicos** de las resonancias de Schumann
-- Bins no-resonantes se atenúan al 10%, preservando solo la energía resonante
-- La frecuencia de Schumann en vivo (no hardcoded a 7.83 Hz) escala proporcionalmente los armónicos
+- **FFT plano del Kp** (`kp_spectral_features`): energía total, ratio de alta
+  frecuencia y periodo dominante del espectro geomagnético — sin disfraz de
+  resonancia. (El "filtro armónico Schumann" anterior era físicamente
+  imposible: 7.83 Hz está ~5 órdenes de magnitud sobre el Nyquist del Kp
+  muestreado a 3 h, la "coherencia" salía ≈1 siempre. Se eliminó.)
+- **Schumann MEDIDO de Tomsk**: frecuencia y % de actividad reales de la
+  estación. Excitación medida > 15% suma confianza; > 30% con espectro Kp
+  calmo produce WATCH — porque es una observación, no un artefacto.
+- **Correlación Tierra-Luna** solo con ≥ 3 ciclos lunares completos en la
+  ventana (dos series suaves en ventana corta dan |r| alto por azar); con
+  menos, se reporta `None` y jamás alimenta confianza.
 
-**Hallazgo**: La **coherencia de Schumann** — ratio de energía en bins resonantes vs energía total — proporciona un indicador de acoplamiento Tierra-ionosfera. Coherencia > 0.3 combinada con excitación activa produce la señal WATCH, un estado intermedio entre NEUTRAL y ALERT que indica "precursor potencial, monitorear de cerca". Este descubrimiento emergió de la correlación entre excitaciones anómalas en la resonancia Schumann de Tomsk (Rusia) y actividad sísmica significativa 48-72 horas después.
+**Hallazgo (el que sí sobrevive a la física)**: la correlación entre
+excitaciones anómalas MEDIDAS en la resonancia Schumann de Tomsk y actividad
+sísmica significativa 48-72 horas después.
 
 ### 3. Muro de los 5 Eventos (Correlación Cruzada Multi-Dominio)
 
@@ -97,13 +106,34 @@ Costo de falsa  =  1 x peso_base
 
 **Innovación**: El sistema prefiere sobre-alertar a sub-alertar. Un 10% de falsas alarmas es aceptable si el sistema captura el 95% de eventos reales. Esto invierte la lógica de la mayoría de sistemas de alerta que optimizan para minimizar falsas alarmas.
 
-### 7. Validación de Asertividad (V46 Lineage)
+### 7. Validación de Asertividad (V46 Lineage) + Línea Base de Molchan
 
 El tracker de asertividad compara predicciones contra eventos reales del catálogo USGS usando distancia euclidiana dentro de un radio de 5 grados:
 
 - **Hit rate**: Predicciones confirmadas por eventos M>=4.5
 - **Miss rate**: Eventos que no fueron predichos
 - **False alarm rate**: Predicciones sin evento correspondiente
+
+**Honestidad estadística (v2.5.1)**:
+- **Verdad POR FILA**: cada predicción viva se resuelve contra los eventos de
+  SU ventana de 72 h y los **nodos de la propia predicción** (un aviso solo
+  vale si acierta DÓNDE avisó); los silencios se juzgan contra toda la malla.
+- **Línea base de Molchan** (`core/precursor/baseline.py`): un modelo nulo que
+  alerta SIEMPRE tiene como hit-rate la tasa base de sismicidad. El sistema
+  reporta su **ganancia** (hit-rate ÷ tasa base) en cada corte — ganancia ≤ 1
+  significa que el número bonito es geografía, no predicción.
+- Solo la fase **viva** puntúa asertividad (vista `viva_real`); el
+  entrenamiento es bitácora y no se mezcla.
+
+### 8. Cimática — memoria de patrones destilada por eventos
+
+Cada ciclo toma un **snapshot** de la telemetría (huella de bandas
+logarítmicas) en `tbl_cimatica_patrones`: patrón nuevo → telemetría completa
+guardada; patrón repetido → frecuencia+1. Cuando el Juez confirma un evento
+real, los patrones de su víspera se **retro-etiquetan** con lo que desataron;
+el patrón que tras 30 días nunca se asoció a un evento es ruido y se **poda**.
+La tabla converge sola a la cimática real de cada tipo de evento (por nodo y
+general). El histórico de 30 años la pre-puebla vía `entrenar_cimatica()`.
 
 ---
 
@@ -229,9 +259,19 @@ Se aplica a:
 | Tabla                      | Propósito                                                        |
 |----------------------------|-------------------------------------------------------------------|
 | TBL_FIRMAS                 | Memoria de patrones por bot. Estado: nueva → observada → recurrente → consolidada (por recurrencia). Solo las consolidadas son conocimiento exigible. |
-| TBL_JUEZ_AUDITORIA         | Ledger disciplinario del Juez: ACIERTO / FALLO / FALSO_POSITIVO con severidad asimétrica (omitir firma conocida = 20 base, omisión = 10, falsa alarma = 1) escalada por reincidencia. |
+| TBL_JUEZ_AUDITORIA         | Ledger disciplinario del Juez: ACIERTO / FALLO / FALSO_POSITIVO con severidad asimétrica (omitir firma conocida = 20 base, omisión = 10, falsa alarma = 1) escalada por reincidencia. Columna **`fase`** estricta (viva/reconocimiento/backtest/observacion/trasfondo); la fase viva es **append-only**. |
+| **viva_real** (vista)      | Vara canónica de asertividad: SOLO filas `fase='viva'`. Todas las tuberías de reporte puntúan desde aquí. |
+| TBL_PESOS_BOTS             | Pesos de credibilidad por bot [0.3, 1.5] — castigo multiplicativo (Padre paga doble), refuerzo recupera hasta 1.0. |
+| tbl_firmas_menores         | Disciplina de trasfondo: firmas TEMPORALES de sismos M3.3–4.49 (retención 90 días, solo sobreviven los pesos). |
 | tbl_eventos_no_sismicos    | Catálogo derivado de erupciones volcánicas (VEI≥3) y tormentas solares (Kp≥6 onset). Alimenta la Fase 1b de entrenamiento multi-evento. |
 | tbl_patrones_correlacion   | Matriz feature × event_class calculada tras el entrenamiento. Para cada par guarda media, media global y ratio; ratio > 1 significa que la variable está elevada en los 14 días previos a ese tipo de evento. |
+| tbl_correlaciones_padre / _omega | Conteo de patrones → clase de evento (+1 por ocurrencia, sin anotar cada una). Cuantifican p. ej. el Silent Trigger. |
+| tbl_orden_precursores / _veredictos | El Padre ve el ORDEN de los precursores en la víspera y discierne contando si la secuencia importa o es indiferente. |
+| tbl_sesgo_aprendizaje      | Realidad vs fantasía por bot: reconocimiento causal (memoria ANTERIOR al evento) vs in-sample. Medido PRE (sin castigo) y POST (con castigo) en cada entrenamiento. |
+| **tbl_cimatica_patrones**  | Snapshot de telemetría por ciclo (huella de bandas logarítmicas). Patrón nuevo = telemetría completa; repetido = frecuencia+1. Retro-etiquetado por eventos reales y poda del ruido (30 días de gracia). |
+| **tbl_correo_salida**      | Outbox de ALERTAS y REPORTES por email (fail-soft: sin SMTP quedan PENDIENTES). |
+| tbl_salud_sistema          | Bitácora por corte: versión, pesos, asertividad viva, deltas. |
+| tbl_resumen_diario         | Barrido diario: lo compactado no se pierde, se resume. |
 
 **Entrenamiento en tres fases** (`--entrenar`):
 - **Fase 1** — Reconocimiento sísmico (sin castigo): extrae la ventana de 14 días previa a cada evento M5+ del backcast y la registra como firma por bot.
@@ -404,7 +444,7 @@ plotly>=5.15         # Visualizaciones
 ## Ejecución
 
 ```bash
-# Tests (301 tests, ejecutar desde /home/user/workspaces/)
+# Tests (396 tests, ejecutar desde /home/user/workspaces/)
 python -m pytest sentinel_omega/tests/ -q
 
 # Dashboard (9 tabs interactivas)
@@ -426,8 +466,29 @@ python sentinel_omega/launcher.py --once
 # Carga histórica (one-time, 1994-2025)
 python sentinel_omega/launcher.py --backcast
 
-# Entrenamiento de firmas sobre el backcast (Fase 1 sísmica + Fase 1b no sísmica + Fase 2 disciplina)
+# Entrenamiento completo (sesgo PRE → Fase 1 sísmica → Fase 1b no sísmica →
+# Fase 2 disciplina → lags → correlaciones → cimática histórica → sesgo POST)
 python sentinel_omega/launcher.py --entrenar
+
+# Disciplina de trasfondo (sismos menores M3.3-4.49, tabla temporal)
+python sentinel_omega/launcher.py --disciplina
+
+# Barrido diario (compacta historial, correlaciones, orden, sesgo, poda cimática)
+python sentinel_omega/launcher.py --barrido
+
+# Los flags de tarea (--entrenar/--disciplina/--barrido/--backcast) corren
+# la tarea y SALEN; solo entran al ciclo continuo sin flags o con --once.
+
+# Pasada del Juez: real vs predicción (ritmo auto-impuesto de 4h)
+python deploy/verificacion_juez.py
+
+# Reportes periódicos (comparativo diario / semanal / mensual, con gráficas)
+python deploy/reporte_periodico.py --comparativo
+python deploy/reporte_periodico.py --semanal
+python deploy/reporte_periodico.py --mensual
+
+# Despacho del outbox de correo
+python deploy/enviar_correos.py
 
 # Detener gracefully (SIGTERM -> espera 30s)
 python sentinel_omega/shutdown.py
@@ -457,13 +518,16 @@ El launcher:
 ## Variables de Entorno
 
 ```bash
-export TELEGRAM_BOT_TOKEN="..."        # Dispatch de alertas Telegram
-export TELEGRAM_CHAT_ID="..."          # Chat destino para alertas
+export SMTP_USER="..."                 # Cuenta emisora de correo (canal de alertas)
+export SMTP_PASS="..."                 # App password de Gmail
+export CORREO_DESTINO="..."            # Destinatario (default elan.zainos.corona@gmail.com)
 export OPENWEATHERMAP_KEY="..."        # Datos atmosféricos (presión, humedad)
 export COINGECKO_API_KEY="..."         # Datos de mercado crypto
 export ALPHA_VANTAGE_KEY="..."         # Datos bursátiles
 export BITSO_API_KEY="..."             # Exchange Bitso
 export BITSO_API_SECRET="..."          # Exchange Bitso
+export TELEGRAM_BOT_TOKEN="..."        # Telegram (en pausa: el canal es correo)
+export TELEGRAM_CHAT_ID="..."          # Telegram (en pausa)
 ```
 
 > **Seguridad**: Todas las claves se cargan exclusivamente vía `os.environ.get()`. Nunca se hardcodean tokens en el código. Las claves se rotan según se van usando.
@@ -477,7 +541,8 @@ export BITSO_API_SECRET="..."          # Exchange Bitso
 | V32      | TITAN V32        | Fórmula Fantasma, Schumann WPC, 2 muros (Geo+Solar) |
 | V46      | TITAN V46        | Asertividad, validación contra USGS, hits/misses     |
 | V53      | TITAN V53        | Patrones WPC, Lorenz-X/Lyapunov, multi-horizonte     |
-| v2.5     | Sentinel Omega   | 15 precursores, 5 muros, 125 nodos, 6 agentes, dashboard, filtro Schumann, backcast 1H |
+| v2.5     | Sentinel Omega   | 15 precursores, 5 muros, 125 nodos, 6 agentes, dashboard, backcast 1H |
+| v2.5.1   | Sentinel Omega   | Honestidad total: fase estricta + viva_real, verdad por fila con nodos propios, línea base de Molchan, agentes honestos (beta1 Schumann medido, alfa1 ONNX real, delta contexto, alfa2 proxy degradado), Omega (ritmo cósmico), cimática con retro-etiquetado y poda, correo con gráficas, rutinas 24/7 |
 
 ---
 

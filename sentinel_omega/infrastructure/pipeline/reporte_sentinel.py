@@ -118,11 +118,16 @@ def _safe_query(conn, query, params=()):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _bloque_juez_bot(conn, bot_name: str, lines: list) -> dict:
-    """Imprime y devuelve las estadísticas del Juez para un bot específico."""
+    """Imprime y devuelve las estadísticas del Juez para un bot específico.
+
+    Vara canónica: viva_real (solo fase='viva') — la misma definición que
+    generar_reporte.py y reporte_ejecutivo.py. Las filas de entrenamiento
+    (reconocimiento/backtest/observacion/trasfondo) jamás puntúan aquí.
+    """
     padre_juez = _safe_query(
         conn,
         "SELECT resultado, COUNT(*) as n, COALESCE(SUM(severidad),0) as sev "
-        "FROM TBL_JUEZ_AUDITORIA WHERE bot_name=? AND resultado != 'PENDIENTE' "
+        "FROM viva_real WHERE bot_name=? AND resultado != 'PENDIENTE' "
         "GROUP BY resultado",
         (bot_name,)
     )
@@ -141,7 +146,7 @@ def _bloque_juez_bot(conn, bot_name: str, lines: list) -> dict:
 
     recientes = _safe_query(
         conn,
-        "SELECT resultado FROM TBL_JUEZ_AUDITORIA "
+        "SELECT resultado FROM viva_real "
         "WHERE bot_name=? AND resultado != 'PENDIENTE' "
         "ORDER BY timestamp DESC LIMIT 200",
         (bot_name,)
@@ -265,7 +270,7 @@ def reporte_general(db_path: str) -> Dict:
     juez_rows = _safe_query(
         conn,
         "SELECT bot_name, resultado, COUNT(*) as n, COALESCE(SUM(severidad),0) as sev "
-        "FROM TBL_JUEZ_AUDITORIA WHERE resultado != 'PENDIENTE' "
+        "FROM viva_real WHERE resultado != 'PENDIENTE' "
         "GROUP BY bot_name, resultado ORDER BY bot_name, resultado"
     )
     juez_pivot: Dict[str, Dict] = {}
@@ -782,7 +787,7 @@ def reporte_omega(db_path: str) -> Dict:
     # Juez sistema
     juez_total = _safe_query(
         conn,
-        "SELECT resultado, COUNT(*) as n FROM TBL_JUEZ_AUDITORIA "
+        "SELECT resultado, COUNT(*) as n FROM viva_real "
         "WHERE resultado != 'PENDIENTE' GROUP BY resultado"
     )
     jt = {r["resultado"]: r["n"] for r in juez_total}

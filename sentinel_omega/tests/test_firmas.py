@@ -192,6 +192,103 @@ class TestJuez:
         assert resumen["padre"]["ACIERTO"] == 1
         assert resumen["padre"]["asertividad"] == 1.0
 
+    def test_eventos_por_fila_dentro_de_ventana(self, db):
+        # Verdad POR FILA: el evento debe caer en la ventana de ESA predicción
+        import time as _t
+        conn, _ = db
+        juez = Juez(conn)
+        ts = _t.time() - 10 * 3600
+        juez.registrar_prediccion("padre", "watch", 0.7, ventana_h=1,
+                                  timestamp=ts)
+        eventos = [{"epoch": ts + 1800, "lat": 17.0, "lon": -99.5,
+                    "magnitude": 5.0}]
+        res = juez.evaluar_pendientes(
+            evento_ocurrido=False, eventos=eventos,
+        )
+        assert res[0]["resultado"] == "ACIERTO"
+
+    def test_eventos_por_fila_fuera_de_ventana(self, db):
+        # Evento fuera de la ventana temporal NO valida la predicción
+        import time as _t
+        conn, _ = db
+        juez = Juez(conn)
+        ts = _t.time() - 10 * 3600
+        juez.registrar_prediccion("padre", "watch", 0.7, ventana_h=1,
+                                  timestamp=ts)
+        eventos = [{"epoch": ts + 5 * 3600, "lat": 17.0, "lon": -99.5,
+                    "magnitude": 5.0}]
+        res = juez.evaluar_pendientes(
+            evento_ocurrido=True,   # ignorado: eventos manda
+            eventos=eventos,
+        )
+        assert res[0]["resultado"] == "FALSO_POSITIVO"
+
+    def test_eventos_filtrados_por_zona(self, db):
+        # Evento lejos de toda zona monitoreada no cuenta
+        import time as _t
+        conn, _ = db
+        juez = Juez(conn)
+        ts = _t.time() - 10 * 3600
+        juez.registrar_prediccion("padre", "watch", 0.7, ventana_h=1,
+                                  timestamp=ts)
+        eventos = [{"epoch": ts + 1800, "lat": 60.0, "lon": 30.0,
+                    "magnitude": 5.0}]
+        res = juez.evaluar_pendientes(
+            evento_ocurrido=False, eventos=eventos,
+            zonas=[(17.0, -99.5)], radio_deg=5.0,
+        )
+        assert res[0]["resultado"] == "FALSO_POSITIVO"
+
+    def test_nodos_propios_ganan_a_zonas_globales(self, db):
+        # La fila trae SUS nodos: un evento cerca de otra parte de la malla
+        # global NO valida el aviso — solo cuenta donde avisó.
+        import time as _t
+        conn, _ = db
+        juez = Juez(conn)
+        ts = _t.time() - 10 * 3600
+        juez.registrar_prediccion(
+            "padre", "watch", 0.7, ventana_h=1, timestamp=ts,
+            detalles={"nodos": [{"id": 14, "lat": 17.0, "lon": -99.5}]},
+        )
+        eventos = [{"epoch": ts + 1800, "lat": 35.0, "lon": 139.0,
+                    "magnitude": 5.5}]   # lejos del nodo avisado
+        res = juez.evaluar_pendientes(
+            evento_ocurrido=False, eventos=eventos,
+            zonas=[(17.0, -99.5), (35.0, 139.0)],   # malla global lo cubre
+        )
+        assert res[0]["resultado"] == "FALSO_POSITIVO"
+
+    def test_nodos_propios_acierto_en_su_nodo(self, db):
+        import time as _t
+        conn, _ = db
+        juez = Juez(conn)
+        ts = _t.time() - 10 * 3600
+        juez.registrar_prediccion(
+            "padre", "watch", 0.7, ventana_h=1, timestamp=ts,
+            detalles={"nodos": [{"id": 14, "lat": 17.0, "lon": -99.5}]},
+        )
+        eventos = [{"epoch": ts + 1800, "lat": 16.6, "lon": -99.1,
+                    "magnitude": 5.5}]   # a <5° del nodo avisado
+        res = juez.evaluar_pendientes(evento_ocurrido=False, eventos=eventos)
+        assert res[0]["resultado"] == "ACIERTO"
+
+    def test_eventos_zona_cercana_cuenta(self, db):
+        import time as _t
+        conn, _ = db
+        juez = Juez(conn)
+        ts = _t.time() - 10 * 3600
+        juez.registrar_prediccion("padre", "no_signal", 0.3, ventana_h=1,
+                                  timestamp=ts)
+        eventos = [{"epoch": ts + 1800, "lat": 16.5, "lon": -99.0,
+                    "magnitude": 5.6}]
+        res = juez.evaluar_pendientes(
+            evento_ocurrido=False, eventos=eventos,
+            zonas=[(17.0, -99.5)], radio_deg=5.0,
+        )
+        # calló y hubo evento en zona → FALLO con gravedad por magnitud
+        assert res[0]["resultado"] == "FALLO"
+        assert res[0]["severidad"] > 10.0
+
 
 # ── Entrenamiento sobre backcast sintetizado en test ────────────────
 
@@ -749,6 +846,131 @@ class TestOrdenPrecursores:
         # persistido
         n = conn.execute("SELECT COUNT(*) FROM tbl_orden_veredictos").fetchone()[0]
         assert n >= 1
+
+    def test_dominio_schumann_desde_serie_viva(self, db):
+        # El latido (beta1) entra al cruce en cuanto hay medición viva.
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            analizar_orden_precursores,
+        )
+        from datetime import datetime, timedelta
+        base = datetime(2020, 6, 1)
+        for ev in range(35):
+            tse = base + timedelta(days=15 * ev)
+            for h in range(0, 336, 3):
+                ts = tse - timedelta(hours=336 - h)
+                conn.execute(
+                    "INSERT OR IGNORE INTO tbl_schumann_vivo "
+                    "(timestamp_blk, schumann_hz, schumann_activity) "
+                    "VALUES (?, 7.9, 45.0)", (ts.strftime("%Y-%m-%d %H:00"),))
+            conn.execute(
+                "INSERT OR IGNORE INTO tbl_historico_sismico_raw "
+                "(timestamp_blk, id_nodo, sismo_count, sismo_max_mag) "
+                "VALUES (?, 45, 1, 5.5)", (tse.strftime("%Y-%m-%d %H:%M"),))
+        conn.commit()
+        res = analizar_orden_precursores(path, muestra=100)
+        # algún orden debe incluir SCHUMANN
+        assert any("SCHUMANN" in o for (o, _) in
+                   conn.execute("SELECT orden, event_class FROM tbl_orden_precursores"))
+
+
+class TestSecuenciaNodos:
+    """La ruta de nodos por la que se propaga la energía: global vs local."""
+
+    def _sembrar(self, conn, base, nodos_ruta, mag, dia0):
+        from datetime import timedelta
+        tse = base + timedelta(days=dia0)
+        # cada nodo de la ruta se activa en un momento distinto de la víspera,
+        # en orden temporal (propagación espacial)
+        for i, nodo in enumerate(nodos_ruta[:-1]):
+            t = tse - timedelta(hours=60 - i * 12)
+            conn.execute(
+                "INSERT OR IGNORE INTO tbl_historico_sismico_raw "
+                "(timestamp_blk, id_nodo, sismo_count, sismo_max_mag) "
+                "VALUES (?, ?, 1, 3.2)", (t.strftime("%Y-%m-%d %H:%M"), nodo))
+        conn.execute(
+            "INSERT OR IGNORE INTO tbl_historico_sismico_raw "
+            "(timestamp_blk, id_nodo, sismo_count, sismo_max_mag) "
+            "VALUES (?, ?, 1, ?)",
+            (tse.strftime("%Y-%m-%d %H:%M"), nodos_ruta[-1], mag))
+
+    def test_ruta_global_vs_local(self, db):
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            analizar_secuencia_nodos,
+        )
+        from datetime import datetime
+        base = datetime(2010, 6, 1)
+        dia = 0
+        # RUTA GLOBAL: nodos 12>45 precede a M5 Y a M6 (distintos tipos)
+        for _ in range(5):
+            self._sembrar(conn, base, [12, 45], 5.5, dia); dia += 15
+        for _ in range(4):
+            self._sembrar(conn, base, [12, 45], 6.2, dia); dia += 15
+        # RUTA LOCAL: nodos 30>31 solo precede a M5
+        for _ in range(5):
+            self._sembrar(conn, base, [30, 31], 5.4, dia); dia += 15
+        conn.commit()
+
+        res = analizar_secuencia_nodos(path, muestra=200)
+        assert res["recurrentes"] >= 2
+        v = {s: d for s, d in res["veredictos"].items()}
+        # la ruta 12>45 aparece con M5 y M6 -> GLOBAL
+        global_seq = next((s for s, d in v.items()
+                           if d["alcance"] == "GLOBAL"), None)
+        assert global_seq is not None
+        assert "nodo12>nodo45" in global_seq
+        # la ruta 30>31 es de un solo tipo -> LOCAL
+        assert any(d["alcance"] == "LOCAL" for d in v.values())
+        # persistido
+        n = conn.execute(
+            "SELECT COUNT(*) FROM tbl_secuencia_veredictos WHERE alcance='GLOBAL'"
+        ).fetchone()[0]
+        assert n >= 1
+
+    def test_incluye_eventos_no_sismicos(self, db):
+        # Todo evento natural es liberación de energía: una ruta que precede a
+        # un SISMO y a un VOLCÁN es cimática global cruzando dominios.
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            analizar_secuencia_nodos,
+        )
+        from datetime import datetime, timedelta
+        base = datetime(2011, 1, 1)
+        dia = 0
+        # ruta 12>45 antes de sismos M5
+        for _ in range(4):
+            self._sembrar(conn, base, [12, 45], 5.4, dia); dia += 20
+        # misma ruta 12>45 antes de erupciones (catálogo no sísmico)
+        for _ in range(4):
+            tse = base + timedelta(days=dia)
+            for i, nodo in enumerate([12]):
+                t = tse - timedelta(hours=60 - i * 12)
+                conn.execute(
+                    "INSERT OR IGNORE INTO tbl_historico_sismico_raw "
+                    "(timestamp_blk, id_nodo, sismo_count, sismo_max_mag) "
+                    "VALUES (?, ?, 1, 3.1)", (t.strftime("%Y-%m-%d %H:%M"), nodo))
+            conn.execute(
+                "INSERT OR IGNORE INTO tbl_eventos_no_sismicos "
+                "(timestamp_blk, id_nodo, event_class, fuente, intensidad) "
+                "VALUES (?, 45, 'ERUPCION_VEI4', 'test', 4.0)",
+                (tse.strftime("%Y-%m-%d %H:%M"),))
+            dia += 20
+        conn.commit()
+
+        res = analizar_secuencia_nodos(path, muestra=200)
+        # la ruta 12>45 precede a SISMO_M5 y a ERUPCION_VEI4 -> GLOBAL cruzando
+        # dominios (sísmico + volcánico)
+        v = res["veredictos"]
+        cross = next((s for s, d in v.items()
+                      if d["alcance"] == "GLOBAL" and "nodo12>nodo45" in s), None)
+        assert cross is not None, "la ruta cruza-dominios debe ser GLOBAL"
+        clases = conn.execute(
+            "SELECT event_class FROM tbl_secuencia_nodos WHERE secuencia = ?",
+            (cross,)).fetchall()
+        nombres = {c[0] for c in clases}
+        assert "SISMO_M5" in nombres
+        assert "ERUPCION_VEI4" in nombres
 
 
 class TestOmegaMapeado:

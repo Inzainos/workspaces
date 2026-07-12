@@ -1,95 +1,65 @@
 """
-Beta-1 Agent — Spectral/Frequency Analysis
-Sources: NOAA Kp index, USGS seismic catalog, IERS LOD, Lunar phase
-Method: FFT with Schumann harmonic filter
-Role: Frequency/harmonic analysis, tidal cycles, cymatic patterns
+Beta-1 Agent — Spectral/Frequency Analysis + measured Schumann resonance
+Sources: NOAA Kp index, USGS seismic catalog, IERS LOD, Lunar phase,
+         Tomsk SRF (MEASURED Schumann resonance: frequency + activity)
+Method: plain FFT spectral features on Kp + measured-Schumann excitation
 
-Fourier-Schumann filter (Formulas.pdf):
-  "Descartar frecuencias que no armonicen con la Resonancia de Schumann
-   (7.83Hz o sus múltiplos)"
+Honestidad física (v2.5.1):
+  El "filtro armónico Schumann" sobre Kp muestreado a 3 h era numerología:
+  7.83 Hz está ~5 órdenes de magnitud por encima del Nyquist (~4.6e-5 Hz),
+  así que la "coherencia armónica" salía ≈1 siempre y sumaba un boost
+  espurio a la confianza. Se eliminó. Ahora:
+    - El FFT del Kp es una feature espectral PLANA (energía, periodo
+      dominante, ratio de alta frecuencia) — sin disfraz de resonancia.
+    - "Schumann" es el dato MEDIDO real de Tomsk (schumann_frequency /
+      schumann_activity), tratado como serie propia — la excitación medida
+      sí puede subir confianza, porque es una observación, no un artefacto.
 """
 
 import numpy as np
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from sentinel_omega.core.shared.agent_base import BaseAgent, AgentSignal, SignalType
 
-SCHUMANN_HARMONICS_HZ: Tuple[float, ...] = (7.83, 14.3, 20.8, 27.3, 33.8)
-
-HARMONIC_TOLERANCE = 0.15
-
 # Maximum LOD reference (ms) used to normalise rotacion_tierra to [0, 1].
-# Historical IERS data shows LOD rarely exceeds ±3 ms; we use 3.0 as the
-# upper bound so that a day 3 ms longer than nominal maps to rotacion = 0.
 LOD_REF_MS: float = 3.0
 
+# La correlación T-L solo es estadísticamente admisible con ventana larga:
+# dos series suaves en ventana corta dan |r| alto por azar. Exigimos que la
+# serie lunar cubra al menos 3 ciclos completos (3 wraps de fase).
+MIN_CICLOS_LUNARES = 3
 
-def schumann_harmonic_filter(
+
+def kp_spectral_features(
     power_spectrum: np.ndarray,
     sample_interval_s: float,
-    live_schumann_hz: float = 7.83,
-    tolerance: float = HARMONIC_TOLERANCE,
 ) -> Dict[str, Any]:
-    """
-    Fourier-Schumann harmonic filter.
+    """Plain spectral features of the Kp power spectrum.
 
-    Identifies which frequency bins in a power spectrum are sub-harmonic
-    of the Schumann resonance (7.83 Hz and overtones). Attenuates
-    non-resonant bins by 0.1×, keeping resonant energy intact.
-
-    For low-rate geophysical data (hours-scale sampling), no bin can
-    directly resolve 7.83 Hz. Instead we check sub-harmonic alignment:
-    whether f_bin divides evenly into a Schumann harmonic.
-
-    Returns coherence ratio, filtered spectrum, and resonant bin count.
+    No harmonic/resonance interpretation: at hours-scale sampling the
+    spectrum resolves periods of hours-days, nothing else. Returns total
+    energy, high-frequency energy ratio and dominant period (hours).
     """
     n_fft = len(power_spectrum)
-    n_signal = 2 * (n_fft - 1)
-    freqs = np.fft.rfftfreq(n_signal, d=sample_interval_s)
-
     total_energy = float(np.sum(power_spectrum[1:]))
-    if total_energy < 1e-10:
+    if n_fft < 2 or total_energy < 1e-10:
         return {
-            "coherence": 0.0,
-            "resonant_energy": 0.0,
             "total_energy": 0.0,
-            "filtered_spectrum": power_spectrum.copy(),
-            "resonant_bins": 0,
-            "resonant_harmonics": [],
+            "high_freq_ratio": 0.0,
+            "dominant_period_h": 0.0,
         }
 
-    scale = live_schumann_hz / 7.83 if live_schumann_hz > 0 else 1.0
-    scaled_harmonics = tuple(h * scale for h in SCHUMANN_HARMONICS_HZ)
-
-    resonant_mask = np.zeros(n_fft, dtype=bool)
-    resonant_mask[0] = True
-    matched_harmonics: List[str] = []
-
-    for i in range(1, n_fft):
-        freq = freqs[i]
-        if freq < 1e-10:
-            continue
-        for harmonic in scaled_harmonics:
-            ratio = harmonic / freq
-            nearest_int = round(ratio)
-            if nearest_int > 0 and abs(ratio - nearest_int) / nearest_int < tolerance:
-                resonant_mask[i] = True
-                matched_harmonics.append(f"{freq:.6f}Hz→{harmonic:.2f}Hz//{nearest_int}")
-                break
-
-    resonant_energy = float(np.sum(power_spectrum[1:][resonant_mask[1:]]))
-    coherence = resonant_energy / total_energy
-
-    filtered = power_spectrum.copy()
-    filtered[~resonant_mask] *= 0.1
-
+    dominant_idx = int(np.argmax(power_spectrum[1:]) + 1)
+    n_signal = 2 * (n_fft - 1)
+    dominant_period_h = (
+        (n_signal * sample_interval_s / 3600.0) / dominant_idx
+        if dominant_idx > 0 else 0.0
+    )
+    high = float(np.sum(power_spectrum[n_fft // 2:]))
     return {
-        "coherence": coherence,
-        "resonant_energy": resonant_energy,
         "total_energy": total_energy,
-        "filtered_spectrum": filtered,
-        "resonant_bins": int(np.sum(resonant_mask[1:])),
-        "resonant_harmonics": matched_harmonics[:10],
+        "high_freq_ratio": high / total_energy,
+        "dominant_period_h": float(dominant_period_h),
     }
 
 
@@ -97,7 +67,8 @@ class Beta1Agent(BaseAgent):
 
     FFT_WINDOW_H = 48
     KP_SAMPLE_INTERVAL_H = 3
-    SCHUMANN_EXCITATION_THRESHOLD = 15.0
+    SCHUMANN_EXCITATION_THRESHOLD = 15.0   # % actividad medida (Tomsk)
+    SCHUMANN_STRONG_EXCITATION = 30.0      # excitación fuerte medida
 
     def __init__(self):
         super().__init__(name="beta1", layer="geodynamic")
@@ -117,71 +88,50 @@ class Beta1Agent(BaseAgent):
         self._schumann_activity = data.get("schumann_activity", 0.0)
         self.logger.info("Beta-1 data ingested")
 
-    def _compute_tl_features(self) -> Dict[str, float]:
-        """
-        Compute individual and combined Tierra-Luna (TL) features.
+    def _compute_tl_features(self) -> Dict[str, Any]:
+        """Tierra-Luna (TL) features.
 
-        Returns a dict with:
-          fase_luna        – current lunar phase fraction [0, 1]
-                             (0 = new moon, 0.5 = full moon, 1 = new moon again)
-          rotacion_tierra  – normalised Earth rotation proxy [0, 1]
-                             derived from the last LOD value:
-                             rotacion_tierra = 1 – clamp(lod_ms / LOD_REF_MS, 0, 1)
-                             A value of 1 means nominal rotation speed; lower values
-                             indicate the tidal brake is stronger.
-          correlacion_TL   – Pearson correlation between the lunar-phase series and
-                             the LOD series (aligned to the shorter one).  NaN → 0.
-          estado_TL        – fase_luna × rotacion_tierra.  Captures the combined
-                             tidal-rotational state: high when the Moon is at a
-                             syzygy-aligned phase AND the rotational braking is low.
+        correlacion_TL SOLO se calcula con ventana >= MIN_CICLOS_LUNARES
+        ciclos lunares completos (dos series suaves en ventana corta dan
+        |r| alto por azar). Con ventana corta se reporta None y NUNCA
+        alimenta confianza — es dato informativo, no voto.
         """
-        # --- fase_luna (scalar from end of series) ---
         if self._lunar_phase is not None and len(self._lunar_phase) > 0:
             fase_luna = float(np.clip(self._lunar_phase[-1], 0.0, 1.0))
         else:
-            fase_luna = 0.5  # default: mid-cycle / unknown
+            fase_luna = 0.5
 
-        # --- rotacion_tierra (normalised LOD) ---
         if self._lod_ms is not None and len(self._lod_ms) > 0:
             lod_last = float(self._lod_ms[-1])
             rotacion_tierra = float(np.clip(1.0 - lod_last / LOD_REF_MS, 0.0, 1.0))
         else:
-            rotacion_tierra = 1.0  # default: nominal rotation
+            rotacion_tierra = 1.0
 
-        # --- correlacion_TL (Pearson r between the two series) ---
-        correlacion_TL = 0.0
+        correlacion_TL = None
+        ciclos = 0
         if (
             self._lunar_phase is not None and len(self._lunar_phase) >= 2
             and self._lod_ms is not None and len(self._lod_ms) >= 2
         ):
             n = min(len(self._lunar_phase), len(self._lod_ms))
-            lp = self._lunar_phase[-n:].astype(float)
-            ld = self._lod_ms[-n:].astype(float)
-            # Pearson r is undefined when either series has zero variance
-            if np.std(lp) > 1e-10 and np.std(ld) > 1e-10:
-                correlacion_TL = float(np.corrcoef(lp, ld)[0, 1])
-            if not np.isfinite(correlacion_TL):
-                correlacion_TL = 0.0
-
-        # --- estado_TL (combined product) ---
-        estado_TL = round(fase_luna * rotacion_tierra, 6)
+            lp = np.asarray(self._lunar_phase[-n:], dtype=float)
+            ld = np.asarray(self._lod_ms[-n:], dtype=float)
+            # Ciclos completos = wraps de fase (salto de ~1 -> ~0)
+            ciclos = int(np.sum(np.diff(lp) < -0.5))
+            if (
+                ciclos >= MIN_CICLOS_LUNARES
+                and np.std(lp) > 1e-10 and np.std(ld) > 1e-10
+            ):
+                r = float(np.corrcoef(lp, ld)[0, 1])
+                correlacion_TL = round(r, 4) if np.isfinite(r) else None
 
         return {
             "fase_luna": round(fase_luna, 4),
             "rotacion_tierra": round(rotacion_tierra, 4),
-            "correlacion_TL": round(correlacion_TL, 4),
-            "estado_TL": estado_TL,
+            "correlacion_TL": correlacion_TL,   # None si ventana corta
+            "ciclos_lunares_en_ventana": ciclos,
+            "estado_TL": round(fase_luna * rotacion_tierra, 6),
         }
-
-    def _apply_schumann_filter(
-        self, power_spectrum: np.ndarray
-    ) -> Dict[str, Any]:
-        """Apply Fourier-Schumann harmonic filter to Kp power spectrum."""
-        return schumann_harmonic_filter(
-            power_spectrum=power_spectrum,
-            sample_interval_s=self.KP_SAMPLE_INTERVAL_H * 3600,
-            live_schumann_hz=self._schumann_hz,
-        )
 
     def analyze(self) -> AgentSignal:
         if self._kp_series is None:
@@ -191,75 +141,71 @@ class Beta1Agent(BaseAgent):
         fft_result = np.fft.rfft(window)
         power_spectrum = np.abs(fft_result) ** 2
 
-        sch_filter = self._apply_schumann_filter(power_spectrum)
-        filtered_spectrum = sch_filter["filtered_spectrum"]
-
-        dominant_freq_idx = np.argmax(filtered_spectrum[1:]) + 1
-        dominant_period = len(window) / dominant_freq_idx if dominant_freq_idx > 0 else 0
-
-        spectral_energy = np.sum(power_spectrum)
-        filtered_energy = np.sum(filtered_spectrum)
-        high_freq_ratio = (
-            np.sum(filtered_spectrum[len(filtered_spectrum)//2:])
-            / max(filtered_energy, 1e-10)
+        spec = kp_spectral_features(
+            power_spectrum,
+            sample_interval_s=self.KP_SAMPLE_INTERVAL_H * 3600,
         )
+        high_freq_ratio = spec["high_freq_ratio"]
 
-        schumann_excited = self._schumann_activity > self.SCHUMANN_EXCITATION_THRESHOLD
-        schumann_coherence = sch_filter["coherence"]
+        # Schumann MEDIDO (Tomsk) — serie propia, no filtro del Kp
+        schumann_excited = (
+            self._schumann_activity > self.SCHUMANN_EXCITATION_THRESHOLD
+        )
+        schumann_strong = (
+            self._schumann_activity > self.SCHUMANN_STRONG_EXCITATION
+        )
 
         tl = self._compute_tl_features()
         signal_data = {
-            "dominant_period_h": float(dominant_period),
+            "dominant_period_h": spec["dominant_period_h"],
             "high_freq_ratio": float(high_freq_ratio),
-            "spectral_energy": float(spectral_energy),
-            "filtered_energy": float(filtered_energy),
+            "spectral_energy": spec["total_energy"],
+            # Schumann medido (Tomsk) — observación real
             "schumann_hz": float(self._schumann_hz),
             "schumann_activity_pct": float(self._schumann_activity),
-            "schumann_coherence": float(schumann_coherence),
-            "schumann_resonant_bins": sch_filter["resonant_bins"],
-            # Tierra-Luna tidal coupling features
+            "schumann_excited": bool(schumann_excited),
+            # Tierra-Luna tidal coupling features (informativo)
             "fase_luna": tl["fase_luna"],
             "rotacion_tierra": tl["rotacion_tierra"],
             "correlacion_TL": tl["correlacion_TL"],
+            "ciclos_lunares_en_ventana": tl["ciclos_lunares_en_ventana"],
             "estado_TL": tl["estado_TL"],
         }
 
-        coherence_boost = schumann_coherence > 0.3
         if high_freq_ratio > 0.6 or (high_freq_ratio > 0.4 and schumann_excited):
             confidence = 0.7
             if schumann_excited:
-                confidence += 0.1
-            if coherence_boost:
-                confidence += 0.05
+                confidence += 0.1   # excitación MEDIDA, no artefacto
 
-            reasons = ["Elevated high-frequency Kp components (Schumann-filtered)"]
+            reasons = ["Elevated high-frequency Kp components"]
             if schumann_excited:
-                reasons.append("Schumann excitation active")
-            if coherence_boost:
-                reasons.append(f"harmonic coherence={schumann_coherence:.0%}")
-
+                reasons.append(
+                    f"measured Schumann excitation "
+                    f"{self._schumann_activity:.0f}%"
+                )
             return self.emit_signal(
                 SignalType.ALERT, min(confidence, 0.95),
                 data=signal_data,
                 reasoning=" + ".join(reasons),
             )
-        else:
-            confidence = 0.3
-            if coherence_boost and schumann_excited:
-                confidence = 0.45
-                return self.emit_signal(
-                    SignalType.WATCH, confidence,
-                    data=signal_data,
-                    reasoning=(
-                        f"Normal spectrum but Schumann-coherent "
-                        f"(coherence={schumann_coherence:.0%}) with excitation"
-                    ),
-                )
+
+        if schumann_strong:
+            # Espectro Kp normal pero la resonancia MEDIDA está fuertemente
+            # excitada — estado intermedio de observación.
             return self.emit_signal(
-                SignalType.NEUTRAL, confidence,
+                SignalType.WATCH, 0.45,
                 data=signal_data,
-                reasoning="Normal spectral distribution (Schumann-filtered)",
+                reasoning=(
+                    f"Normal Kp spectrum but measured Schumann strongly "
+                    f"excited ({self._schumann_activity:.0f}%)"
+                ),
             )
+
+        return self.emit_signal(
+            SignalType.NEUTRAL, 0.3,
+            data=signal_data,
+            reasoning="Normal spectral distribution",
+        )
 
     def health_check(self) -> bool:
         return self._kp_series is not None and len(self._kp_series) >= self.FFT_WINDOW_H

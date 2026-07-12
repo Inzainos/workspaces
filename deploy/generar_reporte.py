@@ -216,11 +216,10 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 return "—"
             return f"P{round(100 * sum(1 for s in serie if s <= v) / len(serie))}"
 
-        # Asertividad viva acumulada y de 7 días
+        # Asertividad viva acumulada y de 7 días — vara canónica: viva_real
         viva_q = (
-            "SELECT resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
-            "WHERE resultado != 'PENDIENTE' "
-            "AND detalles_json NOT LIKE '%\"fase\"%' {extra} "
+            "SELECT resultado, COUNT(*) FROM viva_real "
+            "WHERE resultado != 'PENDIENTE' {extra} "
             "GROUP BY resultado")
 
         def _viva(extra="", params=()):
@@ -261,6 +260,59 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 "*Los promedios de 30 días combinan los ciclos conservados y "
                 "el resumen diario del barrido (lo compactado no se pierde, "
                 "se resume).*",
+                "",
+            ]
+    except sqlite3.OperationalError:
+        pass
+
+    # ── Ganancia sobre el modelo nulo (línea base de Molchan) ──
+    try:
+        filas_nulo = conn.execute(
+            "SELECT verdad, resultado FROM viva_real "
+            "WHERE resultado != 'PENDIENTE' AND verdad != ''"
+        ).fetchall()
+        if filas_nulo:
+            total_n = len(filas_nulo)
+            con_evento = sum(
+                1 for v, _ in filas_nulo if not v.startswith("sin eventos")
+            )
+            aciertos_n = sum(1 for _, r in filas_nulo if r == "ACIERTO")
+            base = con_evento / total_n
+            viva_n = aciertos_n / total_n
+            ganancia = (viva_n / base) if base > 0 else None
+            if ganancia is None:
+                veredicto = "sin eventos en las ventanas — ganancia indefinida"
+            elif ganancia > 1.5:
+                veredicto = "✅ GANANCIA REAL: el sistema aporta información"
+            elif ganancia > 1.0:
+                veredicto = "🟡 ganancia marginal sobre alertar a ciegas"
+            else:
+                veredicto = ("🔴 SIN ganancia: alertar SIEMPRE habría rendido "
+                             "igual o mejor — la asertividad de arriba aún no "
+                             "es habilidad")
+            lineas += [
+                "## 🎯 ¿Le ganamos a alertar siempre? — línea base de Molchan",
+                "",
+                "> La prueba de honestidad definitiva: un bot sin cerebro que "
+                "alerta SIEMPRE acierta cada vez que hay un sismo cerca de la "
+                "malla en la ventana de 72 h. Su tasa de acierto es la **tasa "
+                "base**. Solo si el sistema supera esa tasa hay habilidad "
+                "real; si no, el número bonito es geografía, no predicción.",
+                "",
+                "| Métrica | Valor |",
+                "|---|---:|",
+                f"| Ventanas evaluadas (viva) | {total_n} |",
+                f"| Ventanas con evento real (tasa base) | {base:.0%} |",
+                f"| Asertividad del sistema | {viva_n:.0%} |",
+                f"| **Ganancia** (sistema ÷ tasa base) | "
+                f"{f'{ganancia:.2f}×' if ganancia is not None else '—'} |",
+                "",
+                f"**Veredicto:** {veredicto}",
+                "",
+                "*Con 50 nodos reales y radio de 5°, casi toda ventana de 72 h "
+                "tiene un M4.5+ cerca de algún nodo: para ganar de verdad, las "
+                "predicciones tendrán que volverse específicas por nodo, no "
+                "globales.*",
                 "",
             ]
     except sqlite3.OperationalError:
@@ -493,11 +545,10 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 "SELECT bot_name, aciertos, fallos FROM TBL_PESOS_BOTS"
             ).fetchall()
         }
-        # Viva (operación): predicciones resueltas del Juez, sin backtest
+        # Viva (operación): SOLO filas fase='viva' — vara canónica viva_real
         viva_q = (
-            "SELECT bot_name, resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
-            "WHERE resultado != 'PENDIENTE' "
-            "AND detalles_json NOT LIKE '%\"fase\"%' {extra} "
+            "SELECT bot_name, resultado, COUNT(*) FROM viva_real "
+            "WHERE resultado != 'PENDIENTE' {extra} "
             "GROUP BY bot_name, resultado"
         )
 
@@ -829,20 +880,65 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     except sqlite3.OperationalError:
         pass
 
-    # ── Auditoría del Juez ──
-    juez = conn.execute(
-        "SELECT resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
-        "WHERE resultado != 'PENDIENTE' GROUP BY resultado"
-    ).fetchall()
-    pendientes = conn.execute(
-        "SELECT COUNT(*) FROM TBL_JUEZ_AUDITORIA WHERE resultado = 'PENDIENTE'"
-    ).fetchone()[0]
-    if juez or pendientes:
+    # ── Secuencia de nodos: la ruta por la que se mueve la energía ──
+    try:
+        rutas = conn.execute(
+            "SELECT secuencia, frecuencia_total, n_clases, alcance, interpretacion "
+            "FROM tbl_secuencia_veredictos ORDER BY (alcance='GLOBAL') DESC, "
+            "frecuencia_total DESC LIMIT 8"
+        ).fetchall()
+        if rutas:
+            n_global = sum(1 for r in rutas if r[3] == "GLOBAL")
+            lineas += [
+                "## 🌐 Cimática: cómo se mueve la energía por la malla",
+                "",
+                "> Más allá de *qué* nodos se activan, importa **en qué orden** "
+                "espacial — la ruta por la que la energía se propaga antes de un "
+                "evento. Una ruta que se repite ante **distintos tipos** de "
+                "evento es **GLOBAL**: confirma una cimática organizada, un "
+                "sistema liberando energía con precursores y gatillos "
+                "identificables. Una ruta ligada a un solo tipo es **LOCAL** — "
+                "una causa específica de ese nodo o región.",
+                "",
+                f"**{n_global}** de las {len(rutas)} rutas recurrentes mostradas "
+                f"son globales (cimática organizada).",
+                "",
+                "| Ruta de propagación | Apariciones | Tipos de evento | Alcance |",
+                "|---|---:|---:|---|",
+            ]
+            for r in rutas:
+                marca = "🌐 **GLOBAL**" if r[3] == "GLOBAL" else "📍 LOCAL"
+                lineas.append(
+                    f"| {r[0]} | {r[1]:,} | {r[2]} | {marca} |"
+                )
+            lineas.append("")
+    except sqlite3.OperationalError:
+        pass
+
+    # ── Auditoría del Juez — separada por fase (viva vs entrenamiento) ──
+    try:
+        juez_fases = conn.execute(
+            "SELECT fase, resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
+            "GROUP BY fase, resultado"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        juez_fases = [
+            ("viva", r, n) for r, n in conn.execute(
+                "SELECT resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
+                "GROUP BY resultado").fetchall()
+        ]
+    if juez_fases:
         traduccion = {
             "ACIERTO": "ACIERTO — avisó y el evento ocurrió",
             "FALLO": "FALLO — el evento ocurrió sin aviso (lo más castigado)",
             "FALSO_POSITIVO": "FALSO POSITIVO — avisó y no pasó nada",
+            "PENDIENTE": "PENDIENTE — ventana de 72h aún abierta",
         }
+        vivas = {r: n for f, r, n in juez_fases if f == "viva"}
+        entren = {}
+        for f, r, n in juez_fases:
+            if f != "viva":
+                entren[r] = entren.get(r, 0) + n
         lineas += [
             "## ⚖️ El Juez — auditoría independiente",
             "",
@@ -851,15 +947,22 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             "horas, lo compara contra el catálogo sísmico real (USGS) y "
             "dicta sentencia. Dejar pasar un evento castiga 10 veces más "
             "que una falsa alarma — preferimos un sistema nervioso a uno "
-            "dormido.",
+            "dormido. **Solo la fase viva puntúa asertividad**; el resto es "
+            "bitácora de entrenamiento y no se mezcla.",
             "",
+            "**Operación viva (lo que cuenta):**",
         ]
-        for r in juez:
-            lineas.append(f"- {traduccion.get(r[0], r[0])}: {r[1]:,}")
-        lineas.append(
-            f"- PENDIENTES (avisos cuya ventana de 72h sigue abierta): "
-            f"{pendientes:,}"
-        )
+        for r in ("ACIERTO", "FALLO", "FALSO_POSITIVO", "PENDIENTE"):
+            if vivas.get(r):
+                lineas.append(f"- {traduccion[r]}: {vivas[r]:,}")
+        if entren:
+            lineas += [
+                "",
+                "**Bitácora de entrenamiento (reconocimiento/backtest/"
+                "trasfondo — no puntúa):**",
+            ]
+            for r, n in sorted(entren.items()):
+                lineas.append(f"- {r}: {n:,}")
         lineas.append("")
 
     # ── 🧾 Bitácora del sistema: versión, cambios y salud entre cortes ──
@@ -886,8 +989,7 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
         pesos_now = dict(conn.execute(
             "SELECT bot_name, peso FROM TBL_PESOS_BOTS").fetchall())
         juez_now = dict(conn.execute(
-            "SELECT resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
-            "WHERE detalles_json NOT LIKE '%\"fase\"%' "
+            "SELECT resultado, COUNT(*) FROM viva_real "
             "GROUP BY resultado").fetchall())
         aciertos_now = juez_now.get("ACIERTO", 0)
         fallos_now = juez_now.get("FALLO", 0)

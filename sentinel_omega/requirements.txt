@@ -9,5 +9,8 @@ eodag>=2.10          # ESA Copernicus (Alfa-2 / Beta-2 satelital)
 streamlit>=1.28
 plotly>=5.15
 
+# Gráficas de los reportes periódicos (correo)
+matplotlib>=3.7
+
 # Inferencia ML (opcional — precursor tipo 11)
 # onnxruntime>=1.14

@@ -133,10 +133,9 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     firmas_bot = {r[0]: r[1] for r in _q(
         conn, "SELECT bot_name, COUNT(*) FROM TBL_FIRMAS GROUP BY bot_name")}
 
+    # Vara canónica: solo filas de operación viva (columna fase estricta)
     juez = {r[0]: r[1] for r in _q(
-        conn, "SELECT resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA "
-              "WHERE detalles_json NOT LIKE '%\"fase\"%' "
-              "GROUP BY resultado")}
+        conn, "SELECT resultado, COUNT(*) FROM viva_real GROUP BY resultado")}
     pendientes = juez.get("PENDIENTE", 0)
     aciertos_v = juez.get("ACIERTO", 0)
     fallos_v = juez.get("FALLO", 0)
@@ -707,6 +706,21 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     vfile.write_text(contenido, encoding="utf-8")
     print(f"Reporte ejecutivo: {out}")
     print(f"Versión guardada: {vfile}")
+
+    # Encolar por correo (outbox — sin Telegram, el correo es el canal)
+    try:
+        from sentinel_omega.infrastructure.api.correo import encolar_correo
+        conn2 = sqlite3.connect(db_path)
+        encolar_correo(
+            conn2,
+            asunto=(f"📊 Sentinel Omega — reporte ejecutivo "
+                    f"{local:%Y-%m-%d %H:%M} MX"),
+            cuerpo=contenido,
+            tipo="REPORTE",
+        )
+        conn2.close()
+    except Exception as e:
+        print(f"(aviso) no se pudo encolar el correo: {e}")
     return contenido
 
 
