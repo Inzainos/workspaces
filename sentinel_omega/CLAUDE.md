@@ -41,6 +41,7 @@ If Schumann is perturbed alongside any other signal = precursor detected.
 - `space_weather`: Alfa-1, Alfa-2
 - `schumann_cymatics`: Beta-1, Beta-2
 - `financial_sentiment`: Delta
+- ` Correlation Alpha's Telemetry, Schumann Resonance, Delta and Beta's Patterns':Omega
 
 **Consensus requires**: >= 2 families active + >= 2 alerts + schumann_correlation > 0.3
 
@@ -124,7 +125,7 @@ sentinel_omega/
 │   │   └── juez.py              # ACIERTO/FALLO/FALSO_POSITIVO, recidivism severity
 │   └── snt_engine/              # SNT math framework (satellization, friction, ASI, N-Body)
 ├── layers/
-│   └── geodynamic/              # All 6 agents: alfa1, alfa2, beta1, beta2, delta, padre
+│   └── geodynamic/              # All 6 agents: alfa1, alfa2, beta1, beta2, delta,Omega, padre
 ├── infrastructure/
 │   ├── api/                     # NOAA, USGS, Schumann, ESA, OWM, Crypto, Bolsa, Telegram
 │   ├── pipeline/                # GeodynamicPipeline + GeodynamicLayerRunner + backcast
