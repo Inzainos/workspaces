@@ -18,8 +18,9 @@ Pipeline completado: delta_enriched integrado de punta a punta + rebuild_complet
 
 ### Fixed
 
-- Database paths en rebuild_completo.py (sentinel_omega/data/ → data/)
-- .gitignore: agregar estado/ para no trackar reportes generados
+- **Falsos ceros en features delta_cross** (`launcher.py`): si el fetch de
+  delta_enriched falla, las features quedan AUSENTES (NaN, excluidas por
+  similitud) en vez de escribir 0.0 falso — coherente con "cero datos sintéticos"
 
 ### Notes
 
