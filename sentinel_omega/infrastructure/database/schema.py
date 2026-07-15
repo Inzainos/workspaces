@@ -15,6 +15,7 @@ v5 additions:
   tbl_delta_cross          — Resultados de correlación cruzada delta_enriched por ciclo.
 """
 
+import json
 import logging
 import sqlite3
 from pathlib import Path
@@ -269,6 +270,29 @@ CREATE INDEX IF NOT EXISTS idx_firmas_estado ON TBL_FIRMAS(estado);
 CREATE INDEX IF NOT EXISTS idx_firmas_class ON TBL_FIRMAS(event_class);
 -- Composite: covers common queries (bot_name + estado) used in firmas lookups
 CREATE INDEX IF NOT EXISTS idx_firmas_bot_estado ON TBL_FIRMAS(bot_name, estado);
+-- Composite HOT PATH: FirmaMemoria.registrar() filtra por (bot_name, event_class)
+-- en CADA evento del entrenamiento. Sin este índice, SQLite trae todas las
+-- firmas del bot y filtra la clase a mano (para el Padre son miles de filas por
+-- evento) — es el costo que crece a medida que la memoria engorda. Con el
+-- compuesto salta directo al bucket exacto.
+CREATE INDEX IF NOT EXISTS idx_firmas_bot_class ON TBL_FIRMAS(bot_name, event_class);
+
+-- ─── Normalización 1NF: eventos de cada firma (tabla hija) ────────
+-- El array `eventos_json` de TBL_FIRMAS era un grupo repetido (viola 1NF) y
+-- se reescribía ENTERO en cada recurrencia — costo O(n²) (la firma más
+-- recurrente llegó a 774 KB reescritos 24,719 veces). Aquí cada avistamiento
+-- es una FILA: append O(1), MIN(ts) por índice, muestra por LIMIT. La columna
+-- eventos_json queda como legado (se llena la hija y se deja de reescribir).
+CREATE TABLE IF NOT EXISTS tbl_firma_eventos (
+    firma_id    INTEGER NOT NULL,
+    evento_ref  TEXT    NOT NULL,
+    ts_evento   TEXT,
+    orden       INTEGER,
+    PRIMARY KEY (firma_id, evento_ref),
+    FOREIGN KEY (firma_id) REFERENCES TBL_FIRMAS(firma_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_firma_eventos_fid
+    ON tbl_firma_eventos(firma_id, ts_evento);
 
 -- ─── Juez (auditoría disciplinaria, separado del Padre) ──────────
 CREATE TABLE IF NOT EXISTS TBL_JUEZ_AUDITORIA (
@@ -285,12 +309,15 @@ CREATE TABLE IF NOT EXISTS TBL_JUEZ_AUDITORIA (
     reincidencia    INTEGER DEFAULT 0,
     detalles_json   TEXT    DEFAULT '{}',
     resuelto_at     TEXT,
+    fase            TEXT    DEFAULT 'viva',
     created_at      TEXT    DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_juez_bot ON TBL_JUEZ_AUDITORIA(bot_name);
 CREATE INDEX IF NOT EXISTS idx_juez_resultado ON TBL_JUEZ_AUDITORIA(resultado);
 CREATE INDEX IF NOT EXISTS idx_juez_ts ON TBL_JUEZ_AUDITORIA(timestamp);
+-- El índice idx_juez_fase y la vista viva_real se crean en init_database
+-- DESPUÉS de la migración (la columna fase puede no existir aún en DBs viejas).
 
 -- ─── Pesos de credibilidad por bot (ajustados por el castigo) ─────
 -- El Padre pondera cada bot en el consenso con su peso. La Fase 2 del
@@ -375,6 +402,67 @@ CREATE TABLE IF NOT EXISTS tbl_patrones_correlacion (
 CREATE INDEX IF NOT EXISTS idx_patrones_corr_class
     ON tbl_patrones_correlacion(event_class);
 
+-- ─── Cimática: snapshot de patrones de telemetría ─────────────────
+-- Cada ciclo toma un snapshot del sistema (huella discretizada de la
+-- telemetría). Si el patrón es NUEVO se guarda la telemetría completa;
+-- si ya existe solo se suma +1 a su frecuencia. Con el tiempo la
+-- frecuencia distingue la cimática consistente (por nodo o general)
+-- asociada a cada tipo de evento. Todo registro/actualización dispara
+-- la revisión del Padre (trigger en Python, no en SQL).
+CREATE TABLE IF NOT EXISTS tbl_cimatica_patrones (
+    patron_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    clave           TEXT    NOT NULL,
+    ambito          TEXT    NOT NULL DEFAULT 'general'
+                    CHECK(ambito IN ('general','nodo')),
+    id_nodo         INTEGER,
+    event_class     TEXT,
+    telemetria_json TEXT    NOT NULL DEFAULT '{}',
+    frecuencia      INTEGER NOT NULL DEFAULT 1,
+    primera_vez     TEXT    DEFAULT (datetime('now')),
+    ultima_vez      TEXT    DEFAULT (datetime('now')),
+    UNIQUE(clave, ambito, id_nodo)
+);
+CREATE INDEX IF NOT EXISTS idx_cimatica_clave
+    ON tbl_cimatica_patrones(clave);
+CREATE INDEX IF NOT EXISTS idx_cimatica_frecuencia
+    ON tbl_cimatica_patrones(frecuencia DESC);
+
+-- ─── Correo de salida (sin Telegram) ──────────────────────────────
+-- Outbox de alertas y reportes por email. El envío real usa SMTP con
+-- credenciales por variables de entorno; sin credenciales el correo
+-- queda PENDIENTE (fail-soft, nunca se pierde ni se finge enviado).
+CREATE TABLE IF NOT EXISTS tbl_correo_salida (
+    correo_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    destinatario  TEXT    NOT NULL DEFAULT 'elan.zainos.corona@gmail.com',
+    tipo          TEXT    NOT NULL DEFAULT 'ALERTA'
+                  CHECK(tipo IN ('ALERTA','REPORTE')),
+    asunto        TEXT    NOT NULL,
+    cuerpo        TEXT    NOT NULL,
+    adjuntos_json TEXT    DEFAULT '[]',
+    estado        TEXT    NOT NULL DEFAULT 'PENDIENTE'
+                  CHECK(estado IN ('PENDIENTE','ENVIADO','FALLIDO')),
+    intentos      INTEGER DEFAULT 0,
+    creado_at     TEXT    DEFAULT (datetime('now')),
+    enviado_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_correo_estado
+    ON tbl_correo_salida(estado);
+
+-- ─── Schumann en vivo (serie acumulada, no hay backcast) ──────────
+-- La resonancia Schumann de Tomsk se mide por WPC (White Pixel Count =
+-- "conteo de bits en blanco" del espectrograma) en CADA corrida de 2 h, en
+-- tiempo real cuando el Padre corre. No existe backcast de 30 años, así que
+-- —igual que alfa2— la serie se ACUMULA en vivo aquí y con el tiempo alimenta
+-- los cruces (dominio SCHUMANN del orden de precursores) cuando ya hay datos.
+CREATE TABLE IF NOT EXISTS tbl_schumann_vivo (
+    timestamp_blk     TEXT PRIMARY KEY,
+    schumann_hz       REAL,
+    schumann_activity REAL,       -- % de excitación medido (WPC)
+    creada_at         TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_schumann_vivo_ts
+    ON tbl_schumann_vivo(timestamp_blk);
+
 -- ─── Schema Version ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS TBL_SCHEMA_VERSION (
     version     INTEGER PRIMARY KEY,
@@ -394,6 +482,12 @@ EXPECTED_COLUMNS = {
         # Per-signature anticipation: this firma's own typical lead time
         "lag_promedio_h": "REAL",
         "lag_n": "INTEGER DEFAULT 0",
+    },
+    # v6: fase ESTRICTA de auditoría (columna real, no dentro del JSON).
+    # 'viva' = predicción en operación (la única que cuenta para asertividad
+    # viva); 'reconocimiento'/'backtest'/'observacion' = entrenamiento.
+    "TBL_JUEZ_AUDITORIA": {
+        "fase": "TEXT DEFAULT 'viva'",
     },
     # v5: cobertura satelital — nueva tabla (creada por SCHEMA_SQL con IF NOT EXISTS;
     # se incluye aquí para que _migrate_add_missing_columns no falle en DBs antiguas
@@ -447,7 +541,73 @@ def _migrate_add_missing_columns(conn: sqlite3.Connection) -> None:
             if col_name not in existing_cols:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
                 logger.info(f"Migration: added {table}.{col_name}")
+                # Backfill de fase (v6): las filas viejas traen la fase dentro
+                # del JSON; reclasificarlas para que el DEFAULT 'viva' no
+                # contamine la vara viva con filas de entrenamiento.
+                if table == "TBL_JUEZ_AUDITORIA" and col_name == "fase":
+                    for tag in ("backtest", "reconocimiento", "observacion"):
+                        conn.execute(
+                            "UPDATE TBL_JUEZ_AUDITORIA SET fase = ? "
+                            "WHERE detalles_json LIKE ?",
+                            (tag, f'%"fase": "{tag}"%'),
+                        )
+                    logger.info("Migration: TBL_JUEZ_AUDITORIA.fase backfilled")
     conn.commit()
+
+
+def _migrate_firma_eventos(conn: sqlite3.Connection) -> None:
+    """Normaliza el array legado eventos_json → tabla hija tbl_firma_eventos.
+
+    Idempotente y no destructivo del dato: rellena la hija para las firmas que
+    aún no tienen filas, luego vacía eventos_json (la hija pasa a ser la fuente
+    de verdad). El espacio de los arrays viejos se recupera con VACUUM aparte.
+    """
+    try:
+        pendientes = conn.execute(
+            "SELECT firma_id, eventos_json FROM TBL_FIRMAS "
+            "WHERE eventos_json IS NOT NULL AND eventos_json != '[]'"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return  # tabla aún no existe
+
+    # Solo se conserva una MUESTRA de eventos por firma (el conteo fiel vive
+    # en recurrencia). Importar CAP aquí evita duplicar la constante.
+    from sentinel_omega.core.firmas.signature_engine import CAP_EVENTOS_MUESTRA
+
+    migradas = 0
+    for fid, evs in pendientes:
+        ya = conn.execute(
+            "SELECT 1 FROM tbl_firma_eventos WHERE firma_id = ? LIMIT 1", (fid,)
+        ).fetchone()
+        if ya:
+            continue
+        try:
+            refs = json.loads(evs)
+        except (ValueError, TypeError):
+            continue
+        muestra = refs[:CAP_EVENTOS_MUESTRA]   # los primeros = los más viejos
+        conn.executemany(
+            "INSERT OR IGNORE INTO tbl_firma_eventos "
+            "(firma_id, evento_ref, ts_evento, orden) VALUES (?, ?, ?, ?)",
+            [(fid, ref, ref.split("|")[0] if "|" in ref else None, i + 1)
+             for i, ref in enumerate(muestra)],
+        )
+        conn.execute(
+            "UPDATE TBL_FIRMAS SET eventos_json = '[]' WHERE firma_id = ?", (fid,)
+        )
+        migradas += 1
+    if migradas:
+        conn.commit()
+        logger.info(f"Migración 1NF: {migradas} firmas normalizadas (muestra "
+                    f"de {CAP_EVENTOS_MUESTRA} + conteo en recurrencia)")
+        # Recuperar el espacio en disco de los arrays viejos (best-effort:
+        # VACUUM necesita ~tamaño de la base libre; si no hay, se omite sin
+        # romper el arranque).
+        try:
+            conn.execute("VACUUM")
+            logger.info("Migración 1NF: VACUUM completado — disco recuperado")
+        except sqlite3.OperationalError as e:
+            logger.warning(f"Migración 1NF: VACUUM omitido ({e})")
 
 
 def init_database(db_path: str) -> sqlite3.Connection:
@@ -464,6 +624,32 @@ def init_database(db_path: str) -> sqlite3.Connection:
 
     conn.executescript(SCHEMA_SQL)
     _migrate_add_missing_columns(conn)
+    _migrate_firma_eventos(conn)   # normaliza eventos_json → tabla hija (1NF)
+
+    # Post-migración (la columna fase ya existe seguro): índice + vista
+    # canónica de la operación viva. viva_real es la ÚNICA vara para la
+    # asertividad viva — jamás incluye filas de entrenamiento.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_juez_fase ON TBL_JUEZ_AUDITORIA(fase)"
+    )
+    conn.execute("DROP VIEW IF EXISTS viva_real")
+    conn.execute(
+        "CREATE VIEW viva_real AS "
+        "SELECT * FROM TBL_JUEZ_AUDITORIA WHERE fase = 'viva'"
+    )
+
+    # Vista de compatibilidad: reconstruye la forma vieja `eventos_json` a
+    # partir de la tabla hija normalizada tbl_firma_eventos. Cualquier código
+    # o reporte que quiera el array completo lo obtiene aquí, sin que la tabla
+    # base cargue el grupo repetido.
+    conn.execute("DROP VIEW IF EXISTS v_firma_eventos_json")
+    conn.execute(
+        "CREATE VIEW v_firma_eventos_json AS "
+        "SELECT firma_id, json_group_array(evento_ref) AS eventos_json, "
+        "MIN(ts_evento) AS ts_primero, COUNT(*) AS n_eventos "
+        "FROM tbl_firma_eventos GROUP BY firma_id"
+    )
+    conn.commit()
 
     existing = conn.execute(
         "SELECT version FROM TBL_SCHEMA_VERSION ORDER BY version DESC LIMIT 1"

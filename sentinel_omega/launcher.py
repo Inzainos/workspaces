@@ -325,13 +325,15 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
         )
 
         try:
+            _b1 = getattr(orch._runner.pipeline, "_cache", {}).get("beta1") or {}
+            _sch_hz = _b1.get("schumann_frequency")
             repo.insert_precursor_cosmico(
                 bz=risk.components.get("bz_nT", 0),
                 viento=risk.components.get("wind_kms", 0),
                 protones=0.0,
                 kp=risk.components.get("kp", 0),
                 lod_ms=risk.components.get("lod_ms", 0),
-                schumann_hz=7.83,
+                schumann_hz=_sch_hz if _sch_hz is not None else 7.83,
                 schumann_activity=risk.components.get("schumann_wpc", 0) * 100,
                 presion_hpa=risk.components.get("pressure_hpa", 1013),
                 fantasma=risk.fantasma,
@@ -579,6 +581,45 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         memoria = FirmaMemoria(conn)
         juez = Juez(conn)
 
+        # Serie viva de Schumann: la lectura en tiempo real de esta corrida
+        # (WPC de Tomsk) se acumula con su bloque horario. Con el tiempo esta
+        # serie alimenta el dominio SCHUMANN de los cruces (no hay backcast).
+        try:
+            import time as _t
+            beta1_cache = getattr(runner.pipeline, "_cache", {}).get("beta1") or {}
+            sch_hz = beta1_cache.get("schumann_frequency")
+            sch_act = beta1_cache.get("schumann_activity")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS tbl_schumann_vivo ("
+                "timestamp_blk TEXT PRIMARY KEY, schumann_hz REAL, "
+                "schumann_activity REAL, creada_at TEXT DEFAULT (datetime('now')))")
+            # LOCF (Last Observation Carried Forward): si la API de Tomsk se
+            # cortó (activity == 0.0 exacto = descarga fallida, no calma real),
+            # arrastramos el último valor conocido en vez de escribir un cero
+            # falso. Tomsk solo sirve la imagen ACTUAL (no hay histórico que
+            # rebobinar), así que el LOCF cubre el hueco; las APIs que sí sirven
+            # historia (USGS days=7, NOAA) ya rellenan su ventana solas.
+            señal_viva = sch_act is not None and sch_act != 0.0
+            if not señal_viva:
+                ult = conn.execute(
+                    "SELECT schumann_hz, schumann_activity FROM tbl_schumann_vivo "
+                    "ORDER BY timestamp_blk DESC LIMIT 1").fetchone()
+                if ult:
+                    sch_hz = sch_hz or ult[0]
+                    sch_act = ult[1]   # arrastra el último medido
+                    logger.info(
+                        f"Schumann: API sin señal — LOCF del último valor "
+                        f"({sch_act}%)")
+            if sch_hz is not None or sch_act is not None:
+                ts_blk = _t.strftime("%Y-%m-%d %H:00", _t.gmtime())
+                conn.execute(
+                    "INSERT OR REPLACE INTO tbl_schumann_vivo "
+                    "(timestamp_blk, schumann_hz, schumann_activity) VALUES (?,?,?)",
+                    (ts_blk, sch_hz, sch_act))
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Persistencia Schumann viva falló (non-blocking): {e}")
+
         matches = []
         features = _build_live_features(runner)
         if features:
@@ -645,31 +686,113 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         except Exception as e:
             logger.warning(f"Muro de lags failed (non-blocking): {e}")
 
+        # Nodos DE la predicción: un aviso solo vale si acierta DÓNDE avisó.
+        # El Juez valida esta fila solo contra estos nodos (no toda la malla)
+        # — sin esto, el modelo nulo de Molchan gana siempre.
+        nodos_pred = [
+            {"id": m["id_nodo"], "lat": m.get("nodo_lat"),
+             "lon": m.get("nodo_lon")}
+            for m in matches[:5]
+            if m.get("nodo_lat") is not None
+        ]
         juez.registrar_prediccion(
             bot_name="padre",
             prediccion=geo.final_signal.value,
             confianza=geo.confidence,
             ventana_h=72,
-            detalles={"firma_matches": matches[:5], "muro_lags": muro_lags},
+            detalles={"firma_matches": matches[:5], "muro_lags": muro_lags,
+                      "nodos": nodos_pred},
+            fase="viva",  # operación real — la única que puntúa asertividad viva
         )
 
-        from sentinel_omega.infrastructure.api.usgs import fetch_earthquakes
-        eq = fetch_earthquakes(min_magnitude=4.5, days=4)
-        evento_ocurrido = eq is not None and len(eq) > 0
-        mag_max = float(eq["magnitude"].max()) if evento_ocurrido else 0.0
-        gravedad = 1.0 + max(0.0, mag_max - 4.5) if evento_ocurrido else 1.0
-        verdad = (
-            f"{len(eq)} eventos M4.5+ en 4 dias (máx M{mag_max:.1f})"
-            if evento_ocurrido else "sin eventos M4.5+"
+        # ── Cimática: snapshot del sistema → patrón nuevo o frecuencia+1 ──
+        # Todo alta/incremento dispara la revisión del Padre; si el patrón
+        # es nuevo con el Padre activo, o se volvió consistente y está
+        # asociado a un tipo de evento, se encola la alerta por correo.
+        try:
+            from sentinel_omega.core.firmas.cimatica import (
+                FRECUENCIA_CONSISTENTE, registrar_snapshot,
+            )
+            from sentinel_omega.infrastructure.api.correo import encolar_correo
+
+            if features:
+                ec_top = matches[0]["event_class"] if matches else None
+                snapshots = [(None, ec_top)] + [
+                    (m["id_nodo"], m["event_class"]) for m in matches[:3]
+                ]
+                padre_activo = geo.final_signal.value in ("alert", "watch")
+                for id_nodo, ec in snapshots:
+                    pid_c, es_nuevo, frec = registrar_snapshot(
+                        conn, features, id_nodo=id_nodo, event_class=ec,
+                    )
+                    if not pid_c:
+                        continue
+                    # Trigger: el Padre revisa cada alta/incremento
+                    logger.info(
+                        f"PADRE REVISA cimática: patrón {pid_c} "
+                        f"({'nuevo' if es_nuevo else f'frecuencia {frec}'}"
+                        f"{f', nodo {id_nodo}' if id_nodo else ', general'})"
+                    )
+                    if es_nuevo and padre_activo:
+                        encolar_correo(
+                            conn,
+                            asunto=(f"🌀 Sentinel Omega — patrón cimático "
+                                    f"NUEVO con Padre en "
+                                    f"{geo.final_signal.value.upper()}"),
+                            cuerpo=(
+                                f"Patrón de telemetría nunca visto "
+                                f"(id {pid_c}, "
+                                f"{'nodo ' + str(id_nodo) if id_nodo else 'general'}) "
+                                f"mientras el Padre está en "
+                                f"{geo.final_signal.value.upper()} "
+                                f"({geo.confidence:.0%}).\n"
+                                f"Telemetría completa guardada en "
+                                f"tbl_cimatica_patrones."
+                            ),
+                            tipo="ALERTA",
+                        )
+                    elif frec == FRECUENCIA_CONSISTENTE and ec:
+                        encolar_correo(
+                            conn,
+                            asunto=(f"🔁 Sentinel Omega — cimática "
+                                    f"CONSISTENTE para {ec}"),
+                            cuerpo=(
+                                f"El patrón {pid_c} "
+                                f"({'nodo ' + str(id_nodo) if id_nodo else 'general'}) "
+                                f"alcanzó frecuencia {frec} asociado a {ec}: "
+                                f"ya no es coincidencia, es cimática del "
+                                f"sistema. El Padre lo tiene en revisión."
+                            ),
+                            tipo="ALERTA",
+                        )
+        except Exception as e:
+            logger.warning(f"Cimática falló (non-blocking): {e}")
+
+        # AssertivityTracker: los avisos se anclan a SUS nodos al momento
+        # de emitirse (la validación + Molchan corre en la pasada del Juez).
+        tracker = getattr(runner, "assertivity", None)
+        if tracker is not None and geo.final_signal.value in ("alert", "watch"):
+            for m in matches[:3]:
+                if m.get("nodo_lat") is not None:
+                    tracker.record_prediction(
+                        m["nodo_lat"], m["nodo_lon"],
+                        risk_level=geo.final_signal.value.upper(),
+                        fantasma=float(geo.confidence),
+                        source=f"nodo{m['id_nodo']}",
+                    )
+
+        # El Juez pasa a verificar real vs predicción CADA 4 HORAS (ritmo
+        # auto-impuesto en verificacion.py): el ciclo del Padre solo
+        # registra; la confrontación con USGS es tarea del Juez.
+        from sentinel_omega.infrastructure.pipeline.verificacion import (
+            verificar_juez,
         )
-        resueltos = juez.evaluar_pendientes(
-            evento_ocurrido=evento_ocurrido,
-            verdad=verdad,
-            firma_conocida=bool(matches),
-            gravedad=gravedad,
-        )
-        if resueltos:
-            logger.info(f"Juez resolvió {len(resueltos)} predicciones pendientes")
+        resultado_juez = verificar_juez(conn, tracker=tracker)
+        if resultado_juez.get("resueltas"):
+            logger.info(
+                f"Juez resolvió {resultado_juez['resueltas']} predicciones "
+                f"pendientes"
+            )
     except Exception as e:
         logger.warning(f"Audit step failed (non-blocking): {e}")
 

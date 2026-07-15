@@ -989,7 +989,7 @@ def generate_demo_signals():
             "agents": {
                 "Alfa-1 (Bz/OMNI)": {"signal": "NEUTRAL", "confidence": 0.3, "bz_mean": round(rng.normal(-2, 3), 1)},
                 "Alfa-2 (Satellite)": {"signal": "NEUTRAL", "confidence": 0.3},
-                "Beta-1 (Kp/FFT+Schumann)": {"signal": "NEUTRAL", "confidence": 0.3, "dominant_period_h": round(rng.uniform(6, 48), 1), "schumann_coherence": round(rng.uniform(0, 0.5), 2)},
+                "Beta-1 (Kp/FFT+Schumann)": {"signal": "NEUTRAL", "confidence": 0.3, "dominant_period_h": round(rng.uniform(6, 48), 1), "schumann_activity_pct": round(rng.uniform(0, 40), 1)},
                 "Beta-2 (Atmospheric)": {"signal": "NEUTRAL", "confidence": 0.3},
                 "Delta (Financial)": {"signal": "NEUTRAL", "confidence": 0.3, "fear_greed": round(rng.uniform(20, 80), 0)},
             },

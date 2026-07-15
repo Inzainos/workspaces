@@ -72,10 +72,35 @@ sudo systemctl daemon-reload && sudo systemctl enable --now sentinel-omega-dashb
 > servidor y en la iPad — te da una IP privada segura para llegar al dashboard
 > y SSH desde cualquier red, sin abrir puertos al internet.
 
+## Rutinas 24/7 sin servidor (Roy Vigilante — GitHub Actions)
+
+Si no hay servidor propio, `.github/workflows/roy-vigilante.yml` corre el
+sistema completo en Actions (el cron dispara en `main`). Hora MX = UTC-6:
+
+| Ritmo | Tarea |
+|---|---|
+| Cada 2 h | Ciclo del Padre (status + registro + cimática) |
+| Cada 4 h | El Juez verifica real vs predicción (USGS, verdad por fila) |
+| Cada 6 h | Reporte ejecutivo → correo |
+| 12am/12pm | Comparativo contra el día anterior (con gráfica) |
+| Dom 12:15pm | Reporte semanal |
+| Fin de mes 12:30pm | Reporte mensual |
+| Cada corrida | Despacho del outbox de correo |
+
+**Correo (canal de alertas, sin Telegram)** — secrets del repo
+(Settings → Secrets and variables → Actions):
+- `SMTP_USER` + `SMTP_PASS` — cuenta emisora (app password de Gmail:
+  myaccount.google.com/apppasswords)
+- `CORREO_DESTINO` — opcional (default elan.zainos.corona@gmail.com)
+
+Sin credenciales los correos quedan PENDIENTES en `tbl_correo_salida`
+(no se pierden ni se fingen enviados); los reportes siguen publicándose
+al repo en `estado/` como siempre.
+
 ## Notas
 
-- **Sin Telegram configurado** el sistema corre igual (dry-run automático);
-  con `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` las alertas llegan al celular.
+- **Telegram está en pausa** (el canal es correo); el código sigue ahí — con
+  `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` se reactivan las alertas al celular.
 - **La base de datos** vive en `sentinel_omega/data/SENTINEL_OMEGA_PRO.db`.
   Respáldala si re-instalas: contiene el backcast de 30 años, las firmas
   entrenadas y el ledger del Juez.

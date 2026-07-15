@@ -43,7 +43,7 @@ MIN_MAGNITUD_FIRMA = 4.5
 # Mínimo observado en Fase 1: los bots registran firmas desde esta magnitud.
 # Eventos M2.5–4.49 generan firmas pero NO activan disciplina (castigo/Juez
 # solo punish) — solo alimentan el ACIERTO histórico del Juez.
-MIN_MAGNITUD_OBSERVAR = 2.5
+MIN_MAGNITUD_OBSERVAR = 3.3   # piso de medición (= piso real del backcast); solo alerta desde 4.5
 
 # Feature domain per bot — each bot only remembers what it measures.
 # Padre keeps the full cross-domain vector (patterns within patterns).
@@ -102,7 +102,7 @@ def _event_class(mag: float) -> str:
         return "SISMO_M4_obs"  # 4.0–4.49: observado, no exigible
     if mag >= 3.0:
         return "SISMO_M3_obs"  # 3.0–3.99: observado, no exigible
-    return "SISMO_M2_obs"      # 2.5–2.99: observado, no exigible
+    return "SISMO_M2_obs"      # 2.0–2.99: observado, no exigible
 
 
 def _event_class_volcanico(vei: float) -> str:
@@ -213,7 +213,7 @@ def entrenar_reconocimiento(
 ) -> Dict:
     """Fase 1 — learn signatures from every observed historical event.
 
-    Observes ALL magnitudes >= MIN_MAGNITUD_OBSERVAR (2.5): bots register
+    Observes ALL magnitudes >= MIN_MAGNITUD_OBSERVAR (3.3): bots register
     firma patterns for every size of event so that small precursors are
     captured. The Juez logs an ACIERTO for every successful registration —
     this builds the positive pattern-history used by resumen_por_bot() even
@@ -324,6 +324,7 @@ def entrenar_reconocimiento(
                 evento_ocurrido=True,
                 verdad=evento_ref,
                 firma_conocida=False,  # Fase 1 is learning, not enforcement
+                fase="reconocimiento",  # NUNCA resolver las vivas del launcher
             )
             stats["juez_aciertos"] += len(bots_registrados)
 
@@ -377,11 +378,14 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
         bot = firma["bot_name"]
         es_padre = bot == "padre"
 
-        row = conn.execute(
-            "SELECT eventos_json FROM TBL_FIRMAS WHERE firma_id = ?",
-            (firma["firma_id"],),
-        ).fetchone()
-        eventos = json.loads(row[0]) if row else []
+        # Eventos desde la tabla hija normalizada (1NF).
+        eventos = [
+            r[0] for r in conn.execute(
+                "SELECT evento_ref FROM tbl_firma_eventos "
+                "WHERE firma_id = ? ORDER BY orden",
+                (firma["firma_id"],),
+            )
+        ]
 
         for ref in eventos:
             try:
@@ -435,6 +439,7 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
                     evento_ocurrido=True,
                     verdad=ref,
                     firma_conocida=es_exigible,
+                    fase="backtest",
                 )
                 stats["juez_aciertos"] += 1
             else:
@@ -469,6 +474,7 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
                     firma_conocida=es_exigible,
                     multiplicador=2.0 if es_padre else 1.0,
                     gravedad=gravedad,
+                    fase="backtest",
                 )
 
     # base_geo: when the Padre missed an event that a subordinate DID see,
@@ -493,9 +499,10 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
     # y se regeneran en cada entrenamiento. Ya cumplieron su función — nos
     # quedamos con lo significativo (los pesos + las predicciones VIVAS) y
     # podamos el registro del backtest para que el ledger no crezca sin fin.
+    # Por columna fase (estricta) — las filas 'viva' JAMÁS se tocan: la
+    # auditoría viva es append-only (PENDIENTE→resuelto, nunca DELETE).
     podados = conn.execute(
-        "DELETE FROM TBL_JUEZ_AUDITORIA "
-        "WHERE detalles_json LIKE '%\"fase\": \"backtest\"%'"
+        "DELETE FROM TBL_JUEZ_AUDITORIA WHERE fase = 'backtest'"
     ).rowcount
     conn.commit()
     stats["auditoria_backtest_podada"] = podados
@@ -532,6 +539,16 @@ def entrenar(db_path: str, max_eventos: Optional[int] = None) -> Dict:
     lags = calcular_lags_anticipacion(db_path)
     correlaciones = calcular_correlaciones_evento(db_path)
 
+    # Entrenamiento cimático: graba en tbl_cimatica_patrones la telemetría
+    # de la víspera de cada evento histórico con frecuencias ya contadas —
+    # la cimática viva no empieza de cero.
+    cimatica_stats = {}
+    try:
+        from sentinel_omega.core.firmas.cimatica import entrenar_cimatica
+        cimatica_stats = entrenar_cimatica(db_path, max_eventos=max_eventos)
+    except Exception as e:
+        logger.warning(f"Entrenamiento cimático no disponible: {e}")
+
     # POST: medición disciplinaria (castiga al Padre/Omega si lo real no mejora)
     sesgo_post = {}
     mejora = {}
@@ -548,6 +565,7 @@ def entrenar(db_path: str, max_eventos: Optional[int] = None) -> Dict:
 
     return {"fase1": fase1, "fase1b": fase1b, "fase2": fase2, "lags": lags,
             "correlaciones": correlaciones,
+            "cimatica": cimatica_stats,
             "sesgo_pre": sesgo_pre.get("por_bot", {}),
             "sesgo_post": sesgo_post.get("por_bot", {}),
             "mejora_causal": mejora}
@@ -590,14 +608,17 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
         clase = firma["event_class"]
         if evaluados_por_clase.get(clase, 0) >= LAG_MUESTRA_POR_CLASE:
             continue
-        row = conn.execute(
-            "SELECT eventos_json FROM TBL_FIRMAS WHERE firma_id = ?",
-            (firma["firma_id"],),
-        ).fetchone()
-        eventos = json.loads(row[0]) if row else []
+        # Muestra de 3 eventos desde la tabla hija (no cargamos el array entero).
+        eventos = [
+            r[0] for r in conn.execute(
+                "SELECT evento_ref FROM tbl_firma_eventos "
+                "WHERE firma_id = ? ORDER BY orden LIMIT 3",
+                (firma["firma_id"],),
+            )
+        ]
 
         lags_firma: List[float] = []
-        for ref in eventos[:3]:  # sample per firma
+        for ref in eventos:  # muestra por firma (ya viene limitada a 3)
             if evaluados_por_clase.get(clase, 0) >= LAG_MUESTRA_POR_CLASE:
                 break
             try:
@@ -900,11 +921,11 @@ def calcular_correlaciones_evento(db_path: str) -> Dict:
 # ── Disciplina de trasfondo — "castigo desde abajo" ──────────────────────────
 # Los bots ALERTAN y guardan firmas PERMANENTES desde M4.5 (memoria de 32 años).
 # Pero para que no se duerman con los precursores chiquitos, se les disciplina
-# cada cierto tiempo contra sismos MENORES (M2.5–4.49) de un bloque reciente de
+# cada cierto tiempo contra sismos MENORES (M3.3–4.49) de un bloque reciente de
 # años. Esas firmas viven en una tabla TEMPORAL que se poda por edad — solo
 # sobreviven los PESOS neuronales. El ajuste de peso por corrida está ACOTADO
 # para no cráterizar la credibilidad de un bot de un golpe.
-MAG_MENOR_MIN = 2.5
+MAG_MENOR_MIN = 3.3   # piso de medición vivo, alineado al backcast (alerta solo desde 4.5)
 MAG_MENOR_MAX = MIN_MAGNITUD_FIRMA          # 4.5 — justo por debajo del piso de alerta
 DISCIPLINA_MAX_EVENTOS = 300                # muestreo acotado por corrida
 DISCIPLINA_RETENCION_DIAS = 90             # poda rolling de la tabla temporal
@@ -1056,6 +1077,7 @@ def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
                 evento_ocurrido=True,
                 verdad=evento_ref,
                 firma_conocida=False,  # minor events are never enforceable
+                fase="trasfondo",
             )
 
     # Ajuste de pesos ACOTADO por bot: más ceguera a los chiquitos → más castigo

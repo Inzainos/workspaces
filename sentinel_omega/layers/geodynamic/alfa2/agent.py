@@ -6,7 +6,7 @@ seismic zone. Role: real-time cortical-stress indicator from satellite thermal
 observation.
 
 Like Beta-2 (which subtracts a learned natural degassing background and measures
-the EXCESS), Alfa-2 now **learns its own per-zone baseline** and scores each new
+the EXCESS), Alfa-2 **learns its own per-zone baseline** and scores each new
 observation as a deviation from that baseline — instead of thresholding raw
 coverage counts. This makes Alfa-2 a genuine sensor with its own patterns rather
 than a coverage meter, so it stops being a "dead eye" in the 6-agent consensus.
@@ -19,8 +19,14 @@ Mechanism:
   * The baseline is updated after scoring, and (optionally) persisted to disk
     (SNT_STATE_DIR) so the learned patterns accumulate across runs.
 
-Backward compatible: the explicit `thermal_anomaly_count` still forces an ALERT,
-empty input still yields NO_SIGNAL, and coverage stats are still reported.
+Regla de honestidad proxy-of-proxy (v2.5.1):
+  El conteo `thermal_anomaly_count` llega de fuera y el pipeline actual lo
+  entrega en 0: sin una medición térmica real detrás (`lst_c`, Land Surface
+  Temperature — global o por zona), ese conteo NO alcanza para ALERT: se
+  degrada a WATCH y el reasoning lo dice. El baseline auto-aprendido sí
+  puede escalar a ALERT por desviación (>= Z_ALERT σ) porque compara la
+  zona contra SU PROPIA historia observada — deviación medida, no conteo
+  sin respaldo. `_observation_index` prefiere `lst_c` real cuando existe.
 """
 
 import json
@@ -49,6 +55,7 @@ class Alfa2Agent(BaseAgent):
         super().__init__(name="alfa2", layer="geodynamic")
         self._zone_coverages: Dict[str, Dict[str, Any]] = {}
         self._thermal_anomaly_count: int = 0
+        self._lst_c = None   # LST medida (°C); None = sin térmico real global
         # learned baseline: zone -> {"n": int, "mean": float, "M2": float}
         self._baselines: Dict[str, Dict[str, float]] = {}
         self._state_path = self._resolve_state_path(state_path)
@@ -124,6 +131,7 @@ class Alfa2Agent(BaseAgent):
     def ingest(self, data: Dict[str, Any]) -> None:
         self._zone_coverages = data.get("zone_coverages", {})
         self._thermal_anomaly_count = data.get("thermal_anomaly_count", 0)
+        self._lst_c = data.get("lst_c")
         self.logger.info(
             f"Ingested satellite data for {len(self._zone_coverages)} zones"
         )
@@ -164,23 +172,37 @@ class Alfa2Agent(BaseAgent):
 
         max_abs_z = max((abs(v) for v in anomalies.values()), default=0.0)
         worst_zone = max(anomalies, key=lambda k: abs(anomalies[k])) if anomalies else None
+        tiene_lst = bool(self._lst_c) or any(
+            cov.get("lst_c") is not None for cov in self._zone_coverages.values()
+        )
         base_data = {
             "zone_scores": zone_scores,
             "thermal_anomalies": self._thermal_anomaly_count,
             "max_abs_z": float(max_abs_z),
             "worst_zone": worst_zone,
             "learning_zones": learning_zones,
+            "lst_medida": tiene_lst,
         }
 
-        # 1) Explicit thermal-anomaly count forces an alert (backward compatible).
+        # 1) Conteo térmico explícito: ALERT solo con LST medida detrás;
+        #    sin lst_c es proxy-of-proxy y se degrada a WATCH (honestidad).
         if self._thermal_anomaly_count > 2:
+            if tiene_lst:
+                return self.emit_signal(
+                    SignalType.ALERT,
+                    min(0.6 + self._thermal_anomaly_count * 0.05, 0.9),
+                    data=base_data,
+                    reasoning=(
+                        f"{self._thermal_anomaly_count} thermal anomalies backed "
+                        f"by measured LST across satellite coverage"
+                    ),
+                )
             return self.emit_signal(
-                SignalType.ALERT,
-                min(0.6 + self._thermal_anomaly_count * 0.05, 0.9),
+                SignalType.WATCH, 0.5,
                 data=base_data,
                 reasoning=(
-                    f"{self._thermal_anomaly_count} thermal anomalies detected "
-                    f"across satellite coverage"
+                    f"{self._thermal_anomaly_count} thermal anomalies reported but "
+                    f"NO measured LST backing them (proxy-of-proxy) — degraded to WATCH"
                 ),
             )
 

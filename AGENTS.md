@@ -36,7 +36,7 @@ estado/             Reportes publicados: REPORTE.md (último) + historial/AAAA/M
 
 ```bash
 # Tests — SIEMPRE desde la raíz del workspace, nunca desde dentro de sentinel_omega/
-python -m pytest sentinel_omega/tests/ -q          # 355 tests
+python -m pytest sentinel_omega/tests/ -q          # 396 tests
 
 # Un solo archivo
 python -m pytest sentinel_omega/tests/test_firmas.py -v
@@ -45,12 +45,21 @@ python -m pytest sentinel_omega/tests/test_firmas.py -v
 python sentinel_omega/launcher.py                  # ciclo continuo (default 300s)
 python sentinel_omega/launcher.py --once           # un ciclo y salir
 python sentinel_omega/launcher.py --backcast        # carga histórica 1994-2025 (one-time)
-python sentinel_omega/launcher.py --entrenar        # entrenamiento de firmas (3 fases: sísmica + no sísmica + disciplina)
+python sentinel_omega/launcher.py --entrenar        # entrenamiento completo (sesgo PRE → 3 fases → cimática → sesgo POST)
+python sentinel_omega/launcher.py --disciplina      # castigo desde abajo (menores M3.3-4.49)
+python sentinel_omega/launcher.py --barrido         # compactación diaria + correlaciones + poda cimática
+# Los flags de tarea corren la tarea y SALEN (no entran al ciclo continuo)
 python sentinel_omega/shutdown.py                  # parar (SIGTERM, 30s → SIGKILL)
 python sentinel_omega/reboot.py                    # stop + relaunch
 
+# Juez: real vs predicción (ritmo auto-impuesto de 4h)
+python deploy/verificacion_juez.py
+
 # Reporte (los "ojos" del sistema; lo corre el vigilante tras cada ciclo)
 python deploy/generar_reporte.py
+python deploy/reporte_ejecutivo.py                 # plantilla ejecutiva (cada 6h)
+python deploy/reporte_periodico.py --comparativo   # hoy vs ayer (o --semanal / --mensual)
+python deploy/enviar_correos.py                    # despacho del outbox de correo
 
 # Dashboard
 streamlit run sentinel_omega/infrastructure/dashboard/app.py
@@ -58,6 +67,12 @@ streamlit run sentinel_omega/infrastructure/dashboard/app.py
 
 ## Reglas duras (no romper)
 
+0. **REGLA CERO — nunca asumas, siempre revisa.** No des nada por hecho ni por
+   conectado sin verificarlo contra el código y, cuando toque, **corriendo el
+   flujo de punta a punta** (no basta con que pasen los tests unitarios).
+   Antes de decir "ya está", compruébalo: ¿la tabla se pobló?, ¿el reporte lee
+   la sección?, ¿el script corre sin error de verdad? Si no lo verificaste, no
+   lo afirmes — di qué falta por comprobar. Esta regla manda sobre todas.
 1. **Secretos solo por entorno.** Nunca hardcodear API keys/tokens. Usa
    `os.environ.get("NOMBRE", "")`. Los `.env` están en `.gitignore`; en CI van
    como GitHub Secrets. Las claves se rotan según se usan.
@@ -120,5 +135,17 @@ streamlit run sentinel_omega/infrastructure/dashboard/app.py
 NOAA SWPC · USGS FDSN · NASA OMNI2 (backcast) · NASA MSVOLSO2L4 (SO₂ volcánico) ·
 Tomsk (Schumann) · IERS (LOD) · Yahoo Finance (BTC, keyless) ·
 OpenWeatherMap (`OPENWEATHERMAP_KEY`) · NASA NEO (`NASA_API_KEY`, fallback DEMO_KEY) ·
-ESA Copernicus vía eodag. Telegram para alertas (`TELEGRAM_BOT_TOKEN` /
-`TELEGRAM_CHAT_ID`).
+ESA Copernicus vía eodag.
+
+## Alertas y reportes (canal: correo, Telegram en pausa)
+
+Alertas y reportes viajan por email a `elan.zainos.corona@gmail.com` vía el
+outbox `tbl_correo_salida` (fail-soft: sin `SMTP_USER`/`SMTP_PASS` quedan
+PENDIENTES, nunca se fingen enviados). Rutinas del vigilante (hora MX=UTC-6):
+ciclo del Padre cada 2 h · Juez verifica real vs predicción cada 4 h ·
+reporte ejecutivo cada 6 h · comparativo diario 12am/12pm · semanal domingo
+12:15pm · mensual fin de mes 12:30pm. La cimática
+(`tbl_cimatica_patrones`) toma un snapshot de telemetría por ciclo: patrón
+nuevo guarda todo, patrón repetido suma +1 a la frecuencia; cualquier
+alta/incremento dispara la revisión del Padre y, si amerita, alerta por
+correo.

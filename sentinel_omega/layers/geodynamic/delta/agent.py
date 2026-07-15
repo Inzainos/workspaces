@@ -3,18 +3,27 @@ Delta Agent — Financial Cross-Correlation & Earth Sentiment
 Sources: Crypto (Binance, CoinGecko), Bolsa (Yahoo, VIX), Fear & Greed
 Variables: BTC dominance, VIX, yield spread, Fear & Greed, sector topology
 Training window: 10 years
-Role: Detect financial/social anomalies that correlate with geophysical events
+Role: CONTEXT provider — never a seismic-alert vote
 
 The "humor de la tierra" — market fear, social sentiment, and financial stress
 often shift before or during major natural events. Delta captures these signals
 for cross-correlation against the Schumann baseline (via Padre).
+
+Honestidad de rol (v2.5.1):
+  - Delta NUNCA emite ALERT al consenso: su techo es WATCH. El estrés
+    financiero es contexto correlacionable, no evidencia sísmica directa —
+    un VIX en 45 no vota por un sismo, solo enriquece la firma del Padre.
+  - Se eliminó el "friction" institucional hardcodeado (0.4/0.3/0.5): eran
+    constantes inventadas que inflaban el score compuesto sin dato real
+    detrás. El score compuesto ahora sale solo de entradas medidas
+    (Fear&Greed, VIX, curva de rendimientos, topología cripto/sectorial).
 """
 
 import numpy as np
 from typing import Any, Dict, Optional
 
 from sentinel_omega.core.shared.agent_base import BaseAgent, AgentSignal, SignalType
-from sentinel_omega.core.snt_engine import SatellizationEngine, NBodyMatrix, InstitutionalFrictionCalculator
+from sentinel_omega.core.snt_engine import SatellizationEngine, NBodyMatrix
 
 
 class DeltaAgent(BaseAgent):
@@ -25,8 +34,8 @@ class DeltaAgent(BaseAgent):
         super().__init__(name="delta", layer="geodynamic")
         self._snt = SatellizationEngine()
         self._nbody = NBodyMatrix()
-        self._friction_calc = InstitutionalFrictionCalculator()
 
+        self._ingested: bool = False
         self._fear_greed: float = 50.0
         self._vix: float = 20.0
         self._btc_dominance: float = 0.5
@@ -41,6 +50,7 @@ class DeltaAgent(BaseAgent):
         self._yield_spread = data.get("yield_spread", 0.5)
         self._sector_values = data.get("sector_market_caps", {})
         self._crypto_ratios = data.get("crypto_ratios", {})
+        self._ingested = True
         self.logger.info(
             f"Delta: FGI={self._fear_greed:.0f}, VIX={self._vix:.1f}, "
             f"BTC_dom={self._btc_dominance:.1%}, spread={self._yield_spread:.2f}"
@@ -89,14 +99,8 @@ class DeltaAgent(BaseAgent):
         crypto_topo = self._crypto_topology()
         sector_topo = self._sector_topology()
 
-        friction = self._friction_calc.calculate(
-            regulatory_density=0.4,
-            structural_barriers=0.3,
-            temporal_inertia=0.5,
-            domain="cross_market",
-        )
-
-        combined = fear_score * 0.5 + friction.score * 0.2
+        # Score compuesto SOLO de entradas medidas — sin constantes inventadas
+        combined = fear_score * 0.7
         if crypto_topo["signal"] != SignalType.NEUTRAL:
             combined += 0.15
         if sector_topo.get("concentration", 0) > 0.7:
@@ -109,7 +113,6 @@ class DeltaAgent(BaseAgent):
             "yield_spread": self._yield_spread,
             "market_fear_score": fear_score,
             "crypto_b": crypto_topo.get("b", 0.0),
-            "friction": friction.score,
             "sector_concentration": sector_topo.get("concentration", 0.0),
         }
 
@@ -121,10 +124,15 @@ class DeltaAgent(BaseAgent):
                 reasons.append(f"VIX extreme ({self._vix:.1f})")
             if self._yield_spread < 0:
                 reasons.append("yield curve inverted")
+            # Techo WATCH: estrés financiero fuerte = contexto para el Padre,
+            # nunca un voto de ALERT sísmico.
             return self.emit_signal(
-                SignalType.ALERT, min(0.6 + combined * 0.3, 0.95),
+                SignalType.WATCH, min(0.5 + combined * 0.3, 0.8),
                 data=signal_data,
-                reasoning=f"Financial stress: {', '.join(reasons) or 'elevated composite'}",
+                reasoning=(
+                    f"Financial stress (context, not seismic vote): "
+                    f"{', '.join(reasons) or 'elevated composite'}"
+                ),
             )
 
         if combined > 0.35:
@@ -141,4 +149,6 @@ class DeltaAgent(BaseAgent):
         )
 
     def health_check(self) -> bool:
-        return self._fear_greed != 50.0 or self._vix != 20.0
+        # Flag explícito: VIX==20.0 o FGI==50.0 exactos son valores válidos,
+        # no evidencia de "sin datos".
+        return self._ingested

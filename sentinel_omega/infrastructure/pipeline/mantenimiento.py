@@ -119,6 +119,21 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
     # discierne si la secuencia importa o es indiferente (contando).
     stats["orden_precursores"] = analizar_orden_precursores(db_path)
 
+    # Y la SECUENCIA DE NODOS: la ruta espacial por la que se propaga la
+    # energía. Rutas globales (que preceden a distintos tipos) = cimática
+    # organizada; locales = causas específicas.
+    stats["secuencia_nodos"] = analizar_secuencia_nodos(db_path)
+
+    # Poda cimática: la línea base es TODA la telemetría, pero el patrón
+    # que tras su gracia nunca se asoció a un evento es ruido → se elimina.
+    try:
+        from sentinel_omega.core.firmas.cimatica import poda_cimatica
+        conn_poda = sqlite3.connect(db_path)
+        stats["cimatica_podados"] = poda_cimatica(conn_poda)
+        conn_poda.close()
+    except Exception as e:
+        logger.warning(f"Poda cimática falló (non-blocking): {e}")
+
     logger.info(f"Barrido diario: {stats}")
     return stats
 
@@ -313,16 +328,21 @@ def evaluar_sesgo_aprendizaje(
     if "omega" not in bots_evaluar:
         bots_evaluar["omega"] = None  # None → vector completo (igual que el Padre)
 
-    # Firmas consolidadas por bot + timestamp más temprano de su memoria
+    # Firmas consolidadas por bot + timestamp más temprano de su memoria.
+    # El t0 (primer avistamiento) sale de MIN(ts_evento) en la tabla hija —
+    # antes se parseaba el array eventos_json entero solo para el mínimo.
     firmas: Dict[str, list] = {}
-    for bot, feats, evs in conn.execute(
-        "SELECT bot_name, features_json, eventos_json FROM TBL_FIRMAS "
+    for firma_id, bot, feats in conn.execute(
+        "SELECT firma_id, bot_name, features_json FROM TBL_FIRMAS "
         "WHERE estado = 'consolidada'"
     ):
         try:
             f = _json.loads(feats)
-            refs = _json.loads(evs) if evs else []
-            t0 = min((r.split("|")[0] for r in refs), default=None)
+            row = conn.execute(
+                "SELECT MIN(ts_evento) FROM tbl_firma_eventos WHERE firma_id = ?",
+                (firma_id,),
+            ).fetchone()
+            t0 = row[0] if row else None
         except Exception:
             continue
         firmas.setdefault(bot, []).append((f, t0))
@@ -403,7 +423,14 @@ ORDEN_SEGMENTOS = 4       # la ventana de 14 días se parte en 4 tramos de 3.5d
 
 
 def _orden_evento(conn, ts_evento: str, id_nodo: int) -> str:
-    """Orden de activación de dominios en los 4 tramos de la víspera.
+    """Orden de activación de dominios (bots) en los 4 tramos de la víspera.
+
+    Cruza TODOS los bots con histórico disponible — no solo el sísmico:
+      SOLAR (alfa1) · SISMICO (nodos) · DESGAS (beta2) · FINANCIERO (delta,
+      la psique humana que las tormentas solares agitan) · COSMICO (omega:
+      sicigias/fase lunar extrema). Beta1/Schumann no tiene backcast (tabla
+      vacía) — entra en el cruce EN VIVO vía el consenso del Padre y las
+      correlaciones de Omega (delta_schumann_coupling), no aquí.
 
     Devuelve 'SOLAR→SISMICO' (activación secuencial), 'SOLAR+SISMICO'
     (mismo tramo) o '' si ningún dominio se activó.
@@ -441,6 +468,33 @@ def _orden_evento(conn, ts_evento: str, id_nodo: int) -> str:
             (ts_evento, ini, ts_evento, fin)).fetchone()[0]
         if vol is not None and vol >= 5 and "FINANCIERO" not in activacion:
             activacion["FINANCIERO"] = seg
+        # SCHUMANN (beta1): excitación medida (WPC) en la serie viva acumulada.
+        # No hay backcast, así que solo dispara para eventos recientes con
+        # datos — la serie crece en cada corrida de 2 h y con el tiempo cubre
+        # más. El latido de la Tierra entra al cruce en cuanto hay medición.
+        try:
+            sch = conn.execute(
+                "SELECT MAX(schumann_activity) FROM tbl_schumann_vivo "
+                "WHERE timestamp_blk >= datetime(?, ?) "
+                "AND timestamp_blk < datetime(?, ?)",
+                (ts_evento, ini, ts_evento, fin)).fetchone()[0]
+            if sch is not None and sch >= 30 and "SCHUMANN" not in activacion:
+                activacion["SCHUMANN"] = seg
+        except sqlite3.OperationalError:
+            pass   # serie viva aún no existe
+        # COSMICO (omega): sicigia (luna nueva/llena alineada) o fase lunar
+        # extrema en el tramo — el ritmo cósmico como precursor de marea.
+        cos = conn.execute(
+            "SELECT MAX(es_sicigia), MIN(fase_lunar_pct), MAX(fase_lunar_pct) "
+            "FROM tbl_astronomia_cinematica "
+            "WHERE timestamp_blk >= datetime(?, ?) AND timestamp_blk < datetime(?, ?)",
+            (ts_evento, ini, ts_evento, fin)).fetchone()
+        if cos and cos[0] and "COSMICO" not in activacion:
+            activacion["COSMICO"] = seg
+        elif (cos and cos[1] is not None
+              and (cos[1] <= 0.05 or cos[2] >= 0.95)
+              and "COSMICO" not in activacion):
+            activacion["COSMICO"] = seg
     if not activacion:
         return ""
     por_seg: Dict[int, list] = {}
@@ -468,10 +522,9 @@ def analizar_orden_precursores(db_path: str, muestra: int = ORDEN_MUESTRA) -> Di
         "frac_dominante REAL, veredicto TEXT, "
         "actualizada_at TEXT DEFAULT (datetime('now')))")
 
-    eventos = conn.execute(
-        "SELECT timestamp_blk, id_nodo, sismo_max_mag "
-        "FROM tbl_historico_sismico_raw WHERE sismo_max_mag >= 4.5 "
-        "ORDER BY timestamp_blk").fetchall()
+    # TODOS los eventos naturales (no solo sismos): cada uno es una liberación
+    # de energía cuya coreografía de precursores queremos leer.
+    eventos = _catalogo_eventos_energia(conn)
     if not eventos:
         conn.close()
         return {"eventos": 0}
@@ -479,12 +532,10 @@ def analizar_orden_precursores(db_path: str, muestra: int = ORDEN_MUESTRA) -> Di
     eventos = eventos[::paso]
 
     conteo: Dict[tuple, int] = {}
-    for ts, nodo, mag in eventos:
+    for ts, nodo, clase in eventos:
         orden = _orden_evento(conn, ts, nodo)
         if not orden:
             continue
-        clase = ("SISMO_M7" if mag >= 7 else "SISMO_M6" if mag >= 6
-                 else "SISMO_M5" if mag >= 5 else "SISMO_M4")
         conteo[(orden, clase)] = conteo.get((orden, clase), 0) + 1
 
     conn.execute("DELETE FROM tbl_orden_precursores")
@@ -526,4 +577,154 @@ def analizar_orden_precursores(db_path: str, muestra: int = ORDEN_MUESTRA) -> Di
     logger.info(f"Orden de precursores: {len(conteo)} secuencias, "
                 f"veredictos: { {k: v['veredicto'] for k, v in veredictos.items()} }")
     return {"eventos": len(eventos), "secuencias": len(conteo),
+            "veredictos": veredictos}
+
+
+# ── Secuencia de NODOS — la ruta por la que se mueve la energía ──────────────
+# No basta con QUÉ nodos se activan: importa EN QUÉ ORDEN espacial. Para cada
+# evento reconstruimos la secuencia de nodos que se activaron en la víspera (qué
+# nodo emitió primero, luego cuál…) — la forma en que la energía se propaga por
+# la malla. Contamos (+1) las secuencias recurrentes y las clasificamos:
+#   GLOBAL  — la misma ruta precede a distintos TIPOS de evento → cimática
+#             organizada: un sistema liberando energía con precursores/gatillos
+#             identificables (nodos emisores + camino de propagación).
+#   LOCAL   — la ruta es recurrente pero ligada a un solo tipo → causa específica
+#             (eventos distintos con detonantes distintos).
+SEC_NODOS_MUESTRA = 300
+SEC_NODOS_VENTANA_H = 72     # víspera donde se observa la propagación
+SEC_NODOS_MAX_LEN = 5        # ruta acotada (primeros nodos en activarse)
+SEC_NODOS_MIN_FREC = 3       # una ruta con menos apariciones no es recurrente
+
+
+def _catalogo_eventos_energia(conn) -> list:
+    """TODO evento natural es una liberación de energía: sismos + volcanes +
+    tormentas solares (y cualquier no-sísmico catalogado — blue jets/sprites
+    entran cuando el escáner los persista históricamente). Devuelve
+    [(timestamp_blk, id_nodo, event_class), ...] ordenado en el tiempo.
+
+    Analizar la cimática de TODOS los tipos —y no solo sismos— es lo que deja
+    ver rutas de propagación que cruzan dominios (una ruta que precede a un
+    sismo Y a una erupción es una cimática global, no una coincidencia local).
+    """
+    eventos: list = []
+    for ts, nodo, mag in conn.execute(
+        "SELECT timestamp_blk, id_nodo, sismo_max_mag "
+        "FROM tbl_historico_sismico_raw WHERE sismo_max_mag >= 4.5"
+    ):
+        clase = ("SISMO_M7" if mag >= 7 else "SISMO_M6" if mag >= 6
+                 else "SISMO_M5" if mag >= 5 else "SISMO_M4")
+        eventos.append((ts, nodo, clase))
+    try:
+        for ts, nodo, clase in conn.execute(
+            "SELECT timestamp_blk, id_nodo, event_class "
+            "FROM tbl_eventos_no_sismicos"
+        ):
+            eventos.append((ts, nodo, clase))
+    except sqlite3.OperationalError:
+        pass   # catálogo no-sísmico aún no derivado
+    eventos.sort(key=lambda e: e[0])
+    return eventos
+
+
+def _secuencia_nodos_evento(conn, ts_evento: str, id_nodo_evento: int) -> str:
+    """Ruta de nodos que se activaron en la víspera, en orden temporal.
+
+    Devuelve 'nodo12>nodo45>nodoX' (X = nodo del evento, la culminación) o ''
+    si no hubo una propagación de al menos 2 nodos.
+    """
+    ini = f"-{SEC_NODOS_VENTANA_H} hours"
+    filas = conn.execute(
+        "SELECT id_nodo FROM tbl_historico_sismico_raw "
+        "WHERE timestamp_blk >= datetime(?, ?) AND timestamp_blk < ? "
+        "AND sismo_count > 0 ORDER BY timestamp_blk",
+        (ts_evento, ini, ts_evento)).fetchall()
+    seq: list = []
+    for (nodo,) in filas:
+        if nodo not in seq:          # primera aparición = orden de activación
+            seq.append(nodo)
+        if len(seq) >= SEC_NODOS_MAX_LEN:
+            break
+    if id_nodo_evento not in seq:
+        seq.append(id_nodo_evento)   # el evento culmina la ruta
+    if len(seq) < 2:
+        return ""
+    return ">".join(f"nodo{n}" for n in seq[:SEC_NODOS_MAX_LEN])
+
+
+def analizar_secuencia_nodos(db_path: str, muestra: int = SEC_NODOS_MUESTRA) -> Dict:
+    """Cuenta rutas de propagación de energía por la malla y las clasifica
+    como GLOBAL (cimática organizada) o LOCAL (causa específica).
+
+    tbl_secuencia_nodos:    (secuencia, event_class) -> frecuencia  (contar)
+    tbl_secuencia_veredictos: secuencia -> alcance + interpretación
+    """
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_secuencia_nodos ("
+        "secuencia TEXT, event_class TEXT, frecuencia INTEGER, "
+        "PRIMARY KEY (secuencia, event_class))")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_secuencia_veredictos ("
+        "secuencia TEXT PRIMARY KEY, frecuencia_total INTEGER, "
+        "n_clases INTEGER, n_nodos INTEGER, alcance TEXT, interpretacion TEXT, "
+        "actualizada_at TEXT DEFAULT (datetime('now')))")
+
+    # TODOS los eventos naturales (sismo, volcán, tormenta solar…), no solo sismos
+    eventos = _catalogo_eventos_energia(conn)
+    if not eventos:
+        conn.close()
+        return {"eventos": 0}
+    paso = max(1, len(eventos) // muestra)
+    eventos = eventos[::paso]
+
+    conteo: Dict[tuple, int] = {}
+    for ts, nodo, clase in eventos:
+        seq = _secuencia_nodos_evento(conn, ts, nodo)
+        if not seq:
+            continue
+        conteo[(seq, clase)] = conteo.get((seq, clase), 0) + 1
+
+    conn.execute("DELETE FROM tbl_secuencia_nodos")
+    conn.executemany(
+        "INSERT INTO tbl_secuencia_nodos (secuencia, event_class, frecuencia) "
+        "VALUES (?,?,?)", [(s, c, n) for (s, c), n in conteo.items()])
+
+    # Veredicto por RUTA: ¿es global (varios tipos de evento) o local?
+    por_ruta: Dict[str, Dict[str, int]] = {}
+    for (seq, clase), n in conteo.items():
+        por_ruta.setdefault(seq, {})
+        por_ruta[seq][clase] = por_ruta[seq].get(clase, 0) + n
+
+    conn.execute("DELETE FROM tbl_secuencia_veredictos")
+    veredictos = {}
+    for seq, clases in por_ruta.items():
+        total = sum(clases.values())
+        if total < SEC_NODOS_MIN_FREC:
+            continue   # no recurrente — no concluimos nada
+        n_nodos = seq.count(">") + 1
+        if len(clases) >= 2:
+            alcance = "GLOBAL"
+            interp = ("cimática organizada: la misma ruta de propagación "
+                      "precede a distintos tipos de evento — sistema liberando "
+                      "energía con precursores/gatillos identificables")
+        else:
+            alcance = "LOCAL"
+            interp = ("ruta recurrente pero ligada a un solo tipo de evento — "
+                      "causa específica de ese nodo/región")
+        conn.execute(
+            "INSERT INTO tbl_secuencia_veredictos "
+            "(secuencia, frecuencia_total, n_clases, n_nodos, alcance, "
+            " interpretacion) VALUES (?,?,?,?,?,?)",
+            (seq, total, len(clases), n_nodos, alcance, interp))
+        veredictos[seq] = {"frecuencia": total, "clases": len(clases),
+                           "alcance": alcance}
+    conn.commit()
+    conn.close()
+
+    n_global = sum(1 for v in veredictos.values() if v["alcance"] == "GLOBAL")
+    logger.info(
+        f"Secuencia de nodos: {len(conteo)} rutas, {len(veredictos)} recurrentes "
+        f"({n_global} GLOBALES — cimática organizada)")
+    return {"eventos": len(eventos), "rutas": len(conteo),
+            "recurrentes": len(veredictos), "globales": n_global,
             "veredictos": veredictos}

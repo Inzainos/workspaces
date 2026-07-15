@@ -6,6 +6,148 @@ conventions. Dates are UTC-6 (local time of the author).
 
 ---
 
+## [Unreleased] — 2026-07-11
+
+Bloque de **honestidad total** (fix list A–D + revisión profunda del
+pipeline), **sistema 24/7** (rutinas, cimática, correo) y **reentrenamiento
+limpio** de todas las memorias. Informe de hallazgos:
+`estado/INFORME_CORRECCIONES.md`.
+
+### Added
+
+#### Línea base de Molchan (`sentinel_omega/core/precursor/baseline.py`) — NUEVO
+- **`AlwaysAlertBaseline`** — modelo nulo "alertar siempre": su hit-rate es la
+  tasa base de sismicidad (misma geometría que el sistema: radio 5°, ventana
+  72 h). **Ganancia = hit_rate_sistema ÷ tasa_base**; ≤ 1 = el sistema no
+  supera a alertar a ciegas.
+- Hook **`validate_with_baseline()`** en `assertivity.py`; sección
+  "¿Le ganamos a alertar siempre?" en `deploy/generar_reporte.py`.
+- Primer resultado honesto: tasa base 100%, sistema 36.6% → **ganancia 0.37×**
+  (sin ganancia todavía — por eso las predicciones por nodo, abajo).
+
+#### Predicciones específicas por nodo
+- El Padre registra los **nodos de las firmas que motivaron su aviso**
+  (`nodos` en detalles de la predicción viva).
+- `Juez.evaluar_pendientes()` acepta **`eventos`** (verdad POR FILA: ventana
+  propia de 72 h + zonas) y usa los nodos de la propia fila cuando existen —
+  un aviso solo vale si acierta DÓNDE avisó. Los silencios se juzgan contra
+  toda la malla. `firma_conocida` también por fila (desde los detalles).
+- `AssertivityTracker` por fin alimentado en operación (avisos anclados a sus
+  nodos) con ganancia de Molchan en vivo.
+
+#### Cimática — snapshot de patrones (`sentinel_omega/core/firmas/cimatica.py`) — NUEVO
+- **`tbl_cimatica_patrones`**: cada ciclo toma el snapshot del sistema (huella
+  de bandas logarítmicas con signo). Patrón NUEVO → telemetría completa
+  guardada; existente → **frecuencia+1** (contar, no anotar). Ámbito
+  `general`/`nodo`, `event_class` cuando se conoce.
+- **Trigger del Padre**: toda alta/incremento dispara su revisión; patrón
+  nuevo con Padre activo o cimática consistente (frecuencia ≥ 3) con evento
+  asociado → alerta por correo.
+- **`entrenar_cimatica()`**: el histórico de 30 años graba los patrones de la
+  víspera de cada evento (misma extracción de features que la Fase 1) — la
+  tabla nace con las frecuencias contadas. Integrado a `entrenar()`.
+- **`retroetiquetar_patrones()`**: cuando el Juez confirma un evento real
+  (M4.5+), los patrones sin evento de su víspera de 72 h se etiquetan con lo
+  que desataron (en vivo el snapshot se graba ANTES de saber qué desata).
+- **`poda_cimatica()`**: la línea base es TODA la telemetría, pero el patrón
+  que tras 30 días de gracia no se asoció a ningún evento es ruido → se
+  elimina (enganchada al barrido diario). Lo asociado a eventos se queda.
+
+#### Correo — alertas y reportes sin Telegram (`sentinel_omega/infrastructure/api/correo.py`) — NUEVO
+- **`tbl_correo_salida`**: outbox de ALERTAS y REPORTES a
+  `elan.zainos.corona@gmail.com` (configurable con `CORREO_DESTINO`).
+- Envío SMTP **fail-soft** por variables de entorno (`SMTP_USER`/`SMTP_PASS`,
+  app password de Gmail): sin credenciales el correo queda PENDIENTE — nunca
+  se pierde ni se finge enviado. Adjunta las gráficas PNG de los reportes.
+- `deploy/enviar_correos.py` — despacho del outbox en cada corrida del
+  vigilante.
+
+#### Rutinas 24/7 (`.github/workflows/roy-vigilante.yml` reestructurado)
+- **Cada 2 h**: ciclo del Padre (status + registro + cimática).
+- **Cada 4 h**: el Juez verifica real vs predicción
+  (`deploy/verificacion_juez.py` → `pipeline/verificacion.py`, ritmo
+  AUTO-IMPUESTO: si la última resolución viva tiene <4 h, la pasada se salta).
+- **Cada 6 h**: reporte ejecutivo (encolado por correo).
+- **12am/12pm MX**: comparativo contra el día anterior
+  (`deploy/reporte_periodico.py --comparativo`, con gráfica).
+- **Domingo 12:15pm MX**: reporte semanal (gráficas fantasma/alertas/breaches).
+- **Fin de mes 12:30pm MX**: reporte mensual (guardia "mañana es día 1").
+- Gráficas con matplotlib (nueva dependencia), estilo sobrio: una serie, un
+  color, máximo resaltado.
+
+#### Verificación por fases en reportes
+- Sección del Juez de `generar_reporte.py` separada por fase: "Operación viva
+  (lo que cuenta)" vs "Bitácora de entrenamiento (no puntúa)".
+
+### Changed
+
+#### Honestidad de agentes (fix list A–D)
+- **beta1** (`layers/geodynamic/beta1/agent.py`) — REESCRITO: el "filtro
+  armónico Schumann" sobre Kp muestreado a 3 h era numerología (7.83 Hz ≈ 5
+  órdenes sobre el Nyquist; coherencia ≈ 1 siempre). Ahora
+  `kp_spectral_features()` (FFT PLANO: energía, ratio de alta frecuencia,
+  periodo dominante) + el Schumann MEDIDO de Tomsk como serie propia
+  (excitación >15% suma confianza; >30% con espectro calmo → WATCH).
+  `correlacion_TL` exige ≥ 3 ciclos lunares completos (ventana corta = |r|
+  alto por azar → None, nunca alimenta confianza).
+- **alfa1** (`alfa1/agent.py`) — REESCRITO: rama ONNX real (carga fail-soft,
+  `set_model()` inyectable, `_analyze_onnx()` con fallback honesto); el
+  reasoning dice QUÉ rama corre ("ONNX inference:…" vs "Bz threshold
+  rule:…"), `data.onnx` lo marca. Bz por NOMBRE de columna (posición 0 solo
+  es Bz si `bz_gsm` vino en el dataframe) y vector ONNX alineado por nombre.
+- **delta** (`delta/agent.py`) — NUNCA emite ALERT al consenso: techo WATCH
+  (estrés financiero = contexto correlacionable, no voto sísmico). `friction`
+  institucional hardcodeado (0.4/0.3/0.5) eliminado del score.
+  `health_check` con flag `_ingested` (VIX=20.0 exacto ya no es "sin datos").
+- **alfa2** (`alfa2/agent.py`) — limitación proxy-of-proxy documentada: sin
+  `lst_c` (LST medida) el conteo térmico degrada a WATCH; ALERT térmica exige
+  lecturas reales.
+- **Piso de medición**: `MIN_MAGNITUD_OBSERVAR` y `MAG_MENOR_MIN` en **3.3**
+  (alineado al piso real del backcast, M3.38). El sistema mide y predice
+  desde M3.3 con su clase de desastre; **alerta solo desde M4.5** (solo el
+  Padre avisa).
+
+#### Fase estricta del Juez (C1/C2)
+- Columna **`fase`** real en `TBL_JUEZ_AUDITORIA`
+  (viva/reconocimiento/backtest/observacion/trasfondo) + backfill de datos
+  viejos + vista **`viva_real`** = vara canónica de asertividad.
+- La auditoría viva es **append-only** (jamás DELETE); la poda del backtest
+  usa la columna fase. `evaluar_pendientes(fase=...)` — el entrenamiento no
+  puede resolver (contaminar) las predicciones vivas del launcher.
+- Las tres tuberías de reporte (`generar_reporte.py`, `reporte_ejecutivo.py`,
+  `reporte_sentinel.py`) unificadas sobre `viva_real`.
+
+### Fixed
+- **183 resoluciones viva contaminadas**: todas compartían una verdad de
+  **1994** del backcast (corrida de entrenamiento previa al filtro de fase).
+  Regresadas a PENDIENTE y re-resueltas contra el catálogo USGS REAL de julio
+  2026, cada una contra su propia ventana de 72 h.
+- **El criterio vivo de verdad era el modelo nulo puntuando 100%**: "hubo
+  M4.5+ en la Tierra en 4 días" es cierto casi siempre → todo watch era
+  ACIERTO gratis. Reemplazado por verdad por fila (arriba). USGS caído ahora
+  POSPONE la resolución (antes inventaba "sin eventos" → FALSO_POSITIVO
+  injusto).
+- El gate de disciplina del vigilante (07 UTC) **nunca disparaba** (el cron
+  corre en horas pares) — reemplazado por gates con tolerancia al retraso del
+  scheduler.
+- `--disciplina`/`--barrido`/`--entrenar` sin `--once` ya no caen al ciclo
+  continuo (task-mode batch: corre y sale). USGS FDSN 400 por microsegundos y
+  offset en el timestamp (strftime limpio).
+
+### Notes & Known Limitations
+- **Reentrenamiento limpio total** ejecutado tras las correcciones: firmas,
+  pesos, correlaciones, orden, sesgo y lags borrados y reaprendidos desde
+  cero con el código corregido (sin sesgos de versiones pasadas). La fase
+  viva (append-only) y los datos crudos del backcast se conservan.
+- El backcast histórico tiene piso real M3.38: medir bajo 3.3 requeriría
+  re-ingerir el catálogo (decisión futura).
+- La severidad por reincidencia crece sin techo dentro de un lote grande de
+  resolución (documentado, sin cambio: el castigo duro es de diseño).
+- El envío de correo requiere configurar `SMTP_USER`/`SMTP_PASS` en los
+  secrets del repo; sin ellos el outbox acumula PENDIENTES (por diseño).
+
+---
+
 ## [Unreleased] — 2026-07-05
 
 ### Added
