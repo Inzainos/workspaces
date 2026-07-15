@@ -217,10 +217,11 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Sentinel Omega — databases and data
+# Sentinel Omega — databases, data, and generated reports
 *.db
 *.sqlite3
 data/
+estado/
 
 # Secrets / credentials
 .env.local
