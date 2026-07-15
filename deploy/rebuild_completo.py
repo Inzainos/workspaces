@@ -46,8 +46,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("rebuild")
 
-DB = str(RAIZ / "sentinel_omega" / "data" / "SENTINEL_OMEGA_PRO.db")
-PID = RAIZ / "sentinel_omega" / "data" / "sentinel_omega.pid"
+DB = str(RAIZ / "data" / "SENTINEL_OMEGA_PRO.db")
+PID = RAIZ / "data" / "sentinel_omega.pid"
 REPORTE_OUT = RAIZ / "estado" / "REPORTE_REBUILD.md"
 
 # Memoria aprendida a vaciar (se reconstruye desde cero). NUNCA se toca la
