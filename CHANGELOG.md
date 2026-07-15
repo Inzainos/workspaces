@@ -6,6 +6,29 @@ conventions. Dates are UTC-6 (local time of the author).
 
 ---
 
+## [v2.5.0-complete] — 2026-07-15
+
+Pipeline completado: delta_enriched integrado de punta a punta + rebuild_completo.py listo.
+
+### Added
+
+- **delta_enriched feature extraction** (`sentinel_omega/launcher.py`): `delta_cross_coupling`, `delta_geo_coupling`, `delta_schumann_coupling` ahora extraídas desde caché hacia vector de firma
+- **Rebuild orchestration script** (`deploy/rebuild_completo.py`): pipeline de 8 pasos (parar → vaciar → migrar v6 → tuning → Fase 1+1b+2 → disciplina → VACUUM → reportes)
+- **Complete end-to-end validation**: todas las features (alfa1, alfa2, beta1, beta2, delta, delta_cross) conectadas; reportes generan sin errores
+
+### Fixed
+
+- Database paths en rebuild_completo.py (sentinel_omega/data/ → data/)
+- .gitignore: agregar estado/ para no trackar reportes generados
+
+### Notes
+
+- Fase 1b (multi-evento: sísmico + volcánico + solar + financiero) operativa
+- Omega bot con ritmo cósmico integrado al entrenamiento
+- Sistema 100% verificado de punta a punta; listo para producción
+
+---
+
 ## [Unreleased] — 2026-07-11
 
 Bloque de **honestidad total** (fix list A–D + revisión profunda del
