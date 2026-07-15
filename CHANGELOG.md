@@ -6,6 +6,26 @@ conventions. Dates are UTC-6 (local time of the author).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Alfa-2 aprende su propio baseline por zona** (`alfa2/agent.py`): supera la
+  limitación proxy-of-proxy documentada en v2.5.1. En vez de contar pases de
+  satélite, mantiene una media/σ online por zona (Welford, persistible a
+  `SNT_STATE_DIR`) sobre un índice térmico y puntúa cada ciclo como desviación Z
+  sobre lo aprendido: |Z|≥2.5 → ALERT, ≥1.5 → WATCH. Alfa-2 deja de ser "ojo
+  muerto" en el consenso de 6 agentes. Retrocompatible (thermal_anomaly_count
+  sigue forzando ALERT; entrada vacía → NO_SIGNAL).
+
+### Fixed
+
+- **`esa_sentinel.py`**: `_get_dag()` ahora dentro del `try` de las búsquedas —
+  un `eodag` ausente o credenciales inválidas degradan a resultado vacío en vez
+  de propagar una excepción. (+3 tests de aprendizaje; suite 412.)
+
+---
+
 ## [v2.5.0-complete] — 2026-07-15
 
 Pipeline completado: delta_enriched integrado de punta a punta + rebuild_completo.py listo.
