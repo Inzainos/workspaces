@@ -562,11 +562,15 @@ def _build_live_features(runner) -> dict:
             features["satellite_clear_passes"] = float(clear_total)
 
     # ── delta_enriched: acoplamiento cruzado geofísico-financiero ──
-    delta = cache.get("delta") or {}
-    if delta:
-        features["delta_cross_coupling"] = float(delta.get("cross_coupling", 0.0))
-        features["delta_geo_coupling"] = float(delta.get("geo_coupling", 0.0))
-        features["delta_schumann_coupling"] = float(delta.get("schumann_coupling", 0.0))
+    # Solo si la pasada delta_enriched corrió: un fetch fallido deja las
+    # claves ausentes y la feature debe quedar NaN (excluida por similitud),
+    # nunca un 0.0 falso.
+    if delta.get("cross_coupling") is not None:
+        features["delta_cross_coupling"] = float(delta["cross_coupling"])
+    if delta.get("geo_coupling") is not None:
+        features["delta_geo_coupling"] = float(delta["geo_coupling"])
+    if delta.get("schumann_coupling") is not None:
+        features["delta_schumann_coupling"] = float(delta["schumann_coupling"])
 
     return features
 

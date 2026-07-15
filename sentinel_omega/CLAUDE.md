@@ -126,6 +126,30 @@ python sentinel_omega/reboot.py --dashboard --dry-run
 PID file: `data/sentinel_omega.pid`
 Log file: `data/sentinel_omega.log`
 
+## Rebuild Completo
+
+Ejecuta reconstrucción de punta a punta: limpia memoria aprendida, migra DB v6, entrena Fase 1+1b+Fase 2, disciplina, VACUUM y genera reportes.
+
+```bash
+# Background run (recomendado)
+nohup python deploy/rebuild_completo.py > estado/rebuild.log 2>&1 &
+
+# Ver progreso en vivo
+tail -f estado/rebuild.log
+```
+
+El script:
+1. Para launcher (graceful SIGTERM)
+2. Vacía: TBL_FIRMAS, pesos, correlaciones, orden, sesgo, lags, cimática (conserva backcast + Juez viva)
+3. Migración DB v6 + índices + vistas
+4. ANALYZE + PRAGMA optimize
+5. Entrenamiento: Fase 1 (sísmico) + Fase 1b (volcánico+solar+financiero) + Fase 2 (disciplina) + lags + correlaciones
+6. Disciplina de trasfondo + barrido diario (todos los cruces)
+7. VACUUM + ANALYZE final
+8. Reportes: generar_reporte.py + reporte_ejecutivo.py
+
+Reporte final: `estado/REPORTE_REBUILD.md` (pesos, sesgo pre/post, firmas, rutas, tamaño DB).
+
 ## Running the dashboard
 
 ```bash
