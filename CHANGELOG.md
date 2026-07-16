@@ -10,6 +10,18 @@ conventions. Dates are UTC-6 (local time of the author).
 
 ### Added
 
+- **Júpiter como 7º agente del consenso** (`layers/geodynamic/jupiter/agent.py`):
+  corroborador de atención colectiva. Emite WATCH/ALERT cuando hay tormenta
+  geomagnética activa (Kp≥5) y/o el interés de búsqueda se dispara (≥2σ) con una
+  correlación atención↔tormenta significativa. Registrado en el Padre en la
+  familia `space_weather` (corrobora a Alfa-1/2 sin cambiar el conteo de familias
+  del consenso), fuera de los pares senior/junior. Cableado no-bloqueante en el
+  `layer_runner`; `fetch_jupiter_data` cachea Google Trends 6 h para no pegar el
+  rate-limit en el loop en vivo.
+- **Júpiter · Schumann + vocabulario ES/geo**: `schumann_series_from_trend()`
+  alimenta la serie Schumann acumulada en la DB (`repository.schumann_trend`) a
+  la correlación; el conector de Trends elige vocabulario español para
+  `geo="MX"/"ES"` (`tormenta solar`, `aurora boreal`, …).
 - **Júpiter — motor de correlación de tormentas solares** (`core/precursor/jupiter.py`):
   correlaciona **tormentas solares** (NOAA/GFZ Kp + GOES X-ray) contra la
   **atención colectiva** (Google Trends) y la **resonancia Schumann**. Reporta

@@ -54,6 +54,25 @@ class JupiterResult:
         }
 
 
+def schumann_series_from_trend(rows: Optional[list]) -> Optional[pd.Series]:
+    """
+    Convert repository.schumann_trend() rows -> a daily Schumann-activity Series.
+
+    Rows look like [{"timestamp", "schumann_hz", "schumann_activity"}, ...]. The
+    live series accumulates one point per cycle; here it is collapsed to a daily
+    mean so Júpiter can align it with Kp and Google Trends. Returns None if empty.
+    """
+    if not rows:
+        return None
+    df = pd.DataFrame(rows)
+    if "timestamp" not in df.columns or "schumann_activity" not in df.columns:
+        return None
+    df = df.dropna(subset=["schumann_activity"])
+    if df.empty:
+        return None
+    return _daily(df, "timestamp", "schumann_activity", how="mean")
+
+
 def _daily(df: pd.DataFrame, time_col: str, value_col: str, how: str = "mean") -> pd.Series:
     """Collapse an irregular time series to a daily-indexed Series."""
     s = df[[time_col, value_col]].copy()
@@ -74,7 +93,7 @@ def _lagged_xcorr(a: pd.Series, b: pd.Series, max_lag: int = 7) -> Tuple[int, Op
     best_lag, best_corr = 0, None
     for lag in range(-max_lag, max_lag + 1):
         bb = b.shift(-lag)
-        pair = pd.concat([a, bb], axis=1).dropna()
+        pair = pd.concat([a, bb], axis=1, sort=True).dropna()
         if len(pair) < 5:
             continue
         c = pair.iloc[:, 0].corr(pair.iloc[:, 1])
@@ -84,7 +103,7 @@ def _lagged_xcorr(a: pd.Series, b: pd.Series, max_lag: int = 7) -> Tuple[int, Op
 
 
 def _spearman(a: pd.Series, b: pd.Series) -> Tuple[int, Optional[float], Optional[float]]:
-    pair = pd.concat([a, b], axis=1).dropna()
+    pair = pd.concat([a, b], axis=1, sort=True).dropna()
     n = len(pair)
     if n < 5:
         return n, None, None
@@ -131,7 +150,7 @@ def analyze(
         )
         return result
 
-    all_dates = pd.concat(series.values(), axis=1).dropna(how="all")
+    all_dates = pd.concat(series.values(), axis=1, sort=True).dropna(how="all")
     result.window_days = int(len(all_dates))
 
     # Solar storms are the reference: correlate everything against kp (or xray).
