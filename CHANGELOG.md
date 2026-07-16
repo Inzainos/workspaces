@@ -8,6 +8,17 @@ conventions. Dates are UTC-6 (local time of the author).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Alfa-2 (y Júpiter) ahora aparecen en los reportes.** Los reportes armaban la
+  tabla de bots desde `TBL_FIRMAS`, donde alfa2 no tiene filas (es live-only: sin
+  backcast histórico, acumula desde `tbl_cobertura_satelital`) — por eso
+  "desaparecía". `generar_reporte.py` ahora muestra a alfa2 y jupiter con su
+  estado operativo aunque no tengan firmas; la fila de alfa2 **indica cuando
+  falta el feed satelital** (0 pases → "instalar eodag + credenciales
+  Copernicus"), señalando el pendiente de deployment. `reporte_sentinel.py`
+  añade `jupiter` a `bots_order`; la prosa pasa de "6 bots" a "7 bots".
+
 ### Added
 
 - **Júpiter como 7º agente del consenso** (`layers/geodynamic/jupiter/agent.py`):
