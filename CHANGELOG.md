@@ -8,6 +8,21 @@ conventions. Dates are UTC-6 (local time of the author).
 
 ## [Unreleased]
 
+### Added
+
+- **Júpiter — motor de correlación de tormentas solares** (`core/precursor/jupiter.py`):
+  correlaciona **tormentas solares** (NOAA/GFZ Kp + GOES X-ray) contra la
+  **atención colectiva** (Google Trends) y la **resonancia Schumann**. Reporta
+  Spearman ρ + cross-correlation con lags (¿el interés de búsqueda sigue a la
+  tormenta, y con cuántos días?). Solo tormentas solares.
+  - Conector **Google Trends** (`infrastructure/api/google_trends.py`, `pytrends`):
+    interés diario de vocabulario solar; degrada limpio ante rate-limit.
+  - Conector **GFZ Potsdam Kp** (`infrastructure/api/gfz_kp.py`): Kp histórico
+    largo (NOAA SWPC solo sirve ~7 días); CC BY 4.0.
+  - Script `deploy/jupiter_correlaciones.py` → `estado/jupiter_correlaciones.json`.
+  - Primer hallazgo real (ventana 90d): kp~xray ρ=+0.93 (p=0.003, físico);
+    kp~Google-Trends ρ≈0 (sin correlación en la ventana). (+8 tests → 420.)
+
 ### Changed
 
 - **Alfa-2 aprende su propio baseline por zona** (`alfa2/agent.py`): supera la
