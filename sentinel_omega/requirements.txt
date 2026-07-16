@@ -3,7 +3,7 @@ numpy>=1.24
 scipy>=1.10
 pandas>=2.0
 requests>=2.28
-eodag>=2.10          # ESA Copernicus (Alfa-2 / Beta-2 satelital)
+eodag>=4.0           # ESA Copernicus (Alfa-2 / Beta-2 satelital) — 4.x search(collection=...) API
 pytrends>=4.9        # Google Trends (Júpiter — atención colectiva sobre tormentas solares)
 
 # Dashboard (opcional pero recomendado)
