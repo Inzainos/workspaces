@@ -515,16 +515,19 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
         lineas += [
             "## 🧠 Memoria entrenada — lo que el sistema ya aprendió",
             "",
-            "> El sistema son **6 bots especializados**: `alfa1` vigila el "
+            "> El sistema son **7 bots especializados**: `alfa1` vigila el "
             "clima espacial (30 años), `beta1` la resonancia Schumann — el "
             "latido electromagnético de la Tierra (30 años), `alfa2` los "
-            "satélites Sentinel (14 años), `beta2` la desgasificación "
-            "volcánica y la atmósfera (14 años), `delta` el humor de los "
-            "mercados (10 años), y `padre` arbitra entre todos. Cada uno "
-            "guarda sus propias **firmas** (patrones de vísperas de evento). "
-            "El **peso** es su credibilidad ante el padre: 1.00 = normal; "
-            "baja cuando falla y se recupera cuando acierta; puede superar "
-            "1.00 solo si detectó algo que el padre dejó pasar.",
+            "satélites Sentinel (aprende en vivo, sin backcast), `beta2` la "
+            "desgasificación volcánica y la atmósfera (14 años), `delta` el "
+            "humor de los mercados (10 años), `jupiter` la atención colectiva "
+            "sobre tormentas solares (en vivo), y `padre` arbitra entre todos. "
+            "Cada uno guarda sus propias **firmas** (patrones de vísperas de "
+            "evento). El **peso** es su credibilidad ante el padre: 1.00 = "
+            "normal; baja cuando falla y se recupera cuando acierta; puede "
+            "superar 1.00 solo si detectó algo que el padre dejó pasar. "
+            "`alfa2` y `jupiter` acumulan sus firmas desde los ciclos "
+            "operativos, no desde el backcast histórico.",
             "",
             "| Bot | Firmas aprendidas | Veces confirmadas | Credibilidad |",
             "|---|---|---|---|",
@@ -534,6 +537,30 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             lineas.append(
                 f"| {f[0]} | {f[1]:,} | {f[2]:,} | {p:.2f} `{_barra(p / 1.5, 6)}` |"
             )
+
+        # alfa2 y jupiter acumulan firmas en vivo (sin backcast): si aún no tienen
+        # firmas, mostrarlos igual con su estado operativo para que no "desaparezcan".
+        mostrados = {f[0] for f in firmas}
+        if "alfa2" not in mostrados:
+            cob = conn.execute(
+                "SELECT COUNT(DISTINCT timestamp_blk), COALESCE(SUM(total_passes), 0) "
+                "FROM tbl_cobertura_satelital"
+            ).fetchone()
+            ciclos = (cob[0] if cob else 0) or 0
+            pases = (cob[1] if cob else 0) or 0
+            p = pesos.get("alfa2", 1.0)
+            if not ciclos:
+                estado = "en vivo · esperando cobertura satelital"
+            elif pases == 0:
+                estado = (f"en vivo · {ciclos} ciclos · sin feed satelital "
+                          f"(instalar eodag + credenciales Copernicus)")
+            else:
+                estado = f"en vivo · {ciclos} ciclos · {pases} pases observados"
+            lineas.append(f"| alfa2 | _{estado}_ | — | {p:.2f} `{_barra(p / 1.5, 6)}` |")
+        if "jupiter" not in mostrados:
+            p = pesos.get("jupiter", 1.0)
+            lineas.append(f"| jupiter | _en vivo · atención colectiva_ | — | {p:.2f} `{_barra(p / 1.5, 6)}` |")
+
         lineas.append("")
 
     # ── Asertividad: global, histórica, individual y a 7 días ──

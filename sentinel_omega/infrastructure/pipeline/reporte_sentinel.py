@@ -232,7 +232,7 @@ def reporte_general(db_path: str) -> Dict:
         "SELECT bot_name, estado, COUNT(*) as n "
         "FROM TBL_FIRMAS GROUP BY bot_name, estado ORDER BY bot_name, estado"
     )
-    bots_order = ["alfa1", "alfa2", "beta1", "beta2", "delta", "padre", "omega"]
+    bots_order = ["alfa1", "alfa2", "beta1", "beta2", "delta", "jupiter", "padre", "omega"]
     estados_order = ["nueva", "observada", "recurrente", "consolidada"]
     pivot: Dict[str, Dict[str, int]] = {b: {e: 0 for e in estados_order} for b in bots_order}
     for row in firma_rows:
