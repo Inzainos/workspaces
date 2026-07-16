@@ -27,7 +27,7 @@ DB_DEFAULT = str(
 OUT_DEFAULT = str(Path(__file__).parent.parent / "estado" / "REPORTE_EJECUTIVO.md")
 
 VERSION_REPORTE = "1.0-omega"
-BOTS_ORDEN = ["alfa1", "beta1", "alfa2", "beta2", "delta", "omega", "padre"]
+BOTS_ORDEN = ["alfa1", "beta1", "alfa2", "beta2", "delta", "jupiter", "omega", "padre"]
 
 # Región de la malla → agrupación operativa de la plantilla
 REGIONES_PLANTILLA = {
@@ -541,6 +541,7 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             "alfa2": "memoria satelital acumulándose en vivo",
             "beta2": "desgasificación — sesgo alto, en disciplina",
             "delta": "humor de los mercados",
+            "jupiter": "atención colectiva sobre tormentas solares — en vivo",
             "omega": "ritmo cósmico — recién mapeado, memoria creciendo",
             "padre": "árbitro — decisión real sólida",
         }.get(bot, "")
