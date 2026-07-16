@@ -28,6 +28,7 @@ from sentinel_omega.layers.geodynamic.beta1.agent import Beta1Agent
 from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
 from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
 from sentinel_omega.layers.geodynamic.padre.agent import GeodynamicPadre
+from sentinel_omega.layers.geodynamic.jupiter.agent import JupiterAgent
 
 from sentinel_omega.infrastructure.pipeline.data_pipeline import GeodynamicPipeline
 
@@ -43,6 +44,7 @@ class GeodynamicLayerRunner:
         self.beta1 = Beta1Agent()
         self.beta2 = Beta2Agent()
         self.delta = DeltaAgent()
+        self.jupiter = JupiterAgent()
         self.padre = GeodynamicPadre()
         self._enable_satellite = enable_satellite
         self.assertivity = AssertivityTracker(radius_degrees=5.0, window_days=30)
@@ -163,6 +165,15 @@ class GeodynamicLayerRunner:
                 self._last_alfa2_data = None
         else:
             self._last_alfa2_data = None
+
+        # Júpiter — collective-attention corroborator (non-blocking). Runs without
+        # Schumann history in the live loop; the launcher can pass it from the DB.
+        try:
+            jupiter_data = self.pipeline.fetch_jupiter_data()
+            self.jupiter.ingest(jupiter_data)
+            signals.append(self.jupiter.analyze())
+        except Exception as e:
+            logger.warning(f"Júpiter layer failed (non-blocking): {e}")
 
         consensus = self.padre.evaluate_consensus(signals)
         consensus.precursor_risk = risk

@@ -55,6 +55,84 @@ class TestJupiterEngine:
         json.dumps(res.to_dict())  # must not raise
 
 
+class TestSchumannAndVocab:
+
+    def test_schumann_series_from_trend(self):
+        rows = [
+            {"timestamp": "2026-07-10T00:00:00", "schumann_hz": 7.83, "schumann_activity": 20.0},
+            {"timestamp": "2026-07-10T06:00:00", "schumann_hz": 7.9, "schumann_activity": 24.0},
+            {"timestamp": "2026-07-11T00:00:00", "schumann_hz": 8.0, "schumann_activity": 30.0},
+        ]
+        s = jupiter.schumann_series_from_trend(rows)
+        assert s is not None
+        assert len(s) == 2          # two distinct days
+        assert s.iloc[0] == 22.0    # daily mean of day 1
+
+    def test_schumann_empty(self):
+        assert jupiter.schumann_series_from_trend([]) is None
+        assert jupiter.schumann_series_from_trend(None) is None
+
+    def test_spanish_vocab_for_mx(self):
+        from sentinel_omega.infrastructure.api import google_trends
+        assert "tormenta solar" in google_trends.terms_for_geo("MX")
+        assert "solar storm" in google_trends.terms_for_geo("")
+
+
+class TestJupiterAgent:
+
+    def _agent(self):
+        from sentinel_omega.layers.geodynamic.jupiter.agent import JupiterAgent
+        return JupiterAgent()
+
+    def test_no_data_is_no_signal(self):
+        from sentinel_omega.core.shared.agent_base import SignalType as ST
+        ag = self._agent()
+        ag.ingest({})
+        assert ag.analyze().signal_type == ST.NO_SIGNAL
+        assert ag.health_check() is False
+
+    def test_active_storm_raises_signal(self):
+        from sentinel_omega.core.shared.agent_base import SignalType as ST
+        # Kp climbs to a storm (>=5) on the latest day.
+        kp = pd.DataFrame({
+            "time_tag": pd.date_range("2026-06-01", periods=30, freq="1D"),
+            "kp_index": list(np.full(29, 2.0)) + [6.0],
+        })
+        ag = self._agent()
+        ag.ingest({"kp_df": kp})
+        sig = ag.analyze()
+        assert sig.signal_type in (ST.WATCH, ST.ALERT)
+        assert sig.data["storm_active"] is True
+        assert ag.health_check() is True
+
+    def test_correlation_plus_attention_spike_alerts(self):
+        from sentinel_omega.core.shared.agent_base import SignalType as ST
+        n = 40
+        base = np.linspace(1, 5, n)
+        kp = pd.DataFrame({
+            "time_tag": pd.date_range("2026-05-01", periods=n, freq="1D"),
+            "kp_index": base,
+        })
+        # trends track kp (significant corr) and end on a big spike (high z).
+        interest = base * 10.0
+        interest[-1] = 100.0
+        trends = pd.DataFrame({
+            "date": pd.date_range("2026-05-01", periods=n, freq="1D"),
+            "solar_interest": interest,
+        })
+        ag = self._agent()
+        ag.ingest({"kp_df": kp, "trends_df": trends})
+        sig = ag.analyze()
+        assert sig.data["corr_significant"] is True
+        assert sig.data["attention_z"] >= 2.0
+        assert sig.signal_type == ST.ALERT
+
+    def test_registered_in_padre(self):
+        from sentinel_omega.layers.geodynamic.padre.agent import GeodynamicPadre
+        assert GeodynamicPadre.FAMILY_MAP["jupiter"] == "space_weather"
+        assert GeodynamicPadre.AGENT_TRAINING_YEARS["jupiter"] == 5
+
+
 class TestGoogleTrendsConnector:
 
     def test_degrades_when_pytrends_missing(self):

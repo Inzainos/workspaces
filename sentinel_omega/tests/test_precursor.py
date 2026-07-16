@@ -413,6 +413,7 @@ class TestGeodynamicPrecursorIntegration:
             patch.object(runner.pipeline, "fetch_alfa1_data", return_value=mock_alfa1),
             patch.object(runner.pipeline, "fetch_beta1_data", return_value=mock_beta1),
             patch.object(runner.pipeline, "fetch_delta_data", return_value=mock_delta),
+            patch.object(runner.pipeline, "fetch_jupiter_data", return_value={}),
         ):
             consensus = runner.run()
 
@@ -431,6 +432,7 @@ class TestGeodynamicPrecursorIntegration:
             patch.object(runner.pipeline, "fetch_alfa1_data", return_value={}),
             patch.object(runner.pipeline, "fetch_beta1_data", return_value={}),
             patch.object(runner.pipeline, "fetch_delta_data", return_value={}),
+            patch.object(runner.pipeline, "fetch_jupiter_data", return_value={}),
         ):
             consensus = runner.run()
 

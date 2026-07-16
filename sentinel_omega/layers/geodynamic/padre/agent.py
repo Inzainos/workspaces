@@ -34,6 +34,7 @@ class GeodynamicPadre(PadreAgent):
         "alfa1": 30, "beta1": 30,
         "alfa2": 14, "beta2": 14,
         "delta": 10,
+        "jupiter": 5,   # collective-attention corroborator (short history)
     }
 
     FAMILY_MAP = {
@@ -42,6 +43,9 @@ class GeodynamicPadre(PadreAgent):
         "beta1": "schumann_cymatics",
         "beta2": "schumann_cymatics",
         "delta": "financial_sentiment",
+        # Júpiter joins the space_weather family so it corroborates Alfa-1/2
+        # without adding a new family to the Padre's cross-family math.
+        "jupiter": "space_weather",
     }
 
     SENIOR_AGENTS = {"alfa1", "beta1"}

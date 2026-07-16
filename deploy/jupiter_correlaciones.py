@@ -32,12 +32,22 @@ def main() -> None:
     xray = fetch_goes_xray()
     trends = fetch_solar_storm_trends(timeframe="today 3-m")
 
+    # Schumann accumulates live in the DB; load whatever history exists (best-effort).
+    schumann = None
+    try:
+        from sentinel_omega.infrastructure.database.repository import SentinelRepository
+        rows = SentinelRepository().schumann_trend(limit=500)
+        schumann = jupiter.schumann_series_from_trend(rows)
+    except Exception as exc:  # noqa: BLE001 — no DB / empty table is fine
+        logging.getLogger("jupiter").info(f"Schumann history unavailable: {exc}")
+
     print("Sources:")
     print(f"  GFZ Kp (90d)   : {0 if kp is None else len(kp)} records")
     print(f"  NOAA GOES X-ray: {0 if xray is None else len(xray)} records")
     print(f"  Google Trends  : {0 if trends is None else len(trends)} daily points")
+    print(f"  Schumann (DB)  : {0 if schumann is None else len(schumann)} daily points")
 
-    result = jupiter.analyze(kp_df=kp, xray_df=xray, trends_df=trends)
+    result = jupiter.analyze(kp_df=kp, xray_df=xray, trends_df=trends, schumann_series=schumann)
 
     print(f"\nCommon window: {result.window_days} days")
     print(f"Series available: {', '.join(result.series_available)}")

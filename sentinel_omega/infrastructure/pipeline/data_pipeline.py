@@ -28,6 +28,8 @@ from sentinel_omega.infrastructure.api.noaa import (
     fetch_mag_field,
     fetch_electron_flux,
 )
+from sentinel_omega.infrastructure.api.gfz_kp import fetch_kp_history
+from sentinel_omega.infrastructure.api.google_trends import fetch_solar_storm_trends
 from sentinel_omega.infrastructure.api.nasa_neo import fetch_neo_hazard_summary
 from sentinel_omega.infrastructure.api.usgs import fetch_earthquakes
 from sentinel_omega.infrastructure.api.schumann import fetch_schumann_resonance
@@ -393,4 +395,43 @@ class GeodynamicPipeline:
             f"{len(sector_caps)} sectors"
         )
         self._locf_set("delta", result)
+        return result
+
+    # Google Trends is rate-limited (HTTP 429): refresh it at most every 6 h.
+    _TRENDS_TTL_S = 6 * 3600
+
+    def fetch_jupiter_data(
+        self, schumann_series: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Data for Júpiter: long-history Kp (GFZ) + GOES X-ray + Google Trends.
+
+        Kp/X-ray are fetched fresh each cycle; Google Trends is cached for
+        `_TRENDS_TTL_S` to avoid rate-limiting the live loop. `schumann_series`
+        (a daily Series from repository.schumann_trend) is passed through when the
+        caller has DB access; otherwise Júpiter runs without it.
+        """
+        kp = fetch_kp_history(days=90)
+        xray = fetch_goes_xray()
+
+        trends = None
+        cached = self._cache.get("jupiter_trends")
+        age = time.time() - self._cache_ts.get("jupiter_trends", 0)
+        if cached and age < self._TRENDS_TTL_S:
+            trends = cached.get("trends_df")
+            logger.info(f"Júpiter Trends from cache (age={age / 3600:.1f}h)")
+        else:
+            trends = fetch_solar_storm_trends(timeframe="today 3-m")
+            if trends is not None:
+                self._cache["jupiter_trends"] = {"trends_df": trends}
+                self._cache_ts["jupiter_trends"] = time.time()
+
+        result = {
+            "kp_df": kp,
+            "xray_df": xray,
+            "trends_df": trends,
+            "schumann_series": schumann_series,
+        }
+        n = sum(1 for v in (kp, xray, trends) if v is not None and len(v))
+        logger.info(f"Júpiter pipeline: {n}/3 space-weather/attention sources")
         return result

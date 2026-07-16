@@ -30,6 +30,28 @@ SOLAR_STORM_TERMS: List[str] = [
     "northern lights",
 ]
 
+# Spanish vocabulary (for geo="MX" and Spanish-speaking regions).
+SOLAR_STORM_TERMS_ES: List[str] = [
+    "tormenta solar",
+    "aurora boreal",
+    "llamarada solar",
+    "tormenta geomagnética",
+    "clima espacial",
+]
+
+# Which vocabulary to use per geo (default English/worldwide).
+GEO_TERMS = {
+    "": SOLAR_STORM_TERMS,
+    "US": SOLAR_STORM_TERMS,
+    "MX": SOLAR_STORM_TERMS_ES,
+    "ES": SOLAR_STORM_TERMS_ES,
+}
+
+
+def terms_for_geo(geo: str) -> List[str]:
+    """Pick the solar-storm vocabulary appropriate for a Trends geo."""
+    return GEO_TERMS.get(geo, SOLAR_STORM_TERMS)
+
 
 def fetch_solar_storm_trends(
     timeframe: str = "today 3-m",
@@ -44,7 +66,7 @@ def fetch_solar_storm_trends(
     solar-storm attention signal that day). Returns None if pytrends is
     unavailable or Google rate-limits the request.
     """
-    terms = terms or SOLAR_STORM_TERMS
+    terms = terms or terms_for_geo(geo)
     try:
         from pytrends.request import TrendReq
 

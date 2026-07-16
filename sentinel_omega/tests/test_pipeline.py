@@ -177,6 +177,7 @@ class TestGeodynamicPipeline:
 
 class TestLayerRunner:
 
+    @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.GeodynamicPipeline.fetch_jupiter_data", return_value={})
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_sector_etfs")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_vix")
     @patch("sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_yield_spread")
@@ -196,6 +197,7 @@ class TestLayerRunner:
         self, mock_mag, mock_wind, mock_kp, mock_eq, mock_fg,
         mock_schumann, mock_lod, mock_lunar, mock_owm, mock_aq,
         mock_dom, mock_klines, mock_spread, mock_vix, mock_sectors,
+        mock_jupiter,
     ):
         mock_mag.return_value = _mock_mag_df()
         mock_wind.return_value = _mock_wind_df()
