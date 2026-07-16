@@ -10,6 +10,16 @@ conventions. Dates are UTC-6 (local time of the author).
 
 ### Fixed
 
+- **`eodag` pin alineado a `>=4.0`.** `sentinel_omega/requirements.txt` pedía
+  `eodag>=2.10` mientras que `pyproject.toml` pedía `>=4.0`; el mismatch podía
+  instalar la API vieja (2.x: `search()` devolvía tupla `(results, count)` y
+  usaba `productType=`). El código de `esa_sentinel.py` está escrito contra la
+  API 4.x (`dag.search(collection="S2_MSI_L2A", …)`, resultado iterable), así
+  que se sube el pin de `requirements.txt` a `>=4.0` para que coincida con
+  `pyproject` y con el código. Verificado contra eodag 4.5: `search()` acepta
+  `collection` vía kwargs y ya no expone `productType` — el uso de `collection=`
+  es correcto.
+
 - **Alfa-2 (y Júpiter) ahora aparecen en los reportes.** Los reportes armaban la
   tabla de bots desde `TBL_FIRMAS`, donde alfa2 no tiene filas (es live-only: sin
   backcast histórico, acumula desde `tbl_cobertura_satelital`) — por eso
