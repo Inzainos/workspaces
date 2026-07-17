@@ -1,13 +1,13 @@
-# 🔄 Comparativo diario — 2026-07-16 vs 2026-07-15
-*Corte 13:22 hora MX*
+# 🔄 Comparativo diario — 2026-07-17 vs 2026-07-16
+*Corte 00:23 hora MX*
 
 | Métrica | Hoy | Ayer | Cambio |
 |---|---:|---:|---:|
-| Fantasma medio | 8.6 | 12.2 | ▼ -3.5 |
-| Fantasma máx | 10.7 | 16.7 | ▼ -6.0 |
-| Ciclos corridos | 7 | 9 | ▼ -2 |
+| Fantasma medio | 8.9 | 9.0 | ▼ -0.1 |
+| Fantasma máx | 9.0 | 10.7 | ▼ -1.7 |
+| Ciclos corridos | 2 | 9 | ▼ -7 |
 | Breaches del Muro | 0 | 0 | ＝ +0 |
 | Asertividad viva (resuelta en el día) | — | — | — |
-| Patrones cimáticos (total / nuevos 24h) | 123 | — | +25 |
+| Patrones cimáticos (total / nuevos 24h) | 135 | — | +29 |
 
 ![Fantasma 7 días](graficas/comparativo_fantasma.png)
