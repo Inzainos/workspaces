@@ -21,6 +21,13 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+# Importar módulo de aciertos
+sys.path.insert(0, str(Path(__file__).parent))
+try:
+    from aciertos_reporte import obtener_estadisticas_aciertos
+except ImportError:
+    obtener_estadisticas_aciertos = None
+
 DB_DEFAULT = str(
     Path(__file__).parent.parent / "sentinel_omega" / "data" / "SENTINEL_OMEGA_PRO.db"
 )
@@ -662,6 +669,28 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     A("")
     A("---")
     A("")
+
+    # ══ 12bis. Resumen de Aciertos ═════════════════════════════════════════
+    if obtener_estadisticas_aciertos:
+        try:
+            stats = obtener_estadisticas_aciertos(db_path, dias=90)
+            A("## 12bis. Racha de Aciertos — Últimos 90 días")
+            A("")
+            A(f"| Métrica | Valor |")
+            A(f"|---------|-------|")
+            A(f"| Aciertos | {stats['aciertos_totales']} |")
+            A(f"| Fallos | {stats['fallos_totales']} |")
+            A(f"| Tasa de acierto | {stats['tasa_acierto_global']:.1%} |")
+            A(f"| Total predicciones auditadas | {stats['total_predicciones']} |")
+            A("")
+            for bot, datos in list(stats["por_bot"].items())[:5]:
+                tasa = datos["tasa_acierto"]
+                A(f"- **{bot}**: {datos['aciertos']}/{datos['total']} aciertos ({tasa:.0%})")
+            A("")
+            A("---")
+            A("")
+        except Exception as e:
+            pass  # Si falla, continuar sin sección de aciertos
 
     # ══ 13. Anexo ════════════════════════════════════════════════════════════
     A("## 13. Anexo mínimo técnico")
