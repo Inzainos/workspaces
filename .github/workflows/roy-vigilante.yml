@@ -98,26 +98,28 @@ jobs:
             echo "skip — el Juez pasa cada 4 horas"
           fi
 
-      - name: Reporte ejecutivo (cada 6h)
-        if: github.event.schedule == '7 */2 * * *' || github.event_name == 'workflow_dispatch'
-        run: |
-          H=$(date -u +%-H)
-          if [ $((H % 6)) -le 1 ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            python deploy/reporte_ejecutivo.py
-          else
-            echo "skip — reporte ejecutivo cada 6 horas"
-          fi
-
       - name: Disciplina de trasfondo + barrido (1×/día, madrugada MX)
         if: github.event.schedule == '7 */2 * * *'
         run: |
           # 08 UTC = 2am MX (hora agendada de la corrida de las 08:07)
+          # NOTA: Ejecutar ANTES de reporte ejecutivo para que Omega tenga datos frescos
           H=$(date -u +%-H)
           if [ "$H" = "8" ] || [ "$H" = "9" ]; then
             python sentinel_omega/launcher.py --disciplina
             python sentinel_omega/launcher.py --barrido
           else
             echo "skip — disciplina y barrido corren 1×/día (08 UTC / 2am MX)"
+          fi
+
+      - name: Reporte ejecutivo (cada 6h)
+        if: github.event.schedule == '7 */2 * * *' || github.event_name == 'workflow_dispatch'
+        run: |
+          # NOTA: Ejecutar DESPUÉS de disciplina + barrido para tener correlaciones_omega frescos
+          H=$(date -u +%-H)
+          if [ $((H % 6)) -le 1 ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python deploy/reporte_ejecutivo.py
+          else
+            echo "skip — reporte ejecutivo cada 6 horas"
           fi
 
       - name: Comparativo diario (12am y 12pm hora MX)
