@@ -21,6 +21,8 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+from deploy.aciertos_reporte import obtener_estadisticas_aciertos
+
 DB_DEFAULT = str(RAIZ / "sentinel_omega" / "data" / "SENTINEL_OMEGA_PRO.db")
 DIR_ESTADO = RAIZ / "estado"
 DIR_GRAFICAS = DIR_ESTADO / "graficas"
@@ -119,6 +121,58 @@ def _delta_txt(hoy, ayer, fmt="{:+.1f}"):
     return f"{flecha} {fmt.format(d)}"
 
 
+def _barra(pct: float, ancho: int = 10) -> str:
+    """Barra visual ▓▓▓░░ para porcentajes."""
+    if pct is None:
+        return ""
+    llenos = round(max(0.0, min(1.0, pct)) * ancho)
+    return "▓" * llenos + "░" * (ancho - llenos)
+
+
+def _seccion_aciertos(db_path: str, dias: int, titulo: str) -> str:
+    """Genera sección de aciertos compacta para reportes periódicos."""
+    try:
+        stats = obtener_estadisticas_aciertos(db_path, dias)
+    except Exception:
+        return ""
+
+    if stats["total_predicciones"] == 0:
+        return f"## ✅ {titulo}\n\n**No hay predicciones auditadas en este período.** "
+
+    lineas = [
+        f"## ✅ {titulo}",
+        "",
+        "| Métrica | Valor |",
+        "|---------|-------|",
+        f"| **Aciertos** | {stats['aciertos_totales']} |",
+        f"| **Fallos** | {stats['fallos_totales']} |",
+        f"| **Falsos positivos** | {stats['falsos_positivos_totales']} |",
+        f"| **Tasa de acierto** | {stats['tasa_acierto_global']:.1%} `{_barra(stats['tasa_acierto_global'], 12)}` |",
+        f"| **Total predicciones** | {stats['total_predicciones']} |",
+        "",
+    ]
+
+    if stats["por_bot"]:
+        lineas += [
+            "### Desempeño por Bot",
+            "",
+            "| Bot | Aciertos | Tasa | Confianza | Anticipación |",
+            "|-----|----------|------|-----------|---------------|",
+        ]
+        for bot, datos in stats["por_bot"].items():
+            tasa_bot = datos["tasa_acierto"]
+            conf = datos["confianza_promedio"] or 0
+            dias_ant = datos["dias_anticipacion_promedio"] or 0
+            lineas.append(
+                f"| {bot} | {datos['aciertos']}/{datos['total']} | "
+                f"{tasa_bot:.0%} `{_barra(tasa_bot, 8)}` | "
+                f"{conf:.2f} | {dias_ant:.1f}d |"
+            )
+        lineas.append("")
+
+    return "\n".join(lineas)
+
+
 def comparativo(conn) -> tuple:
     """Hoy vs ayer (corre 12pm y 12am hora MX)."""
     ahora = _ahora_mx()
@@ -165,6 +219,12 @@ def comparativo(conn) -> tuple:
         f"{cim[0]} | — | +{cim[1] or 0} |",
         "",
     ]
+
+    aciertos_sec = _seccion_aciertos(DB_DEFAULT, 1, "Aciertos — Últimas 24 horas")
+    if aciertos_sec:
+        lineas.append(aciertos_sec)
+        lineas.append("")
+
     grafica = _grafica_serie(
         _dias_resumen(conn, 7), "fantasma_media",
         "Fantasma medio — últimos 7 días", "índice fantasma",
@@ -222,6 +282,12 @@ def _resumen_rango(conn, n_dias, titulo, archivo, prefijo_grafica):
             lugar = f"nodo {nodo}" if nodo else "general"
             lineas.append(f"| {pid} | {lugar} | {ec or '—'} | {frec} |")
     lineas.append("")
+
+    aciertos_titulo = f"Aciertos — Últimos {n_dias} días"
+    aciertos_sec = _seccion_aciertos(DB_DEFAULT, n_dias, aciertos_titulo)
+    if aciertos_sec:
+        lineas.append(aciertos_sec)
+        lineas.append("")
 
     adjuntos = []
     for campo, tit, ylab, nombre, resalta in (
