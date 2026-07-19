@@ -17,6 +17,10 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Importar módulo de aciertos
+sys.path.insert(0, str(Path(__file__).parent))
+from aciertos_reporte import seccion_aciertos_markdown
+
 DB_DEFAULT = str(
     Path(__file__).parent.parent / "sentinel_omega" / "data" / "SENTINEL_OMEGA_PRO.db"
 )
@@ -1105,6 +1109,15 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
         pass
 
     total_ciclos = conn.execute("SELECT COUNT(*) FROM TBL_CICLOS").fetchone()[0]
+
+    # ── Sección de aciertos ──
+    try:
+        lineas.append("")
+        lineas.append(seccion_aciertos_markdown(db_path, dias=30))
+    except Exception as e:
+        import logging
+        logging.warning(f"Error agregando sección de aciertos: {e}")
+
     lineas += [
         "---",
         "*Todos los datos provienen de fuentes públicas oficiales (NOAA, "
