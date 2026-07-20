@@ -129,16 +129,96 @@ def _barra(pct: float, ancho: int = 10) -> str:
     return "▓" * llenos + "░" * (ancho - llenos)
 
 
-def _seccion_aciertos(db_path: str, dias: int, titulo: str) -> str:
-    """Genera sección de aciertos compacta para reportes periódicos."""
+def _grafica_aciertos_pastel(stats: dict, nombre: str) -> str:
+    """Gráfica de pastel: Aciertos vs Fallos vs Falsos Positivos."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return ""
+
+    aciertos = stats["aciertos_totales"] or 0
+    fallos = stats["fallos_totales"] or 0
+    falsos = stats["falsos_positivos_totales"] or 0
+
+    if aciertos + fallos + falsos == 0:
+        return ""
+
+    fig, ax = plt.subplots(figsize=(7, 5), dpi=120)
+    sizes = [aciertos, fallos, falsos]
+    labels = [f"Aciertos\n{aciertos}", f"Fallos\n{fallos}", f"Falsos positivos\n{falsos}"]
+    colors = ["#059669", "#dc2626", "#f59e0b"]  # verde, rojo, ámbar
+
+    wedges, texts, autotexts = ax.pie(
+        sizes, labels=labels, colors=colors, autopct="%1.1f%%",
+        startangle=90, textprops={"fontsize": 9, "weight": "bold"}
+    )
+    for autotext in autotexts:
+        autotext.set_color("white")
+        autotext.set_fontsize(8)
+
+    ax.set_title("Distribución de Veredictos", fontsize=11, weight="bold", pad=20)
+    fig.tight_layout()
+    DIR_GRAFICAS.mkdir(parents=True, exist_ok=True)
+    ruta = DIR_GRAFICAS / nombre
+    fig.savefig(ruta)
+    plt.close(fig)
+    return str(ruta)
+
+
+def _grafica_aciertos_barras(stats: dict, nombre: str) -> str:
+    """Gráfica de barras: Tasa de acierto por bot."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return ""
+
+    if not stats.get("por_bot"):
+        return ""
+
+    bots = list(stats["por_bot"].keys())
+    tasas = [stats["por_bot"][bot]["tasa_acierto"] * 100 for bot in bots]
+
+    fig, ax = plt.subplots(figsize=(8, 4), dpi=120)
+    bars = ax.barh(bots, tasas, color=COLOR_SERIE, height=0.6)
+
+    # Anotar porcentajes
+    for i, (bar, tasa) in enumerate(zip(bars, tasas)):
+        ax.text(tasa + 1, bar.get_y() + bar.get_height() / 2,
+                f"{tasa:.0f}%", va="center", fontsize=9, weight="bold")
+
+    ax.set_xlabel("Tasa de acierto (%)", fontsize=9)
+    ax.set_title("Desempeño por Bot", fontsize=11, weight="bold")
+    ax.set_xlim(0, 110)
+    ax.grid(axis="x", color=COLOR_CONTEXTO, alpha=0.3, linewidth=0.7)
+    for lado in ("top", "right"):
+        ax.spines[lado].set_visible(False)
+
+    fig.tight_layout()
+    DIR_GRAFICAS.mkdir(parents=True, exist_ok=True)
+    ruta = DIR_GRAFICAS / nombre
+    fig.savefig(ruta)
+    plt.close(fig)
+    return str(ruta)
+
+
+def _seccion_aciertos(db_path: str, dias: int, titulo: str) -> tuple:
+    """Genera sección de aciertos con gráficas para reportes periódicos.
+
+    Retorna: (markdown_text, list_of_image_paths)
+    """
     try:
         stats = obtener_estadisticas_aciertos(db_path, dias)
     except Exception:
-        return ""
+        return "", []
 
     if stats["total_predicciones"] == 0:
-        return f"## ✅ {titulo}\n\n**No hay predicciones auditadas en este período.** "
+        return f"## ✅ {titulo}\n\n**No hay predicciones auditadas en este período.**\n", []
 
+    imagenes = []
     lineas = [
         f"## ✅ {titulo}",
         "",
@@ -152,9 +232,17 @@ def _seccion_aciertos(db_path: str, dias: int, titulo: str) -> str:
         "",
     ]
 
+    # Gráfica de pastel
+    sufijo = f"aciertos_{dias}d_pastel.png"
+    grafica_pastel = _grafica_aciertos_pastel(stats, sufijo)
+    if grafica_pastel:
+        imagenes.append(grafica_pastel)
+        lineas.append(f"![Distribución de veredictos](graficas/{sufijo})")
+        lineas.append("")
+
     if stats["por_bot"]:
         lineas += [
-            "### Desempeño por Bot",
+            "### 🤖 Desempeño por Bot",
             "",
             "| Bot | Aciertos | Tasa | Confianza | Anticipación |",
             "|-----|----------|------|-----------|---------------|",
@@ -170,7 +258,15 @@ def _seccion_aciertos(db_path: str, dias: int, titulo: str) -> str:
             )
         lineas.append("")
 
-    return "\n".join(lineas)
+        # Gráfica de barras
+        sufijo_barras = f"aciertos_{dias}d_barras.png"
+        grafica_barras = _grafica_aciertos_barras(stats, sufijo_barras)
+        if grafica_barras:
+            imagenes.append(grafica_barras)
+            lineas.append(f"![Desempeño por bot](graficas/{sufijo_barras})")
+            lineas.append("")
+
+    return "\n".join(lineas), imagenes
 
 
 def comparativo(conn) -> tuple:
@@ -220,10 +316,9 @@ def comparativo(conn) -> tuple:
         "",
     ]
 
-    aciertos_sec = _seccion_aciertos(DB_DEFAULT, 1, "Aciertos — Últimas 24 horas")
+    aciertos_sec, aciertos_imgs = _seccion_aciertos(DB_DEFAULT, 1, "Aciertos — Últimas 24 horas")
     if aciertos_sec:
         lineas.append(aciertos_sec)
-        lineas.append("")
 
     grafica = _grafica_serie(
         _dias_resumen(conn, 7), "fantasma_media",
@@ -233,7 +328,10 @@ def comparativo(conn) -> tuple:
         lineas.append("![Fantasma 7 días](graficas/comparativo_fantasma.png)")
     ruta = DIR_ESTADO / "REPORTE_COMPARATIVO.md"
     ruta.write_text("\n".join(lineas), encoding="utf-8")
-    return ruta, lineas, ([str(grafica)] if grafica else [])
+
+    adjuntos = [str(grafica)] if grafica else []
+    adjuntos.extend(aciertos_imgs)
+    return ruta, lineas, adjuntos
 
 
 def _resumen_rango(conn, n_dias, titulo, archivo, prefijo_grafica):
@@ -284,12 +382,11 @@ def _resumen_rango(conn, n_dias, titulo, archivo, prefijo_grafica):
     lineas.append("")
 
     aciertos_titulo = f"Aciertos — Últimos {n_dias} días"
-    aciertos_sec = _seccion_aciertos(DB_DEFAULT, n_dias, aciertos_titulo)
+    aciertos_sec, aciertos_imgs = _seccion_aciertos(DB_DEFAULT, n_dias, aciertos_titulo)
     if aciertos_sec:
         lineas.append(aciertos_sec)
-        lineas.append("")
 
-    adjuntos = []
+    adjuntos = list(aciertos_imgs)
     for campo, tit, ylab, nombre, resalta in (
         ("fantasma_media", "Fantasma medio diario", "índice",
          f"{prefijo_grafica}_fantasma.png", True),
