@@ -21,7 +21,7 @@ Flow:
   5. If pattern matches across families → alert confirmed
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from sentinel_omega.core.shared.agent_base import (
     PadreAgent, AgentSignal, ConsensusResult, SignalType
@@ -192,6 +192,37 @@ class GeodynamicPadre(PadreAgent):
         )
         return min(1.0, other_active * 0.3 + beta1.confidence * 0.4)
 
+    def _aggregate_nodos(self, validated: Dict[str, AgentSignal]) -> List[int]:
+        """
+        Extract and aggregate node-level information from all agent signals.
+
+        Agents that match firmas should include 'nodos' in their signal.data
+        (list of node_ids where signatures matched strongly). This method
+        collects all unique nodes across all signals for node-specific validation.
+
+        Returns:
+            Sorted list of unique node_ids mentioned in active signals,
+            or empty list if no signals mention nodes.
+        """
+        nodos_set: Set[int] = set()
+
+        for signal in validated.values():
+            if signal.signal_type not in (SignalType.ALERT, SignalType.WATCH):
+                continue
+
+            nodos = signal.data.get("nodos")
+            if nodos is None:
+                continue
+
+            if isinstance(nodos, int):
+                nodos_set.add(nodos)
+            elif isinstance(nodos, list):
+                for nodo in nodos:
+                    if isinstance(nodo, int):
+                        nodos_set.add(nodo)
+
+        return sorted(list(nodos_set))
+
     def evaluate_consensus(self, signals: List[AgentSignal]) -> ConsensusResult:
         if not signals:
             return ConsensusResult(
@@ -207,6 +238,7 @@ class GeodynamicPadre(PadreAgent):
         validated = self._aplicar_pesos(validated)
         family_status = self._cross_family_check(validated)
         schumann_corr = self._schumann_correlation(validated)
+        nodos_prediccion = self._aggregate_nodos(validated)
 
         active_families = sum(1 for active in family_status.values() if active)
         total_families = len(family_status)
@@ -232,6 +264,7 @@ class GeodynamicPadre(PadreAgent):
                     "families_active": active_families,
                     "schumann_correlation": schumann_corr,
                     "cross_family": family_status,
+                    "nodos": nodos_prediccion,
                 },
             )
 
@@ -245,6 +278,7 @@ class GeodynamicPadre(PadreAgent):
                 metadata={
                     "families_active": active_families,
                     "schumann_correlation": schumann_corr,
+                    "nodos": nodos_prediccion,
                 },
             )
 
@@ -254,7 +288,10 @@ class GeodynamicPadre(PadreAgent):
                 final_signal=SignalType.WATCH,
                 confidence=0.35,
                 agent_signals=list(validated.values()),
-                metadata={"note": "Single-family alert, needs cross-validation"},
+                metadata={
+                    "note": "Single-family alert, needs cross-validation",
+                    "nodos": nodos_prediccion,
+                },
             )
 
         if self.veto_check(list(validated.values())):
