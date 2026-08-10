@@ -353,6 +353,15 @@ class TestNodosTopologia:
         nodes = repo.get_nodos()
         assert len(nodes) == 125
 
+    def test_node_saturation_ranking_filters_by_region(self, repo):
+        repo.bulk_upsert_nodos([
+            {"node_id": 1, "nombre": "MX", "lat": 1.0, "lon": 1.0, "tipo": "real", "region": "Mexico", "saturacion": 0.8},
+            {"node_id": 2, "nombre": "JP", "lat": 2.0, "lon": 2.0, "tipo": "real", "region": "Japan", "saturacion": 0.9},
+            {"node_id": 3, "nombre": "MX2", "lat": 3.0, "lon": 3.0, "tipo": "ghost", "region": "Mexico", "saturacion": 0.7},
+        ])
+        mx = repo.node_saturation_ranking(region="Mexico")
+        assert [node["region"] for node in mx] == ["Mexico", "Mexico"]
+
 
 # ══════════════════════════════════════════════════════════════════
 # Repository — Histórico Sísmico
@@ -402,6 +411,15 @@ class TestHistoricoSismico:
         ])
         mx = repo.get_sismos(region="Mexico")
         assert len(mx) == 1
+
+    def test_depth_vs_magnitude_respects_min_magnitude(self, repo):
+        repo.bulk_insert_sismos([
+            {"event_id": "small", "timestamp": 1.0, "lat": 0, "lon": 0, "magnitude": 4.2, "depth_km": 10.0, "region": "Mexico"},
+            {"event_id": "big", "timestamp": 2.0, "lat": 1, "lon": 1, "magnitude": 6.8, "depth_km": 20.0, "region": "Japan"},
+        ])
+        deep = repo.seismic_depth_vs_magnitude(min_magnitude=5.0)
+        assert len(deep) == 1
+        assert deep[0]["magnitude"] == 6.8
 
 
 # ══════════════════════════════════════════════════════════════════

@@ -436,28 +436,46 @@ class SentinelRepository:
             for r in rows
         ]
 
-    def seismic_depth_vs_magnitude(self, limit: int = 500) -> List[Dict]:
+    def seismic_depth_vs_magnitude(
+        self,
+        min_magnitude: float = 4.0,
+        limit: int = 500,
+    ) -> List[Dict]:
         rows = self._execute(
             """SELECT depth_km, magnitude, lat, lon, region
                FROM TBL_HISTORICO_SISMICO
-               WHERE magnitude >= 4.0
+               WHERE magnitude >= ?
                ORDER BY timestamp DESC LIMIT ?""",
-            (limit,),
+            (min_magnitude, limit),
         ).fetchall()
         return [
             {"depth_km": r[0], "magnitude": r[1], "lat": r[2], "lon": r[3], "region": r[4]}
             for r in rows
         ]
 
-    def node_saturation_ranking(self, limit: int = 25) -> List[Dict]:
-        rows = self._execute(
-            """SELECT node_id, nombre, tipo, saturacion, energia_acumulada,
-                      conductividad_telurica, region
-               FROM TBL_NODOS_TOPOLOGIA
-               WHERE saturacion > 0
-               ORDER BY saturacion DESC LIMIT ?""",
-            (limit,),
-        ).fetchall()
+    def node_saturation_ranking(
+        self,
+        limit: int = 25,
+        region: Optional[str] = None,
+    ) -> List[Dict]:
+        if region:
+            rows = self._execute(
+                """SELECT node_id, nombre, tipo, saturacion, energia_acumulada,
+                          conductividad_telurica, region
+                   FROM TBL_NODOS_TOPOLOGIA
+                   WHERE saturacion > 0 AND region = ?
+                   ORDER BY saturacion DESC LIMIT ?""",
+                (region, limit),
+            ).fetchall()
+        else:
+            rows = self._execute(
+                """SELECT node_id, nombre, tipo, saturacion, energia_acumulada,
+                          conductividad_telurica, region
+                   FROM TBL_NODOS_TOPOLOGIA
+                   WHERE saturacion > 0
+                   ORDER BY saturacion DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
         return [
             {"node_id": r[0], "nombre": r[1], "tipo": r[2], "saturacion": r[3],
              "energia": r[4], "conductividad": r[5], "region": r[6]}
