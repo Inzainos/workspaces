@@ -666,10 +666,18 @@ def render_topology():
         st.info("Nodos no cargados en la DB. Usando datos seed.")
         nodes = SEED_NODOS
 
+    region_filter = st.selectbox(
+        "Filtrar por región",
+        ["All"] + sorted(set(n.get("region", "—") for n in nodes)),
+    )
+    filtered_nodes = nodes if region_filter == "All" else [
+        n for n in nodes if n.get("region", "—") == region_filter
+    ]
+
     c1, c2, c3 = st.columns(3)
-    real = [n for n in nodes if n.get("tipo") == "real"]
-    ghost = [n for n in nodes if n.get("tipo") == "ghost"]
-    geobat = [n for n in nodes if n.get("tipo") == "geobattery"]
+    real = [n for n in filtered_nodes if n.get("tipo") == "real"]
+    ghost = [n for n in filtered_nodes if n.get("tipo") == "ghost"]
+    geobat = [n for n in filtered_nodes if n.get("tipo") == "geobattery"]
     c1.metric("Real Nodes", len(real))
     c2.metric("Ghost Nodes", len(ghost))
     c3.metric("Geobattery Nodes", len(geobat))
@@ -680,7 +688,7 @@ def render_topology():
     fig = go.Figure()
 
     for tipo in ["real", "ghost", "geobattery"]:
-        subset = [n for n in nodes if n.get("tipo") == tipo]
+        subset = [n for n in filtered_nodes if n.get("tipo") == tipo]
         if not subset:
             continue
         lats = [n["lat"] for n in subset]
@@ -716,7 +724,11 @@ def render_topology():
         center=dict(lat=19, lon=-99),
     )
     fig.update_layout(
-        title="Mapa de Nodos — Ring of Fire + Mexico Focus",
+        title=(
+            "Mapa de Nodos — Ring of Fire + Mexico Focus"
+            if region_filter == "All"
+            else f"Mapa de Nodos — {region_filter}"
+        ),
         height=550,
         template="plotly_dark",
         geo=dict(bgcolor="rgba(0,0,0,0)"),
@@ -725,16 +737,9 @@ def render_topology():
 
     st.markdown("---")
     st.markdown("**Detalle de Nodos por Región**")
-    region_filter = st.selectbox(
-        "Filtrar por región",
-        ["All"] + sorted(set(n.get("region", "—") for n in nodes)),
-    )
-    filtered = nodes if region_filter == "All" else [
-        n for n in nodes if n.get("region", "—") == region_filter
-    ]
 
     table_data = []
-    for n in filtered:
+    for n in filtered_nodes:
         table_data.append({
             "ID": n.get("node_id", "—"),
             "Nombre": n.get("nombre", "—"),
@@ -748,11 +753,14 @@ def render_topology():
         })
     st.dataframe(pd.DataFrame(table_data), use_container_width=True, hide_index=True)
 
-    _render_node_saturation(repo)
+    _render_node_saturation(repo, region_filter)
 
 
-def _render_node_saturation(repo: SentinelRepository):
-    ranking = repo.node_saturation_ranking(limit=25)
+def _render_node_saturation(repo: SentinelRepository, region_filter: str = "All"):
+    ranking = repo.node_saturation_ranking(
+        limit=25,
+        region=None if region_filter == "All" else region_filter,
+    )
     if not ranking:
         return
 
@@ -778,7 +786,11 @@ def _render_node_saturation(repo: SentinelRepository):
         xaxis_range=[0, 1.15],
         height=max(350, len(ranking) * 28),
         template="plotly_dark",
-        title="Top 25 Nodos por Saturación",
+        title=(
+            "Top 25 Nodos por Saturación"
+            if region_filter == "All"
+            else f"Top Nodos por Saturación — {region_filter}"
+        ),
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -896,12 +908,12 @@ def render_sismico():
             use_container_width=True, hide_index=True,
         )
 
-    _render_seismic_analytics(repo)
+    _render_seismic_analytics(repo, min_mag)
 
 
-def _render_seismic_analytics(repo: SentinelRepository):
-    depth_mag = repo.seismic_depth_vs_magnitude(limit=500)
-    by_region = repo.seismic_by_region(min_magnitude=4.0, limit=20)
+def _render_seismic_analytics(repo: SentinelRepository, min_magnitude: float):
+    depth_mag = repo.seismic_depth_vs_magnitude(min_magnitude=min_magnitude, limit=500)
+    by_region = repo.seismic_by_region(min_magnitude=min_magnitude, limit=20)
 
     if depth_mag:
         st.markdown("---")
@@ -925,7 +937,7 @@ def _render_seismic_analytics(repo: SentinelRepository):
             hoverinfo="text",
         ))
         fig.update_layout(
-            title="Scatter: Profundidad vs Magnitud (M4.0+)",
+            title=f"Scatter: Profundidad vs Magnitud (M{min_magnitude:.1f}+)",
             xaxis_title="Magnitud",
             yaxis_title="Profundidad (km)",
             yaxis_autorange="reversed",
@@ -935,7 +947,7 @@ def _render_seismic_analytics(repo: SentinelRepository):
 
     if by_region:
         st.markdown("---")
-        st.markdown("**Actividad Sísmica por Región (M4.0+)**")
+        st.markdown(f"**Actividad Sísmica por Región (M{min_magnitude:.1f}+)**")
 
         c1, c2 = st.columns(2)
         with c1:
