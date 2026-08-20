@@ -1,0 +1,7 @@
+{
+  "version": "1.1.0",
+  "protocol": "physics-informed RF MultiOutputRegressor -> ONNX + juez feedback",
+  "output": "[confidence, signal_idx]",
+  "bots": ["alfa1", "alfa2", "beta1", "beta2", "delta", "omega"],
+  "note": "Run train_onnx_bootstrap.py or train_onnx_from_db.py to generate .onnx files"
+}

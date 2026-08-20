@@ -1,11 +1,11 @@
 """
-Unified Telegram Bot for Sentinel Omega
-Routes alerts from all active layers through a single bot instance.
+Unified Telegram Bot — thin wrapper over infrastructure.api.telegram
 """
 
 import logging
-from typing import Optional
 from dataclasses import dataclass
+
+from sentinel_omega.infrastructure.api import telegram as tg
 
 logger = logging.getLogger(__name__)
 
@@ -20,50 +20,30 @@ class TelegramMessage:
 
 
 class SentinelTelegramBot:
+    LAYER_EMOJIS = {"geodynamic": "🌍", "system": "⚙️", "omega": "Ω"}
 
-    LAYER_EMOJIS = {
-        "geodynamic": "🌍",
-        "system": "⚙️",
-    }
-
-    def __init__(self, token: str, chat_id: str):
-        self._token = token
-        self._chat_id = chat_id
-        self._enabled = bool(token and chat_id)
+    def __init__(self, token: str = "", chat_id: str = ""):
+        import os
+        self._token = token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        self._chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")
+        self._enabled = bool(self._token and self._chat_id)
 
     def send_alert(self, msg: TelegramMessage) -> bool:
         emoji = self.LAYER_EMOJIS.get(msg.layer, "⚡")
         text = (
-            f"{emoji} SENTINEL OMEGA — {msg.layer.upper()}\n"
+            f"{emoji} <b>SENTINEL OMEGA — {msg.layer.upper()}</b>\n"
             f"Signal: {msg.signal_type} ({msg.confidence:.0%})\n"
             f"{msg.summary}\n"
         )
         if msg.details:
             text += f"\n{msg.details}"
-
         if not self._enabled:
             logger.info(f"[DRY RUN] Telegram: {text}")
             return True
-
-        try:
-            import requests
-            resp = requests.post(
-                f"https://api.telegram.org/bot{self._token}/sendMessage",
-                json={"chat_id": self._chat_id, "text": text, "parse_mode": "HTML"},
-                timeout=10,
-            )
-            return resp.ok
-        except Exception as e:
-            logger.error(f"Telegram send failed: {e}")
-            return False
+        return tg.send_alert_gated(text, f"{msg.layer}_{msg.signal_type}")
 
     def send_heartbeat(self, status: dict) -> bool:
         layers_status = " | ".join(
             f"{'✅' if v else '❌'} {k}" for k, v in status.items()
         )
-        return self.send_alert(TelegramMessage(
-            layer="system",
-            signal_type="HEARTBEAT",
-            confidence=1.0,
-            summary=f"Layers: {layers_status}",
-        ))
+        return tg.maybe_heartbeat(f"Layers: {layers_status}")
