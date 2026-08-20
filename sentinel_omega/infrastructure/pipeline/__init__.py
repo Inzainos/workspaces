@@ -15,3 +15,9 @@ from sentinel_omega.infrastructure.pipeline.mantenimiento import (
     evaluar_sesgo_aprendizaje,
     construir_correlaciones_omega,
 )
+
+# Persistent LOCF (memory + tbl_locf_cache)
+try:
+    from sentinel_omega.infrastructure.pipeline import data_pipeline_locf_patch  # noqa: F401
+except Exception:
+    pass
