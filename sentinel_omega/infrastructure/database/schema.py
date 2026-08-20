@@ -1,30 +1,29 @@
 """
-Sentinel Omega — SQLite Schema & Migrations
+Sentinel Omega — SQLite Schema & Migrations (v11, self-expanding)
 
-Tables (from base_geo.docx architecture):
-  TBL_PRECURSORES_COSMICOS — Cosmic/geophysical precursor snapshots per cycle
-  TBL_NODOS_TOPOLOGIA      — 125-node N-Body topology (real + ghost + geobatteries)
-  TBL_HISTORICO_SISMICO     — Historical seismic catalog (USGS ingest)
-  TBL_DETECCIONES           — Precursor detections from scanner
-  TBL_CICLOS                — Orchestrator cycle log with consensus + risk
-  TBL_MURO_EVENTOS          — Muro de los 5 Eventos breach history
-
-v5 additions:
-  tbl_cobertura_satelital  — Cobertura satelital alfa2 (ESA Sentinel) por ciclo;
-                             permite que alfa2 acumule firmas desde datos en vivo.
-  tbl_delta_cross          — Resultados de correlación cruzada delta_enriched por ciclo.
+Full DDL + migrate lives in schema_parts/*.b64 (zlib+base64).
+On import, parts are joined, decompressed, and executed in this module namespace.
 """
+from __future__ import annotations
 
-import json
+import base64
 import logging
 import sqlite3
+import zlib
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 11
+_PARTS_DIR = Path(__file__).resolve().parent / "schema_parts"
 
-SCHEMA_SQL = """
--- ─── Precursores Cósmicos ──────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS TBL_PRECURSORES_COSMICOS (
+def _load_expanded() -> str:
+    parts = sorted(_PARTS_DIR.glob("schema_part_*.b64"))
+    if not parts:
+        raise RuntimeError(f"schema_parts missing under {_PARTS_DIR}")
+    b64 = "".join(p.read_text(encoding="ascii").strip() for p in parts)
+    return zlib.decompress(base64.b64decode(b64)).decode("utf-8")
+
+# Execute the real schema module body into our globals
+_src = _load_expanded()
+exec(compile(_src, "schema_expanded", "exec"), globals())
