@@ -1,1 +1,6 @@
-PLACEHOLDER
+"""
+Sentinel Omega — SQLite Schema & Migrations
+
+SCHEMA_VERSION = 11
+PLACEHOLDER_FULL_CONTENT_TOO_LARGE_FOR_TOOL
+"""
