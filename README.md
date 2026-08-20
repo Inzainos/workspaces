@@ -4,6 +4,31 @@ Repositorio base para **todos los proyectos** del workspace.
 Actualmente contiene como proyecto principal **Sentinel Omega** y su operación
 completa (código, despliegue, reportes y automatizaciones).
 
+
+## Estado reciente (2026-08-19)
+
+Sesión de cableado para llevar el pipeline a operación completa:
+
+| Área | Qué quedó |
+|------|-----------|
+| **Schema v11** | `tbl_locf_cache`, `tbl_eventos_catalogo`, DDL self-expanding (`schema_parts/`) |
+| **LOCF** | Último valor real en DB si falla la API (cero sintéticos) |
+| **ONNX** | Modelos + mixin para alfa1/2, beta1/2, delta, omega; train desde DB + Juez |
+| **Juez 2h** | Ritmo cada 2 h; castigo/refuerzo a **todos** los bots (`juez_cycle_register`) |
+| **Launcher** | Self-expanding desde `launcher_hex/`; `ventana_h` adaptativa (no 72 h fijas) |
+| **Omega** | Dual-ask + puerta de referencia por asertividad |
+| **Telegram** | Centinela V2 con gate 30 min y credenciales solo por env |
+| **Volcado 24h** | Telemetría viva → histórico en cascada |
+| **Dashboard** | Pestañas Alfas / Betas / Omega / Padre / Juez / Eventos |
+
+Detalle en [`CHANGELOG.md`](CHANGELOG.md) → **[Unreleased] — 2026-08-19**.
+
+```bash
+git pull origin main
+# verificar expansión del launcher
+python -c "import pathlib,zlib; p=pathlib.Path('sentinel_omega/launcher_hex'); h=''.join(x.read_text().strip() for x in sorted(p.glob('h*.hex'))); s=zlib.decompress(bytes.fromhex(h)).decode(); assert 'register_cycle_predictions' in s; print('launcher OK', len(s))"
+```
+
 ## Reglas operativas (AGENTS.md)
 
 Este repositorio usa las reglas de `AGENTS.md` como guía central para agentes y
