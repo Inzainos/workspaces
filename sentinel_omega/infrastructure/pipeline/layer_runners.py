@@ -1,11 +1,11 @@
 """
-Layer Runner — orchestrates fetch → ingest → analyze → consensus for all 6 agents.
-Single runner: Alfa-1, Alfa-2, Beta-1, Beta-2, Delta, Padre.
+Layer Runner — orchestrates fetch → ingest → analyze → consensus.
+Agents: Alfa-1, Alfa-2, Beta-1, Beta-2, Delta, Jupiter, Omega, Padre.
 
 Hierarchical validation:
   1. All agents fetch and analyze independently
   2. #2 agents report to #1 agents for validation
-  3. Padre cross-validates across families
+  3. Padre cross-validates across families (+ Omega dual-ask)
   4. Everything correlates against Schumann (Beta-1)
 """
 
@@ -29,6 +29,7 @@ from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
 from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
 from sentinel_omega.layers.geodynamic.padre.agent import GeodynamicPadre
 from sentinel_omega.layers.geodynamic.jupiter.agent import JupiterAgent
+from sentinel_omega.layers.geodynamic.omega.agent import OmegaAgent
 
 from sentinel_omega.infrastructure.pipeline.data_pipeline import GeodynamicPipeline
 
@@ -45,6 +46,7 @@ class GeodynamicLayerRunner:
         self.beta2 = Beta2Agent()
         self.delta = DeltaAgent()
         self.jupiter = JupiterAgent()
+        self.omega = OmegaAgent()
         self.padre = GeodynamicPadre()
         self._enable_satellite = enable_satellite
         self.assertivity = AssertivityTracker(radius_degrees=5.0, window_days=30)
@@ -157,8 +159,6 @@ class GeodynamicLayerRunner:
                 alfa2_data = self.pipeline.fetch_alfa2_data()
                 self.alfa2.ingest(alfa2_data)
                 signals.append(self.alfa2.analyze())
-                # Exponer los datos de alfa2 en el atributo del runner para que
-                # el launcher los persista en tbl_cobertura_satelital.
                 self._last_alfa2_data = alfa2_data
             except Exception as e:
                 logger.warning(f"Satellite layer failed (non-blocking): {e}")
@@ -166,8 +166,6 @@ class GeodynamicLayerRunner:
         else:
             self._last_alfa2_data = None
 
-        # Júpiter — collective-attention corroborator (non-blocking). Runs without
-        # Schumann history in the live loop; the launcher can pass it from the DB.
         try:
             jupiter_data = self.pipeline.fetch_jupiter_data()
             self.jupiter.ingest(jupiter_data)
@@ -175,9 +173,30 @@ class GeodynamicLayerRunner:
         except Exception as e:
             logger.warning(f"Júpiter layer failed (non-blocking): {e}")
 
+        # Omega: telemetría espacial + pregunta a Beta-1
+        try:
+            beta1_sig = next(
+                (s for s in signals if getattr(s, "agent_name", "") == "beta1"),
+                None,
+            )
+            omega_data = dict(alfa1_data or {})
+            omega_data.update({
+                "schumann_hz": (beta1_data or {}).get("schumann_frequency")
+                or (beta1_data or {}).get("schumann_hz"),
+                "schumann_mean": (beta1_data or {}).get("schumann_mean"),
+                "schumann_std": (beta1_data or {}).get("schumann_std"),
+            })
+            self.omega.ingest(omega_data)
+            self.omega.set_beta_context(beta1_sig)
+            signals.append(self.omega.analyze())
+        except Exception as e:
+            logger.warning(f"Omega layer failed (non-blocking): {e}")
+
         consensus = self.padre.evaluate_consensus(signals)
         consensus.precursor_risk = risk
         consensus.precursor_detections = detections
+        # Exponer señales por bot para registrar_prediccion en launcher
+        consensus.agent_signals = signals
 
         logger.info(
             f"Consensus: {consensus.final_signal.value} "
