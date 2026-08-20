@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 TELEGRAM_API = "https://api.telegram.org"
 TIMEOUT = 10
 
+# Umbrales estilo Centinela V2 (fantasma 0–10 o 0–1 se normaliza)
 TH_RISK_WARN = float(os.environ.get("TG_TH_RISK_WARN", "0.60"))
 TH_RISK_CRIT = float(os.environ.get("TG_TH_RISK_CRIT", "0.75"))
 TH_BZ_CRACK = float(os.environ.get("TG_TH_BZ_CRACK", "-5.0"))
@@ -82,6 +83,7 @@ def send_alert(message: str, parse_mode: str = "HTML") -> bool:
         return False
     token, chat_id = creds
     url = f"{TELEGRAM_API}/bot{token}/sendMessage"
+    # Telegram max ~4096 chars
     if len(message) > 4000:
         message = message[:3990] + "…"
     payload = {
@@ -235,8 +237,12 @@ def format_centinela_threat(
     wind: float,
     schumann: Optional[float] = None,
 ) -> Optional[Tuple[str, str]]:
+    """
+    Prioridades Centinela V2. Devuelve (alert_type, html) o None.
+    risk: fantasma 0–1 (si viene 0–10 se escala).
+    """
     r = float(risk)
-    if r > 1.5:
+    if r > 1.5:  # escala antigua 0–10
         r = r / 10.0
     bz = float(bz)
     wind = float(wind)
@@ -304,6 +310,10 @@ def dispatch_cycle_alerts(
     muro_msg: Optional[str] = None,
     elevated_risk_msg: Optional[str] = None,
 ) -> int:
+    """
+    Un solo punto de despacho por ciclo: Centinela + consenso + dual-ask + muro.
+    Retorna número de mensajes enviados.
+    """
     sent = 0
     meta = metadata or {}
 

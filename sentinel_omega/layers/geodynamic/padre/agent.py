@@ -3,8 +3,22 @@ Padre / Árbitro — Hierarchical Consensus Validator
 Asymmetric Loss: missed events penalized 10× more than false alarms.
 VETO power: no alert without cross-family validation.
 
-Omega: fuera del córum salvo que asertividad_omega >= asertividad_corum (referencia).
-Dual-ask: quién alerta primero pregunta al otro lado.
+Hierarchy:
+  - Padre punishes Alfa-1 and Beta-1 (30-year trained agents)
+  - Alfa-1 validates Alfa-2 (14 years → validated against 30-year history)
+  - Beta-1 validates Beta-2 (14 years → validated against 30-year history)
+  - Delta provides financial cross-correlation (10 years)
+
+Schumann correlation:
+  Everything correlates against the Schumann resonance (Beta-1).
+  If Schumann is perturbed alongside any other signal, that's a precursor.
+
+Flow:
+  1. #2 agents detect pattern → report to #1
+  2. #1 agents validate against 30-year history
+  3. If confirmed → escalate to Padre
+  4. Padre cross-validates with OTHER agent families
+  5. If pattern matches across families → alert confirmed
 """
 
 from typing import Any, Dict, List, Optional
@@ -20,8 +34,8 @@ class GeodynamicPadre(PadreAgent):
         "alfa1": 30, "beta1": 30,
         "alfa2": 14, "beta2": 14,
         "delta": 10,
-        "jupiter": 5,
-        "omega": 30,
+        "jupiter": 5,   # collective-attention corroborator (short history)
+        "omega": 30,  # correlacion espacial independiente
     }
 
     FAMILY_MAP = {
@@ -30,19 +44,27 @@ class GeodynamicPadre(PadreAgent):
         "beta1": "schumann_cymatics",
         "beta2": "schumann_cymatics",
         "delta": "financial_sentiment",
+        # Júpiter joins the space_weather family so it corroborates Alfa-1/2
+        # without adding a new family to the Padre's cross-family math.
         "jupiter": "space_weather",
     }
 
     SENIOR_AGENTS = {"alfa1", "beta1"}
     JUNIOR_AGENTS = {"alfa2", "beta2"}
     SENIOR_FOR_JUNIOR = {"alfa2": "alfa1", "beta2": "beta1"}
+
+    # Below this credibility weight, a bot's ALERT is demoted to WATCH:
+    # the Padre no longer trusts it enough to escalate on its word alone.
     PESO_DEMOTION_THRESHOLD = 0.6
 
     def __init__(self):
         super().__init__(name="padre_geo", domain="geodynamic")
         self.miss_penalty = 10.0
         self.false_alarm_penalty = 1.0
+        # Per-bot credibility weights, adjusted by disciplinary training
+        # (castigo hijo x1 / Padre x2). Empty dict = everyone at 1.0.
         self.pesos_bots: Dict[str, float] = {}
+        # Gate Omega: solo cuenta en córum si asertividad_omega >= asertividad_corum
         self.asertividad_omega: float = 0.0
         self.asertividad_corum: float = 0.0
         self.omega_es_referencia: bool = False
@@ -61,17 +83,24 @@ class GeodynamicPadre(PadreAgent):
     def _aplicar_pesos(
         self, validated: Dict[str, AgentSignal]
     ) -> Dict[str, AgentSignal]:
+        """Weigh each bot's vote by its disciplinary credibility."""
         if not self.pesos_bots:
             return validated
+
         weighted: Dict[str, AgentSignal] = {}
         for name, sig in validated.items():
             peso = self.pesos_bots.get(name, 1.0)
             if peso == 1.0:
                 weighted[name] = sig
                 continue
+
             signal_type = sig.signal_type
-            if peso < self.PESO_DEMOTION_THRESHOLD and signal_type == SignalType.ALERT:
+            if (
+                peso < self.PESO_DEMOTION_THRESHOLD
+                and signal_type == SignalType.ALERT
+            ):
                 signal_type = SignalType.WATCH
+
             weighted[name] = AgentSignal(
                 agent_name=sig.agent_name,
                 signal_type=signal_type,
@@ -85,21 +114,32 @@ class GeodynamicPadre(PadreAgent):
     def _validate_junior_with_senior(
         self, signals: List[AgentSignal]
     ) -> Dict[str, AgentSignal]:
+        """
+        #2 agents report to #1 agents. If a junior detects a pattern,
+        it's only confirmed if the senior's 30-year history supports it.
+        Returns validated signals (junior confirmed by senior, or senior alone).
+        """
         by_name = {s.agent_name: s for s in signals}
         validated: Dict[str, AgentSignal] = {}
+
         for senior_name in self.SENIOR_AGENTS:
             if senior_name in by_name:
                 validated[senior_name] = by_name[senior_name]
+
         for junior_name, senior_name in self.SENIOR_FOR_JUNIOR.items():
             junior = by_name.get(junior_name)
             senior = by_name.get(senior_name)
             if junior is None:
                 continue
-            junior_active = junior.signal_type in (SignalType.ALERT, SignalType.WATCH)
+
+            junior_active = junior.signal_type in (
+                SignalType.ALERT, SignalType.WATCH
+            )
             senior_confirms = (
                 senior is not None
                 and senior.signal_type in (SignalType.ALERT, SignalType.WATCH)
             )
+
             if junior_active and senior_confirms:
                 boost = min(junior.confidence * 1.2, 0.95)
                 validated[junior_name] = AgentSignal(
@@ -121,16 +161,23 @@ class GeodynamicPadre(PadreAgent):
                 )
             else:
                 validated[junior_name] = junior
+
         if "delta" in by_name:
             validated["delta"] = by_name["delta"]
+        # Júpiter y Omega no son junior/senior: pasan su voto intacto
         for extra in ("jupiter", "omega"):
             if extra in by_name:
                 validated[extra] = by_name[extra]
+
         return validated
 
     def _cross_family_check(
         self, validated: Dict[str, AgentSignal]
     ) -> Dict[str, bool]:
+        """
+        Check if multiple families show correlated patterns.
+        A precursor is stronger when space weather + Schumann + financial align.
+        """
         family_active = {}
         for agent_name, signal in validated.items():
             family = self.FAMILY_MAP.get(agent_name, "unknown")
@@ -144,12 +191,18 @@ class GeodynamicPadre(PadreAgent):
     def _schumann_correlation(
         self, validated: Dict[str, AgentSignal]
     ) -> float:
+        """
+        Everything correlates against Schumann (Beta-1).
+        If Schumann is excited while other agents fire, correlation is high.
+        """
         beta1 = validated.get("beta1")
         if beta1 is None:
             return 0.0
+
         schumann_active = beta1.signal_type in (SignalType.ALERT, SignalType.WATCH)
         if not schumann_active:
             return 0.0
+
         other_active = sum(
             1 for name, sig in validated.items()
             if name != "beta1" and sig.signal_type in (SignalType.ALERT, SignalType.WATCH)
