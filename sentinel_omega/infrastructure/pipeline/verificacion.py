@@ -1,14 +1,13 @@
 """
-Verificación del Juez — real vs predicción, cada 4 horas.
+Verificación del Juez — real vs predicción, cada 2 horas (mismo ritmo del ciclo).
 
-El ciclo del Padre (cada 2 h) solo REGISTRA su estado; el Juez pasa cada
-4 horas a confrontar las predicciones vivas expiradas contra el catálogo
-USGS real (verdad POR FILA: ventana propia de 72 h + nodos de la propia
-predicción, o los nodos reales de la malla para los silencios).
+Cada ciclo del Padre (~2 h) registra predicciones; el Juez confronta las
+pendientes cuya ventana ya expiró contra el catálogo real (USGS + futuros
+multi-evento). Ventana por fila: 2 h mínimo de sesgo continuo, o el lag
+típico de la firma/evento si es mayor (no se corta a 72 h fijas).
 
 El ritmo se auto-impone: si la última resolución viva tiene menos de
-RITMO_HORAS, la pasada se salta (así ningún llamador — launcher continuo o
-vigilante en Actions — puede acelerar el ritmo por accidente).
+RITMO_HORAS, la pasada se salta (salvo forzar=True).
 """
 
 import logging
@@ -19,7 +18,7 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-RITMO_HORAS = 4
+RITMO_HORAS = 2
 
 
 def _ultima_resolucion_ts(conn: sqlite3.Connection) -> Optional[float]:
@@ -42,7 +41,7 @@ def verificar_juez(
 ) -> Dict[str, Any]:
     """Pasa el Juez: resuelve pendientes vivas contra USGS (verdad por fila).
 
-    forzar=True ignora el ritmo de 4 h (para el paso agendado del vigilante).
+    forzar=True ignora el ritmo de 2 h (vigilante / prueba manual).
     tracker: AssertivityTracker opcional — se alimenta con los eventos para
     la ganancia de Molchan en vivo.
     """
@@ -59,9 +58,8 @@ def verificar_juez(
         return {"saltada": True}
 
     from sentinel_omega.infrastructure.api.usgs import fetch_earthquakes
-    eq = fetch_earthquakes(min_magnitude=4.5, days=7)
+    eq = fetch_earthquakes(min_magnitude=4.5, days=30)
     if eq is None:
-        # USGS caído: NO resolver con "sin eventos" falso.
         logger.warning("Juez: USGS sin respuesta — verificación pospuesta")
         return {"saltada": True, "motivo": "usgs_caido"}
 
@@ -85,21 +83,18 @@ def verificar_juez(
 
     juez = Juez(conn)
     resueltos = juez.evaluar_pendientes(
-        evento_ocurrido=False,          # ignorado: `eventos` manda por fila
+        evento_ocurrido=False,
         eventos=eventos,
         zonas=zonas or None,
         fase="viva",
     )
 
-    # Retro-etiquetado cimático: los eventos reales le dicen a cada patrón
-    # de la víspera QUÉ desató (lo que importa es el evento, no la telemetría)
     try:
         from sentinel_omega.core.firmas.cimatica import retroetiquetar_patrones
         retroetiquetar_patrones(conn, eventos)
     except Exception as e:
         logger.warning(f"Retro-etiquetado cimático falló (non-blocking): {e}")
 
-    # Resumen real vs predicción de esta pasada
     conteo: Dict[str, int] = {}
     for r in resueltos:
         conteo[r["resultado"]] = conteo.get(r["resultado"], 0) + 1
@@ -111,7 +106,6 @@ def verificar_juez(
         f"acumulado viva: {viva}"
     )
 
-    # Molchan en vivo si hay tracker alimentado
     if tracker is not None and eventos and tracker.prediction_count:
         try:
             tracker.ingest_events([
@@ -128,5 +122,34 @@ def verificar_juez(
         except Exception as e:
             logger.warning(f"Molchan vivo falló (non-blocking): {e}")
 
+    castigos = []
+    refuerzos = []
+    try:
+        from sentinel_omega.core.juez.pesos import castigar, reforzar
+        for r in resueltos:
+            bot = r["bot_name"]
+            res = r["resultado"]
+            sev = float(r.get("severidad") or 0)
+            es_padre = bot in ("padre", "padre_geo")
+            if res == "FALLO":
+                gravedad = max(1.0, min(3.0, (sev / 10.0) ** 0.5 if sev else 1.0))
+                nuevo = castigar(conn, bot, es_padre=es_padre, gravedad=gravedad)
+                castigos.append({"bot": bot, "peso": nuevo, "motivo": "FALLO"})
+            elif res == "FALSO_POSITIVO":
+                nuevo = castigar(conn, bot, es_padre=es_padre, gravedad=1.0)
+                castigos.append({"bot": bot, "peso": nuevo, "motivo": "FALSO_POSITIVO"})
+            elif res == "ACIERTO":
+                nuevo = reforzar(conn, bot)
+                refuerzos.append({"bot": bot, "peso": nuevo})
+        if castigos or refuerzos:
+            conn.commit()
+            logger.info(
+                f"Juez disciplina: castigos={len(castigos)} "
+                f"refuerzos={len(refuerzos)}"
+            )
+    except Exception as e:
+        logger.warning(f"Disciplina post-Juez falló (non-blocking): {e}")
+
     return {"saltada": False, "resueltas": len(resueltos),
-            "conteo": conteo, "viva": viva}
+            "conteo": conteo, "viva": viva,
+            "castigos": castigos, "refuerzos": refuerzos}
