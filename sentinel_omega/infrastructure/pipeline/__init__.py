@@ -21,3 +21,11 @@ try:
     from sentinel_omega.infrastructure.pipeline import data_pipeline_locf_patch  # noqa: F401
 except Exception:
     pass
+
+# Juez: padre + per-bot predictions
+try:
+    from sentinel_omega.infrastructure.pipeline.juez_cycle_register import (  # noqa: F401
+        register_cycle_predictions,
+    )
+except Exception:
+    pass
