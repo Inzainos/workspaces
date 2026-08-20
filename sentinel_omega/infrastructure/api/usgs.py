@@ -25,7 +25,6 @@ def fetch_earthquakes(
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
 
-    # FDSN espera ISO8601 sin microsegundos ni offset (+00:00 → 400 Bad Request).
     _fdsn_fmt = "%Y-%m-%dT%H:%M:%S"
     starttime = start.strftime(_fdsn_fmt)
     endtime = end.strftime(_fdsn_fmt)
@@ -46,7 +45,11 @@ def fetch_earthquakes(
         for f in features:
             props = f.get("properties", {})
             coords = f.get("geometry", {}).get("coordinates", [None, None, None])
+            event_id = f.get("id") or props.get("code") or props.get("ids")
+            if isinstance(event_id, str) and event_id.startswith(","):
+                event_id = event_id.strip(",").split(",")[0]
             records.append({
+                "event_id": event_id or None,
                 "time": pd.to_datetime(props.get("time"), unit="ms"),
                 "magnitude": props.get("mag"),
                 "place": props.get("place"),
@@ -54,6 +57,7 @@ def fetch_earthquakes(
                 "longitude": coords[0] if len(coords) > 0 else None,
                 "latitude": coords[1] if len(coords) > 1 else None,
                 "type": props.get("type"),
+                "mag_type": props.get("magType") or "",
             })
 
         df = pd.DataFrame(records)
