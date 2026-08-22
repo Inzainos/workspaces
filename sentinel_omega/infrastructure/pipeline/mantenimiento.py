@@ -135,6 +135,16 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
         logger.warning(f"Poda cimática falló (non-blocking): {e}")
 
     logger.info(f"Barrido diario: {stats}")
+    
+    # Volcado 24h: telemetría viva → histórico + cascada
+    try:
+        stats["volcado_vivo"] = volcar_telemetria_viva(
+            db_path, run_cascada=True, dry_run=False
+        )
+    except Exception as e:
+        logger.warning(f"Volcado telemetría viva falló (no bloquea barrido): {e}")
+        stats["volcado_vivo"] = {"error": str(e)}
+
     return stats
 
 
@@ -728,3 +738,256 @@ def analizar_secuencia_nodos(db_path: str, muestra: int = SEC_NODOS_MUESTRA) -> 
     return {"eventos": len(eventos), "rutas": len(conteo),
             "recurrentes": len(veredictos), "globales": n_global,
             "veredictos": veredictos}
+
+
+# ─── Volcado 24h: telemetría viva → histórico + cascada ───────────────────
+# Cada ~24h:
+#   1) Schumann vivo (más viejo que retención) → tbl_enjambre_telemetria
+#   2) delta_cross viejo → tbl_delta_cross_historico
+#   3) cobertura satelital vieja → tbl_cobertura_satelital_historico
+#   4) Vacía esas filas de las tablas vivas (deja las últimas N horas)
+#   5) Topología en cascada --solo-recalcular (propaga id_nodo / raw)
+
+HORAS_RETENCION_VIVO = 24
+
+
+def _ensure_hist_tables(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS tbl_delta_cross_historico (
+            timestamp_blk            TEXT PRIMARY KEY,
+            cross_coupling           REAL,
+            geomagnetic_coupling     REAL,
+            schumann_coupling        REAL,
+            sentiment_coupling       REAL,
+            composite_score          REAL,
+            regime_label             TEXT,
+            confidence               REAL,
+            data_completeness        REAL,
+            geo_kp_max_3d            REAL,
+            geo_storm_active         INTEGER,
+            geo_schumann_deviation   REAL,
+            archivada_at             TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS tbl_cobertura_satelital_historico (
+            timestamp_blk        TEXT NOT NULL,
+            zona                 TEXT NOT NULL,
+            coverage_score       REAL,
+            thermal_anomalies    INTEGER,
+            clear_passes         INTEGER,
+            total_passes         INTEGER,
+            revisit_days         REAL,
+            archivada_at         TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (timestamp_blk, zona)
+        );
+        CREATE TABLE IF NOT EXISTS tbl_volcado_vivo_log (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            ejecutado_at    TEXT DEFAULT (datetime('now')),
+            corte_blk       TEXT,
+            schumann_movidos INTEGER DEFAULT 0,
+            delta_movidos    INTEGER DEFAULT 0,
+            cobertura_movidos INTEGER DEFAULT 0,
+            cascada_ok       INTEGER DEFAULT 0,
+            detalle_json     TEXT DEFAULT '{}'
+        );
+        """
+    )
+    # Blindaje (fix 2026-08-20): si tbl_volcado_vivo_log ya existía con el
+    # schema viejo de migrate_v11.py (id, ran_at, stats_json, cascada_ok —
+    # 4 columnas), CREATE TABLE IF NOT EXISTS de arriba no la actualiza —
+    # SQLite deja la tabla vieja tal cual. Sin este blindaje, el INSERT de
+    # volcar_telemetria_viva() fallaría con "no column named corte_blk".
+    # Se agregan las columnas que falten, sin tocar filas existentes.
+    cols_actuales = {row[1] for row in conn.execute(
+        "PRAGMA table_info(tbl_volcado_vivo_log)"
+    ).fetchall()}
+    columnas_esperadas = {
+        "corte_blk": "TEXT",
+        "schumann_movidos": "INTEGER DEFAULT 0",
+        "delta_movidos": "INTEGER DEFAULT 0",
+        "cobertura_movidos": "INTEGER DEFAULT 0",
+        "cascada_ok": "INTEGER DEFAULT 0",
+        "detalle_json": "TEXT DEFAULT '{}'",
+    }
+    for col, tipo in columnas_esperadas.items():
+        if col not in cols_actuales:
+            conn.execute(
+                f"ALTER TABLE tbl_volcado_vivo_log ADD COLUMN {col} {tipo}"
+            )
+    conn.commit()
+
+
+def volcar_telemetria_viva(
+    db_path: str,
+    horas_retencion: int = HORAS_RETENCION_VIVO,
+    run_cascada: bool = True,
+    dry_run: bool = False,
+) -> Dict:
+    """Vacia telemetría en vivo al histórico y dispara cascada de topología.
+
+    Conserva en las tablas vivas solo las últimas `horas_retencion` horas.
+    Idempotente: filas ya archivadas no se duplican (INSERT OR IGNORE).
+    """
+    from datetime import datetime, timedelta, timezone
+    import json
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA journal_mode=WAL")
+    _ensure_hist_tables(conn)
+
+    ahora = datetime.now(timezone.utc)
+    corte = ahora - timedelta(hours=horas_retencion)
+    corte_blk = corte.strftime("%Y-%m-%d %H:%M")
+    stats = {
+        "corte_blk": corte_blk,
+        "schumann_movidos": 0,
+        "delta_movidos": 0,
+        "cobertura_movidos": 0,
+        "cascada_ok": 0,
+        "dry_run": int(dry_run),
+    }
+
+    # ── 1) Schumann vivo → enjambre (histórico de entrenamiento) ──
+    try:
+        rows = conn.execute(
+            "SELECT timestamp_blk, schumann_hz, schumann_activity "
+            "FROM tbl_schumann_vivo WHERE timestamp_blk < ?",
+            (corte_blk,),
+        ).fetchall()
+        if rows and not dry_run:
+            for ts, hz, act in rows:
+                # id_nodo=0 = serie global (no ligada a un nodo UVG)
+                conn.execute(
+                    """INSERT OR IGNORE INTO tbl_enjambre_telemetria
+                       (timestamp_blk, id_nodo, schumann_hz)
+                       VALUES (?, 0, ?)""",
+                    (ts, hz),
+                )
+            conn.execute(
+                "DELETE FROM tbl_schumann_vivo WHERE timestamp_blk < ?",
+                (corte_blk,),
+            )
+            conn.commit()
+        stats["schumann_movidos"] = len(rows)
+        logger.info(f"Volcado Schumann: {len(rows)} filas → enjambre (corte={corte_blk})")
+    except sqlite3.Error as e:
+        logger.warning(f"Volcado Schumann falló: {e}")
+
+    # ── 2) delta_cross → histórico ──
+    try:
+        cols = (
+            "timestamp_blk, cross_coupling, geomagnetic_coupling, schumann_coupling, "
+            "sentiment_coupling, composite_score, regime_label, confidence, "
+            "data_completeness, geo_kp_max_3d, geo_storm_active, geo_schumann_deviation"
+        )
+        rows = conn.execute(
+            f"SELECT {cols} FROM tbl_delta_cross WHERE timestamp_blk < ?",
+            (corte_blk,),
+        ).fetchall()
+        if rows and not dry_run:
+            conn.executemany(
+                f"""INSERT OR IGNORE INTO tbl_delta_cross_historico
+                    ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                rows,
+            )
+            conn.execute(
+                "DELETE FROM tbl_delta_cross WHERE timestamp_blk < ?",
+                (corte_blk,),
+            )
+            conn.commit()
+        stats["delta_movidos"] = len(rows)
+        logger.info(f"Volcado delta_cross: {len(rows)} filas → histórico")
+    except sqlite3.Error as e:
+        logger.warning(f"Volcado delta_cross falló: {e}")
+
+    # ── 3) cobertura satelital → histórico (alfa2 sigue leyendo vivo reciente) ──
+    try:
+        rows = conn.execute(
+            "SELECT timestamp_blk, zona, coverage_score, thermal_anomalies, "
+            "clear_passes, total_passes, revisit_days "
+            "FROM tbl_cobertura_satelital WHERE timestamp_blk < ?",
+            (corte_blk,),
+        ).fetchall()
+        if rows and not dry_run:
+            conn.executemany(
+                """INSERT OR IGNORE INTO tbl_cobertura_satelital_historico
+                   (timestamp_blk, zona, coverage_score, thermal_anomalies,
+                    clear_passes, total_passes, revisit_days)
+                   VALUES (?,?,?,?,?,?,?)""",
+                rows,
+            )
+            conn.execute(
+                "DELETE FROM tbl_cobertura_satelital WHERE timestamp_blk < ?",
+                (corte_blk,),
+            )
+            conn.commit()
+        stats["cobertura_movidos"] = len(rows)
+        logger.info(f"Volcado cobertura: {len(rows)} filas → histórico")
+    except sqlite3.Error as e:
+        logger.warning(f"Volcado cobertura falló: {e}")
+
+    # ── 4) Log ──
+    if not dry_run:
+        conn.execute(
+            """INSERT INTO tbl_volcado_vivo_log
+               (corte_blk, schumann_movidos, delta_movidos, cobertura_movidos,
+                cascada_ok, detalle_json)
+               VALUES (?,?,?,?,?,?)""",
+            (
+                corte_blk,
+                stats["schumann_movidos"],
+                stats["delta_movidos"],
+                stats["cobertura_movidos"],
+                0,
+                json.dumps(stats),
+            ),
+        )
+        conn.commit()
+    conn.close()
+
+    # ── 5) Cascada de topología (sin red) ──
+    if run_cascada and not dry_run:
+        try:
+            import subprocess
+            import sys
+            from pathlib import Path
+
+            script = (
+                Path(__file__).resolve().parent / "topologia_cascada.py"
+            )
+            if not script.exists():
+                script = (
+                    Path(__file__).resolve().parents[3]
+                    / "deploy"
+                    / "topologia_cascada.py"
+                )
+            if script.exists():
+                rc = subprocess.call(
+                    [
+                        sys.executable,
+                        str(script),
+                        "--db-path",
+                        db_path,
+                        "--solo-recalcular",
+                    ],
+                    timeout=3600,
+                )
+                stats["cascada_ok"] = 1 if rc == 0 else 0
+                logger.info(f"Cascada topología tras volcado: rc={rc}")
+                # actualizar log
+                conn = sqlite3.connect(db_path)
+                conn.execute(
+                    "UPDATE tbl_volcado_vivo_log SET cascada_ok=? "
+                    "WHERE id = (SELECT MAX(id) FROM tbl_volcado_vivo_log)",
+                    (stats["cascada_ok"],),
+                )
+                conn.commit()
+                conn.close()
+            else:
+                logger.warning("topologia_cascada.py no encontrado — cascada omitida")
+        except Exception as e:
+            logger.warning(f"Cascada tras volcado falló: {e}")
+            stats["cascada_ok"] = 0
+
+    logger.info(f"Volcado telemetría 24h completo: {stats}")
+    return stats
