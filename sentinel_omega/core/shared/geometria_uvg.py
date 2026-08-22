@@ -1,20 +1,35 @@
 """
 Static UVG-125 Node Matrix — loaded into RAM at import time.
 
-The 125 nodes of the Becker-Hagens (UVG 120) grid are a geometric constant.
-They never change, so we load them once into memory and never query SQLite
-for topology at runtime.
+The 125 nodes de la malla N-Body usan coordenadas geograficas REALES,
+tomadas de la unica fuente de verdad topologica: SEED_NODOS
+(infrastructure/database/seed_nodos.py).
 
-Layout:
-  - Nodes 1-50: Physical (real seismic zones, volcanic centers)
-  - Nodes 51-100: Ghost (inferred from seismic gaps)
-  - Nodes 101-125: Geobattery (electrochemical accumulation)
+CAMBIO v2.5.2 (10-13 ago 2026) — FIX CRITICO DE LOCALIZACION:
+Version anterior generaba 102 de los 125 nodos con coordenadas
+matematicas ficticias (lat = sin(i/PHI)*90, lon = cos(i/PHI)*180),
+sin relacion alguna con geografia real. Confirmado en produccion:
+el sismo real M7.4 de Choco, Colombia (2026-08-10) fue asignado
+al nodo "Chiapas Subduccion" (Mexico, ~1700km de error) en vez del
+nodo real mas cercano ("Colombia-Ecuador", ~350km), porque ese nodo
+(id=30) no tenia coordenadas reales en el motor de calculo.
+
+Este archivo ahora importa SEED_NODOS directamente — una sola fuente
+de verdad para topologia, compartida entre el motor de calculo y los
+reportes. Ya no hay generacion procedural de coordenadas fantasma.
+
+Layout (heredado de SEED_NODOS, ver seed_nodos.py):
+  - Nodes 1-50: Real (major seismic zones, volcanic centers, subduction zones)
+  - Nodes 51-100: Ghost (shadow nodes inferred from geodynamic gaps)
+  - Nodes 101-125: Geobattery (electrochemical accumulation zones)
   - Node 0: Observation point (Tlaxcala — asynchronous, does not affect Euler sum)
 """
 
 import numpy as np
 
-PHI = (1 + np.sqrt(5)) / 2
+from sentinel_omega.infrastructure.database.seed_nodos import SEED_NODOS
+
+PHI = (1 + np.sqrt(5)) / 2  # Se conserva por compatibilidad con otros modulos que la importen de aqui.
 RADIO_TERRESTRE_KM = 6371.0
 
 NODO_OBSERVACION = {
@@ -24,64 +39,40 @@ NODO_OBSERVACION = {
     "lon": -98.2375,
     "name": "TLAXMASTER",
     "region": "Mexico",
-}
-
-NODOS_MAESTROS_CONOCIDOS = {
-    1: {"lat": 17.2, "lon": -100.5, "name": "Guerrero Gap", "tipo": "real"},
-    2: {"lat": 15.9, "lon": -97.1, "name": "Oaxaca Costa", "tipo": "real"},
-    3: {"lat": 14.8, "lon": -92.5, "name": "Chiapas Subducción", "tipo": "real"},
-    4: {"lat": 19.2, "lon": -104.0, "name": "Jalisco-Colima", "tipo": "real"},
-    5: {"lat": 18.0, "lon": -103.0, "name": "Michoacán Costa", "tipo": "real"},
-    6: {"lat": 18.8, "lon": -98.9, "name": "Puebla-Morelos", "tipo": "real"},
-    7: {"lat": 19.4, "lon": -99.1, "name": "CDMX Lago", "tipo": "real"},
-    8: {"lat": 19.02, "lon": -98.63, "name": "Popocatépetl", "tipo": "real"},
-    9: {"lat": 19.51, "lon": -103.62, "name": "Colima Volcán", "tipo": "real"},
-    10: {"lat": 18.46, "lon": -97.39, "name": "Tehuacán", "tipo": "real"},
-    11: {"lat": 19.32, "lon": -98.24, "name": "Tlaxcala", "tipo": "real"},
-    14: {"lat": 25.0, "lon": 142.0, "name": "Triángulo Dragón", "tipo": "ghost"},
-    16: {"lat": 19.5, "lon": -155.5, "name": "Hawaii Hotspot", "tipo": "real"},
-    18: {"lat": 25.0, "lon": -71.0, "name": "Triángulo Bermudas", "tipo": "ghost"},
-    21: {"lat": 33.0, "lon": 135.0, "name": "Japón Nankai", "tipo": "real"},
-    26: {"lat": 26.95, "lon": -103.70, "name": "Vórtice 26 Fantasma", "tipo": "ghost"},
-    29: {"lat": 29.9792, "lon": 31.1342, "name": "Giza Master", "tipo": "real"},
-    35: {"lat": -20.0, "lon": -70.0, "name": "Nazca Andes", "tipo": "real"},
-    43: {"lat": 19.5, "lon": -155.5, "name": "Hamakulia Hawaii", "tipo": "real"},
-    47: {"lat": -26.4, "lon": -112.5, "name": "Isla Pascua", "tipo": "ghost"},
-    61: {"lat": 90.0, "lon": 0.0, "name": "Polo Norte Vórtice", "tipo": "ghost"},
-    62: {"lat": -90.0, "lon": 0.0, "name": "Polo Sur Vórtice", "tipo": "ghost"},
-    125: {"lat": 0.0, "lon": 0.0, "name": "Núcleo Singularidad", "tipo": "geobattery"},
+    "conductividad": None,
 }
 
 
 def _generar_matriz_125() -> list:
-    """Generate the full 125+1 node matrix in RAM using golden ratio geometry."""
+    """Construye la matriz 125+1 en RAM a partir de SEED_NODOS (coordenadas reales).
+
+    Ya no hay rama procedural con formula aurea. Cada uno de los 125 nodos
+    usa exactamente la misma lat/lon/tipo/region que ve el pipeline de
+    reportes (estado/), garantizando que el motor de calculo y los reportes
+    hablen siempre de la misma geografia para el mismo id de nodo.
+    """
     matriz = [NODO_OBSERVACION]
 
+    seed_por_id = {n["node_id"]: n for n in SEED_NODOS}
+
+    if len(seed_por_id) != 125:
+        raise ValueError(
+            f"SEED_NODOS debe tener exactamente 125 nodos, encontrados: {len(seed_por_id)}"
+        )
+
     for i in range(1, 126):
-        if i in NODOS_MAESTROS_CONOCIDOS:
-            nodo = NODOS_MAESTROS_CONOCIDOS[i]
-            matriz.append({
-                "id": i,
-                "tipo": nodo["tipo"],
-                "lat": nodo["lat"],
-                "lon": nodo["lon"],
-                "name": nodo["name"],
-                "region": nodo.get("region", ""),
-            })
-        else:
-            tipo = "ghost" if i % 2 == 0 else "real"
-            if i > 100:
-                tipo = "geobattery"
-            lat_calc = float(np.sin(i / PHI) * 90.0)
-            lon_calc = float(np.cos(i / PHI) * 180.0)
-            matriz.append({
-                "id": i,
-                "tipo": tipo,
-                "lat": lat_calc,
-                "lon": lon_calc,
-                "name": f"NODO_UVG_{i}",
-                "region": "",
-            })
+        if i not in seed_por_id:
+            raise KeyError(f"Falta node_id={i} en SEED_NODOS — matriz de topologia incompleta.")
+        nodo = seed_por_id[i]
+        matriz.append({
+            "id": i,
+            "tipo": nodo["tipo"],
+            "lat": nodo["lat"],
+            "lon": nodo["lon"],
+            "name": nodo["nombre"],
+            "region": nodo.get("region", ""),
+            "conductividad": nodo.get("conductividad"),
+        })
 
     return matriz
 
@@ -92,7 +83,15 @@ NODOS_POR_ID = {n["id"]: n for n in MATRIZ_UVG_125}
 
 
 def nodo_mas_cercano(lat: float, lon: float) -> dict:
-    """Find the nearest UVG node to given coordinates. O(n) in-memory lookup."""
+    """Find the nearest UVG node to given coordinates. O(n) in-memory lookup.
+
+    NOTA: sigue usando distancia euclidiana en grados (no haversine) por
+    consistencia con el comportamiento previo del sistema en produccion;
+    no se cambia la metrica de distancia en este parche, solo la fuente
+    de coordenadas. Si se requiere precisión geodésica real (relevante
+    cerca de los polos o para distancias largas), evaluar migrar a
+    haversine en un parche separado.
+    """
     return min(
         MATRIZ_UVG_125,
         key=lambda n: (lat - n["lat"]) ** 2 + (lon - n["lon"]) ** 2,
