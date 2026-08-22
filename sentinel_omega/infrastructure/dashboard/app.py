@@ -7,6 +7,7 @@ Launch: streamlit run sentinel_omega/infrastructure/dashboard/app.py
 import json
 import time
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -994,7 +995,55 @@ def _render_seismic_analytics(repo: SentinelRepository, min_magnitude: float):
 # TAB 6: Layer Signals (existing, cleaned up)
 # ══════════════════════════════════════════════════════════════════════
 
+def fetch_real_layer_signals(repo) -> Optional[dict]:
+    """Señales reales del último ciclo, por bot, desde viva_real
+    (TBL_JUEZ_AUDITORIA fase='viva', alimentada por
+    register_cycle_predictions() en cada ciclo del launcher).
+    Devuelve None si todavía no hay ninguna predicción registrada
+    (ej. sistema recién instalado, cero ciclos corridos) — en ese
+    caso el caller debe mostrar el demo, etiquetado como demo.
+    """
+    filas = repo.get_ultima_prediccion_por_bot()
+    if not filas:
+        return None
+
+    DISPLAY_NAMES = {
+        "alfa1": "Alfa-1 (Bz/OMNI)",
+        "alfa2": "Alfa-2 (Satellite)",
+        "beta1": "Beta-1 (Kp/FFT+Schumann)",
+        "beta2": "Beta-2 (Atmospheric)",
+        "delta": "Delta (Financial)",
+        "omega": "Omega (Dual-Ask)",
+    }
+
+    agents = {}
+    padre = {"consensus": False, "signal": "NO_SIGNAL", "confidence": 0.0}
+    for fila in filas:
+        bot = (fila.get("bot_name") or "").lower()
+        signal = fila.get("prediccion") or "NO_SIGNAL"
+        conf = float(fila.get("confianza") or 0.0)
+        if bot == "padre":
+            padre = {
+                "consensus": signal not in (None, "", "NO_SIGNAL"),
+                "signal": signal,
+                "confidence": conf,
+            }
+        elif bot in DISPLAY_NAMES:
+            agents[DISPLAY_NAMES[bot]] = {"signal": signal, "confidence": conf}
+
+    # Si algún bot conocido aun no registro nada (ej. Omega recien
+    # agregado, o un bot deshabilitado), se muestra explicitamente
+    # como sin datos en vez de omitirlo silenciosamente.
+    for bot, label in DISPLAY_NAMES.items():
+        if label not in agents:
+            agents[label] = {"signal": "SIN_DATOS", "confidence": 0.0}
+
+    return {"geodynamic": {"agents": agents, "padre": padre}}
+
+
 def generate_demo_signals():
+    """DEMO — valores de ejemplo, no telemetria real. Usar solo cuando
+    fetch_real_layer_signals() devuelve None (cero ciclos corridos aun)."""
     rng = np.random.default_rng(int(time.time()) % 1000)
     layers = {
         "geodynamic": {
@@ -1004,6 +1053,7 @@ def generate_demo_signals():
                 "Beta-1 (Kp/FFT+Schumann)": {"signal": "NEUTRAL", "confidence": 0.3, "dominant_period_h": round(rng.uniform(6, 48), 1), "schumann_activity_pct": round(rng.uniform(0, 40), 1)},
                 "Beta-2 (Atmospheric)": {"signal": "NEUTRAL", "confidence": 0.3},
                 "Delta (Financial)": {"signal": "NEUTRAL", "confidence": 0.3, "fear_greed": round(rng.uniform(20, 80), 0)},
+                "Omega (Dual-Ask)": {"signal": "NEUTRAL", "confidence": 0.3},
             },
             "padre": {"consensus": False, "signal": "NO_SIGNAL", "confidence": 0.0},
         },
@@ -1416,7 +1466,14 @@ def main():
         render_schumann_monitor()
 
     with tabs[6]:
-        signals = generate_demo_signals()
+        _repo = get_repo()
+        signals = fetch_real_layer_signals(_repo)
+        if signals is None:
+            st.info(
+                "Aún no hay predicciones registradas (0 ciclos corridos). "
+                "Mostrando valores de ejemplo — no es telemetría real."
+            )
+            signals = generate_demo_signals()
         render_layer_signals(signals)
 
     with tabs[7]:
