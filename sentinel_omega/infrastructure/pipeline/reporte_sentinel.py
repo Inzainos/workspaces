@@ -391,6 +391,59 @@ def reporte_general(db_path: str) -> Dict:
     lines.append("")
     lines.append(_sep("═"))
     lines.append("")
+
+    # ── Bitácora de salud del sistema (tbl_salud_sistema) ────────────────
+    # Tabla huérfana desde el schema v11 self-expanding (nadie la
+    # llenaba). Se restaura aquí — el único lugar donde ya se calculan
+    # pesos y asertividad para el reporte — en vez de duplicar esa
+    # lógica en otro archivo. Documentada originalmente como:
+    # "Bitácora por corte: versión, pesos, asertividad viva, deltas."
+    try:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS tbl_salud_sistema (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                corte_at TEXT DEFAULT (datetime('now')),
+                version TEXT,
+                pesos_json TEXT,
+                asertividad_viva REAL,
+                deltas_json TEXT
+            )"""
+        )
+        asert_aciertos = sum(d["ACIERTO"] for d in juez_pivot.values())
+        asert_resueltos = sum(d["ACIERTO"] + d["FALLO"] for d in juez_pivot.values())
+        asertividad_viva = asert_aciertos / max(1, asert_resueltos)
+
+        anterior = conn.execute(
+            "SELECT pesos_json, asertividad_viva FROM tbl_salud_sistema "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        deltas = {"asertividad_viva": None, "pesos": {}}
+        if anterior:
+            pesos_prev = json.loads(anterior[0]) if anterior[0] else {}
+            asert_prev = anterior[1] if anterior[1] is not None else 0.0
+            deltas["asertividad_viva"] = round(asertividad_viva - asert_prev, 4)
+            deltas["pesos"] = {
+                bot: round(data["pesos"].get(bot, 0.0) - pesos_prev.get(bot, 0.0), 4)
+                for bot in data["pesos"]
+            }
+
+        try:
+            from sentinel_omega.config.sentinel_config import SentinelOmegaConfig
+            version = SentinelOmegaConfig().version
+        except Exception:
+            version = None
+
+        conn.execute(
+            "INSERT INTO tbl_salud_sistema (version, pesos_json, asertividad_viva, "
+            "deltas_json) VALUES (?, ?, ?, ?)",
+            (version, json.dumps(data["pesos"]), asertividad_viva, json.dumps(deltas)),
+        )
+        conn.commit()
+        data["salud_sistema"] = {"version": version, "asertividad_viva": asertividad_viva,
+                                  "deltas": deltas}
+    except Exception as e:
+        logger.warning(f"No se pudo actualizar tbl_salud_sistema: {e}")
+
     conn.close()
     print("\n".join(lines))
     logger.info(f"Reporte general — {n_total} firmas, {n_cons} consolidadas.")
