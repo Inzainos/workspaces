@@ -78,6 +78,22 @@ class SentinelRepository:
             ).fetchall()
         return [dict(zip(self._col_names("TBL_PRECURSORES_COSMICOS"), r)) for r in rows]
 
+    def get_ultima_prediccion_por_bot(self) -> List[Dict]:
+        """Última predicción real (fase='viva') de cada bot, incluido 'padre'.
+        Fuente: viva_real (vista sobre TBL_JUEZ_AUDITORIA, solo fase='viva'),
+        alimentada por register_cycle_predictions() en cada ciclo del launcher.
+        """
+        rows = self._execute(
+            """SELECT bot_name, prediccion, confianza, timestamp, detalles_json
+               FROM viva_real
+               WHERE (bot_name, timestamp) IN (
+                   SELECT bot_name, MAX(timestamp) FROM viva_real GROUP BY bot_name
+               )
+               ORDER BY bot_name"""
+        ).fetchall()
+        cols = ["bot_name", "prediccion", "confianza", "timestamp", "detalles_json"]
+        return [dict(zip(cols, r)) for r in rows]
+
     # ── Nodos Topología ───────────────────────────────────────────
 
     def upsert_nodo(
