@@ -81,7 +81,7 @@ def analyze_spectrogram(image_path: str) -> Tuple[float, float]:
         active_pixels = cv2.countNonZero(mask)
         activity_pct = round((active_pixels / total_pixels) * 100, 2)
 
-        schumann_hz = round(FUNDAMENTAL_HZ + (activity_pct * 0.8), 2)
+        schumann_hz = round(FUNDAMENTAL_HZ + (activity_pct * 0.02), 2)
 
         logger.info(
             f"Schumann WPC: {schumann_hz} Hz, activity={activity_pct}%"

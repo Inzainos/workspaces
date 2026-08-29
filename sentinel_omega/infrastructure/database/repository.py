@@ -22,14 +22,48 @@ class SentinelRepository:
 
     def __init__(self, db_path: Optional[str] = None):
         self._db_path = db_path
-        self._conn = get_connection(db_path)
+        self._conn = None
+        # Cache column names per table (thread-safe dict)
+        self._cols_cache: Dict[str, List[str]] = {}
+
+    @property
+    def _conn_safe(self) -> sqlite3.Connection:
+        """Thread-safe connection: new per thread or check_same_thread=False."""
+        import threading
+        # Use thread-local connection if main conn was created in another thread
+        if not hasattr(self, "_tls"):
+            import threading as _th
+            self._tls = _th.local()
+        if hasattr(self._tls, "conn") and self._tls.conn is not None:
+            return self._tls.conn
+        # Fallback: create thread-local conn with check_same_thread=False
+        try:
+            self._tls.conn = get_connection(self._db_path)
+            # Ensure it can be used across threads if reused
+            return self._tls.conn
+        except Exception:
+            # Last resort: direct sqlite connect
+            from pathlib import Path as _P
+            db = self._db_path or str(_P(__file__).parent.parent.parent / "data" / "SENTINEL_OMEGA_PRO.db")
+            conn = sqlite3.connect(str(db), timeout=30.0, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            self._tls.conn = conn
+            return conn
 
     def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
-        return self._conn.execute(sql, params)
+        # Try thread-safe conn first
+        try:
+            return self._conn_safe.execute(sql, params)
+        except Exception:
+            # Fallback to legacy _conn if exists
+            if self._conn is not None:
+                return self._conn_safe.execute(sql, params)
+            raise
 
     def _executemany(self, sql: str, params_list: List[tuple]) -> None:
-        self._conn.executemany(sql, params_list)
-        self._conn.commit()
+        conn = self._conn_safe
+        conn.executemany(sql, params_list)
+        conn.commit()
 
     # ── Precursores Cósmicos ──────────────────────────────────────
 
@@ -59,7 +93,7 @@ class SentinelRepository:
              schumann_hz, schumann_activity, fase_lunar,
              presion_hpa, fantasma, nivel_riesgo),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
         return cur.lastrowid
 
     def get_precursores_cosmicos(
@@ -116,7 +150,7 @@ class SentinelRepository:
             (node_id, nombre, lat, lon, tipo, conductividad,
              energia, saturacion, region),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
 
     def bulk_upsert_nodos(self, nodos: List[Dict]) -> int:
         self._executemany(
@@ -153,7 +187,7 @@ class SentinelRepository:
             WHERE node_id = ?""",
             (energia, saturacion, node_id),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
 
     # ── Histórico Sísmico ─────────────────────────────────────────
 
@@ -177,7 +211,7 @@ class SentinelRepository:
             (event_id, timestamp, lat, lon, depth_km, magnitude,
              mag_type, region, source),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
 
     def bulk_insert_sismos(self, sismos: List[Dict]) -> int:
         before = self._execute(
@@ -252,7 +286,7 @@ class SentinelRepository:
             (ts, cycle_id, tipo, display_name, station, lat, lon,
              confidence, json.dumps(values or {}), wall_name),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
         return cur.lastrowid
 
     def get_detecciones(
@@ -304,7 +338,7 @@ class SentinelRepository:
              fantasma, nivel_riesgo, precursors_count, types_json,
              muro_walls_active, int(muro_breach), alerts_dispatched),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
         return cur.lastrowid
 
     def get_ciclos(self, limit: int = 50) -> List[Dict]:
@@ -344,7 +378,7 @@ class SentinelRepository:
              int(wall_states.get("FINANCIERO/SOCIAL", False)),
              json.dumps(active_types)),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
         return cur.lastrowid
 
     def get_muro_breaches(self, limit: int = 50) -> List[Dict]:
@@ -580,7 +614,7 @@ class SentinelRepository:
             (timestamp_blk, zona, coverage_score, thermal_anomalies,
              clear_passes, total_passes, revisit_days),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
 
     def insert_delta_cross(
         self,
@@ -610,7 +644,7 @@ class SentinelRepository:
              regime_label, confidence, data_completeness,
              geo_kp_max_3d, geo_storm_active, geo_schumann_deviation),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
 
     # ── Helpers ───────────────────────────────────────────────────
 

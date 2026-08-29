@@ -1568,6 +1568,7 @@ def main():
         render_layer_signals(signals)
 
     with tabs[7]:
+        st.info("SNT Analysis — valores de ejemplo (DEMO). No es teletria satelital real.")
         snt_results = generate_demo_satellization()
         render_satellization_analysis(snt_results)
 
