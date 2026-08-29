@@ -28,27 +28,28 @@ class SentinelRepository:
 
     @property
     def _conn_safe(self) -> sqlite3.Connection:
-        """Thread-safe connection: new per thread or check_same_thread=False."""
+        """Thread-safe connection: read-only fast path, no DDL."""
         import threading
-        # Use thread-local connection if main conn was created in another thread
         if not hasattr(self, "_tls"):
             import threading as _th
             self._tls = _th.local()
         if hasattr(self._tls, "conn") and self._tls.conn is not None:
             return self._tls.conn
-        # Fallback: create thread-local conn with check_same_thread=False
+        from pathlib import Path as _P
+        db = self._db_path or str(_P(__file__).parent.parent.parent / "data" / "SENTINEL_OMEGA_PRO.db")
+        # Direct connect without init_database (evita database is locked en dashboard)
+        # WAL + busy_timeout para concurrencia con launcher
+        conn = sqlite3.connect(str(db), timeout=30.0, check_same_thread=False, isolation_level=None)
         try:
-            self._tls.conn = get_connection(self._db_path)
-            # Ensure it can be used across threads if reused
-            return self._tls.conn
-        except Exception:
-            # Last resort: direct sqlite connect
-            from pathlib import Path as _P
-            db = self._db_path or str(_P(__file__).parent.parent.parent / "data" / "SENTINEL_OMEGA_PRO.db")
-            conn = sqlite3.connect(str(db), timeout=30.0, check_same_thread=False)
             conn.execute("PRAGMA journal_mode=WAL")
-            self._tls.conn = conn
-            return conn
+            conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA cache_size=-8000")
+            conn.row_factory = sqlite3.Row
+        except Exception:
+            pass
+        self._tls.conn = conn
+        return conn
 
     def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         # Try thread-safe conn first
