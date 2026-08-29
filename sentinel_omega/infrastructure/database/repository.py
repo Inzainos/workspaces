@@ -374,6 +374,35 @@ class SentinelRepository:
 
     # ── Analytics ─────────────────────────────────────────────────
 
+    def cimatica_top_patrones(self, limit: int = 20) -> "List[Dict]":
+        """Top patrones por frecuencia (dashboard cimatica)."""
+        try:
+            cur = self.conn.execute(
+                "SELECT patron_id, clave, frecuencia, event_class, ambito, id_nodo, primera_vez, ultima_vez "
+                "FROM tbl_cimatica_patrones ORDER BY frecuencia DESC, ultima_vez DESC LIMIT ?", (limit,)
+            )
+            return [dict(r) for r in cur.fetchall()]
+        except Exception:
+            return []
+
+    def cimatica_stats(self) -> "Dict[str, Any]":
+        """Resumen cimatica."""
+        try:
+            total = self.conn.execute("SELECT COUNT(*) FROM tbl_cimatica_patrones").fetchone()[0]
+            consistentes = self.conn.execute("SELECT COUNT(*) FROM tbl_cimatica_patrones WHERE frecuencia>=3").fetchone()[0]
+            por_clase = self.conn.execute("SELECT event_class, COUNT(*) as n FROM tbl_cimatica_patrones GROUP BY event_class ORDER BY n DESC LIMIT 10").fetchall()
+            return {"total": total, "consistentes": consistentes, "por_clase": [dict(r) for r in por_clase]}
+        except Exception:
+            return {"total": 0, "consistentes": 0, "por_clase": []}
+
+    def fantasma_timeline(self, limit: int = 50) -> "List[Dict]":
+        """Historial fantasma para timeline."""
+        try:
+            cur = self.conn.execute("SELECT ts, fantasma, nivel FROM tbl_salud_sistema ORDER BY ts DESC LIMIT ?", (limit,))
+            return [dict(r) for r in cur.fetchall()]
+        except Exception:
+            return []
+
     def fantasma_component_breakdown(self, limit: int = 50) -> List[Dict]:
         rows = self._execute(
             """SELECT timestamp, bz_nT, viento_km_s, schumann_hz,

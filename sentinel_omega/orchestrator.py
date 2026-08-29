@@ -115,7 +115,7 @@ class SentinelOrchestrator:
                 getattr(d.tipo, "value", str(d.tipo)) for d in detections
             ]
             for detection in detections:
-                if getattr(detection, "confidence", 0) >= 0.7:
+                if getattr(detection, "confidence", 0) >= 0.5:  # ampliado 0.5
                     details = ", ".join(
                         f"{k}={v}" for k, v in (detection.values or {}).items()
                     )
@@ -128,11 +128,46 @@ class SentinelOrchestrator:
                         lon=getattr(detection, "lon", None),
                         lugar=getattr(detection, "station", None),
                     )
+                    try:
+                        descripciones = {
+                            "schumann": "Schumann alterada - latido Tierra cambia. Precede sismos/volcanes 3-14 dias.",
+                            "sismo_cluster": "Enjambre sismico - agrupacion anomala. Ventana 14 dias.",
+                        }
+                        tipo_key = getattr(detection.tipo, "value", str(detection.tipo)).lower()
+                        desc = descripciones.get(tipo_key, "")
+                        if desc:
+                            alert_msg = alert_msg.replace("</i>", f"<br><br><i>{desc}</i>", 1) if "</i>" in alert_msg else alert_msg + f"<br><i>{desc}</i>"
+                    except Exception:
+                        pass
                     if send_alert_gated(
                         alert_msg,
                         f"PREC_{getattr(detection.tipo, 'value', 'X')}",
                     ):
                         self._status.alerts_dispatched += 1
+                    try:
+                        fantasma_val = getattr(risk, "fantasma", None) if risk and hasattr(risk, "fantasma") else (getattr(risk, "value", None) if risk else None)
+                        if fantasma_val and fantasma_val > 5:
+                            from sentinel_omega.infrastructure.messaging.charts import fantasma_timeline
+                            from sentinel_omega.infrastructure.api.telegram import send_photo
+                            import sqlite3
+                            from pathlib import Path as _P2
+                            vals = []
+                            try:
+                                dbp2 = getattr(self._runner, "db_path", "sentinel_omega/data/SENTINEL_OMEGA_PRO.db")
+                                if _P2(str(dbp2)).exists():
+                                    conn2 = sqlite3.connect(str(dbp2))
+                                    cur2 = conn2.execute("SELECT fantasma FROM tbl_salud_sistema ORDER BY ts DESC LIMIT 10")
+                                    vals = [r[0] for r in cur2.fetchall() if r[0] is not None]
+                                    conn2.close()
+                                    vals = list(reversed(vals))
+                            except Exception:
+                                vals = [fantasma_val] if fantasma_val else []
+                            if vals:
+                                ch = fantasma_timeline(vals, titulo=f"Fantasma - {detection.display_name} {detection.confidence:.0%}")
+                                if ch and ch.exists():
+                                    send_photo(str(ch), caption=f"Fantasma {fantasma_val:.1f} | {detection.display_name}")
+                    except Exception:
+                        pass
 
         muro_msg = None
         if self._runner and getattr(self._runner, "last_muro", None):

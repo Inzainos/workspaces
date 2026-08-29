@@ -115,6 +115,48 @@ def send_alert_gated(
     return send_alert(message, parse_mode=parse_mode)
 
 
+
+
+def send_photo(photo_path: str, caption: str = "", parse_mode: str = "HTML") -> bool:
+    """Envia una foto con caption a Telegram. photo_path debe ser archivo local."""
+    creds = _get_credentials()
+    if not creds:
+        return False
+    token, chat_id = creds
+    url = f"{TELEGRAM_API}/bot{token}/sendPhoto"
+    if len(caption) > 1000:
+        caption = caption[:998] + "…"
+    try:
+        with open(photo_path, "rb") as f:
+            files = {"photo": f}
+            data = {"chat_id": chat_id, "caption": caption, "parse_mode": parse_mode}
+            resp = get_session().post(url, data=data, files=files, timeout=TIMEOUT + 10)
+            resp.raise_for_status()
+            logger.info(f"Telegram photo sent: {photo_path}")
+            return True
+    except Exception as e:
+        logger.error(f"Telegram photo failed: {e}")
+        return False
+
+
+def send_document(doc_path: str, caption: str = "") -> bool:
+    creds = _get_credentials()
+    if not creds:
+        return False
+    token, chat_id = creds
+    url = f"{TELEGRAM_API}/bot{token}/sendDocument"
+    try:
+        with open(doc_path, "rb") as f:
+            files = {"document": f}
+            data = {"chat_id": chat_id, "caption": caption[:1000] if caption else ""}
+            resp = get_session().post(url, data=data, files=files, timeout=TIMEOUT + 10)
+            resp.raise_for_status()
+            logger.info(f"Telegram document sent: {doc_path}")
+            return True
+    except Exception as e:
+        logger.error(f"Telegram document failed: {e}")
+        return False
+
 def notify_online() -> bool:
     return send_alert(
         "🔵 <b>SISTEMA ONLINE</b>\nSentinel Omega vigilando telemetría y precursores."

@@ -19,7 +19,9 @@ Sesión de cableado para llevar el pipeline a operación completa:
 | **Omega** | Dual-ask + puerta de referencia por asertividad |
 | **Telegram** | Centinela V2 con gate 30 min y credenciales solo por env |
 | **Volcado 24h** | Telemetría viva → histórico en cascada |
-| **Dashboard** | Pestañas Alfas / Betas / Omega / Padre / Juez / Eventos |
+| **Dashboard** | Pestañas Alfas / Betas / Omega / Padre / Juez / Eventos / **Agente** (consenso) |
+| **Mensajeria** | **AlertService** unificado (Telegram/Correo/Log) + **ReportEngine** versionado |
+| **Agente** | consensus-expert-agent umbral 85/100, contexto inyectado, modo --audit |
 
 Detalle en [`CHANGELOG.md`](CHANGELOG.md) → **[Unreleased] — 2026-08-19**.
 
@@ -81,6 +83,9 @@ workspaces/
 │   ├── core/
 │   ├── docs/
 │   ├── infrastructure/
+│   │   ├── messaging/       # AlertService + agent_bridge (unificado)
+│   │   ├── pipeline/        # reporte_sentinel + ReportEngine
+│   │   └── dashboard/       # app.py + agent_tab (pestana Agente)
 │   ├── layers/
 │   ├── models/
 │   ├── notebooks/

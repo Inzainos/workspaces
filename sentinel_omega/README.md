@@ -1,4 +1,4 @@
-# Sentinel Omega v2.5
+# Sentinel Omega v2.5.3
 
 **Plataforma de detección de precursores de eventos naturales**
 
@@ -305,21 +305,28 @@ En operación, cada ciclo compara el estado vivo contra las firmas consolidadas 
 
 ---
 
-## Dashboard (Streamlit + Plotly)
+## Dashboard (Streamlit + Plotly) - 11 pestañas (v2.5.3)
 
-9 pestañas interactivas con datos en tiempo real:
+11 pestañas interactivas con datos en tiempo real:
 
-| Tab | Nombre          | Visualizaciones                                                          |
-|-----|-----------------|--------------------------------------------------------------------------|
-| 1   | Precursor Risk  | Gauge fantasma, historial, waterfall de componentes, donut de riesgo     |
-| 2   | Muro 5 Eventos  | 5 tarjetas de estado, radar de correlación, timeline de activación       |
-| 3   | Scanner         | Tabla de detecciones, barras por tipo, histograma de confianza, stats    |
-| 4   | Topología       | Mapa mundial 125 nodos, ranking saturación, conductividad vs energía    |
-| 5   | Sísmico         | Mapa sísmico, histograma magnitudes, profundidad vs magnitud, regiones  |
-| 6   | Schumann        | Tendencia Hz, actividad WPC, distribución, Hz vs actividad scatter      |
-| 7   | Layer Signals   | Consenso por capa, señales de agentes individuales                       |
-| 8   | SNT Analysis    | Exponente de satelización, fits de ley de potencia                       |
-| 9   | Ciclos          | Timeline fantasma + precursores, tasa de alertas, breach rate gauges    |
+| Tab | Nombre          | Visualizaciones                                                                                      |
+|-----|-----------------|------------------------------------------------------------------------------------------------------|
+| 1   | Precursor Risk  | Gauge fantasma, historial, waterfall de componentes, donut de riesgo, **timeline 50 ciclos con bandas 15/30 + vista previa Telegram con PNG** |
+| 2   | Muro 5 Eventos  | 5 tarjetas de estado, radar de correlación, timeline de activación                                  |
+| 3   | Scanner         | Tabla de detecciones, barras por tipo, histograma de confianza, stats                                |
+| 4   | Topología       | Mapa mundial 125 nodos, ranking saturación, conductividad vs energía                                |
+| 5   | Sísmico         | Mapa sísmico, histograma magnitudes, profundidad vs magnitud, regiones                              |
+| 6   | Schumann        | Tendencia Hz, actividad WPC, distribución, Hz vs actividad scatter                                  |
+| 7   | Layer Signals   | Consenso por capa, señales de agentes individuales                                                   |
+| 8   | SNT Analysis    | Exponente de satelización, fits de ley de potencia                                                   |
+| 9   | Ciclos          | Timeline fantasma + precursores, tasa de alertas, breach rate gauges                                |
+| 10  | Cimatica (v2.5.3) | **Barras top-10 patrones por frecuencia, tabla 20 mas frecuentes, pie por clase, PNG Telegram** |
+| 11  | Agente          | Estado del agente, logs, controls                                                                   |
+
+**Novedades v2.5.3:**
+- `render_cimatica()`: 3 metricas (total/consistentes/clases), barras `plotly_dark` con `px.bar`, tabla `patron_id|clave|frecuencia|clase|ambito|nodo|ultima_vez` (20), pie `por_clase`, boton "Generar PNG cimatica (como Telegram)" via `cimatica_bars()`.
+- `render_precursor_risk()` enriquecido: `_render_fantasma_timeline_plotly()` (50 ciclos, `go.Scatter` + `add_hrect` 0-15/15-30/30+, `add_hline` 15/30) + tabla 10 + boton "Vista previa alerta Telegram" (`AlertTemplates.centinela_advertencia` + `fantasma_timeline` PNG).
+- `repository.py`: `cimatica_top_patrones()`, `cimatica_stats()`, `fantasma_timeline()` - queries `tbl_cimatica_patrones` / `tbl_salud_sistema`.
 
 ---
 
@@ -349,7 +356,8 @@ sentinel_omega/
 ├── reboot.py                            # Reboot — stop + relaunch
 ├── orchestrator.py                      # Orquestador maestro — ejecuta ciclos
 ├── config/
-│   └── sentinel_config.py               # Configuración central (secrets vía os.environ)
+│   ├── sentinel_config.py               # Configuración central (secrets vía os.environ + YAML)
+│   └── sentinel.yaml                    # Config declarativa (yaml, env vars override)
 │
 ├── core/
 │   ├── shared/
@@ -383,7 +391,9 @@ sentinel_omega/
 │       └── padre/agent.py               # Consenso asimétrico + Fantasma + Scanner + Muro
 │
 ├── infrastructure/
-│   ├── api/                             # 10 conectores de API
+│   ├── api/                             # 10 conectores + resilience
+│   │   ├── _http.py                     # Session con Retry + tenacity + circuit breaker
+│   │   ├── circuit_breaker.py           # Circuit breaker (CLOSED/OPEN/HALF_OPEN)
 │   │   ├── noaa.py                      # NOAA SWPC (Bz, Kp, protones)
 │   │   ├── usgs.py                      # USGS FDSN (catálogo sísmico)
 │   │   ├── schumann.py                  # Tomsk SRF (resonancia Schumann)
@@ -405,6 +415,10 @@ sentinel_omega/
 │   │   └── seed_nodos.py                # 125 nodos semilla (malla global)
 │   ├── dashboard/
 │   │   └── app.py                       # Dashboard Streamlit (9 tabs)
+│   ├── logging/                         # Logging estructurado JSON
+│   │   └── formatter.py                 # JSONFormatter + RotatingFileHandler
+│   ├── health/                          # Health checks (DB/disk/APIs/pipeline)
+│   │   └── checks.py                    # HealthChecker + get_health()
 │   └── telegram/
 │       └── bot.py                       # Bot Telegram para alertas
 │
@@ -420,6 +434,36 @@ sentinel_omega/
 └── data/                                # Bases de datos SQLite
     └── SENTINEL_OMEGA_PRO.db            # DB principal (6 tablas operacionales + 6 backcast)
 ```
+
+---
+
+## Observabilidad y Resilience (v2.5.3 — 2026-08-29)
+
+### Logging estructurado JSON
+- `infrastructure/logging/formatter.py`: `JSONFormatter` + `RotatingFileHandler` (10MB x 5).
+- Cada linea: `{"timestamp": "2026-08-29T02:44:00Z", "level": "INFO", "logger": "..."}`. Configurable `json`/`text` via `sentinel.yaml` (`logging.format`).
+
+### Health checks
+- `infrastructure/health/checks.py`: `HealthChecker` verifica `database` (sqlite_master), `disk` (shutil), `apis` (NOAA 200), `pipeline` (MAX(ts) en tbl_salud_sistema).
+- Uso: `python -m sentinel_omega.infrastructure.health.checks` o `HealthChecker().run_all().to_dict()`.
+
+### Resilience: Retry + Circuit Breaker
+- `infrastructure/api/_http.py`: `urllib3.Retry` (429/500/502/503/504, backoff 1s->4s) + `tenacity` (`retry_api`, `fetch_with_retry`) para `ConnectionError`/`Timeout`.
+- `infrastructure/api/circuit_breaker.py`: `CircuitBreaker` CLOSED->OPEN->HALF_OPEN, thread-safe, decorador `@circuit(name)` en `noaa.py`, `usgs.py`, `nasa_neo.py`.
+
+### Config declarativa
+- `config/sentinel.yaml`: defaults versionados. Env vars hacen override. `sentinel_config.load_config()` mergea YAML + env.
+- `sentinel_omega/.env.example`: `LOG_LEVEL`, `LOG_FORMAT`, `CB_*` centralizados.
+
+### Alertas enriquecidas Telegram (v2.5.3)
+- `infrastructure/api/telegram.py`: `send_photo(path, caption)` y `send_document(path)` — envia PNG/PDF a Telegram con caption HTML (1000 chars, timeout 20s).
+- `infrastructure/messaging/charts.py`: graficas con `matplotlib Agg` en `/tmp/sentinel_charts/` (configurable `SENTINEL_CHARTS_DIR`):
+  - `fantasma_timeline(valores)` — linea Fantasma con umbrales 15/30, marca ultimo punto rojo.
+  - `cimatica_bars(patrones)` — barras frecuencia por patron (verde si tiene event_class).
+  - `precursores_tabla_png(filas)` — tabla precursores como imagen.
+- `infrastructure/messaging/alert_service.py`: nuevos templates `cimatica_consistente()` y `reporte_resumen()`.
+- `orchestrator.py`: umbral 0.7 -> 0.5 (mas cobertura), cada alerta lleva descripcion detallada + tabla de activos + cimatica top-3. Si `fantasma>5`, envia `fantasma_timeline` como foto (ultimos 10 valores de `tbl_salud_sistema`).
+- `core/firmas/cimatica.py`: cuando `frecuencia==3` dispara `AlertService` (telegram+log) + `cimatica_bars` con top-5 patrones `frecuencia>=2` como foto.
 
 ---
 
@@ -439,6 +483,9 @@ requests>=2.28       # HTTP para APIs
 onnxruntime>=1.14    # Inferencia ML (precursor tipo 11)
 streamlit>=1.28      # Dashboard interactivo
 plotly>=5.15         # Visualizaciones
+pyyaml>=6.0          # Config YAML (config/sentinel.yaml)
+tenacity>=8.2        # Retry con backoff exponencial + circuit breaker
+python-dotenv>=1.0   # .env para secrets (no hardcode)
 ```
 
 ## Ejecución
@@ -528,6 +575,10 @@ export BITSO_API_KEY="..."             # Exchange Bitso
 export BITSO_API_SECRET="..."          # Exchange Bitso
 export TELEGRAM_BOT_TOKEN="..."        # Telegram (en pausa: el canal es correo)
 export TELEGRAM_CHAT_ID="..."          # Telegram (en pausa)
+export LOG_LEVEL="INFO"                # DEBUG/INFO/WARNING/ERROR (yaml: logging.level)
+export LOG_FORMAT="json"               # json/text
+export CB_FAILURE_THRESHOLD="5"         # Circuit breaker: fallos para abrir
+export CB_RECOVERY_TIMEOUT="60"         # Circuit breaker: segundos para HALF_OPEN
 ```
 
 > **Seguridad**: Todas las claves se cargan exclusivamente vía `os.environ.get()`. Nunca se hardcodean tokens en el código. Las claves se rotan según se van usando.
@@ -542,6 +593,7 @@ export TELEGRAM_CHAT_ID="..."          # Telegram (en pausa)
 | V46      | TITAN V46        | Asertividad, validación contra USGS, hits/misses     |
 | V53      | TITAN V53        | Patrones WPC, Lorenz-X/Lyapunov, multi-horizonte     |
 | v2.5     | Sentinel Omega   | 15 precursores, 5 muros, 125 nodos, 6 agentes, dashboard, backcast 1H |
+| v2.5.2   | Sentinel Omega   | Observabilidad: logging JSON + health + circuit breaker/tenacity + YAML + ruff/mypy |
 | v2.5.1   | Sentinel Omega   | Honestidad total: fase estricta + viva_real, verdad por fila con nodos propios, línea base de Molchan, agentes honestos (beta1 Schumann medido, alfa1 ONNX real, delta contexto, alfa2 proxy degradado), Omega (ritmo cósmico), cimática con retro-etiquetado y poda, correo con gráficas, rutinas 24/7 |
 
 ---

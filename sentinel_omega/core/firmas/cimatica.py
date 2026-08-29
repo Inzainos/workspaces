@@ -138,9 +138,32 @@ def registrar_snapshot(
     if frecuencia == FRECUENCIA_CONSISTENTE and not silencioso:
         logger.warning(
             f"CIMÁTICA CONSISTENTE: patrón {patron_id} ({ambito}) alcanzó "
-            f"frecuencia {frecuencia}"
-            + (f" — asociado a {nueva_ec}" if nueva_ec else "")
+            f"frecuencia {frecuencia}" + (f" — asociado a {nueva_ec}" if nueva_ec else "")
         )
+        try:
+            from sentinel_omega.infrastructure.messaging.alert_service import AlertService, AlertTemplates
+            from sentinel_omega.infrastructure.messaging.charts import cimatica_bars
+            from sentinel_omega.infrastructure.api.telegram import send_photo
+            # clave ya calculada arriba
+            _clave = clave if 'clave' in locals() else ""
+            msg = AlertTemplates.cimatica_consistente(patron_id, _clave or str(clave), frecuencia, nueva_ec, ambito, id_nodo)
+            AlertService().dispatch(msg, channels=["telegram", "log"])
+            try:
+                import sqlite3
+                from pathlib import Path as _P3
+                dbp3 = "sentinel_omega/data/SENTINEL_OMEGA_PRO.db"
+                if _P3(dbp3).exists():
+                    conn3 = sqlite3.connect(dbp3)
+                    cur3 = conn3.execute("SELECT patron_id, clave, frecuencia, event_class FROM tbl_cimatica_patrones WHERE frecuencia>=2 ORDER BY frecuencia DESC LIMIT 5")
+                    filas = [dict(r) for r in cur3.fetchall()]
+                    conn3.close()
+                    ch3 = cimatica_bars(filas, titulo=f"Cimatica - patron {patron_id}")
+                    if ch3 and ch3.exists():
+                        send_photo(str(ch3), caption=f"Cimatica patron {patron_id} x{frecuencia}")
+            except Exception:
+                pass
+        except Exception as _e:
+            logger.debug(f"cimatica telegram fail: {_e}")
     return (patron_id, False, frecuencia)
 
 
