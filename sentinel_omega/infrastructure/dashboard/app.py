@@ -58,12 +58,30 @@ from sentinel_omega.infrastructure.database.seed_nodos import SEED_NODOS
 
 # ── Page Config ──────────────────────────────────────────────────────
 
+
+# ── Linear Theme (popular-web-designs/linear.app) ────────────────────
+LINEAR_CSS = """
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#08090a;--panel:#0f1011;--card:#191a1b;--text:#f7f8f8;--muted:#8a8f98;--border:rgba(255,255,255,0.08);--accent:#5e6ad2;--acc2:#7170ff}
+html,body,[data-testid="stAppViewContainer"]{background:var(--bg) !important}
+[data-testid="stHeader"]{background:rgba(8,9,10,0.85) !important;backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,0.05)}
+[data-testid="stSidebar"]{background:var(--panel) !important;border-right:1px solid rgba(255,255,255,0.05)}
+h1,h2,h3{font-family:Inter,sans-serif !important;letter-spacing:-0.02em}
+.mono{font-family:JetBrains Mono,monospace}
+div[data-testid="stMetric"]{background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;padding:12px}
+div[data-testid="stTabs"] button{font-family:Inter,sans-serif !important;font-weight:500 !important}
+div[data-testid="stTabs"] button[aria-selected="true"]{color:var(--text) !important;background:rgba(255,255,255,0.05) !important}
+</style>
+"""
 st.set_page_config(
     page_title="Sentinel Omega",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+st.markdown(LINEAR_CSS, unsafe_allow_html=True)
 
 SIGNAL_COLORS = {
     "BULLISH": "#00c853",
