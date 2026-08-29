@@ -235,3 +235,16 @@ deploy/.env
 __pycache__/
 ignore
 sentinel_omega/infrastructure/database/schema_parts/_SCHEMA_PARTS_BACKUP*
+
+# Local artifacts (not for commit)
+.claude/
+.agents/
+add_test.py
+debug_test.py
+deploy/.env.bak
+deploy/sentinel-omega-watchdog.service
+estado/
+fix_*.py
+test_fetch*.py
+test_runner*.py
+test_telegram.py
