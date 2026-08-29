@@ -412,8 +412,17 @@ def render_muro():
         walls_active = 0
         is_breach = False
 
+    # Determinar fuente más reciente para sincronizar KPI y visual
+    latest_muro = breaches[0] if breaches else None
+    use_muro = False
+    if latest_muro and cycles:
+        use_muro = latest_muro.get("timestamp", 0) > cycles[0].get("timestamp", 0)
+    elif latest_muro:
+        use_muro = True
+
     c1, c2, c3 = st.columns(3)
-    c1.metric("Walls Active", f"{walls_active}/5")
+    _kpi_walls = int(latest_muro.get("walls_active", walls_active)) if (use_muro and latest_muro) else walls_active
+    c1.metric("Walls Active", f"{_kpi_walls}/5", help="Sincronizado muro↔ciclo")
     c2.metric("Breach", "YES" if is_breach else "NO")
     c3.metric("Historical Breaches", len(breaches))
 
@@ -426,10 +435,12 @@ def render_muro():
             members = WALL_MEMBERS.get(wall_name, set())
             member_names = [PRECURSOR_DISPLAY_NAMES.get(m, m.value) for m in members]
 
-            if breaches and wall_field in breaches[0]:
-                active = bool(breaches[0].get(wall_field, 0))
+            if use_muro and wall_field in latest_muro:
+                active = bool(latest_muro.get(wall_field, 0))
             elif cycles and wall_field in cycles[0]:
                 active = bool(cycles[0].get(wall_field, 0))
+            elif not use_muro and latest_muro and wall_field in latest_muro:
+                active = bool(latest_muro.get(wall_field, 0))
             else:
                 active = False
 
