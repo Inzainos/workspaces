@@ -233,3 +233,5 @@ deploy/.env
 .venv/
 *.pyc
 __pycache__/
+ignore
+sentinel_omega/infrastructure/database/schema_parts/_SCHEMA_PARTS_BACKUP*

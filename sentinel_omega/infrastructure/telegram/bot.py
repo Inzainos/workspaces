@@ -46,4 +46,7 @@ class SentinelTelegramBot:
         layers_status = " | ".join(
             f"{'✅' if v else '❌'} {k}" for k, v in status.items()
         )
+        if not self._enabled:
+            logger.info(f"[DRY RUN] Telegram Heartbeat: Layers: {layers_status}")
+            return True
         return tg.maybe_heartbeat(f"Layers: {layers_status}")

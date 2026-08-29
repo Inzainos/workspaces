@@ -974,7 +974,7 @@ class TestTelegramPrecursorFormat:
             lat=19.31, lon=-98.24,
             lugar="Tlaxcala",
         )
-        assert "ALERTA DE PRECURSOR" in msg
+        assert "SENTINEL OMEGA — PRECURSOR" in msg
         assert "Blue Jet" in msg
         assert "72h" in msg
         assert "48h" in msg
