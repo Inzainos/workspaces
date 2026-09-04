@@ -1,36 +1,36 @@
 {
-  "retrained_at": "2026-08-29T05:29:07.246047Z",
-  "db_path": "sentinel_omega/data/SENTINEL_OMEGA_PRO.db",
+  "retrained_at": "2026-09-04T05:04:30.505325Z",
+  "db_path": "data/SENTINEL_OMEGA_PRO.db",
   "bots": {
     "alfa1": {
-      "path": "/home/deamon/workspaces/sentinel_omega/models/alfa1_spaceweather_rf.onnx",
-      "n": 205,
-      "source": "db-only (205)"
+      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/alfa1_spaceweather_rf.onnx",
+      "n": 2500,
+      "source": "bootstrap-only (2500)"
     },
     "alfa2": {
-      "path": "/home/deamon/workspaces/sentinel_omega/models/alfa2_satellite_cnn.onnx",
+      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/alfa2_satellite_cnn.onnx",
       "n": 2500,
       "source": "bootstrap-only (2500)"
     },
     "beta1": {
-      "path": "/home/deamon/workspaces/sentinel_omega/models/beta1_schumann_fft.onnx",
-      "n": 899,
-      "source": "db-only (899)"
+      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/beta1_schumann_fft.onnx",
+      "n": 2500,
+      "source": "bootstrap-only (2500)"
     },
     "beta2": {
-      "path": "/home/deamon/workspaces/sentinel_omega/models/beta2_atmospheric_cnn.onnx",
-      "n": 784,
-      "source": "db-only (784)"
+      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/beta2_atmospheric_cnn.onnx",
+      "n": 2500,
+      "source": "bootstrap-only (2500)"
     },
     "delta": {
-      "path": "/home/deamon/workspaces/sentinel_omega/models/delta_financial_lstm.onnx",
-      "n": 675,
-      "source": "db-only (675)"
+      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/delta_financial_lstm.onnx",
+      "n": 2500,
+      "source": "bootstrap-only (2500)"
     },
     "omega": {
-      "path": "/home/deamon/workspaces/sentinel_omega/models/omega_espacial_rf.onnx",
-      "n": 6070,
-      "source": "db-only (6070)"
+      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/omega_espacial_rf.onnx",
+      "n": 2500,
+      "source": "bootstrap-only (2500)"
     }
   }
 }

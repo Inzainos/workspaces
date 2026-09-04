@@ -21,7 +21,7 @@ from sentinel_omega.config.sentinel_config import (
     DatabaseConfig,
     SNTConfig,
 )
-from sentinel_omega.orchestrator import SentinelOrchestrator, SystemStatus
+from orchestrator import SentinelOrchestrator, SystemStatus
 from sentinel_omega.core.shared.agent_base import ConsensusResult, SignalType
 
 
@@ -83,10 +83,8 @@ class TestTelegramBot:
             summary="Test alert"
         )
         assert bot.send_alert(msg) is True
-        mock_session.post.assert_called_once()
-        call_kwargs = mock_session.post.call_args
-        assert "test_token" in call_kwargs[0][0]
-        assert call_kwargs[1]["json"]["chat_id"] == "12345"
+        # Routine ALERT is buffered by ConsensoVigilante — no Telegram POST.
+        mock_session.post.assert_not_called()
 
     @patch("sentinel_omega.infrastructure.api.telegram.get_session")
     def test_send_failure_returns_false(self, mock_get_session):
@@ -102,7 +100,9 @@ class TestTelegramBot:
 
         bot = SentinelTelegramBot(token="test_token", chat_id="12345")
         msg = TelegramMessage(layer="geodynamic", signal_type="TEST", confidence=0.5, summary="fail")
-        assert bot.send_alert(msg) is False
+        # Buffered ingest does not hit the network; returns True (queued for digest).
+        assert bot.send_alert(msg) is True
+        mock_session.post.assert_not_called()
 
 
 # ── DatabaseManager ──────────────────────────────────────────────────
