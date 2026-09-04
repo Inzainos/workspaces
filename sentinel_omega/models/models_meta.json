@@ -1,7 +1,36 @@
 {
-  "version": "1.1.0",
-  "protocol": "physics-informed RF MultiOutputRegressor -> ONNX + juez feedback",
-  "output": "[confidence, signal_idx]",
-  "bots": ["alfa1", "alfa2", "beta1", "beta2", "delta", "omega"],
-  "note": "Run train_onnx_bootstrap.py or train_onnx_from_db.py to generate .onnx files"
+  "retrained_at": "2026-09-04T05:04:30.505325Z",
+  "db_path": "data/SENTINEL_OMEGA_PRO.db",
+  "bots": {
+    "alfa1": {
+      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/alfa1_spaceweather_rf.onnx",
+      "n": 2500,
+      "source": "bootstrap-only (2500)"
+    },
+    "alfa2": {
+      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/alfa2_satellite_cnn.onnx",
+      "n": 2500,
+      "source": "bootstrap-only (2500)"
+    },
+    "beta1": {
+      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/beta1_schumann_fft.onnx",
+      "n": 2500,
+      "source": "bootstrap-only (2500)"
+    },
+    "beta2": {
+      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/beta2_atmospheric_cnn.onnx",
+      "n": 2500,
+      "source": "bootstrap-only (2500)"
+    },
+    "delta": {
+      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/delta_financial_lstm.onnx",
+      "n": 2500,
+      "source": "bootstrap-only (2500)"
+    },
+    "omega": {
+      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/omega_espacial_rf.onnx",
+      "n": 2500,
+      "source": "bootstrap-only (2500)"
+    }
+  }
 }

@@ -90,6 +90,11 @@ class SentinelOrchestrator:
                 logger.error(f"Cycle failed: {e}", exc_info=True)
 
         self._analyze_results(results)
+        try:
+            from sentinel_omega.infrastructure.messaging.consenso_vigilante import get_vigilante
+            get_vigilante().maybe_flush()
+        except Exception as _exc:
+            logger.debug("consenso digest flush: %s", _exc)
         return results
 
     def _analyze_results(self, results: Dict[str, ConsensusResult]) -> None:
@@ -115,7 +120,7 @@ class SentinelOrchestrator:
                 getattr(d.tipo, "value", str(d.tipo)) for d in detections
             ]
             for detection in detections:
-                if getattr(detection, "confidence", 0) >= 0.7:
+                if getattr(detection, "confidence", 0) >= 0.5:  # ampliado 0.5
                     details = ", ".join(
                         f"{k}={v}" for k, v in (detection.values or {}).items()
                     )
@@ -128,11 +133,44 @@ class SentinelOrchestrator:
                         lon=getattr(detection, "lon", None),
                         lugar=getattr(detection, "station", None),
                     )
-                    if send_alert_gated(
-                        alert_msg,
-                        f"PREC_{getattr(detection.tipo, 'value', 'X')}",
-                    ):
+                    try:
+                        descripciones = {
+                            "schumann": "Schumann alterada - latido Tierra cambia. Precede sismos/volcanes 3-14 dias.",
+                            "sismo_cluster": "Enjambre sismico - agrupacion anomala. Ventana 14 dias.",
+                        }
+                        tipo_key = getattr(detection.tipo, "value", str(detection.tipo)).lower()
+                        desc = descripciones.get(tipo_key, "")
+                        if desc:
+                            alert_msg = alert_msg.replace("</i>", f"<br><br><i>{desc}</i>", 1) if "</i>" in alert_msg else alert_msg + f"<br><i>{desc}</i>"
+                    except Exception:
+                        pass
+                    try:
+                        from sentinel_omega.infrastructure.messaging.alert_service import (
+                            AlertService, AlertTemplates,
+                        )
+                        _msg = AlertTemplates.precursor(
+                            precursor_type=getattr(detection.tipo, "value", str(detection.tipo)),
+                            display_name=detection.display_name,
+                            value=detection.confidence,
+                            details=details,
+                            lat=getattr(detection, "lat", None),
+                            lon=getattr(detection, "lon", None),
+                            lugar=getattr(detection, "station", None),
+                        )
+                        AlertService().dispatch(
+                            _msg,
+                            channels=["telegram", "log"],
+                            extra={
+                                "tipo": getattr(detection.tipo, "value", str(detection.tipo)),
+                                "display_name": detection.display_name,
+                                "confidence": detection.confidence,
+                                "zona": getattr(detection, "station", None),
+                            },
+                        )
                         self._status.alerts_dispatched += 1
+                    except Exception as _e:
+                        logger.debug("precursor ingest failed: %s", _e)
+                    # Fotos por ciclo desactivadas (ruido). Van en el digest / Mini App.
 
         muro_msg = None
         if self._runner and getattr(self._runner, "last_muro", None):

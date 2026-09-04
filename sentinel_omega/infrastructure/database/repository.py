@@ -22,14 +22,51 @@ class SentinelRepository:
 
     def __init__(self, db_path: Optional[str] = None):
         self._db_path = db_path
-        self._conn = get_connection(db_path)
+        self._conn = None
+        # Cache column names per table (thread-safe dict)
+        self._cols_cache: Dict[str, List[str]] = {}
+
+    @property
+    def _conn_safe(self) -> sqlite3.Connection:
+        """Thread-safe connection: read-only fast path, no DDL."""
+        import threading
+        if not hasattr(self, "_tls"):
+            import threading as _th
+            self._tls = _th.local()
+        if hasattr(self._tls, "conn") and self._tls.conn is not None:
+            return self._tls.conn
+        from pathlib import Path as _P
+        # __file__ = sentinel_omega/infrastructure/database/repository.py
+        # Need to go up 4 levels: database -> infrastructure -> sentinel_omega -> workspace -> data/
+        db = self._db_path or str(_P(__file__).parent.parent.parent.parent / "data" / "SENTINEL_OMEGA_PRO.db")
+        # Direct connect without init_database (evita database is locked en dashboard)
+        # WAL + busy_timeout para concurrencia con launcher
+        conn = sqlite3.connect(str(db), timeout=30.0, check_same_thread=False, isolation_level=None)
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA cache_size=-8000")
+            conn.row_factory = sqlite3.Row
+        except Exception:
+            pass
+        self._tls.conn = conn
+        return conn
 
     def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
-        return self._conn.execute(sql, params)
+        # Try thread-safe conn first
+        try:
+            return self._conn_safe.execute(sql, params)
+        except Exception:
+            # Fallback to legacy _conn if exists
+            if self._conn is not None:
+                return self._conn_safe.execute(sql, params)
+            raise
 
     def _executemany(self, sql: str, params_list: List[tuple]) -> None:
-        self._conn.executemany(sql, params_list)
-        self._conn.commit()
+        conn = self._conn_safe
+        conn.executemany(sql, params_list)
+        conn.commit()
 
     # ── Precursores Cósmicos ──────────────────────────────────────
 
@@ -59,7 +96,7 @@ class SentinelRepository:
              schumann_hz, schumann_activity, fase_lunar,
              presion_hpa, fantasma, nivel_riesgo),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
         return cur.lastrowid
 
     def get_precursores_cosmicos(
@@ -116,7 +153,7 @@ class SentinelRepository:
             (node_id, nombre, lat, lon, tipo, conductividad,
              energia, saturacion, region),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
 
     def bulk_upsert_nodos(self, nodos: List[Dict]) -> int:
         self._executemany(
@@ -153,7 +190,7 @@ class SentinelRepository:
             WHERE node_id = ?""",
             (energia, saturacion, node_id),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
 
     # ── Histórico Sísmico ─────────────────────────────────────────
 
@@ -177,7 +214,7 @@ class SentinelRepository:
             (event_id, timestamp, lat, lon, depth_km, magnitude,
              mag_type, region, source),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
 
     def bulk_insert_sismos(self, sismos: List[Dict]) -> int:
         before = self._execute(
@@ -252,7 +289,7 @@ class SentinelRepository:
             (ts, cycle_id, tipo, display_name, station, lat, lon,
              confidence, json.dumps(values or {}), wall_name),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
         return cur.lastrowid
 
     def get_detecciones(
@@ -304,7 +341,7 @@ class SentinelRepository:
              fantasma, nivel_riesgo, precursors_count, types_json,
              muro_walls_active, int(muro_breach), alerts_dispatched),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
         return cur.lastrowid
 
     def get_ciclos(self, limit: int = 50) -> List[Dict]:
@@ -344,7 +381,7 @@ class SentinelRepository:
              int(wall_states.get("FINANCIERO/SOCIAL", False)),
              json.dumps(active_types)),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
         return cur.lastrowid
 
     def get_muro_breaches(self, limit: int = 50) -> List[Dict]:
@@ -373,6 +410,35 @@ class SentinelRepository:
         return result
 
     # ── Analytics ─────────────────────────────────────────────────
+
+    def cimatica_top_patrones(self, limit: int = 20) -> "List[Dict]":
+        """Top patrones por frecuencia (dashboard cimatica)."""
+        try:
+            cur = self.conn.execute(
+                "SELECT patron_id, clave, frecuencia, event_class, ambito, id_nodo, primera_vez, ultima_vez "
+                "FROM tbl_cimatica_patrones ORDER BY frecuencia DESC, ultima_vez DESC LIMIT ?", (limit,)
+            )
+            return [dict(r) for r in cur.fetchall()]
+        except Exception:
+            return []
+
+    def cimatica_stats(self) -> "Dict[str, Any]":
+        """Resumen cimatica."""
+        try:
+            total = self.conn.execute("SELECT COUNT(*) FROM tbl_cimatica_patrones").fetchone()[0]
+            consistentes = self.conn.execute("SELECT COUNT(*) FROM tbl_cimatica_patrones WHERE frecuencia>=3").fetchone()[0]
+            por_clase = self.conn.execute("SELECT event_class, COUNT(*) as n FROM tbl_cimatica_patrones GROUP BY event_class ORDER BY n DESC LIMIT 10").fetchall()
+            return {"total": total, "consistentes": consistentes, "por_clase": [dict(r) for r in por_clase]}
+        except Exception:
+            return {"total": 0, "consistentes": 0, "por_clase": []}
+
+    def fantasma_timeline(self, limit: int = 50) -> "List[Dict]":
+        """Historial fantasma para timeline."""
+        try:
+            cur = self.conn.execute("SELECT ts, fantasma, nivel FROM tbl_salud_sistema ORDER BY ts DESC LIMIT ?", (limit,))
+            return [dict(r) for r in cur.fetchall()]
+        except Exception:
+            return []
 
     def fantasma_component_breakdown(self, limit: int = 50) -> List[Dict]:
         rows = self._execute(
@@ -551,7 +617,7 @@ class SentinelRepository:
             (timestamp_blk, zona, coverage_score, thermal_anomalies,
              clear_passes, total_passes, revisit_days),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
 
     def insert_delta_cross(
         self,
@@ -581,7 +647,7 @@ class SentinelRepository:
              regime_label, confidence, data_completeness,
              geo_kp_max_3d, geo_storm_active, geo_schumann_deviation),
         )
-        self._conn.commit()
+        self._conn_safe.commit()
 
     # ── Helpers ───────────────────────────────────────────────────
 
@@ -590,4 +656,15 @@ class SentinelRepository:
         return [row[1] for row in cur.fetchall()]
 
     def close(self) -> None:
-        self._conn.close()
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
+        if hasattr(self, "_tls") and hasattr(self._tls, "conn") and self._tls.conn is not None:
+            try:
+                self._tls.conn.close()
+            except Exception:
+                pass
+            self._tls.conn = None

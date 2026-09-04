@@ -16,6 +16,12 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 
+# Ensure workspace root is importable (like launcher.py) - fixes ModuleNotFoundError
+import sys
+_WORKSPACE_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+if str(_WORKSPACE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_WORKSPACE_ROOT))
+
 from sentinel_omega.config.sentinel_config import SentinelOmegaConfig
 from sentinel_omega.core.snt_engine.satellization import SatellizationEngine, DominanceRegime
 from sentinel_omega.core.snt_engine.friction import InstitutionalFrictionCalculator, FrictionLevel
@@ -41,16 +47,41 @@ from sentinel_omega.core.precursor.muro_cinco_eventos import (
 )
 from sentinel_omega.infrastructure.database.schema import get_connection
 from sentinel_omega.infrastructure.database.repository import SentinelRepository
+try:
+    from sentinel_omega.infrastructure.dashboard.agent_tab import render_agent_tab
+    HAS_AGENT_TAB = True
+except Exception:
+    HAS_AGENT_TAB = False
+    def render_agent_tab():
+        st.error("agent_tab no disponible")
 from sentinel_omega.infrastructure.database.seed_nodos import SEED_NODOS
 
 # ── Page Config ──────────────────────────────────────────────────────
 
+
+# ── Linear Theme (popular-web-designs/linear.app) ────────────────────
+LINEAR_CSS = """
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#08090a;--panel:#0f1011;--card:#191a1b;--text:#f7f8f8;--muted:#8a8f98;--border:rgba(255,255,255,0.08);--accent:#5e6ad2;--acc2:#7170ff}
+html,body,[data-testid="stAppViewContainer"]{background:var(--bg) !important}
+[data-testid="stHeader"]{background:rgba(8,9,10,0.85) !important;backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,0.05)}
+[data-testid="stSidebar"]{background:var(--panel) !important;border-right:1px solid rgba(255,255,255,0.05)}
+h1,h2,h3{font-family:Inter,sans-serif !important;letter-spacing:-0.02em}
+.mono{font-family:JetBrains Mono,monospace}
+div[data-testid="stMetric"]{background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;padding:12px}
+div[data-testid="stTabs"] button{font-family:Inter,sans-serif !important;font-weight:500 !important}
+div[data-testid="stTabs"] button[aria-selected="true"]{color:var(--text) !important;background:rgba(255,255,255,0.05) !important}
+</style>
+"""
 st.set_page_config(
     page_title="Sentinel Omega",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+st.markdown(LINEAR_CSS, unsafe_allow_html=True)
 
 SIGNAL_COLORS = {
     "BULLISH": "#00c853",
@@ -362,6 +393,25 @@ def _render_fantasma_demo():
 # TAB 2: Muro de los 5 Eventos
 # ══════════════════════════════════════════════════════════════════════
 
+    st.divider()
+    st.markdown("**Timeline Fantasma + Alertas (v2.5.3)**")
+    try:
+        _render_fantasma_timeline_plotly(get_repo())
+    except Exception as _e:
+        st.caption(f"Timeline no disponible: {_e}")
+    if st.button("Vista previa alerta Telegram (ejemplo)", key="preview_alert"):
+        try:
+            from sentinel_omega.infrastructure.messaging.alert_service import AlertTemplates
+            m = AlertTemplates.centinela_advertencia(18.5, -2.1, 520.0)
+            st.markdown(m.html, unsafe_allow_html=True)
+            st.code(m.plain)
+            from sentinel_omega.infrastructure.messaging.charts import fantasma_timeline
+            ch = fantasma_timeline([5,8,12,18.5], titulo="Fantasma - preview")
+            if ch and ch.exists():
+                st.image(str(ch), caption="PNG como se enviaria a Telegram")
+        except Exception as _e:
+            st.error(str(_e))
+
 def render_muro():
     st.subheader("Muro de los 5 Eventos — Cross-Correlation Engine")
 
@@ -380,8 +430,17 @@ def render_muro():
         walls_active = 0
         is_breach = False
 
+    # Determinar fuente más reciente para sincronizar KPI y visual
+    latest_muro = breaches[0] if breaches else None
+    use_muro = False
+    if latest_muro and cycles:
+        use_muro = latest_muro.get("timestamp", 0) > cycles[0].get("timestamp", 0)
+    elif latest_muro:
+        use_muro = True
+
     c1, c2, c3 = st.columns(3)
-    c1.metric("Walls Active", f"{walls_active}/5")
+    _kpi_walls = int(latest_muro.get("walls_active", walls_active)) if (use_muro and latest_muro) else walls_active
+    c1.metric("Walls Active", f"{_kpi_walls}/5", help="Sincronizado muro↔ciclo")
     c2.metric("Breach", "YES" if is_breach else "NO")
     c3.metric("Historical Breaches", len(breaches))
 
@@ -394,10 +453,12 @@ def render_muro():
             members = WALL_MEMBERS.get(wall_name, set())
             member_names = [PRECURSOR_DISPLAY_NAMES.get(m, m.value) for m in members]
 
-            if breaches and wall_field in breaches[0]:
-                active = bool(breaches[0].get(wall_field, 0))
+            if use_muro and wall_field in latest_muro:
+                active = bool(latest_muro.get(wall_field, 0))
             elif cycles and wall_field in cycles[0]:
                 active = bool(cycles[0].get(wall_field, 0))
+            elif not use_muro and latest_muro and wall_field in latest_muro:
+                active = bool(latest_muro.get(wall_field, 0))
             else:
                 active = False
 
@@ -656,6 +717,63 @@ def _render_precursor_types_reference():
 # ══════════════════════════════════════════════════════════════════════
 # TAB 4: Topología 125 Nodos
 # ══════════════════════════════════════════════════════════════════════
+
+
+def render_cimatica():
+    st.subheader("Cimatica - Patrones destilados por eventos")
+    repo = get_repo()
+    stats = repo.cimatica_stats()
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total patrones", stats.get("total", 0))
+    col2.metric("Consistentes (x3+)", stats.get("consistentes", 0))
+    col3.metric("Clases distintas", len(stats.get("por_clase", [])))
+    patrones = repo.cimatica_top_patrones(limit=20)
+    if not patrones:
+        st.info("Sin patrones aun. Correr ciclos y entrenar_cimatica() para poblar.")
+        st.markdown("- Cada ciclo toma snapshot en tbl_cimatica_patrones")
+        return
+    df = pd.DataFrame(patrones)
+    df["label"] = df["patron_id"].astype(str) + " (" + df["event_class"].fillna("sin clase") + ")"
+    fig = px.bar(df.head(10), x="label", y="frecuencia", color="event_class", title="Top 10 patrones por frecuencia", template="plotly_dark", color_discrete_sequence=px.colors.qualitative.Dark24)
+    fig.update_layout(height=350, xaxis_title="Patron", yaxis_title="Frecuencia")
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown("**Tabla (20 mas frecuentes)**")
+    show = df[["patron_id", "clave", "frecuencia", "event_class", "ambito", "id_nodo", "ultima_vez"]].copy()
+    show["clave"] = show["clave"].str.slice(0, 48)
+    st.dataframe(show, use_container_width=True, height=320)
+    if stats.get("por_clase"):
+        dfc = pd.DataFrame(stats["por_clase"])
+        dfc["event_class"] = dfc["event_class"].fillna("(sin clase)")
+        fig2 = px.pie(dfc, names="event_class", values="n", title="Distribucion por clase", template="plotly_dark")
+        fig2.update_layout(height=300)
+        st.plotly_chart(fig2, use_container_width=True)
+    if st.button("Generar PNG cimatica (como Telegram)"):
+        try:
+            from sentinel_omega.infrastructure.messaging.charts import cimatica_bars
+            ch = cimatica_bars(patrones[:10], titulo="Cimatica - Top 10")
+            if ch and ch.exists():
+                st.image(str(ch), caption=f"PNG {ch.stat().st_size} bytes")
+                st.success(f"PNG: {ch}")
+            else:
+                st.warning("No PNG")
+        except Exception as e:
+            st.error(str(e))
+def _render_fantasma_timeline_plotly(repo):
+    hist = repo.fantasma_timeline(limit=50)
+    if not hist:
+        st.info("Sin historial fantasma")
+        return
+    df = pd.DataFrame(hist).sort_values("ts")
+    fig = go.Figure()
+    fig.add_hrect(y0=0, y1=15, fillcolor="rgba(0,200,0,0.08)", line_width=0)
+    fig.add_hrect(y0=15, y1=30, fillcolor="rgba(255,200,0,0.12)", line_width=0)
+    fig.add_hrect(y0=30, y1=100, fillcolor="rgba(255,0,0,0.10)", line_width=0)
+    fig.add_trace(go.Scatter(x=df["ts"], y=df["fantasma"], mode="lines+markers", line=dict(color="#00d4ff", width=2), marker=dict(size=4), name="Fantasma"))
+    fig.add_hline(y=15, line_dash="dash", line_color="orange", annotation_text="AMARILLO 15")
+    fig.add_hline(y=30, line_dash="dash", line_color="red", annotation_text="ROJO 30")
+    fig.update_layout(height=320, template="plotly_dark", title="Timeline Fantasma (50 ciclos)")
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(df.tail(10).sort_values("ts", ascending=False), use_container_width=True, height=220)
 
 def render_topology():
     st.subheader("Topología N-Body — 125 Nodos")
@@ -1445,6 +1563,8 @@ def main():
         "📡 Layer Signals",
         "📐 SNT Analysis",
         "📋 Ciclos",
+        "🌀 Cimatica",
+        "🤖 Agente",
     ])
 
     with tabs[0]:
@@ -1477,11 +1597,21 @@ def main():
         render_layer_signals(signals)
 
     with tabs[7]:
+        st.info("SNT Analysis — valores de ejemplo (DEMO). No es teletria satelital real.")
         snt_results = generate_demo_satellization()
         render_satellization_analysis(snt_results)
 
     with tabs[8]:
         render_cycle_history()
+
+    with tabs[9]:
+        render_cimatica()
+
+    with tabs[10]:
+        if HAS_AGENT_TAB:
+            render_agent_tab()
+        else:
+            st.error("Pestaña Agente no disponible")
 
 
 if __name__ == "__main__":

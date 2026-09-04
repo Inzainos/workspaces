@@ -8,12 +8,14 @@ from typing import Optional
 
 import pandas as pd
 from sentinel_omega.infrastructure.api._http import get_session
+from sentinel_omega.infrastructure.api.circuit_breaker import circuit
 
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 15
 
 
+@circuit("usgs")
 def fetch_earthquakes(
     min_magnitude: float = 4.5,
     days: int = 30,
