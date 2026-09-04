@@ -1,29 +1,29 @@
 # 🗓️ Reporte mensual — Sentinel Omega
-*Generado 2026-07-31 14:00 hora MX — ventana 31 días*
+*Generado 2026-08-31 16:57 hora MX — ventana 31 días*
 
 ## Resumen
-- Ciclos corridos: **333**
-- Fantasma medio del periodo: **10.4**
-- Fantasma máximo: **25.4**
-- Breaches del Muro: **50**
-- Asertividad viva del periodo: **43%** (n=5107 resueltas)
+- Ciclos corridos: **306**
+- Fantasma medio del periodo: **9.2**
+- Fantasma máximo: **27.5**
+- Breaches del Muro: **70**
+- Asertividad viva del periodo: **19%** (n=416 resueltas)
 
 ## Cimática
-- Patrones `general`: 115 (frecuencia máx 6)
-- Patrones `nodo`: 326 (frecuencia máx 12)
+- Patrones `general`: 291 (frecuencia máx 10)
+- Patrones `nodo`: 817 (frecuencia máx 12)
 
 | Patrón | Ámbito | Evento asociado | Frecuencia |
 |---|---|---|---:|
 | 163 | nodo 14 | SISMO_M6 | 12 |
 | 313 | nodo 14 | SISMO_M6 | 11 |
-| 335 | nodo 14 | SISMO_M5 | 7 |
-| 152 | nodo 14 | SISMO_M6 | 6 |
-| 162 | general | SISMO_M6 | 6 |
-| 167 | nodo 14 | SISMO_M5 | 6 |
-| 220 | nodo 14 | SISMO_M5 | 6 |
-| 311 | general | SISMO_M5 | 6 |
-| 178 | nodo 14 | SISMO_M5 | 5 |
-| 183 | nodo 14 | SISMO_M5 | 5 |
+| 800 | general | SISMO_M5 | 10 |
+| 801 | nodo 48 | SISMO_M5 | 9 |
+| 451 | general | SISMO_M6 | 8 |
+| 452 | nodo 35 | SISMO_M6 | 8 |
+| 456 | nodo 14 | SISMO_M6 | 8 |
+| 635 | nodo 14 | SISMO_M5 | 8 |
+| 973 | nodo 14 | SISMO_M5 | 8 |
+| 985 | nodo 14 | SISMO_M5 | 8 |
 
 ![Fantasma medio diario](graficas/mensual_fantasma.png)
 ![Alertas por día](graficas/mensual_alertas.png)
