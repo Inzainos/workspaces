@@ -11,6 +11,10 @@ Credenciales SOLO por entorno (nunca hardcode):
   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
   TELEGRAM_COOLDOWN_S (opcional, default 1800)
   TELEGRAM_HEARTBEAT_S (opcional, default 14400 = 4 h)
+
+NUEVA ARQUITECTURA: Sentinel escribe a cola JSON compartida.
+Consensus Bot (telegram_bot.py) lee la cola y envía a Telegram.
+Un solo bot token, un solo chat_id, mensajería centralizada.
 """
 
 from __future__ import annotations
@@ -20,6 +24,39 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
+
+# Import alert queue from consensus-expert-agent
+import sys
+from pathlib import Path
+
+# Try multiple possible locations for consensus-expert-agent
+CONSENSUS_PATHS = [
+    Path("/home/deamon/consensus-expert-agent"),  # Standard location
+    Path(os.environ.get("CONSENSUS_EXPERT_AGENT_ROOT", "")) if os.environ.get("CONSENSUS_EXPERT_AGENT_ROOT") else None,
+    Path(os.environ.get("SENTINEL_OMEGA_ROOT", "/home/deamon/workspaces/sentinel_omega")).parent / "consensus-expert-agent",
+]
+
+ALERT_QUEUE_AVAILABLE = False
+for p in CONSENSUS_PATHS:
+    if p and p.exists() and str(p) not in sys.path:
+        sys.path.insert(0, str(p))
+        try:
+            from alert_queue import (
+                alert_queue, Alert, AlertPriority,
+                queue_alert, queue_critical, queue_warning, queue_info,
+                queue_heartbeat, queue_system
+            )
+            ALERT_QUEUE_AVAILABLE = True
+            break
+        except ImportError:
+            continue
+        finally:
+            if str(p) in sys.path:
+                sys.path.remove(str(p))
+
+if not ALERT_QUEUE_AVAILABLE:
+    logger = logging.getLogger(__name__)
+    logger.warning("Alert queue not available, falling back to direct send")
 
 from sentinel_omega.infrastructure.api._http import get_session
 
@@ -76,8 +113,16 @@ def _get_credentials() -> Optional[Tuple[str, str]]:
     return token, chat_id
 
 
-def send_alert(message: str, parse_mode: str = "HTML") -> bool:
-    """Envío directo (sin gate). Preferir send_alert_gated en ciclos."""
+def send_alert(message: str, parse_mode: str = "HTML", reply_markup: Optional[dict] = None) -> bool:
+    """Envío directo (sin gate). Preferir send_alert_gated en ciclos.
+    
+    NUEVO: Si alert queue está disponible, escribe a cola en lugar de enviar directo.
+    """
+    if ALERT_QUEUE_AVAILABLE:
+        queue_alert("Direct Alert", message, AlertPriority.MEDIUM, parse_mode)
+        return True
+    
+    # Fallback: envío directo legacy
     creds = _get_credentials()
     if not creds:
         return False
@@ -92,6 +137,8 @@ def send_alert(message: str, parse_mode: str = "HTML") -> bool:
         "parse_mode": parse_mode,
         "disable_web_page_preview": True,
     }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     try:
         resp = get_session().post(url, json=payload, timeout=TIMEOUT)
         resp.raise_for_status()
@@ -107,13 +154,59 @@ def send_alert_gated(
     alert_type: str,
     parse_mode: str = "HTML",
     cooldown: int = COOLDOWN_S,
+    reply_markup: Optional[dict] = None,
 ) -> bool:
     """Envía solo si el gate anti-spam lo permite."""
     if not _GATE.allow(alert_type, cooldown=cooldown):
         logger.debug(f"Telegram gated skip: {alert_type}")
         return False
-    return send_alert(message, parse_mode=parse_mode)
+    return send_alert(message, parse_mode=parse_mode, reply_markup=reply_markup)
 
+
+
+
+def send_photo(photo_path: str, caption: str = "", parse_mode: str = "HTML") -> bool:
+    if os.environ.get("SENTINEL_DRY_RUN", "").lower() in ("1", "true", "yes"):
+        logger.info("[DRY_RUN] Telegram photo skipped: %s", photo_path)
+        return True
+    """Envia una foto con caption a Telegram. photo_path debe ser archivo local."""
+    creds = _get_credentials()
+    if not creds:
+        return False
+    token, chat_id = creds
+    url = f"{TELEGRAM_API}/bot{token}/sendPhoto"
+    if len(caption) > 1000:
+        caption = caption[:998] + "…"
+    try:
+        with open(photo_path, "rb") as f:
+            files = {"photo": f}
+            data = {"chat_id": chat_id, "caption": caption, "parse_mode": parse_mode}
+            resp = get_session().post(url, data=data, files=files, timeout=TIMEOUT + 10)
+            resp.raise_for_status()
+            logger.info(f"Telegram photo sent: {photo_path}")
+            return True
+    except Exception as e:
+        logger.error(f"Telegram photo failed: {e}")
+        return False
+
+
+def send_document(doc_path: str, caption: str = "") -> bool:
+    creds = _get_credentials()
+    if not creds:
+        return False
+    token, chat_id = creds
+    url = f"{TELEGRAM_API}/bot{token}/sendDocument"
+    try:
+        with open(doc_path, "rb") as f:
+            files = {"document": f}
+            data = {"chat_id": chat_id, "caption": caption[:1000] if caption else ""}
+            resp = get_session().post(url, data=data, files=files, timeout=TIMEOUT + 10)
+            resp.raise_for_status()
+            logger.info(f"Telegram document sent: {doc_path}")
+            return True
+    except Exception as e:
+        logger.error(f"Telegram document failed: {e}")
+        return False
 
 def notify_online() -> bool:
     return send_alert(
@@ -124,11 +217,16 @@ def notify_online() -> bool:
 def notify_system_dead(minutes: float) -> bool:
     if _GATE.system_dead_alerted:
         return False
-    ok = send_alert(
-        f"💀 <b>FALLO DE CICLO PRINCIPAL</b>\n\n"
-        f"Sin datos recientes (~{int(minutes)} min).\n"
-        f"Revisar launcher / orchestrator."
-    )
+    try:
+        from sentinel_omega.infrastructure.messaging.alert_service import AlertService, AlertTemplates
+        out = AlertService().dispatch(AlertTemplates.sistema_dead(minutes), channels=["telegram", "log"])
+        ok = bool(out.get("telegram"))
+    except Exception:
+        ok = send_alert(
+            f"💀 <b>FALLO DE CICLO PRINCIPAL</b>\n\n"
+            f"Sin datos recientes (~{int(minutes)} min).\n"
+            f"Revisar launcher / orchestrator."
+        )
     if ok:
         _GATE.system_dead_alerted = True
     return ok
@@ -146,15 +244,24 @@ def notify_system_restored() -> bool:
 
 
 def maybe_heartbeat(status_line: str) -> bool:
-    if not _GATE.heartbeat_due():
+    """Legacy 4h ping — now ingested as HEARTBEAT (hourly digest covers this)."""
+    try:
+        from sentinel_omega.infrastructure.messaging.alert_service import AlertService, AlertTemplates
+        out = AlertService().dispatch(AlertTemplates.heartbeat(status_line), channels=["telegram", "log"])
+        if out.get("telegram"):
+            _GATE.mark_heartbeat()
+            return True
         return False
-    ok = send_alert(
-        f"💓 <b>REPORTE DE ESTADO</b>\n{status_line}\n"
-        f"<i>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC</i>"
-    )
-    if ok:
-        _GATE.mark_heartbeat()
-    return ok
+    except Exception:
+        if not _GATE.heartbeat_due():
+            return False
+        ok = send_alert(
+            f"💓 <b>REPORTE DE ESTADO</b>\n{status_line}\n"
+            f"<i>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC</i>"
+        )
+        if ok:
+            _GATE.mark_heartbeat()
+        return ok
 
 
 def format_geodynamic_alert(signal_type: str, confidence: float, details: str) -> str:
@@ -316,13 +423,37 @@ def dispatch_cycle_alerts(
     """
     sent = 0
     meta = metadata or {}
+    try:
+        from sentinel_omega.infrastructure.messaging.alert_service import (
+            AlertService, FormattedMessage, Severity,
+        )
+        svc = AlertService()
+    except Exception:
+        svc = None
+
+    def _ingest(html: str, atype: str, sev: "Severity", extra=None) -> None:
+        nonlocal sent
+        if svc is None:
+            # last-resort: still do not fire raw unless dry-run is off AND no vigilante
+            from sentinel_omega.infrastructure.messaging.consenso_vigilante import get_vigilante
+            from sentinel_omega.infrastructure.messaging.alert_service import FormattedMessage, Severity as _S
+            get_vigilante().ingest(FormattedMessage(html=html, markdown=html, plain=html, subject=atype, severity=_S.AZUL, alert_type=atype), extra=extra)
+            sent += 1
+            return
+        msg = FormattedMessage(
+            html=html, markdown=html, plain=html,
+            subject=f"[SENTINEL] {atype}", severity=sev, alert_type=atype,
+        )
+        svc.dispatch(msg, channels=["telegram", "log"], extra=extra)
+        sent += 1
 
     if fantasma is not None and bz is not None and wind is not None:
         threat = format_centinela_threat(fantasma, bz, wind, schumann)
         if threat:
             atype, html = threat
-            if send_alert_gated(html, atype):
-                sent += 1
+            sev = Severity.ROJO if atype in ("CRITICO", "GRIETA") else Severity.AMARILLO
+            # Routine centinela watches go to the hourly digest (not a page).
+            _ingest(html, atype, sev)
 
     if consensus_signal and consensus_signal.lower() in ("alert", "watch"):
         msg = format_consensus_alert(
@@ -333,20 +464,17 @@ def dispatch_cycle_alerts(
             dual_ask=meta.get("dual_ask"),
             omega_voto=meta.get("omega_voto"),
         )
-        if send_alert_gated(msg, f"CONSENSUS_{consensus_signal.upper()}"):
-            sent += 1
+        _ingest(msg, f"CONSENSUS_{consensus_signal.upper()}", Severity.AMARILLO)
 
     omega_msg = format_omega_dual_ask(meta)
     if omega_msg and meta.get("dual_ask"):
-        if send_alert_gated(omega_msg, "OMEGA_DUAL"):
-            sent += 1
+        _ingest(omega_msg, "OMEGA_DUAL", Severity.AZUL)
 
     if elevated_risk_msg:
-        if send_alert_gated(elevated_risk_msg, "RISK_ELEVATED"):
-            sent += 1
+        _ingest(elevated_risk_msg, "RISK_ELEVATED", Severity.AMARILLO)
 
     if muro_msg:
-        if send_alert_gated(muro_msg, "MURO_BREACH", cooldown=max(900, COOLDOWN_S // 2)):
-            sent += 1
+        extra = {"muro_tipo": "MURO_BREACH"}
+        _ingest(muro_msg, "MURO_BREACH", Severity.AMARILLO, extra=extra)
 
     return sent

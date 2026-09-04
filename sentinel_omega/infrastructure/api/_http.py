@@ -17,9 +17,13 @@ The session is module-level so it is reused across calls within the same
 process, sharing the underlying TCP connection pool.
 """
 
+import logging
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log
+
+logger = logging.getLogger(__name__)
 
 # Retry on these HTTP status codes (transient server / rate-limit errors).
 _RETRY_STATUSES = frozenset([429, 500, 502, 503, 504])
@@ -45,3 +49,9 @@ def get_session() -> requests.Session:
         _session.mount("https://", adapter)
         _session.mount("http://", adapter)
     return _session
+
+retry_api = retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10), retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout)), before_sleep=before_sleep_log(logger, logging.WARNING), reraise=True)
+def fetch_with_retry(fn, *a, **kw):
+    @retry_api
+    def _inner(): return fn(*a, **kw)
+    return _inner()

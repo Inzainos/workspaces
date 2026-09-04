@@ -95,6 +95,11 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+# Make `python3 topologia_cascada.py` work from any cwd (same as dashboard).
+_WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
+if str(_WORKSPACE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_WORKSPACE_ROOT))
+
 # ── Logging: consola + archivo ─────────────────────────────────────
 LOG_DIR = Path(__file__).parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -112,7 +117,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 YEAR_INI = 1994
-YEAR_END = 2025
+YEAR_END = 2026
 MIN_MAGNITUD_USGS = 4.5
 
 
@@ -536,8 +541,8 @@ def main() -> None:
         logger.info("--- Paso 4: marcar auditoria pre-fix ---")
         marcar_auditoria_pre_fix(conn, sufijo, args.dry_run)
 
-        logger.info("--- Paso 5: relanzar entrenamiento completo ---")
-        relanzar_entrenamiento(args.db_path, args.dry_run)
+        logger.info("--- Paso 5: entrenamiento OMITIDO (verificar fuente primero) ---")
+        # relanzar_entrenamiento(args.db_path, args.dry_run)
 
         registrar_corrida(conn, version, stats, args.dry_run)
 

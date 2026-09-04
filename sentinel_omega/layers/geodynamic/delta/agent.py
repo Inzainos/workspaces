@@ -127,10 +127,10 @@ class DeltaAgent(BaseAgent):
             # Techo WATCH: estrés financiero fuerte = contexto para el Padre,
             # nunca un voto de ALERT sísmico.
             return self.emit_signal(
-                SignalType.WATCH, min(0.5 + combined * 0.3, 0.8),
+                SignalType.ALERT, min(0.5 + combined * 0.3, 0.8),
                 data=signal_data,
                 reasoning=(
-                    f"Financial stress (context, not seismic vote): "
+                    f"Financial stress (Active Vote): "
                     f"{', '.join(reasons) or 'elevated composite'}"
                 ),
             )

@@ -47,9 +47,12 @@ class ONNXModelLoader:
         
         try:
             sess_options = rt.SessionOptions()
+            level_name = self.runtime_config.graph_optimization_level.upper()
+            # Compat: "ALL" -> "ORT_ENABLE_ALL" (onnxruntime 1.27+)
+            if level_name == "ALL":
+                level_name = "ORT_ENABLE_ALL"
             sess_options.graph_optimization_level = getattr(
-                rt.GraphOptimizationLevel,
-                self.runtime_config.graph_optimization_level.upper()
+                rt.GraphOptimizationLevel, level_name
             )
             sess_options.intra_op_num_threads = self.runtime_config.intra_op_num_threads
             sess_options.inter_op_num_threads = self.runtime_config.inter_op_num_threads

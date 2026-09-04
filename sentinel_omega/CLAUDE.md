@@ -18,21 +18,22 @@ Sentinel Omega detects **precursors of natural events** (earthquakes, volcanic a
 
 The system is the successor to the TITAN V32/V46/V53 bot family.
 
-## Architecture — 6 Agents, Single System
+## Architecture — 8 Agents (SNT 5 + Omega + Loki + Padre), Single System
 
 ```
-Orchestrator → GeodynamicLayerRunner → 6 Agents → Padre Consensus
+Orchestrator → GeodynamicLayerRunner → 8 Agents (SNT×5 + Omega + Loki) → Padre Consensus
 │
 ├── Alfa-1 (Geodynamic: Bz, solar wind, seismic) — 30yr training
 │       ↑ validates
 ├── Alfa-2 (Satellite: ESA Sentinel) — 14yr training
 │
-├── Beta-1 (Schumann/cymatics/energy released) — 30yr training  ← HEARTBEAT
+├── Beta-1 (The Artist — Cymatic Figure) — 30yr training  ← HEARTBEAT
 │       ↑ validates
-├── Beta-2 (Air chemistry/atmospheric) — 14yr training
+├── Beta-2 (The Analyst — réplica histórica + gas/presión) — 14yr training
 │
-├── Delta  (Crypto + Bolsa + humor de la tierra) — 10yr training
+├── Delta  (Fin stress — ALERT si combined>0.6) — 10yr training
 │
+├── Loki  (Fractal-Bayesiano: Gauss-Jordan→Fourier→Bayes, nodo Tlaxcala)
 ├── Omega  (Memoria/correlación: ritmo cósmico — luna, Schumann, envolvente
 │           solar, acoplamiento Schumann↔mercado) — 30yr, NO es agente en vivo
 │
@@ -309,3 +310,11 @@ Five walls of cross-correlation. Breach when >= 3 walls active:
 ## Branch
 
 All development on: `claude/sentinel-omega-architecture-j3c2kn`
+
+## Telegram (consenso Padre, 2026-09-03)
+
+Canal Telegram ya no dispara cada ciclo. El Padre (`consenso_vigilante.py`):
+
+1. **Reporte horario siempre** (`TG_DIGEST_MINUTES=60`) — Fantasma+nivel, muro n/5, telemetría, top precursores, loop, botón Mini App (`TELEGRAM_WEBAPP_URL` HTTPS público a `/mini`). No se omite la hora en calma. No es un pile de "precursores revisar".
+2. **Page inmediato solo si no hay registro** (`is_unprecedented`): patrón cimática NUEVO, firma `TBL_FIRMAS` nueva, tipo de muro no visto, `SYSTEM_DEAD`. Firmas recurrentes y watches de precursores van al digest. Rojo/naranja rutinario NO pagina.
+3. Correo (`tbl_correo_salida`) no cambia. `SENTINEL_DRY_RUN=1` no envía. Mini App exige HTTPS; este repo no crea túnel.

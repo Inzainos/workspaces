@@ -5,7 +5,14 @@ All secrets loaded from environment variables. Never hardcode tokens.
 
 import os
 from dataclasses import dataclass, field
-from typing import Dict
+from pathlib import Path
+from typing import Dict, Optional
+
+try:
+    import yaml
+    HAS_YAML = True
+except ImportError:
+    HAS_YAML = False
 
 
 @dataclass
@@ -126,5 +133,33 @@ class SentinelOmegaConfig:
     })
 
 
-# Global config instance
-config = SentinelOmegaConfig()
+def load_config(yaml_path: Optional[str] = None) -> SentinelOmegaConfig:
+    """Load from config/sentinel.yaml if exists, env vars override."""
+    if yaml_path is None:
+        yaml_path = str(Path(__file__).parent / "sentinel.yaml")
+    if HAS_YAML and Path(yaml_path).exists():
+        try:
+            with open(yaml_path) as f:
+                data = yaml.safe_load(f)
+            # yaml overrides defaults but env still wins via field(default_factory)
+            # simple merge: only top-level keys we understand
+            cfg = SentinelOmegaConfig()
+            if "database" in data:
+                for k, v in data["database"].items():
+                    if hasattr(cfg.databases, k):
+                        setattr(cfg.databases, k, v)
+            if "telegram" in data:
+                # env vars take precedence, so only set if env not set
+                for k, v in data["telegram"].items():
+                    if k in ("bot_token", "chat_id") and os.environ.get(f"TELEGRAM_{k.upper()}"):
+                        continue
+                    if hasattr(cfg.telegram, k):
+                        try: setattr(cfg.telegram, k, v)
+                        except Exception: pass
+            return cfg
+        except Exception as e:
+            import logging; logging.getLogger(__name__).warning(f"Failed to load {yaml_path}: {e}")
+    return SentinelOmegaConfig()
+
+# Global config instance (lazy yaml load)
+config = load_config()

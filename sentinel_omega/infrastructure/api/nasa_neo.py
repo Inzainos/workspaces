@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from sentinel_omega.infrastructure.api._http import get_session
+from sentinel_omega.infrastructure.api.circuit_breaker import circuit
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ NEO_FEED_URL = "https://api.nasa.gov/neo/rest/v1/feed"
 TIMEOUT = 15
 
 
+@circuit("nasa_neo")
 def fetch_neo_hazard_summary(date: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Fetch today's near-Earth objects and summarize the hazardous ones.
 

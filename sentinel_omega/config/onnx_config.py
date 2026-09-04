@@ -39,7 +39,7 @@ class ONNXModelConfig:
 class ONNXRuntimeConfig:
     """Global ONNX Runtime settings"""
     providers: list = field(default_factory=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"])
-    graph_optimization_level: str = "all"
+    graph_optimization_level: str = "ORT_ENABLE_ALL"
     intra_op_num_threads: int = 4
     inter_op_num_threads: int = 1
     session_options_kwargs: Dict = field(default_factory=dict)

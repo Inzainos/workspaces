@@ -42,6 +42,7 @@ install_unit deploy/sentinel-omega-mantenimiento.timer
 install_unit deploy/sentinel-omega-disciplina.service
 install_unit deploy/sentinel-omega-barrido.service
 install_unit deploy/sentinel-omega-scheduler.service
+install_unit deploy/sentinel-omega-watchdog.service
 
 sudo systemctl daemon-reload
 echo ">> systemd daemon-reload OK."
@@ -59,7 +60,9 @@ echo "  ARRANQUE 24/7:"
 echo "    sudo systemctl enable --now sentinel-omega"
 echo "    sudo systemctl enable --now sentinel-omega-dashboard   # opcional"
 echo "    sudo systemctl enable --now sentinel-omega-scheduler   # reportes 2h/6h"
+echo "    sudo systemctl enable --now sentinel-omega-watchdog     # watchdog red/agente"
 echo "    sudo systemctl start sentinel-omega-mantenimiento.timer"
+echo "    sudo systemctl enable --now sentinel-omega-onnx-retrain.timer  # retrain ONNX domingos 03:00"
 echo ""
 echo "  MANTENIMIENTO MANUAL:"
 echo "    sudo systemctl start sentinel-omega-mantenimiento.service"

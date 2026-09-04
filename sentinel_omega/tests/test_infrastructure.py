@@ -21,7 +21,7 @@ from sentinel_omega.config.sentinel_config import (
     DatabaseConfig,
     SNTConfig,
 )
-from sentinel_omega.orchestrator import SentinelOrchestrator, SystemStatus
+from orchestrator import SentinelOrchestrator, SystemStatus
 from sentinel_omega.core.shared.agent_base import ConsensusResult, SignalType
 
 
@@ -63,11 +63,19 @@ class TestTelegramBot:
         status = {"geodynamic": True}
         assert bot.send_heartbeat(status) is True
 
-    @patch("requests.post")
-    def test_send_with_token(self, mock_post):
+    @patch("sentinel_omega.infrastructure.api.telegram.get_session")
+    def test_send_with_token(self, mock_get_session):
+        import os
+        os.environ["TELEGRAM_BOT_TOKEN"] = "test_token"
+        os.environ["TELEGRAM_CHAT_ID"] = "12345"
+        from sentinel_omega.infrastructure.api import telegram as tg
+        tg._GATE.last_alert_time = 0
+        tg._GATE.last_msg_type = ""
+
         mock_resp = MagicMock()
         mock_resp.ok = True
-        mock_post.return_value = mock_resp
+        mock_session = mock_get_session.return_value
+        mock_session.post.return_value = mock_resp
 
         bot = SentinelTelegramBot(token="test_token", chat_id="12345")
         msg = TelegramMessage(
@@ -75,16 +83,26 @@ class TestTelegramBot:
             summary="Test alert"
         )
         assert bot.send_alert(msg) is True
-        mock_post.assert_called_once()
-        call_kwargs = mock_post.call_args
-        assert "test_token" in call_kwargs[0][0]
-        assert call_kwargs[1]["json"]["chat_id"] == "12345"
+        # Routine ALERT is buffered by ConsensoVigilante — no Telegram POST.
+        mock_session.post.assert_not_called()
 
-    @patch("requests.post", side_effect=ConnectionError("Network error"))
-    def test_send_failure_returns_false(self, mock_post):
-        bot = SentinelTelegramBot(token="token", chat_id="123")
+    @patch("sentinel_omega.infrastructure.api.telegram.get_session")
+    def test_send_failure_returns_false(self, mock_get_session):
+        import os
+        os.environ["TELEGRAM_BOT_TOKEN"] = "test_token"
+        os.environ["TELEGRAM_CHAT_ID"] = "12345"
+        from sentinel_omega.infrastructure.api import telegram as tg
+        tg._GATE.last_alert_time = 0
+        tg._GATE.last_msg_type = ""
+
+        mock_session = mock_get_session.return_value
+        mock_session.post.side_effect = ConnectionError("Network error")
+
+        bot = SentinelTelegramBot(token="test_token", chat_id="12345")
         msg = TelegramMessage(layer="geodynamic", signal_type="TEST", confidence=0.5, summary="fail")
-        assert bot.send_alert(msg) is False
+        # Buffered ingest does not hit the network; returns True (queued for digest).
+        assert bot.send_alert(msg) is True
+        mock_session.post.assert_not_called()
 
 
 # ── DatabaseManager ──────────────────────────────────────────────────

@@ -149,3 +149,10 @@ reporte ejecutivo cada 6 h · comparativo diario 12am/12pm · semanal domingo
 nuevo guarda todo, patrón repetido suma +1 a la frecuencia; cualquier
 alta/incremento dispara la revisión del Padre y, si amerita, alerta por
 correo.
+
+## Telegram — consenso Padre (2026-09-03)
+
+- **Digest horario SIEMPRE** (`TG_DIGEST_MINUTES=60`): concentrado Fantasma, muro, telemetría, precursores, loop. No saltar la hora.
+- **Inmediato SOLO sin precedentes** (`is_unprecedented`): cimática NUEVO, firma nueva, muro kind nuevo, SYSTEM_DEAD. Precursores/firmas recurrentes → digest.
+- Mini App: `TELEGRAM_WEBAPP_URL` = HTTPS público de `/mini` en el FastAPI del dashboard. No inventar túneles.
+- Código: `infrastructure/messaging/consenso_vigilante.py`. `SENTINEL_DRY_RUN=1` no llama a la API de Telegram. No imprimir tokens.

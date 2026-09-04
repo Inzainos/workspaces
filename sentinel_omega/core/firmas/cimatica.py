@@ -122,6 +122,18 @@ def registrar_snapshot(
                 f"{f', nodo {id_nodo}' if id_nodo else ''}) — telemetría "
                 f"completa guardada"
             )
+            try:
+                from sentinel_omega.infrastructure.messaging.alert_service import AlertService, AlertTemplates
+                pid = int(cur.lastrowid or 0)
+                msg = AlertTemplates.cimatica_nuevo(pid, clave or "", ambito, id_nodo, event_class)
+                AlertService().dispatch(
+                    msg,
+                    channels=["telegram", "log"],
+                    conn=conn,
+                    extra={"es_nuevo": True, "frecuencia": 1, "patron_id": pid, "clave": clave},
+                )
+            except Exception as _e:
+                logger.debug("cimatica NUEVO ingest failed: %s", _e)
         return (cur.lastrowid, True, 1)
 
     patron_id, frecuencia, ec_previa = fila
@@ -138,9 +150,22 @@ def registrar_snapshot(
     if frecuencia == FRECUENCIA_CONSISTENTE and not silencioso:
         logger.warning(
             f"CIMÁTICA CONSISTENTE: patrón {patron_id} ({ambito}) alcanzó "
-            f"frecuencia {frecuencia}"
-            + (f" — asociado a {nueva_ec}" if nueva_ec else "")
+            f"frecuencia {frecuencia}" + (f" — asociado a {nueva_ec}" if nueva_ec else "")
         )
+        try:
+            from sentinel_omega.infrastructure.messaging.alert_service import AlertService, AlertTemplates
+            # clave ya calculada arriba
+            _clave = clave if 'clave' in locals() else ""
+            msg = AlertTemplates.cimatica_consistente(patron_id, _clave or str(clave), frecuencia, nueva_ec, ambito, id_nodo)
+            AlertService().dispatch(
+                msg,
+                channels=["telegram", "log"],
+                conn=conn,
+                extra={"es_nuevo": False, "frecuencia": frecuencia, "patron_id": patron_id, "clave": _clave},
+            )
+            # Foto por incremento consistente: ruido. El digest horario cubre el concentrado.
+        except Exception as _e:
+            logger.debug(f"cimatica telegram fail: {_e}")
     return (patron_id, False, frecuencia)
 
 
