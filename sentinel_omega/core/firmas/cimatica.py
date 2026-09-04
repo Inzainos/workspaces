@@ -122,6 +122,18 @@ def registrar_snapshot(
                 f"{f', nodo {id_nodo}' if id_nodo else ''}) — telemetría "
                 f"completa guardada"
             )
+            try:
+                from sentinel_omega.infrastructure.messaging.alert_service import AlertService, AlertTemplates
+                pid = int(cur.lastrowid or 0)
+                msg = AlertTemplates.cimatica_nuevo(pid, clave or "", ambito, id_nodo, event_class)
+                AlertService().dispatch(
+                    msg,
+                    channels=["telegram", "log"],
+                    conn=conn,
+                    extra={"es_nuevo": True, "frecuencia": 1, "patron_id": pid, "clave": clave},
+                )
+            except Exception as _e:
+                logger.debug("cimatica NUEVO ingest failed: %s", _e)
         return (cur.lastrowid, True, 1)
 
     patron_id, frecuencia, ec_previa = fila
@@ -142,26 +154,16 @@ def registrar_snapshot(
         )
         try:
             from sentinel_omega.infrastructure.messaging.alert_service import AlertService, AlertTemplates
-            from sentinel_omega.infrastructure.messaging.charts import cimatica_bars
-            from sentinel_omega.infrastructure.api.telegram import send_photo
             # clave ya calculada arriba
             _clave = clave if 'clave' in locals() else ""
             msg = AlertTemplates.cimatica_consistente(patron_id, _clave or str(clave), frecuencia, nueva_ec, ambito, id_nodo)
-            AlertService().dispatch(msg, channels=["telegram", "log"])
-            try:
-                import sqlite3
-                from pathlib import Path as _P3
-                dbp3 = "sentinel_omega/data/SENTINEL_OMEGA_PRO.db"
-                if _P3(dbp3).exists():
-                    conn3 = sqlite3.connect(dbp3)
-                    cur3 = conn3.execute("SELECT patron_id, clave, frecuencia, event_class FROM tbl_cimatica_patrones WHERE frecuencia>=2 ORDER BY frecuencia DESC LIMIT 5")
-                    filas = [dict(r) for r in cur3.fetchall()]
-                    conn3.close()
-                    ch3 = cimatica_bars(filas, titulo=f"Cimatica - patron {patron_id}")
-                    if ch3 and ch3.exists():
-                        send_photo(str(ch3), caption=f"Cimatica patron {patron_id} x{frecuencia}")
-            except Exception:
-                pass
+            AlertService().dispatch(
+                msg,
+                channels=["telegram", "log"],
+                conn=conn,
+                extra={"es_nuevo": False, "frecuencia": frecuencia, "patron_id": patron_id, "clave": _clave},
+            )
+            # Foto por incremento consistente: ruido. El digest horario cubre el concentrado.
         except Exception as _e:
             logger.debug(f"cimatica telegram fail: {_e}")
     return (patron_id, False, frecuencia)

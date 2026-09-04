@@ -38,7 +38,12 @@ def _process_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
         return True
+    except PermissionError:
+        # Proceso existe pero pertenece a otro usuario (ej. root) -> sí está vivo
+        return True
     except ProcessLookupError:
+        return False
+    except OSError:
         return False
 
 
@@ -49,10 +54,22 @@ def shutdown(force: bool = False):
         logger.info("No PID file found — Sentinel Omega is not running.")
         sys.exit(0)
 
-    if not _process_alive(pid):
+    alive = _process_alive(pid)
+    if not alive:
         logger.info(f"PID {pid} is not running (stale pidfile). Cleaning up.")
-        PIDFILE.unlink(missing_ok=True)
+        try:
+            PIDFILE.unlink(missing_ok=True)
+        except PermissionError:
+            logger.warning(f"Stale pidfile pertenece a otro usuario — no se puede borrar sin sudo: {PIDFILE}")
         sys.exit(0)
+
+    # Si el proceso es de otro usuario (root), no podremos signalearlo
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        logger.error(f"PID {pid} pertenece a otro usuario (root?). No se puede señalear sin sudo.")
+        logger.error(f"Ejecuta: sudo kill -TERM {pid}  &&  sudo rm {PIDFILE}")
+        sys.exit(1)
 
     logger.info(f"Sending SIGTERM to Sentinel Omega (PID {pid})...")
     os.kill(pid, signal.SIGTERM)

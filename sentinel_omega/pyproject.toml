@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sentinel-omega"
-version = "2.5.0"
+version = "2.5.4"
 description = "Precursor detection platform for natural events — 15-type scanner, 5-wall cross-correlation, 125-node topology, Schumann harmonic filter (TITAN V32/V46/V53 lineage)"
 authors = [
     {name = "Elán Zainos Corona", email = "elan.zainos.corona@gmail.com"},
@@ -48,7 +48,7 @@ all = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["sentinel_omega*", "config*", "core*", "infrastructure*", "layers*"]
+include = ["sentinel_omega*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

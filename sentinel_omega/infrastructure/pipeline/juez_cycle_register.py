@@ -42,26 +42,6 @@ def register_cycle_predictions(
     features = features or {}
 
     ventana_h = 2
-    for m in matches[:5]:
-        dias = m.get("ventana_tipica_dias")
-        if dias is not None:
-            try:
-                ventana_h = max(ventana_h, int(float(dias) * 24))
-            except (TypeError, ValueError):
-                pass
-    if matches and ventana_h == 2 and conn is not None:
-        try:
-            row = conn.execute(
-                "SELECT MAX(lag_promedio_h), MAX(lag_max_h) "
-                "FROM tbl_lag_anticipacion"
-            ).fetchone()
-            if row and row[0]:
-                ventana_h = max(ventana_h, int(row[0]))
-            if row and row[1]:
-                ventana_h = max(ventana_h, int(row[1]))
-        except Exception:
-            pass
-    ventana_h = min(max(2, ventana_h), 90 * 24)
 
     juez.registrar_prediccion(
         bot_name="padre",

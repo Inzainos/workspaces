@@ -190,6 +190,7 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def repo(db_path):
+    init_database(db_path)
     r = SentinelRepository(db_path=db_path)
     yield r
     r.close()

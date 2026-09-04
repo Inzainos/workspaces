@@ -1,4 +1,4 @@
-# Sentinel Omega v2.5.3
+# Sentinel Omega v2.5.4 — The Third Act
 
 **Plataforma de detección de precursores de eventos naturales**
 
@@ -87,13 +87,15 @@ El sistema modela la Tierra completa con una malla de 125 nodos de monitoreo bas
 
 | Tipo        | Cantidad | Descripción                                    |
 |-------------|----------|------------------------------------------------|
-| Real        | 50       | Zonas sísmicas reales (Ring of Fire global)    |
+| Real        | 75       | Zonas sísmicas reales (Ring of Fire global + México) |
 | Ghost       | 50       | Nodos fantasma inferidos de gaps sísmicos      |
-| Geobattery  | 25       | Zonas de acumulación electroquímica            |
+| Geobattery  | 25*      | Zonas de acumulación electroquímica (incluidas en los 75 reales) |
+
+*Distribución DB real: 75 reales + 50 Ghost = 125 UVG. Los 25 Geobattery están modelados como subconjunto de los reales (conductividad >0), no como nodos adicionales. Total físico = 125.
 
 **Hallazgo**: Los nodos "ghost" — posiciones inferidas donde no hay monitoreo pero la topología sugiere acumulación de estrés — han mostrado ser zonas de riesgo subestimado por redes sísmicas convencionales. Los nodos "geobattery" modelan zonas donde corrientes telúricas y diferencias de potencial electroquímico en el subsuelo pueden actuar como acumuladores de energía. La saturación de un nodo (capped a 1.0 por trigger SQL) indica zona de máximo estrés acumulado.
 
-La matriz estática UVG-125 se carga en RAM al importar (`geometria_uvg.py`) y permite mapear cada sismo global al nodo más cercano. Tlaxcala (19.31, -98.24) es el nodo de observación (id=0); los otros 125 cubren el planeta.
+La matriz estática UVG-125 se carga en RAM al importar (`geometria_uvg.py`) y permite mapear cada sismo global al nodo más cercano. Tlaxcala (19.31, -98.24) es el nodo de observación (id=0); los otros 125 cubren el planeta. Con 125 nodos y radio de 5°, la dispersión ya es nodal y global — por eso la línea base de Molchan es 16% (casi toda ventana tiene un sismo cerca de algún nodo); la ganancia real debe medirse específica por nodo, no solo global.
 
 ### 6. Pérdida Asimétrica en Consenso Jerárquico
 
@@ -305,9 +307,9 @@ En operación, cada ciclo compara el estado vivo contra las firmas consolidadas 
 
 ---
 
-## Dashboard (Streamlit + Plotly) - 11 pestañas (v2.5.3)
+## Dashboard — React (v2.5.4, puerto 5173→8787) + Streamlit legacy (11 pestañas, puerto 8510)
 
-11 pestañas interactivas con datos en tiempo real:
+**v2.5.4 — Dashboard React** (6 tabs: Principal/Telemetría/Consenso/Análisis/Agentes/Sistema, React+shadcn, API FastAPI ) + **Streamlit legacy** (11 pestañas, ) con datos en tiempo real:
 
 | Tab | Nombre          | Visualizaciones                                                                                      |
 |-----|-----------------|------------------------------------------------------------------------------------------------------|
@@ -382,7 +384,7 @@ sentinel_omega/
 │       └── corpus.py                    # Corpus de observaciones empíricas (satelización)
 │
 ├── layers/
-│   └── geodynamic/                      # Los 6 agentes del sistema único
+│   └── geodynamic/                      # Los 8 agentes (SNT 5 + Omega + Loki + Padre) único
 │       ├── alfa1/agent.py               # NOAA OMNI: Bz, viento solar
 │       ├── alfa2/agent.py               # ESA Sentinel-2 multispectral
 │       ├── beta1/agent.py               # Kp FFT + filtro Schumann
@@ -406,15 +408,15 @@ sentinel_omega/
 │   │   └── telegram.py                  # Telegram Bot API
 │   ├── pipeline/
 │   │   ├── data_pipeline.py             # Pipeline maestro con LOCF
-│   │   ├── layer_runners.py             # GeodynamicLayerRunner (6 agentes)
+│   │   ├── layer_runners.py             # GeodynamicLayerRunner (8 agentes: SNT×5 + Omega + Loki + Padre)
 │   │   ├── backcast.py                  # Carga histórica one-time (1994-2025, 1H)
 │   │   └── legacy_loader.py             # Cargador de datos TITAN legacy
 │   ├── database/
 │   │   ├── schema.py                    # Schema SQLite + WAL + triggers + backcast + migración
 │   │   ├── repository.py                # CRUD + 12 queries analíticas
 │   │   └── seed_nodos.py                # 125 nodos semilla (malla global)
-│   ├── dashboard/
-│   │   └── app.py                       # Dashboard Streamlit (9 tabs)
+│   ├── dashboard/  (api.py FastAPI :8787 + web/ React 6 tabs + app.py Streamlit)
+│   │   └── app.py                       # Dashboard Streamlit (11 tabs legacy, puerto 8510)
 │   ├── logging/                         # Logging estructurado JSON
 │   │   └── formatter.py                 # JSONFormatter + RotatingFileHandler
 │   ├── health/                          # Health checks (DB/disk/APIs/pipeline)
@@ -424,7 +426,7 @@ sentinel_omega/
 │
 ├── tests/                               # 301 tests
 │   ├── test_snt_engine.py               # Tests SNT (satellization, friction, ASI, N-Body)
-│   ├── test_agents.py                   # Tests de agentes (6 agentes)
+│   ├── test_agents.py                   # Tests de agentes (8 agentes)
 │   ├── test_precursor.py                # Tests precursor (fantasma, scanner, muro, assertivity)
 │   ├── test_schumann_filter.py          # Tests Schumann filter + DB schema
 │   ├── test_api_connectors.py           # Tests de conectores API
@@ -548,6 +550,79 @@ python sentinel_omega/reboot.py
 python sentinel_omega/reboot.py --dashboard --dry-run
 ```
 
+---
+
+## Integración Telegram Bidireccional (v2.5.3+)
+
+Sentinel Omega se integra con **Consensus Expert Agent** vía Telegram bot compartido:
+
+### Flujo Sentinel Omega → Usuario (Alertas)
+```python
+from sentinel_omega.infrastructure.api import telegram as tg
+tg.send_alert("Mensaje de alerta HTML", chat_id="8056592822")
+```
+- Envía alertas de precursores detectados en tiempo real
+- Soporta `send_photo()` y `send_document()` para gráficas PNG/PDF
+- Templates enriquecidos: `centinela_advertencia()`, `cimatica_consistente()`, `reporte_resumen()`
+
+### Flujo Usuario → Consensus Expert Agent (Comandos)
+El bot `@IngZainos_bot` (corriendo en Consensus Expert Agent) recibe comandos y consulta Sentinel Omega:
+
+| Comando | Función |
+|---------|---------|
+| `/start` | Menú principal con botones inline |
+| `/task <prompt>` | Tarea al Concilio (Nemotron → DeepSeek → Gemma) |
+| `/audit [foco]` | Auditar Sentinel (tests, secrets, migrations, automation) |
+| `/status` | Estado Sentinel Omega (ciclos, precursores, Juez) — **lee BD real** |
+| `/blackboard` | Ver pizarra de consenso activa |
+| `/cancel` | Cancelar tarea en curso |
+
+### Configuración compartida
+Ambos sistemas usan las **mismas credenciales** en sus respectivos `.env`:
+```bash
+TELEGRAM_BOT_TOKEN=<REDACTED>
+TELEGRAM_CHAT_ID=8056592822,8016695154
+```
+
+### Ejecutar bot de Consensus
+```bash
+cd /home/deamon/consensus-expert-agent
+./run_telegram_bot.sh
+# O directamente:
+python telegram_bot.py
+```
+
+### Dashboard Streamlit (Sentinel Omega)
+```bash
+cd /home/deamon/workspaces/sentinel_omega
+python -m streamlit run sentinel_omega/infrastructure/dashboard/app.py --server.port 8502 --server.address 0.0.0.0
+```
+**Acceso:** `http://localhost:8502` (local) | `http://192.168.1.144:8502` (red LAN)
+
+Tabs: Precursor Risk (Fantasma) | Muro 5 Eventos | SNT Engine | Alerts & Charts | Database | Agent Tab
+
+---
+
+## Concilio Operativo (verificado 02/09/2026)
+
+El bot `@IngZainos_bot` ejecuta **consenso real** Nemotron → DeepSeek → Gemma:
+
+1. **Usuario** envía `/task` o usa botón "🚀 Nueva Tarea"
+2. **Bot** muestra: `🔄 Iniciando Concilio... 🔍 Nemotron... 💻 DeepSeek... ⚖️ Gemma...`
+3. **Nemotron** (investigador): Analiza, busca patrones, propone arquitectura → Blackboard
+4. **DeepSeek** (coder): Lee investigación, implementa código tipado → Blackboard
+5. **Gemma** (optimizador): Audita, calcula score 0-100, sintetiza → resultado
+6. **Refinamiento**: Si score < 85, feedback a DeepSeek (máx 3 rondas)
+7. **Entrega**: Bot edita mensaje con síntesis final + teclado principal
+
+**Log real (07:30-07:35):**
+- Usuario: "Puedes revisar la seguridad"
+- 4 llamadas Ollama secuenciales (Nemotron → DeepSeek → Gemma → Síntesis)
+- Respuesta final via `editMessageText` en <5 min
+- `/status` lee BD real: 10,651 ciclos, 1,418 alertas, 29,270 predicciones, 897,356 eventos Juez
+
+---
+
 | Archivo                     | Propósito                              |
 |-----------------------------|----------------------------------------|
 | `data/sentinel_omega.pid`   | PID del proceso activo                 |
@@ -594,6 +669,7 @@ export CB_RECOVERY_TIMEOUT="60"         # Circuit breaker: segundos para HALF_OP
 | V53      | TITAN V53        | Patrones WPC, Lorenz-X/Lyapunov, multi-horizonte     |
 | v2.5     | Sentinel Omega   | 15 precursores, 5 muros, 125 nodos, 6 agentes, dashboard, backcast 1H |
 | v2.5.2   | Sentinel Omega   | Observabilidad: logging JSON + health + circuit breaker/tenacity + YAML + ruff/mypy |
+| v2.5.4   | Sentinel Omega   | The Third Act: Loki Fractal-Bayesiano + SNT Artist/Analyst + Fin stress + FastAPI compat (React 6 tabs) |
 | v2.5.1   | Sentinel Omega   | Honestidad total: fase estricta + viva_real, verdad por fila con nodos propios, línea base de Molchan, agentes honestos (beta1 Schumann medido, alfa1 ONNX real, delta contexto, alfa2 proxy degradado), Omega (ritmo cósmico), cimática con retro-etiquetado y poda, correo con gráficas, rutinas 24/7 |
 
 ---

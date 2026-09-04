@@ -36,7 +36,9 @@ class SentinelRepository:
         if hasattr(self._tls, "conn") and self._tls.conn is not None:
             return self._tls.conn
         from pathlib import Path as _P
-        db = self._db_path or str(_P(__file__).parent.parent.parent / "data" / "SENTINEL_OMEGA_PRO.db")
+        # __file__ = sentinel_omega/infrastructure/database/repository.py
+        # Need to go up 4 levels: database -> infrastructure -> sentinel_omega -> workspace -> data/
+        db = self._db_path or str(_P(__file__).parent.parent.parent.parent / "data" / "SENTINEL_OMEGA_PRO.db")
         # Direct connect without init_database (evita database is locked en dashboard)
         # WAL + busy_timeout para concurrencia con launcher
         conn = sqlite3.connect(str(db), timeout=30.0, check_same_thread=False, isolation_level=None)
@@ -654,4 +656,15 @@ class SentinelRepository:
         return [row[1] for row in cur.fetchall()]
 
     def close(self) -> None:
-        self._conn.close()
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
+        if hasattr(self, "_tls") and hasattr(self._tls, "conn") and self._tls.conn is not None:
+            try:
+                self._tls.conn.close()
+            except Exception:
+                pass
+            self._tls.conn = None

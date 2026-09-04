@@ -1,10 +1,44 @@
 # Changelog — Sentinel Omega
 
+
+## [Unreleased] - 2026-09-03 - Consenso Telegram: digest horario + solo sin precedentes
+
+### Added
+- `infrastructure/messaging/consenso_vigilante.py` — el Padre (bot de consenso) agrupa avisos de los demás bots.
+  - **Reporte horario SIEMPRE** (`TG_DIGEST_MINUTES=60`): Fantasma+nivel, muro n/5, telemetría one-liners, top precursores, loop vivo/muerto, botón Mini App. No se salta la hora aunque esté calma. No es un montón de pings "precursores revisar".
+  - **Telegram inmediato SOLO si `is_unprecedented`**: sin registro previo en el sistema. Califica: cimática NUEVO (`tbl_cimatica_patrones.frecuencia==1`), firma nunca vista (`TBL_FIRMAS` estado=`nueva` / recurrencia≤1), tipo de muro breach nuevo, `SYSTEM_DEAD` (loop muerto). Firmas recurrentes y precursores de siempre → solo el reporte horario. El cooldown `send_alert_gated` (1800s) se conserva en el path inmediato para no spamear el mismo tipo.
+  - Mini App: `infrastructure/dashboard/static/mini.html` servida por FastAPI en `/mini`. Botón `web_app` si `TELEGRAM_WEBAPP_URL` es HTTPS público. No se fabrica túnel.
+- Templates nuevos/enriquecidos (español, captions de qué significa el número, sin claims de lotería): `cimatica_nuevo`, `firma_nueva`, `muro_breach`, `sin_precedente`.
+- Tests: `tests/test_consenso_vigilante.py` (buffer vs immediate, digest vacío, cooldown, DB firmas/cimática, dry_run, cero red).
+
+### Changed
+- `AlertService.dispatch` canal Telegram pasa por el vigilante; correo y log siguen igual.
+- `orchestrator.py` ya no dispara `send_alert_gated`/`send_photo` por cada precursor ≥0.5; ingesta al vigilante y `maybe_flush` al cierre de ciclo.
+- `dispatch_cycle_alerts` y cimática consistente dejan de pagear; cimática NUEVO sí (sin precedentes).
+- Env: `TG_DIGEST_MINUTES` (default 60), `TELEGRAM_WEBAPP_URL` (HTTPS), `SENTINEL_DRY_RUN`.
+
+### Policy (Elán)
+Digest horario siempre. Immediate = solo lo que no tiene registro. No hay page por rojo/naranja rutinario.
+
+---
 All notable changes to the Sentinel Omega precursor detection system are
 documented here. Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 conventions. Dates are UTC-6 (local time of the author).
 
 ---
+## [Unreleased] - 2026-09-01 - Fixes operativos + corrección 125 nodos UVG
+
+### Fixed
+- `sentinel_omega/launcher_hex/h00..h11.hex`: `_check_already_running` ahora captura `PermissionError` (pid de root visto desde deamon) → `return True` en vez de traceback; `_clear_pid` resiliente a `OSError`. Backup en `launcher_hex_backup_1788196565/`. Verificado: `launcher.py --once` con pid root ahora responde `ERROR already running` limpio.
+- `sentinel_omega/shutdown.py`: `_process_alive` captura `PermissionError` → `True`; `shutdown()` detecta pid de otro usuario y sugiere `sudo kill -TERM <pid> && sudo rm data/sentinel_omega.pid` en vez de colgarse 30s.
+- `deploy/generar_reporte.py`: detecciones deduplicadas por `GROUP BY tipo` con `MAX(id)` + rehidratación → 6 tipos distintos en lugar de 8 filas duplicadas (SEISMIC_CLUSTER/SILENT_TRIGGER x4); texto Molchan corregido `50 nodos reales` → `125 nodos UVG (75 reales + 50 Ghost)` con dispersión global nodal. Reporte regenerado `2026-09-01_09-00_MX.md`.
+
+### Verified
+- `python sentinel_omega/launcher.py --once` con pid root → exit 1 controlado
+- `python sentinel_omega/shutdown.py` con pid root → mensaje sudo claro
+- `python deploy/generar_reporte.py` → REPORTE.md con 6 precursores distintos y texto 125 nodos
+- `pytest test_precursor / test_schumann_filter` → PASS
+
 ## [Unreleased] - 2026-08-29 - Alertas enriquecidas Telegram (v2.5.3 - graficas, tablas, cimatica)
 
 ### Added

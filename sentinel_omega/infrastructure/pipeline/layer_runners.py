@@ -1,12 +1,13 @@
 """
 Layer Runner — orchestrates fetch → ingest → analyze → consensus.
-Agents: Alfa-1, Alfa-2, Beta-1, Beta-2, Delta, Jupiter, Omega, Padre.
+Agents: Alfa-1, Alfa-2, Beta-1, Beta-2, Delta, Jupiter, Omega, Loki, Padre.
 
 Hierarchical validation:
   1. All agents fetch and analyze independently
   2. #2 agents report to #1 agents for validation
   3. Padre cross-validates across families (+ Omega dual-ask)
   4. Everything correlates against Schumann (Beta-1)
+  5. Loki provides Bayesian probability collapse (Act 3)
 """
 
 import logging
@@ -30,6 +31,7 @@ from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
 from sentinel_omega.layers.geodynamic.padre.agent import GeodynamicPadre
 from sentinel_omega.layers.geodynamic.jupiter.agent import JupiterAgent
 from sentinel_omega.layers.geodynamic.omega.agent import OmegaAgent
+from sentinel_omega.layers.geodynamic.loki.agent import LokiAgent
 
 from sentinel_omega.infrastructure.pipeline.data_pipeline import GeodynamicPipeline
 
@@ -47,6 +49,7 @@ class GeodynamicLayerRunner:
         self.delta = DeltaAgent()
         self.jupiter = JupiterAgent()
         self.omega = OmegaAgent()
+        self.loki = LokiAgent()  # Act 3 - Unified Field
         self.padre = GeodynamicPadre()
         self._enable_satellite = enable_satellite
         self.assertivity = AssertivityTracker(radius_degrees=5.0, window_days=30)
@@ -191,6 +194,38 @@ class GeodynamicLayerRunner:
             signals.append(self.omega.analyze())
         except Exception as e:
             logger.warning(f"Omega layer failed (non-blocking): {e}")
+
+        # Loki (Act 3): Unified Field - Fractal-Bayesian collapse
+        try:
+            # Extract data needed by Loki
+            omni_df = alfa1_data.get("omni_dataframe")
+            bz_gsm = 0.0
+            solar_wind = 400.0
+            if omni_df is not None:
+                if "bz_gsm" in omni_df.columns:
+                    bz_gsm = float(omni_df["bz_gsm"].iloc[-1]) if len(omni_df) > 0 else 0.0
+                if "plasma_speed" in omni_df.columns:
+                    solar_wind = float(omni_df["plasma_speed"].iloc[-1]) if len(omni_df) > 0 else 400.0
+
+            schumann_resonance = (beta1_data or {}).get("schumann_mean", 7.83)
+            vix = (delta_data or {}).get("vix", 20.0)
+            lod_ms = 0.0
+            lod_series = beta1_data.get("lod_ms")
+            if lod_series is not None and len(lod_series) > 0:
+                lod_ms = float(lod_series[-1])
+
+            loki_data = {
+                "bz_gsm": bz_gsm,
+                "solar_wind": solar_wind,
+                "schumann_resonance": schumann_resonance,
+                "vix": vix,
+                "lod_ms": lod_ms,
+            }
+            self.loki.ingest(loki_data)
+            signals.append(self.loki.analyze())
+            logger.info(f"Loki signal: {signals[-1].signal_type.value} (conf={signals[-1].confidence:.2f})")
+        except Exception as e:
+            logger.warning(f"Loki layer failed (non-blocking): {e}")
 
         consensus = self.padre.evaluate_consensus(signals)
         consensus.precursor_risk = risk
