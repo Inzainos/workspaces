@@ -433,14 +433,15 @@ def dispatch_cycle_alerts(
 
     def _ingest(html: str, atype: str, sev: "Severity", extra=None) -> None:
         nonlocal sent
+        from sentinel_omega.infrastructure.messaging.alert_service import FormattedMessage as _FM2
         if svc is None:
             # last-resort: still do not fire raw unless dry-run is off AND no vigilante
             from sentinel_omega.infrastructure.messaging.consenso_vigilante import get_vigilante
-            from sentinel_omega.infrastructure.messaging.alert_service import FormattedMessage, Severity as _S
-            get_vigilante().ingest(FormattedMessage(html=html, markdown=html, plain=html, subject=atype, severity=_S.AZUL, alert_type=atype), extra=extra)
+            from sentinel_omega.infrastructure.messaging.alert_service import Severity as _S
+            get_vigilante().ingest(_FM2(html=html, markdown=html, plain=html, subject=atype, severity=_S.AZUL, alert_type=atype), extra=extra)
             sent += 1
             return
-        msg = FormattedMessage(
+        msg = _FM2(
             html=html, markdown=html, plain=html,
             subject=f"[SENTINEL] {atype}", severity=sev, alert_type=atype,
         )

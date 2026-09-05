@@ -17,6 +17,20 @@ La plataforma integra datos de 10+ fuentes públicas en tiempo real y aplica un 
 
 ---
 
+
+## Dashboard local (React Vite) — acceso y troubleshooting
+
+- **Dev (Vite)**:  → http://127.0.0.1:5173 (también http://localhost:5173).  debe tener  y ; sin  Windows ve ERR_CONNECTION_REFUSED por aislamiento WSL.
+- **API prod**:  (CORS para 5173/5174).  devuelve  — .
+- **Prod estático fallback**:  →  282KB/85KB gzip (sin vite dev).
+- **Health check**:  debe ser true; <!doctype html>
+<html lang="es" class="dark">
+  <head>
+    <script type="module">import { injectIntoGlobalHook } from "/@react-refresh";
+injectIntoGlobalHook(window);
+window.$ = () => {};
+w debe devolver .
+
 ## Hallazgos e Innovación
 
 ### 1. Fórmula Fantasma (TITAN V32)

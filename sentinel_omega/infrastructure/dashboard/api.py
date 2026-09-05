@@ -928,7 +928,24 @@ def unificado() -> Dict[str, Any]:
 # ── Compat layer for React frontend (api.ts expects non-/api paths) ──
 @app.get("/health")
 def health_alias():
-    return health()
+    h = health()
+    # Adapt to frontend expected shape {version, db:{connected,path}, agents:[]}
+    # health() returns {status, db_exists, db_path, version?, agentes?}
+    db_connected = bool(h.get("db_exists") or h.get("db_readable"))
+    db_path = h.get("db_path") or str(h.get("db_path",""))
+    version = h.get("version") or h.get("app_version") or "2.5.4"
+    # agents from TBL_PESOS_BOTS if not in h
+    agents = h.get("agents") or []
+    if not agents:
+        try:
+            rows = _rows("SELECT bot_name as name, peso FROM TBL_PESOS_BOTS ORDER BY bot_name") if _table_exists("TBL_PESOS_BOTS") else []
+            for r in rows:
+                agents.append({"name": str(r.get("name")), "status": "ok" if float(r.get("peso") or 1)>0.5 else "warn", "last_run": ""})
+            if not agents:
+                agents = [{"name": n, "status": "ok", "last_run": ""} for n in ["alfa1","alfa2","beta1","beta2","delta","omega","loki","padre"]]
+        except:
+            agents = []
+    return _jsonable({"version": version, "db": {"connected": db_connected, "path": db_path}, "agents": agents, **h})
 
 @app.get("/kpis")
 def kpis_alias():

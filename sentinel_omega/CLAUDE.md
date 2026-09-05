@@ -70,6 +70,13 @@ If Schumann is perturbed alongside any other signal = precursor detected.
 - **Vara de asertividad**: SOLO la vista `viva_real` (fase='viva', append-only);
   verdad POR FILA — ventana propia de 72h + nodos de la propia predicción.
 
+
+## Dashboard (React Vite + FastAPI 8787)
+
+- Dev:  Vite 6.4.3,  (.env local),  (WSL→Windows), proxy /api→8787. Build:  63 módulos 282KB/85KB gzip → dist/.
+- API:  (946L) + 13 compat aliases sin /api (/health,/kpis,/telemetry/*,/consenso/*,/analysis/*,/agents/*,/system/*) — resuelven TBL_* reales + fallback. CORS para 5173/5174/4173.  envuelve  → {version, db:{connected,path}, agents}.
+- Troubleshooting: ERR_CONNECTION_REFUSED en 5173 = host 127.0.0.1 en WSL; fix host 0.0.0.0. DB desconectada falso = health sin wrapper db.connected; fix health_alias. Launcher UnboundLocalError FormattedMessage = import mal scope; fix _FM2.
+
 ## Running tests
 
 ```bash
