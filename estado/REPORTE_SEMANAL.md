@@ -1,16 +1,16 @@
 # 📅 Reporte semanal — Sentinel Omega
-*Generado 2026-08-30 15:07 hora MX — ventana 7 días*
+*Generado 2026-09-06 14:25 hora MX — ventana 7 días*
 
 ## Resumen
-- Ciclos corridos: **60**
-- Fantasma medio del periodo: **8.6**
-- Fantasma máximo: **15.7**
+- Ciclos corridos: **41**
+- Fantasma medio del periodo: **8.8**
+- Fantasma máximo: **13.0**
 - Breaches del Muro: **0**
 - Asertividad viva del periodo: **—** (n=0 resueltas)
 
 ## Cimática
-- Patrones `general`: 287 (frecuencia máx 10)
-- Patrones `nodo`: 805 (frecuencia máx 12)
+- Patrones `general`: 313 (frecuencia máx 10)
+- Patrones `nodo`: 874 (frecuencia máx 12)
 
 | Patrón | Ámbito | Evento asociado | Frecuencia |
 |---|---|---|---:|
