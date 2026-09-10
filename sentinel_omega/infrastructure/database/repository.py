@@ -8,6 +8,7 @@ All timestamps are Unix epoch floats (time.time()).
 import json
 import logging
 import sqlite3
+import threading
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -22,7 +23,26 @@ class SentinelRepository:
 
     def __init__(self, db_path: Optional[str] = None):
         self._db_path = db_path
-        self._conn = get_connection(db_path)
+        self._local = threading.local()
+
+    @property
+    def _conn(self) -> sqlite3.Connection:
+        """Conexión SQLite del hilo actual (una por hilo, creada bajo demanda).
+
+        Root cause del ProgrammingError original: __init__ abría UNA conexión
+        y la guardaba en self._conn; sqlite3.Connection solo es válida en el
+        hilo que la creó. Streamlit guarda el repo en st.session_state, que
+        persiste entre reruns, y reruns/callbacks pueden ejecutarse en un hilo
+        distinto al que instanció el repositorio -> 'SQLite objects created in
+        a thread can only be used in that same thread'. init_database() es
+        idempotente (CREATE ... IF NOT EXISTS), así que abrir una conexión
+        nueva por hilo es seguro y no reejecuta migraciones destructivas.
+        """
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = get_connection(self._db_path)
+            self._local.conn = conn
+        return conn
 
     def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         return self._conn.execute(sql, params)
@@ -590,4 +610,9 @@ class SentinelRepository:
         return [row[1] for row in cur.fetchall()]
 
     def close(self) -> None:
-        self._conn.close()
+        """Cierra la conexión del hilo actual (si existe). No afecta a otros
+        hilos que puedan tener su propia conexión abierta sobre este repo."""
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            conn.close()
+            self._local.conn = None
