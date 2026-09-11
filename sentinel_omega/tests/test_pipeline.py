@@ -718,7 +718,9 @@ class TestTelegramConnector:
     def test_format_geodynamic_alert(self):
         from sentinel_omega.infrastructure.api.telegram import format_geodynamic_alert
         msg = format_geodynamic_alert("ALERT", 0.85, "Bz dropped to -12 nT")
-        assert "GEODYNAMIC ALERT" in msg
+        # Formato Centinela V2: encabezado y señal en líneas separadas (HTML).
+        assert "SENTINEL OMEGA — GEODYNAMIC" in msg
+        assert "ALERT" in msg
         assert "85%" in msg
         assert "Bz dropped" in msg
 
