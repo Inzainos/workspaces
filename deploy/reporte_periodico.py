@@ -244,17 +244,19 @@ def _seccion_aciertos(db_path: str, dias: int, titulo: str) -> tuple:
         lineas += [
             "### 🤖 Desempeño por Bot",
             "",
-            "| Bot | Aciertos | Tasa | Confianza | Anticipación |",
-            "|-----|----------|------|-----------|---------------|",
+            "| Bot | Aciertos | Tasa | Confianza | Ventana declarada |",
+            "|-----|----------|------|-----------|--------------------|",
         ]
         for bot, datos in stats["por_bot"].items():
             tasa_bot = datos["tasa_acierto"]
             conf = datos["confianza_promedio"] or 0
-            dias_ant = datos["dias_anticipacion_promedio"] or 0
+            # La DB no guarda el instante del evento real: la cifra honesta es
+            # la ventana que la predicción declaró, no una "anticipación".
+            ventana = datos["ventana_h_promedio"] or 0
             lineas.append(
                 f"| {bot} | {datos['aciertos']}/{datos['total']} | "
                 f"{tasa_bot:.0%} `{_barra(tasa_bot, 8)}` | "
-                f"{conf:.2f} | {dias_ant:.1f}d |"
+                f"{conf:.2f} | {ventana:.1f}h |"
             )
         lineas.append("")
 

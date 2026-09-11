@@ -6,6 +6,80 @@ conventions. Dates are UTC-6 (local time of the author).
 
 ---
 
+## [Unreleased] — 2026-09-10
+
+Sesión de auditoría: revisión de README/AGENTS/CLAUDE/CHANGELOG y verificación
+del pipeline de punta a punta (REGLA CERO — no basta con que pasen los tests).
+
+### Fixed
+
+- **El ciclo en vivo no persistía su telemetría (`NameError` silencioso).**
+  `_log_cycle_summary()` recibe `runner` como parámetro, pero su cuerpo
+  referenciaba `orch` — variable local de `run()`, fuera de alcance. El
+  `except Exception` de la función lo convertía en un
+  `WARNING Failed to persist cycle data: name 'orch' is not defined` y
+  `repo.insert_precursor_cosmico(...)` **nunca se ejecutaba**. Como el launcher
+  es el único escritor de `TBL_PRECURSORES_COSMICOS` (el resto del código solo
+  la lee para los promedios de 30 d y la poda de mantenimiento), cada ciclo de
+  Roy perdía su fila de telemetría. Verificado corriendo `launcher.py --once`
+  antes y después: la tabla pasó de **0 filas** (con `TBL_CICLOS`,
+  `TBL_DETECCIONES`, `tbl_cimatica_patrones` y `TBL_JUEZ_AUDITORIA` sí
+  pobladas) a registrar Bz, viento, Kp, LOD, fantasma y nivel de riesgo reales.
+  Corregido en `launcher_hex/` (fuente self-expanding) usando el `runner` que
+  ya se le pasaba.
+
+- **`deploy/aciertos_reporte.py` consultaba un esquema inexistente.** Las tres
+  funciones del módulo (`obtener_aciertos_recientes`,
+  `obtener_estadisticas_aciertos`, `seccion_aciertos_markdown`) pedían
+  `veredicto`, `timestamp_evento`, `event_class`, `magnitude` y `location` —
+  ninguna existe en `TBL_JUEZ_AUDITORIA`, que usa `resultado`, `verdad`,
+  `ventana_h`, `resuelto_at` y `detalles_json`. Las tres lanzaban
+  `OperationalError` y los **tres** consumidores (`generar_reporte.py`,
+  `reporte_ejecutivo.py`, `reporte_periodico.py`) se tragaban el error en
+  silencio: la sección de aciertos nunca salió en ningún reporte. Reescrito
+  contra el esquema real.
+  - La tasa de acierto ahora se calcula **solo sobre lo resuelto**; las
+    PENDIENTE se reportan aparte (antes entraban en el denominador y la tasa
+    bajaba sola con abrir predicciones nuevas).
+  - Sin "anticipación en días": la DB no guarda el instante del evento real,
+    así que se reporta la **ventana declarada** (`ventana_h`), que sí es un
+    dato registrado. Magnitud y ámbito se extraen del texto de `verdad` y
+    quedan en `None` cuando no vienen (cero datos sintéticos).
+  - `reporte_periodico.py` actualizado a la columna honesta ("Ventana
+    declarada" en horas).
+  - +8 tests nuevos (`test_aciertos_reporte.py`), incluido uno de punta a punta
+    que comprueba que la sección **llega** al reporte. El módulo no tenía
+    ninguno: por eso se pudrió sin que nadie lo notara. Suite: 430 → 438.
+
+- **`SentinelTelegramBot` ignoraba las credenciales de su constructor.** El
+  wrapper guardaba `token`/`chat_id`, se marcaba `_enabled=True` y delegaba en
+  `api.telegram`, que solo leía el entorno — así que `_get_credentials()`
+  devolvía `None` y **no se emitía ninguna petición** (verificado interceptando
+  `requests.post` y `Session.post`: ninguno se llamaba). Las funciones de envío
+  aceptan ahora un override explícito `token=`/`chat_id=`; sin él, el entorno
+  sigue mandando (regla dura #1). `send_heartbeat()` gana además el mismo
+  guardia de dry-run que ya tenía `send_alert()`.
+
+### Changed
+
+- **Tests de Telegram realineados con el código real.** `test_send_with_token`
+  parcheaba `requests.post`, pero el envío va por la sesión compartida con
+  retry/backoff (`_http.get_session`) desde que esta existe — el mock nunca
+  interceptaba nada y `test_send_failure_returns_false` pasaba de forma vacua.
+  Dos aserciones de formato (`"GEODYNAMIC ALERT"`, `"ALERTA DE PRECURSOR"`)
+  seguían esperando los encabezados anteriores a Centinela V2. Añadido un
+  fixture que aísla cada test del entorno y reinicia `_GATE` (estado a nivel de
+  módulo: sin reiniciarlo, el resultado dependía del orden de ejecución).
+
+### Notes
+
+- Entorno: `eodag` degrada correctamente (Alfa-2 sigue el camino sin feed
+  satelital), pero en este contenedor el fallo real era **PyYAML sin extensión
+  C** — `eodag>=4.7` importa `yaml.CSafeLoader`, ausente en un PyYAML sin
+  libyaml. No es defecto del repo; es del entorno donde se instale.
+
+---
+
 ## [Unreleased] — 2026-08-19
 
 > **Detalle completo:** [`CHANGELOG_2026-08-19.md`](CHANGELOG_2026-08-19.md)

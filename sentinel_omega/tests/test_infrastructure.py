@@ -30,6 +30,21 @@ from sentinel_omega.core.shared.agent_base import ConsensusResult, SignalType
 
 class TestTelegramBot:
 
+    @pytest.fixture(autouse=True)
+    def _telegram_isolado(self, monkeypatch):
+        """
+        Aísla cada test del entorno y del estado compartido:
+          - TELEGRAM_* fuera, para que los tests de dry-run no dependan de
+            que la máquina tenga credenciales cargadas (.env local o CI).
+          - _GATE es estado a nivel de módulo (cooldown anti-spam de 30 min y
+            marca de heartbeat): sin reiniciarlo, el resultado de un test
+            depende de los que corrieron antes.
+        """
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+        monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+        from sentinel_omega.infrastructure.api import telegram as tg
+        tg._GATE.__init__()
+
     def test_dry_run_no_token(self):
         bot = SentinelTelegramBot(token="", chat_id="")
         msg = TelegramMessage(
@@ -63,10 +78,13 @@ class TestTelegramBot:
         status = {"geodynamic": True}
         assert bot.send_heartbeat(status) is True
 
-    @patch("requests.post")
-    def test_send_with_token(self, mock_post):
+    # El envío NO usa requests.post directo: va por la sesión compartida con
+    # retry/backoff (_http.get_session), así que el parche apunta ahí.
+    @patch("sentinel_omega.infrastructure.api.telegram.get_session")
+    def test_send_with_token(self, mock_get_session):
         mock_resp = MagicMock()
         mock_resp.ok = True
+        mock_post = mock_get_session.return_value.post
         mock_post.return_value = mock_resp
 
         bot = SentinelTelegramBot(token="test_token", chat_id="12345")
@@ -76,12 +94,14 @@ class TestTelegramBot:
         )
         assert bot.send_alert(msg) is True
         mock_post.assert_called_once()
-        call_kwargs = mock_post.call_args
-        assert "test_token" in call_kwargs[0][0]
-        assert call_kwargs[1]["json"]["chat_id"] == "12345"
+        args, kwargs = mock_post.call_args
+        # Las credenciales del constructor deben llegar hasta la petición.
+        assert "test_token" in args[0]
+        assert kwargs["json"]["chat_id"] == "12345"
 
-    @patch("requests.post", side_effect=ConnectionError("Network error"))
-    def test_send_failure_returns_false(self, mock_post):
+    @patch("sentinel_omega.infrastructure.api.telegram.get_session")
+    def test_send_failure_returns_false(self, mock_get_session):
+        mock_get_session.return_value.post.side_effect = ConnectionError("Network error")
         bot = SentinelTelegramBot(token="token", chat_id="123")
         msg = TelegramMessage(layer="geodynamic", signal_type="TEST", confidence=0.5, summary="fail")
         assert bot.send_alert(msg) is False

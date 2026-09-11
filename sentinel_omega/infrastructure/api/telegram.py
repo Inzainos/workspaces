@@ -7,7 +7,9 @@ Hereda del Centinela V2 (Drive TELEGRAM_SENTINEL / COMMS_LINK):
   - fallo de ciclo / restauración
   - prioridades: crítico, grieta Bz, tormenta, advertencia
 
-Credenciales SOLO por entorno (nunca hardcode):
+Credenciales por entorno (nunca hardcode). Las funciones de envío aceptan
+además un override explícito `token=`/`chat_id=` para el llamador que ya las
+tiene resueltas (SentinelTelegramBot); sin override, el entorno manda:
   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
   TELEGRAM_COOLDOWN_S (opcional, default 1800)
   TELEGRAM_HEARTBEAT_S (opcional, default 14400 = 4 h)
@@ -64,9 +66,16 @@ class _AlertGate:
 _GATE = _AlertGate()
 
 
-def _get_credentials() -> Optional[Tuple[str, str]]:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+def _get_credentials(
+    token: str = "", chat_id: str = ""
+) -> Optional[Tuple[str, str]]:
+    """
+    Resuelve credenciales. Por defecto SOLO del entorno (regla dura #1);
+    los argumentos son un override explícito del llamador (p. ej. el wrapper
+    SentinelTelegramBot, que las recibe en su constructor). Nunca hardcodear.
+    """
+    token = (token or os.environ.get("TELEGRAM_BOT_TOKEN", "")).strip()
+    chat_id = (chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")).strip()
     if not token or not chat_id:
         logger.debug("Telegram credentials not configured")
         return None
@@ -76,9 +85,15 @@ def _get_credentials() -> Optional[Tuple[str, str]]:
     return token, chat_id
 
 
-def send_alert(message: str, parse_mode: str = "HTML") -> bool:
+def send_alert(
+    message: str,
+    parse_mode: str = "HTML",
+    *,
+    token: str = "",
+    chat_id: str = "",
+) -> bool:
     """Envío directo (sin gate). Preferir send_alert_gated en ciclos."""
-    creds = _get_credentials()
+    creds = _get_credentials(token, chat_id)
     if not creds:
         return False
     token, chat_id = creds
@@ -107,12 +122,15 @@ def send_alert_gated(
     alert_type: str,
     parse_mode: str = "HTML",
     cooldown: int = COOLDOWN_S,
+    *,
+    token: str = "",
+    chat_id: str = "",
 ) -> bool:
     """Envía solo si el gate anti-spam lo permite."""
     if not _GATE.allow(alert_type, cooldown=cooldown):
         logger.debug(f"Telegram gated skip: {alert_type}")
         return False
-    return send_alert(message, parse_mode=parse_mode)
+    return send_alert(message, parse_mode=parse_mode, token=token, chat_id=chat_id)
 
 
 def notify_online() -> bool:
@@ -145,12 +163,16 @@ def notify_system_restored() -> bool:
     return ok
 
 
-def maybe_heartbeat(status_line: str) -> bool:
+def maybe_heartbeat(
+    status_line: str, *, token: str = "", chat_id: str = ""
+) -> bool:
     if not _GATE.heartbeat_due():
         return False
     ok = send_alert(
         f"💓 <b>REPORTE DE ESTADO</b>\n{status_line}\n"
-        f"<i>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC</i>"
+        f"<i>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC</i>",
+        token=token,
+        chat_id=chat_id,
     )
     if ok:
         _GATE.mark_heartbeat()

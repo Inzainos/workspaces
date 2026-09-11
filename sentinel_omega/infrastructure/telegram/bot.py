@@ -40,10 +40,21 @@ class SentinelTelegramBot:
         if not self._enabled:
             logger.info(f"[DRY RUN] Telegram: {text}")
             return True
-        return tg.send_alert_gated(text, f"{msg.layer}_{msg.signal_type}")
+        return tg.send_alert_gated(
+            text,
+            f"{msg.layer}_{msg.signal_type}",
+            token=self._token,
+            chat_id=self._chat_id,
+        )
 
     def send_heartbeat(self, status: dict) -> bool:
         layers_status = " | ".join(
             f"{'✅' if v else '❌'} {k}" for k, v in status.items()
         )
-        return tg.maybe_heartbeat(f"Layers: {layers_status}")
+        text = f"Layers: {layers_status}"
+        if not self._enabled:
+            logger.info(f"[DRY RUN] Telegram heartbeat: {text}")
+            return True
+        return tg.maybe_heartbeat(
+            text, token=self._token, chat_id=self._chat_id
+        )
