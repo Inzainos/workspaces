@@ -227,3 +227,10 @@ Pipeline completado: delta_enriched integrado de punta a punta + rebuild_complet
 > cimática, correo, multi-evento, delta_enriched): conservado en el historial
 > de commits de este archivo. Para el detalle de la sesión más reciente ver
 > [`CHANGELOG_2026-08-19.md`](CHANGELOG_2026-08-19.md).
+
+## [Unreleased] — 2026-09-15 (Persistencia y Resiliencia)
+
+- **LOCF (Last Observation Carried Forward) Persistente**: Se migró el cache en memoria a la tabla 	bl_locf_cache de SQLite en data_pipeline.py y epository.py garantizando la continuidad de los precursores en caso de caída de las APIs de origen o reinicio del sistema.
+- **Refetch Automático Diario**: Implementado check_and_refetch_stale_apis en mantenimiento.py para correr de manera automática los scripts de backfill (sismos_refetch_recent.py y clima_gapfill_2026.py) si detectan un lag mayor a 7 días.
+- **Salud de APIs (Endpoint /api/health/apis)**: Dashboard enriquecido con una ruta para observar en tiempo real la latencia y el estado (*LIVE*, *LOCF_ACTIVE*, *STALE*) de todas las integraciones subyacentes.
+- **Backfill Manual Ejecutado**: Recuperados 2,203 sismos de USGS correspondientes a los últimos 30 días para sincronizar TBL_HISTORICO_SISMICO con la operación en tiempo real.
