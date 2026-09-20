@@ -71,6 +71,26 @@ class GeodynamicLayerRunner:
             self._repo = SentinelRepository()
         return self._repo
 
+    def _bind_locf(self) -> None:
+        """Enlaza el repo al pipeline para que el LOCF persista en la DB.
+
+        El patch (data_pipeline_locf_patch) instala bind_repository, pero
+        nadie lo llamaba: el pipeline se construye sin `repository`, así que
+        `self._repo` quedaba None y _locf_set nunca escribía en
+        tbl_locf_cache (el fallo se tragaba en su try/except). Idempotente.
+        """
+        if getattr(self, "_locf_bound", False):
+            return
+        bind = getattr(self.pipeline, "bind_repository", None)
+        if bind is None:
+            return  # patch LOCF no activo
+        try:
+            bind(self._get_repo())
+            self._locf_bound = True
+            logger.info("LOCF enlazado al repositorio — persistencia activa")
+        except Exception as exc:  # noqa: BLE001 — fail-soft
+            logger.warning("No se pudo enlazar LOCF al repo: %s", exc)
+
     def _persist_sismos(self, beta1_data: Dict) -> None:
         """Persiste el catálogo sísmico vivo en TBL_HISTORICO_SISMICO (Juez).
 
@@ -154,6 +174,8 @@ class GeodynamicLayerRunner:
 
     def run(self, financial_data: Optional[Dict] = None) -> ConsensusResult:
         logger.info("=== Sentinel Omega Cycle ===")
+
+        self._bind_locf()
 
         alfa1_data = self.pipeline.fetch_alfa1_data()
         beta1_data = self.pipeline.fetch_beta1_data()
