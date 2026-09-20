@@ -260,6 +260,13 @@ class GeodynamicPipeline:
                     })
             if eventos:
                 result["seismic_events"] = eventos
+                # Conteo M4+ de las ULTIMAS 24 H para el detector de enjambre
+                # (su umbral está definido por día, no por la ventana de 30 d).
+                _corte = time.time() - 86_400
+                result["m4_count_24h"] = sum(
+                    1 for e in eventos
+                    if e["magnitude"] >= 4.0 and e["timestamp"] >= _corte
+                )
 
         try:
             sch = fetch_schumann_resonance(cleanup=True)

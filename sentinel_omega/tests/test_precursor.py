@@ -514,15 +514,24 @@ class TestSilentTriggerDetection:
 
 
 class TestSeismicClusterDetection:
+    """Umbral p90 = 23 M4+/24h, calibrado sobre 11.934 días del backcast.
+
+    El valor anterior (10) se superaba el 85% de los días: el detector no
+    discriminaba nada (ganancia de Molchan ~1).
+    """
 
     def test_cluster_detected(self):
-        assert detect_seismic_cluster(15) is True
+        assert detect_seismic_cluster(30) is True
 
     def test_below_threshold(self):
         assert detect_seismic_cluster(5) is False
 
+    def test_dia_normal_no_dispara(self):
+        # la mediana real es 15 M4+/día: un día corriente NO es un enjambre
+        assert detect_seismic_cluster(15) is False
+
     def test_exact_threshold(self):
-        assert detect_seismic_cluster(10) is True
+        assert detect_seismic_cluster(23) is True
 
 
 class TestVolcanicPrecursor:
@@ -757,11 +766,25 @@ class TestPrecursorScanner:
 
     def test_seismic_cluster_detection(self):
         scanner = self._make_scanner()
-        beta1 = {"seismic_magnitudes": np.array([4.5, 4.2, 4.8, 4.1, 4.3, 5.0, 4.7, 4.4, 4.6, 4.9, 5.1])}
+        # 25 sismos M4+ en 24 h: por encima del p90 (23) → es un enjambre
+        beta1 = {
+            "seismic_magnitudes": np.full(25, 4.5),
+            "m4_count_24h": 25,
+        }
         detections = scanner.scan({}, beta1, {})
         cluster = [d for d in detections if d.tipo == PrecursorType.SEISMIC_CLUSTER]
         assert len(cluster) == 1
-        assert cluster[0].values["event_count"] >= 10
+        assert cluster[0].values["event_count"] >= 23
+
+    def test_seismic_cluster_dia_normal(self):
+        """Un día con actividad mediana no debe activar el precursor."""
+        scanner = self._make_scanner()
+        beta1 = {
+            "seismic_magnitudes": np.full(15, 4.5),
+            "m4_count_24h": 15,
+        }
+        detections = scanner.scan({}, beta1, {})
+        assert not [d for d in detections if d.tipo == PrecursorType.SEISMIC_CLUSTER]
 
     def test_volcanic_detection(self):
         scanner = self._make_scanner()

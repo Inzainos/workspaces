@@ -223,7 +223,18 @@ def detect_silent_trigger(kp_series: list, min_hours: float = 12.0) -> bool:
     return all(kp < 2.0 for kp in kp_series) and (sum(kp_series) / len(kp_series)) <= 1.5
 
 
-def detect_seismic_cluster(event_count_24h: int, threshold: int = 10) -> bool:
+def detect_seismic_cluster(event_count_24h: int, threshold: int = 23) -> bool:
+    """¿Hay un enjambre sísmico anómalo en las últimas 24 h?
+
+    El umbral se calibró contra la distribución real de M4+/día del backcast
+    (11.934 días, 1994-2025): media 15.6, mediana 15, p90 = 23, p95 = 27.
+    El valor anterior (10) se superaba el 85% de los días, así que el
+    "precursor" se activaba casi siempre y su ganancia de Molchan era ~1, es
+    decir, sin habilidad real. Con p90 dispara ~10% de los días.
+
+    Se elige p90 y no p95/p99 por la pérdida asimétrica del sistema
+    (miss = 10x, falsa alarma = 1x): conviene pecar de sensible.
+    """
     return event_count_24h >= threshold
 
 
