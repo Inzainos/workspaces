@@ -422,6 +422,11 @@ def ejecutar_bloque_anual(
                 ),
             )
 
+        # OJO: aquí solo se siembra el timestamp. Las columnas astronómicas
+        # (fase_lunar_pct, es_sicigia, distancia_lunar_km) las rellena
+        # `scripts/db_backfill_astronomia.py` — CÓRRELO DESPUÉS DE UN BACKCAST
+        # o quedarán muertas y omega entrenará con fase lunar en cero (bug
+        # detectado el 2026-09-20). `lod_ms` es medición del IERS: no derivable.
         cursor.execute(
             """INSERT OR IGNORE INTO tbl_astronomia_cinematica
                (timestamp_blk) VALUES (?)""",
