@@ -288,7 +288,12 @@ def compute_cross(data, window_days: Optional[int] = None) -> CrossResult:
             and p.target in target_set
             and np.isfinite(p.pearson_r)
         ]
-        return float(np.mean(rs)) if rs else 0.0
+        if not rs:
+            # Sin pares válidos = SIN DATOS, no "correlación cero". Devolver
+            # 0.0 aquí ocultó 671 ciclos de fuentes caídas (2026-09-20).
+            logger.warning("cross: sin pares válidos para %s→%s", driver_set, target_set)
+            return float("nan")
+        return float(np.mean(rs))
 
     result.geomagnetic_coupling = _mean_abs_r(GEOMAG_DRIVERS, FINANCIAL_TARGETS)
     result.schumann_coupling = _mean_abs_r(SCHUMANN_DRIVERS, FINANCIAL_TARGETS)
