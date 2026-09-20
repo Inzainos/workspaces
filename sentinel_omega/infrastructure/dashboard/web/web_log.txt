@@ -1,0 +1,10 @@
+npm notice run sentinel-omega-dashboard@0.1.0 dev
+npm notice run vite --host 0.0.0.0
+Port 5173 is in use, trying another one...
+
+  VITE v6.4.3  ready in 364 ms
+
+  ➜  Local:   http://localhost:5174/
+  ➜  Network: http://10.255.255.254:5174/
+  ➜  Network: http://192.168.1.144:5174/
+  ➜  Network: http://172.18.0.1:5174/

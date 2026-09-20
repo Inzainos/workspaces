@@ -43,6 +43,8 @@ BOT_DIMS = {
     "beta2": 16,
     "delta": 16,
     "omega": 12,
+    "loki": 8,
+    "jupiter": 8,
 }
 
 FEATURE_ORDER: Dict[str, List[str]] = {
@@ -81,6 +83,14 @@ FEATURE_ORDER: Dict[str, List[str]] = {
         "fase_lunar", "es_sicigia", "schumann_mean", "schumann_std",
         "bz_mean", "kp_mean", "viento_avg", "bz_min",
         "kp_max", "schumann_mean", "fase_lunar", "kp_max_72h",
+    ],
+    "loki": [
+        "bz", "solar_wind", "schumann_activity", "vix", "lod",
+        "kp_mean", "fase_lunar", "btc_volatilidad",
+    ],
+    "jupiter": [
+        "latest_kp", "storm_active", "attention_z", "corr_significant",
+        "kp_mean", "xray_mean", "trends_mean", "schumann_mean",
     ],
 }
 
@@ -320,6 +330,8 @@ def train_export(bot: str, X: np.ndarray, y_conf: np.ndarray, y_sig: np.ndarray)
         "beta2": "beta2_atmospheric_cnn.onnx",
         "delta": "delta_financial_lstm.onnx",
         "omega": "omega_espacial_rf.onnx",
+        "loki": "loki_unificado_rf.onnx",
+        "jupiter": "jupiter_attention_rf.onnx",
     }
     out = MODELS_DIR / names[bot]
     with open(out, "wb") as f:

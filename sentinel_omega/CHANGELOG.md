@@ -1,4 +1,57 @@
+## 2026-09-15 — Email removido, ONNX full suite, Telegram Mini App, lag en horas
+
+- **Email removido:** eliminado `infrastructure/api/correo.py`; `deploy/enviar_correos.py` ahora flushea digest horario por Telegram; `reporte_ejecutivo.py` y `reporte_periodico.py` usan AlertService → Telegram. Variables SMTP/MAIL eliminadas de docs.
+- **ONNX full suite:** entrenados `loki_unificado_rf.onnx` (18KB) y `jupiter_attention_rf.onnx` (24KB) desde firmas + Juez feedback. `BOT_DIMS` y `FEATURE_ORDER` actualizados (8 features c/u). Todos 8 modelos con datos históricos.
+- **Arquitectura 8+3 agentes:** docs actualizados (README/CLAUDE/AGENTS): 8 SNT + Omega + Loki + Padre. Jupiter, Omega, Loki con roles documentados.
+- **Telegram Mini App:** reportes horarios e inmediatos incluyen URL `TELEGRAM_WEBAPP_URL` (HTTPS público) y botón WebApp. `consenso_vigilante.py` muestra "🔗 Mini App: https://..." en digest.
+- **Lag en horas:** hourly digest y precursores muestran `SISMO_M4: ~192h` (antes días). `get_model_status()` agrega tabla de lag al reporte.
+- **Model status en digest:** hourly report incluye `✅ ALFA1 (333KB) ... ✅ LOKI (18KB) ✅ JUPITER (24KB)` + lag table.
+- **Dashboard bind 0.0.0.0:** `sentinel-omega-dashboard-api.service` y `-web.service` habilitados LAN.
+- **Tests:** 446 passing.
+
+## 2026-09-14 — Contrato documentación↔pipeline (script-by-script)
+
+- **Docs:** se amplió mapa de `infrastructure/pipeline/` en `README.md` (flat + nested) con scripts runtime, batch y one-shot.
+- **Docs:** nueva sección **"Scripts auxiliares del pipeline (auditados)"** en README con tipo de script y uso esperado.
+- **Docs:** `CLAUDE.md` (flat + nested) ahora incluye **"Pipeline scripts (operational map)"**.
+- **Docs/Regla:** `AGENTS.md` incorpora contrato operativo para mantener sincronía código↔README/CLAUDE/CHANGELOG.
+- **Auditoría:** generado `docs/audits/pipeline_script_by_script_contract_20260914_021102.{md,json}`.
+- **Auditoría total consolidada:** `docs/audits/AUDITORIA_TOTAL_2026-09-14.md` con alcance, métricas, tests globales y deuda operativa.
+- **Dashboard moderno persistente (user services):** `~/.config/systemd/user/sentinel-omega-dashboard-api.service` (`:8787`) y `sentinel-omega-dashboard-web.service` (`:5173`) habilitados con `systemctl --user enable --now`, ahora bind en `0.0.0.0` para acceso LAN.
+- **Fix UI React:** componentes faltantes agregados (`HealthStrip.tsx`, `TelemetryStrip.tsx`, `AskBox.tsx`) para eliminar errores de import en Vite.
+
+## 2026-09-13 — Duelo launcher cerrado, watchdog/ops, Schumann/Alfa2 tests
+
+- **Fixed:** `sentinel-omega-scheduler` disabled — dejaba de matar al launcher de `sentinel-omega` (alertas Telegram desbloqueadas). Watchdog ya no re-enable el scheduler.
+- **Ops:** dashboard Sentinel `:8510` active; Ollama = Windows `ollama.exe` (unit Kali disabled); backup offbox catch-up `watchdog_2026-09-13_1253.tar.gz` (hueco 12-sep irrecuperable).
+- **Tests:** Schumann connector tests alineados a ingest None (6/6); `pytrends` en venv; Alfa2 7 passed (Agente-T).
+- **Docs:** `docs/SESSION_2026-09-13.md`, `docs/SYSTEM_HEALTH_2026-09-13.md`.
+
+## 2026-09-10/11 — Dashboard 6 tabs, ingest Schumann/Delta, ONNX retrain
+
+- Dashboard React: exactamente 6 tabs; APIs RO schumann_vivo/delta/clima_espacial; promovido Dev→Test→Prod.
+- Telegram messaging: eliminado copy "lotería" de alertas/digest.
+- Ingest: WPC Tomsk (linaje Drive extractor_vision_schumann); sin fallback falso 7.83/0; Schumann vivo 8.26/21.46; clima 2026 gapfill; sismos refetch; Delta no escribe all-zero.
+- ONNX: wipe+retrain; Prod deja bootstrap-only y gana Loki.
+- Docs: SESSION_2026-09-10.md, SYSTEM_HEALTH, INGEST_FIX, TRAIN_RESTART, DASHBOARD_6TABS_DONE.
+- No corrido: launcher --entrenar firmas.
+
 # Changelog - Sentinel Omega
+
+## [Unreleased] - 2026-09-10 - Dashboard 6 tabs → Prod + lottery scrub + health/ingest docs
+
+### Changed
+- Promocion Dev→Prod (flat + nested) del dashboard React 6 tabs + api.py/README/package.json (puerto 5174).
+- Messaging loteria scrub (0 matches en Prod); restart ~18:06 CST.
+- Docs: SYSTEM_HEALTH_2026-09-10.md, DASHBOARD_6TABS_DONE.md, INGEST_FIX_2026-09-10.md stub (pending).
+
+### Notes
+- Health OK. DB empty/flat (correlaciones vacias / frescura) documentado; DB file no escrita en esta pasada.
+- Blockers: correlaciones vacias, ONNX placeholder, tsc shim, prod gate firmas, ingest PENDING.
+- NO se habilito entrenar/firmas/remapeo. Streamlit 8501 legacy sin tocar.
+
+---
+
 
 ## [2.5.4] - 2026-09-04 - Fixes: Vite/Health/Telegram — documentado
 

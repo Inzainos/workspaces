@@ -433,6 +433,40 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 "",
             ]
 
+    # ── Muro de Lags: ventana temporal ACTIVA con countdown que decrementa ──
+    try:
+        ml = conn.execute(
+            "SELECT clases, fecha_inicio, fecha_fin, detectado_en "
+            "FROM tbl_muro_lags_estado WHERE id=1 AND activo=1"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        ml = None
+    if ml:
+        import json as _json
+        from datetime import datetime as _dtn
+        try:
+            dini = _dtn.strptime(ml[1], "%Y-%m-%d").date()
+            dfin = _dtn.strptime(ml[2], "%Y-%m-%d").date()
+            hoy = _dtn.utcnow().date()
+            rini = max(0, (dini - hoy).days)
+            rfin = max(0, (dfin - hoy).days)
+            t0 = _dtn.strptime(ml[3], "%Y-%m-%d %H:%M")
+            transc = max(0, (_dtn.utcnow() - t0).days)
+            clases_ml = ", ".join(_json.loads(ml[0] or "[]"))
+            lineas += [
+                "## 🕐 Ventana temporal activa (muro de lags)",
+                "",
+                "> Varias firmas independientes convergen en las MISMAS fechas. "
+                "La ventana se fijó al **detectarla** y el contador **baja** cada "
+                "ciclo mientras la señal persiste — no se re-proyecta desde hoy.",
+                "",
+                f"- **Faltan ~{rini}–{rfin} días** (ventana {ml[1]} → {ml[2]})",
+                f"- Detectada hace **{transc} días** · clases: {clases_ml or '—'}",
+                "",
+            ]
+        except (ValueError, TypeError):
+            pass
+
     # ── Lag de anticipación por tipo de evento ──
     try:
         lags = conn.execute(
@@ -1063,14 +1097,16 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             f"{f'{viva_now:.1%}' if viva_now is not None else '—'} | "
             f"{f'{previo_salud[3]:.1%}' if previo_salud and previo_salud[3] is not None else '—'} | "
             f"{_delta(viva_now, previo_salud[3] if previo_salud else None, '{:+.1%}')} |")
+        prev_aciertos = f"{previo_salud[4]:,} / {previo_salud[5]:,}" if (previo_salud and previo_salud[4] is not None and previo_salud[5] is not None) else "—"
         lineas.append(
             f"| Aciertos / Fallos (vivos) | {aciertos_now:,} / {fallos_now:,} | "
-            f"{f'{previo_salud[4]:,} / {previo_salud[5]:,}' if previo_salud else '—'} | "
-            f"{_delta(float(aciertos_now), float(previo_salud[4]) if previo_salud else None, '{:+.0f}') } aciertos |")
+            f"{prev_aciertos} | "
+            f"{_delta(float(aciertos_now), float(previo_salud[4]) if (previo_salud and previo_salud[4] is not None) else None, '{:+.0f}') } aciertos |")
+        prev_pend = f"{previo_salud[6]:,}" if (previo_salud and previo_salud[6] is not None) else "—"
         lineas.append(
             f"| Pendientes de auditoría | {pend_now:,} | "
-            f"{f'{previo_salud[6]:,}' if previo_salud else '—'} | "
-            f"{_delta(float(pend_now), float(previo_salud[6]) if previo_salud else None, '{:+.0f}')} |")
+            f"{prev_pend} | "
+            f"{_delta(float(pend_now), float(previo_salud[6]) if (previo_salud and previo_salud[6] is not None) else None, '{:+.0f}')} |")
 
         # Movimiento de pesos por bot (disciplina en acción)
         if previo_salud and previo_salud[7]:

@@ -796,9 +796,14 @@ class TestSesgoEnEntrenamiento:
         res = entrenar(path)
         assert "sesgo_pre" in res and "sesgo_post" in res
         assert "mejora_causal" in res
-        # tras entrenar sobre eventos idénticos, el post debe reconocer
+        # tras entrenar sobre eventos idénticos, el post debe reconocer.
+        # Bots sin firmas consolidadas (p.ej. alfa2/jupiter/loki, que no
+        # tienen backcast histórico) reportan causal=None honestamente en
+        # vez de un número inventado — se excluyen de esta aserción.
         if res["sesgo_post"]:
             for bot, d in res["sesgo_post"].items():
+                if d["causal"] is None:
+                    continue
                 assert 0.0 <= d["causal"] <= 1.0
 
 

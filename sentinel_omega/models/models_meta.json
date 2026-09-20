@@ -1,36 +1,46 @@
 {
-  "retrained_at": "2026-09-04T05:04:30.505325Z",
-  "db_path": "data/SENTINEL_OMEGA_PRO.db",
+  "retrained_at": "2026-09-20T09:10:00.372432Z",
+  "db_path": "sentinel_omega/data/SENTINEL_OMEGA_PRO.db",
   "bots": {
     "alfa1": {
-      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/alfa1_spaceweather_rf.onnx",
-      "n": 2500,
-      "source": "bootstrap-only (2500)"
+      "path": "/home/deamon/workspaces/sentinel_omega/models/alfa1_spaceweather_rf.onnx",
+      "n": 2124,
+      "source": "db-only (2124)"
     },
     "alfa2": {
-      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/alfa2_satellite_cnn.onnx",
-      "n": 2500,
-      "source": "bootstrap-only (2500)"
+      "path": "/home/deamon/workspaces/sentinel_omega/models/alfa2_satellite_cnn.onnx",
+      "n": 1776,
+      "source": "db-only (1776)"
     },
     "beta1": {
-      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/beta1_schumann_fft.onnx",
-      "n": 2500,
-      "source": "bootstrap-only (2500)"
+      "path": "/home/deamon/workspaces/sentinel_omega/models/beta1_schumann_fft.onnx",
+      "n": 2637,
+      "source": "db-only (2637)"
     },
     "beta2": {
-      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/beta2_atmospheric_cnn.onnx",
-      "n": 2500,
-      "source": "bootstrap-only (2500)"
+      "path": "/home/deamon/workspaces/sentinel_omega/models/beta2_atmospheric_cnn.onnx",
+      "n": 2560,
+      "source": "db-only (2560)"
     },
     "delta": {
-      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/delta_financial_lstm.onnx",
-      "n": 2500,
-      "source": "bootstrap-only (2500)"
+      "path": "/home/deamon/workspaces/sentinel_omega/models/delta_financial_lstm.onnx",
+      "n": 2452,
+      "source": "db-only (2452)"
     },
     "omega": {
-      "path": "/home/deamon/workspaces/sentinel_omega/sentinel_omega/models/omega_espacial_rf.onnx",
-      "n": 2500,
-      "source": "bootstrap-only (2500)"
+      "path": "/home/deamon/workspaces/sentinel_omega/models/omega_espacial_rf.onnx",
+      "n": 3908,
+      "source": "db-only (3908)"
+    },
+    "loki": {
+      "path": "/home/deamon/workspaces/sentinel_omega/models/loki_unificado_rf.onnx",
+      "n": 1776,
+      "source": "db-only (1776)"
+    },
+    "jupiter": {
+      "path": "/home/deamon/workspaces/sentinel_omega/models/jupiter_attention_rf.onnx",
+      "n": 1776,
+      "source": "db-only (1776)"
     }
   }
 }

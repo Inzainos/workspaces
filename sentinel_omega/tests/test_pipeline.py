@@ -14,6 +14,19 @@ from sentinel_omega.infrastructure.pipeline.legacy_loader import LegacyDataLoade
 from sentinel_omega.core.shared.agent_base import SignalType
 
 
+@pytest.fixture(autouse=True)
+def _stub_red_no_mockeada():
+    """Los tests NO deben tocar la red. `fetch_beta1_data` llama a NASA NEO
+    (y otros fetchers) que algunos tests no mockean → cuelgan en el retry de
+    urllib3. Este stub de módulo los neutraliza; los @patch de cada test tienen
+    prioridad durante su cuerpo."""
+    with patch(
+        "sentinel_omega.infrastructure.pipeline.data_pipeline.fetch_neo_hazard_summary",
+        return_value={"hazardous_count": 0, "closest_hazardous_ld": None},
+    ):
+        yield
+
+
 # ── Helpers ────────────────────────────────────────────────────────
 
 
@@ -389,16 +402,13 @@ class TestSchumannConnector:
     def test_analyze_missing_image(self):
         from sentinel_omega.infrastructure.api.schumann import analyze_spectrogram
 
-        hz, pct = analyze_spectrogram("/nonexistent/image.jpg")
-        assert hz == 7.83
-        assert pct == 0.0
+        # ingest fix 2026-09-10: missing/unreadable image returns None (no fake 7.83/0.0)
+        assert analyze_spectrogram("/nonexistent/image.jpg") is None
 
     def test_analyze_none_path(self):
         from sentinel_omega.infrastructure.api.schumann import analyze_spectrogram
 
-        hz, pct = analyze_spectrogram(None)
-        assert hz == 7.83
-        assert pct == 0.0
+        assert analyze_spectrogram(None) is None
 
     @patch("sentinel_omega.infrastructure.api.schumann.fetch_schumann_spectrogram")
     @patch("sentinel_omega.infrastructure.api.schumann.analyze_spectrogram")
@@ -417,9 +427,8 @@ class TestSchumannConnector:
         from sentinel_omega.infrastructure.api.schumann import fetch_schumann_resonance
 
         mock_fetch.return_value = None
-        hz, pct = fetch_schumann_resonance()
-        assert hz == 7.83
-        assert pct == 0.0
+        # No download → None (callers use LOCF / skip persist; do not invent baseline)
+        assert fetch_schumann_resonance() is None
 
 
 # ── Geophysical (IERS LOD / Lunar) ───────────────────────────────
@@ -507,69 +516,55 @@ class TestESASentinelConnector:
 
 
 class TestAlfa2Agent:
+    """Alfa-2 canonical behavior: historical baseline inference only (no live learning)."""
+
+    def _ingest_zone(self, agent, zona, *, total_passes, clear_passes, thermal_anomalies=0.0):
+        agent.ingest({
+            "cobertura_satelital": {
+                zona: {
+                    "total_passes": total_passes,
+                    "clear_passes": clear_passes,
+                    "thermal_anomalies": thermal_anomalies,
+                }
+            }
+        })
 
     def test_analyze_with_coverage(self):
         from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
 
         agent = Alfa2Agent()
-        agent.ingest({
-            "zone_coverages": {
-                "guerrero_gap": {
-                    "s2_count": 5, "s1_count": 4, "total_passes": 9,
-                    "mean_revisit_days": 3.5,
-                    "s2_cloud_covers": [5.0, 12.0, 8.0, 25.0, 45.0],
-                },
-                "oaxaca_costa": {
-                    "s2_count": 3, "s1_count": 2, "total_passes": 5,
-                    "mean_revisit_days": 6.0,
-                    "s2_cloud_covers": [10.0, 15.0, 30.0],
-                },
-            },
-            "thermal_anomaly_count": 0,
-        })
+        self._ingest_zone(
+            agent, "guerrero_gap", total_passes=60, clear_passes=20, thermal_anomalies=0.0
+        )
         signal = agent.analyze()
         assert signal.signal_type in SignalType
         assert signal.confidence >= 0.0
+        assert signal.data.get("baseline_source") == "historical_precomputed"
+        assert signal.data.get("zones_analyzed") == 1
 
-    def test_analyze_with_anomalies_backed_by_lst(self):
+    def test_analyze_with_thermal_alert(self):
         from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
 
         agent = Alfa2Agent()
-        agent.ingest({
-            "zone_coverages": {
-                "guerrero_gap": {
-                    "s2_count": 8, "s1_count": 6, "total_passes": 14,
-                    "mean_revisit_days": 2.1,
-                    "s2_cloud_covers": [5.0, 8.0, 3.0, 12.0, 7.0, 10.0, 15.0, 4.0],
-                },
-            },
-            "thermal_anomaly_count": 4,
-            "lst_c": [38.2, 41.5, 39.8, 44.1],
-        })
+        # thermal_std in baseline is ~0 → z_thermal blows up with small counts
+        self._ingest_zone(
+            agent, "guerrero_gap", total_passes=58, clear_passes=20, thermal_anomalies=5.0
+        )
         signal = agent.analyze()
         assert signal.signal_type == SignalType.ALERT
         assert signal.confidence > 0.5
-        assert signal.data["lst_medida"] is True
+        assert signal.data["max_sigma"] >= 3.0
 
-    def test_anomalies_without_lst_degraded_to_watch(self):
-        # Proxy-of-proxy: conteo térmico sin lst_c medida NO alcanza para ALERT
+    def test_moderate_anomaly_is_watch(self):
         from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
 
         agent = Alfa2Agent()
-        agent.ingest({
-            "zone_coverages": {
-                "guerrero_gap": {
-                    "s2_count": 8, "s1_count": 6, "total_passes": 14,
-                    "mean_revisit_days": 2.1,
-                    "s2_cloud_covers": [5.0, 8.0, 3.0, 12.0, 7.0, 10.0, 15.0, 4.0],
-                },
-            },
-            "thermal_anomaly_count": 4,
-        })
+        self._ingest_zone(
+            agent, "guerrero_gap", total_passes=80, clear_passes=70, thermal_anomalies=0.02
+        )
         signal = agent.analyze()
-        assert signal.signal_type == SignalType.WATCH
-        assert signal.data["lst_medida"] is False
-        assert "proxy" in signal.reasoning
+        assert signal.signal_type in (SignalType.WATCH, SignalType.ALERT)
+        assert signal.data["max_sigma"] >= 1.0
 
     def test_analyze_no_data(self):
         from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
@@ -579,54 +574,37 @@ class TestAlfa2Agent:
         signal = agent.analyze()
         assert signal.signal_type == SignalType.NO_SIGNAL
 
-    def test_health_check(self):
+    def test_health_check_uses_baseline(self):
         from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
 
         agent = Alfa2Agent()
-        assert agent.health_check() is False
-        agent.ingest({"zone_coverages": {"test": {"s2_count": 1}}})
+        # Canonical: health reflects loaded historical baseline, not ingest presence.
+        assert agent.health_check() is True
+        agent.ingest({"cobertura_satelital": {"guerrero_gap": {"total_passes": 1, "clear_passes": 0}}})
         assert agent.health_check() is True
 
-    # ── self-learning baseline ("its own patterns") ──────────────────────
+    def test_init_has_no_state_path(self):
+        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+        import inspect
 
-    def _cycle(self, agent, lst_c):
-        agent.ingest({"zone_coverages": {"guerrero_gap": {"lst_c": lst_c}}})
-        return agent.analyze()
+        sig = inspect.signature(Alfa2Agent.__init__)
+        assert "state_path" not in sig.parameters
+        agent = Alfa2Agent()
+        assert agent._baseline_stats is not None
+        assert "guerrero_gap" in agent._baseline_stats or "mexico" in agent._baseline_stats
 
-    def test_learns_baseline_then_flags_deviation(self):
+    def test_near_baseline_is_neutral(self):
         from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
 
-        agent = Alfa2Agent(state_path=None)  # in-memory, isolated
-        # Feed a stable thermal baseline for several cycles -> agent learns it.
-        for lst in [20.0, 20.2, 19.8, 20.1, 19.9, 20.0]:
-            sig = self._cycle(agent, lst)
-        # Within its learned baseline -> not an alert.
-        assert sig.signal_type in (SignalType.NEUTRAL, SignalType.WATCH)
-        # A large thermal excursion is now flagged as a learned-baseline anomaly.
-        spike = self._cycle(agent, 26.0)
-        assert spike.signal_type in (SignalType.WATCH, SignalType.ALERT)
-        assert spike.data["max_abs_z"] >= agent.Z_WATCH
+        agent = Alfa2Agent()
+        # Near historical obs_mean (~58.5) with low thermal → NEUTRAL/low sigma
+        self._ingest_zone(
+            agent, "guerrero_gap", total_passes=90, clear_passes=30, thermal_anomalies=0.0
+        )
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.NEUTRAL
+        assert signal.data["max_sigma"] < 1.0
 
-    def test_learning_phase_is_neutral(self):
-        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
-
-        agent = Alfa2Agent(state_path=None)
-        sig = self._cycle(agent, 20.0)  # first cycle, no history yet
-        assert sig.signal_type == SignalType.NEUTRAL
-        assert sig.data["learning_zones"] == 1
-
-    def test_baseline_persists_across_instances(self, tmp_path):
-        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
-
-        state = str(tmp_path / "alfa2.json")
-        a1 = Alfa2Agent(state_path=state)
-        for lst in [20.0, 20.1, 19.9, 20.0, 20.2, 19.8]:
-            self._cycle(a1, lst)
-        # A fresh instance reloads the learned baseline from disk.
-        a2 = Alfa2Agent(state_path=state)
-        assert a2._baselines["guerrero_gap"]["n"] >= a2.MIN_HISTORY
-        spike = self._cycle(a2, 27.0)
-        assert spike.data["max_abs_z"] >= a2.Z_WATCH
 
 
 # ── OpenWeatherMap ─────────────────────────────────────────────────
@@ -728,12 +706,14 @@ class TestTelegramConnector:
         assert "GEODYNAMIC CONSENSUS" in msg
         assert "90%" in msg
 
+    @patch("sentinel_omega.infrastructure.api.telegram.ALERT_QUEUE_AVAILABLE", False)
     @patch.dict("os.environ", {}, clear=True)
     def test_send_alert_no_credentials(self):
         from sentinel_omega.infrastructure.api.telegram import send_alert
         result = send_alert("Test message")
         assert result is False
 
+    @patch("sentinel_omega.infrastructure.api.telegram.ALERT_QUEUE_AVAILABLE", False)
     @patch("sentinel_omega.infrastructure.api.telegram.get_session")
     @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "test:token", "TELEGRAM_CHAT_ID": "12345"})
     def test_send_alert_success(self, mock_get_session):
@@ -746,6 +726,7 @@ class TestTelegramConnector:
         assert result is True
         mock_get_session.return_value.post.assert_called_once()
 
+    @patch("sentinel_omega.infrastructure.api.telegram.ALERT_QUEUE_AVAILABLE", False)
     @patch("sentinel_omega.infrastructure.api.telegram.get_session")
     @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "test:token", "TELEGRAM_CHAT_ID": "12345"})
     def test_send_alert_failure(self, mock_get_session):

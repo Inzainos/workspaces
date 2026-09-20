@@ -108,7 +108,7 @@ class JupyterConfig:
 @dataclass
 class SentinelOmegaConfig:
     project_name: str = "Sentinel Omega"
-    version: str = "2.5.0-shadow-node"
+    version: str = "2.5.4"
     author: str = "Elán Zainos Corona (Fractal Core Research)"
 
     databases: DatabaseConfig = field(default_factory=DatabaseConfig)

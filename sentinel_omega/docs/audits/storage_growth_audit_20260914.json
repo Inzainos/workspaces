@@ -1,0 +1,302 @@
+{
+  "estado": {
+    "exists": true,
+    "file_count": 1124,
+    "total_bytes": 22559579,
+    "top_files": [
+      {
+        "path": "/home/deamon/workspaces/estado/entrenamiento_inicial.log",
+        "size_bytes": 399874,
+        "mtime": "2026-07-24T09:37:00.746693+00:00",
+        "age_days": 51.92
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/graficas/mensual_fantasma.png",
+        "size_bytes": 44959,
+        "mtime": "2026-09-04T21:34:48.761270+00:00",
+        "age_days": 9.42
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/graficas/mensual_breaches.png",
+        "size_bytes": 35039,
+        "mtime": "2026-09-04T21:34:48.761270+00:00",
+        "age_days": 9.42
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/graficas/aciertos_1d_barras.png",
+        "size_bytes": 31738,
+        "mtime": "2026-09-11T18:06:08.544308+00:00",
+        "age_days": 2.57
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/graficas/aciertos_7d_barras.png",
+        "size_bytes": 31702,
+        "mtime": "2026-09-13T18:24:03.313592+00:00",
+        "age_days": 0.56
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/graficas/aciertos_7d_pastel.png",
+        "size_bytes": 28502,
+        "mtime": "2026-09-13T18:24:03.233592+00:00",
+        "age_days": 0.56
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/graficas/semanal_alertas.png",
+        "size_bytes": 27714,
+        "mtime": "2026-09-13T18:24:03.433592+00:00",
+        "age_days": 0.56
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/historial/2026/09/2026-09-11_04-05_MX.md",
+        "size_bytes": 27102,
+        "mtime": "2026-09-11T10:05:53.544705+00:00",
+        "age_days": 2.9
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/historial/2026/09/2026-09-14_00-14_MX.md",
+        "size_bytes": 27064,
+        "mtime": "2026-09-14T06:14:05.156105+00:00",
+        "age_days": 0.06
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/REPORTE.md",
+        "size_bytes": 27064,
+        "mtime": "2026-09-14T06:14:05.154926+00:00",
+        "age_days": 0.06
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/historial/2026/09/2026-09-11_02-01_MX.md",
+        "size_bytes": 27052,
+        "mtime": "2026-09-11T08:01:53.587244+00:00",
+        "age_days": 2.99
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/historial/2026/09/2026-09-09_18-09_MX.md",
+        "size_bytes": 27047,
+        "mtime": "2026-09-10T00:09:12.384113+00:00",
+        "age_days": 4.32
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/2026-08-06_19-26_MX.md",
+        "size_bytes": 27035,
+        "mtime": "2026-08-22T17:52:19.863511+00:00",
+        "age_days": 22.58
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/historial/2026/08/2026-08-06_19-26_MX.md",
+        "size_bytes": 27035,
+        "mtime": "2026-08-07T01:26:05.892958+00:00",
+        "age_days": 38.26
+      },
+      {
+        "path": "/home/deamon/workspaces/estado/graficas/comparativo_fantasma.png",
+        "size_bytes": 27016,
+        "mtime": "2026-09-14T06:14:43.856190+00:00",
+        "age_days": 0.06
+      }
+    ]
+  },
+  "data": {
+    "exists": true,
+    "file_count": 10,
+    "total_bytes": 2275283813,
+    "top_files": [
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/data/SENTINEL_OMEGA_PRO.db",
+        "size_bytes": 914968576,
+        "mtime": "2026-09-14T07:37:44.022895+00:00",
+        "age_days": 0.0
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/data/backups/SENTINEL_OMEGA_PRO.db.copy-20260913_post_classify",
+        "size_bytes": 914968576,
+        "mtime": "2026-09-13T21:41:53.476110+00:00",
+        "age_days": 0.42
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/data/sentinel_omega.log",
+        "size_bytes": 255105203,
+        "mtime": "2026-09-14T07:43:12.090814+00:00",
+        "age_days": 0.0
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/data/sentinel_omega.log.prev",
+        "size_bytes": 186064922,
+        "mtime": "2026-08-23T02:08:39.053523+00:00",
+        "age_days": 22.23
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/data/SENTINEL_OMEGA_PRO.db-wal",
+        "size_bytes": 4124152,
+        "mtime": "2026-09-14T07:42:52.454818+00:00",
+        "age_days": 0.0
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/data/SENTINEL_OMEGA_PRO.db-shm",
+        "size_bytes": 32768,
+        "mtime": "2026-09-14T07:42:52.338818+00:00",
+        "age_days": 0.0
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/data/alerta_fantasma.png",
+        "size_bytes": 19034,
+        "mtime": "2026-08-16T18:21:29.657471+00:00",
+        "age_days": 28.56
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/data/alfa2_baseline_historical.json",
+        "size_bytes": 579,
+        "mtime": "2026-09-04T05:36:49.332145+00:00",
+        "age_days": 10.09
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/data/sentinel_omega.pid",
+        "size_bytes": 3,
+        "mtime": "2026-09-14T07:10:49.249347+00:00",
+        "age_days": 0.02
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/data/scheduler_reportes.log",
+        "size_bytes": 0,
+        "mtime": "2026-07-24T02:44:50.799338+00:00",
+        "age_days": 52.21
+      }
+    ]
+  },
+  "models": {
+    "exists": true,
+    "file_count": 15,
+    "total_bytes": 3381543,
+    "top_files": [
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/beta2_atmospheric_cnn.onnx",
+        "size_bytes": 782782,
+        "mtime": "2026-09-13T09:05:00.284156+00:00",
+        "age_days": 0.94
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/beta1_schumann_fft.onnx",
+        "size_bytes": 693765,
+        "mtime": "2026-09-13T09:04:59.954047+00:00",
+        "age_days": 0.94
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/delta_financial_lstm.onnx",
+        "size_bytes": 639207,
+        "mtime": "2026-09-13T09:05:00.579076+00:00",
+        "age_days": 0.94
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/omega_espacial_rf.onnx",
+        "size_bytes": 491619,
+        "mtime": "2026-09-13T09:05:00.835788+00:00",
+        "age_days": 0.94
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/loki_unificado_rf.onnx",
+        "size_bytes": 357152,
+        "mtime": "2026-09-11T00:20:23.584858+00:00",
+        "age_days": 3.31
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/alfa1_spaceweather_rf.onnx",
+        "size_bytes": 339267,
+        "mtime": "2026-09-13T09:04:59.445597+00:00",
+        "age_days": 0.94
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/__pycache__/train_onnx_from_db.cpython-313.pyc",
+        "size_bytes": 19888,
+        "mtime": "2026-08-30T09:04:06.657376+00:00",
+        "age_days": 14.94
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/alfa2_satellite_cnn.onnx",
+        "size_bytes": 18716,
+        "mtime": "2026-09-13T09:04:59.643220+00:00",
+        "age_days": 0.94
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/__pycache__/train_onnx_bootstrap.cpython-313.pyc",
+        "size_bytes": 16148,
+        "mtime": "2026-08-29T08:49:56.737936+00:00",
+        "age_days": 15.95
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/train_onnx_from_db.py",
+        "size_bytes": 12981,
+        "mtime": "2026-08-22T17:52:19.887511+00:00",
+        "age_days": 22.58
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/train_onnx_bootstrap.py",
+        "size_bytes": 8330,
+        "mtime": "2026-08-22T17:52:19.887511+00:00",
+        "age_days": 22.58
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/models_meta.json",
+        "size_bytes": 1087,
+        "mtime": "2026-09-13T09:05:00.837586+00:00",
+        "age_days": 0.94
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/.gitkeep",
+        "size_bytes": 385,
+        "mtime": "2026-07-24T02:42:09.032342+00:00",
+        "age_days": 52.21
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/__pycache__/__init__.cpython-313.pyc",
+        "size_bytes": 189,
+        "mtime": "2026-08-29T08:49:56.736022+00:00",
+        "age_days": 15.95
+      },
+      {
+        "path": "/home/deamon/workspaces/sentinel_omega/models/__init__.py",
+        "size_bytes": 27,
+        "mtime": "2026-08-22T17:52:19.887511+00:00",
+        "age_days": 22.58
+      }
+    ]
+  },
+  "estado_months": [
+    {
+      "month": "2026-07",
+      "files": 319,
+      "size_bytes": 5477224
+    },
+    {
+      "month": "2026-08",
+      "files": 659,
+      "size_bytes": 13442862
+    },
+    {
+      "month": "2026-09",
+      "files": 60,
+      "size_bytes": 1291425
+    }
+  ],
+  "data_special": {
+    "sentinel_omega.log": {
+      "size_bytes": 255105203,
+      "age_days": 0.0
+    },
+    "sentinel_omega.log.prev": {
+      "size_bytes": 186064922,
+      "age_days": 22.23
+    },
+    "SENTINEL_OMEGA_PRO.db": {
+      "size_bytes": 914968576,
+      "age_days": 0.0
+    },
+    "SENTINEL_OMEGA_PRO.db-wal": {
+      "size_bytes": 4124152,
+      "age_days": 0.0
+    },
+    "SENTINEL_OMEGA_PRO.db-shm": {
+      "size_bytes": 32768,
+      "age_days": 0.0
+    }
+  }
+}

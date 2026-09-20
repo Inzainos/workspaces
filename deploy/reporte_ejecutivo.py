@@ -175,6 +175,11 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
         ventana_fin = muro_lags.get("fecha_fin", "—")
         base_vent = ("MURO DE LAGS (" + ", ".join(muro_lags.get("clases", []))
                      + ")")
+        rest = muro_lags.get("dias_restantes")
+        if rest:
+            base_vent += f" — faltan ~{rest[0]}-{rest[1]}d"
+        if muro_lags.get("persistente"):
+            base_vent += f" · persistente hace {muro_lags.get('dias_transcurridos', 0)}d"
     elif matches:
         clase = matches[0].get("event_class", "")
         lag_h = lags.get(clase)
@@ -737,20 +742,20 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     print(f"Reporte ejecutivo: {out}")
     print(f"Versión guardada: {vfile}")
 
-    # Encolar por correo (outbox — sin Telegram, el correo es el canal)
+    # Enviar por Telegram (vía Consenso Vigilante)
     try:
-        from sentinel_omega.infrastructure.api.correo import encolar_correo
-        conn2 = sqlite3.connect(db_path)
-        encolar_correo(
-            conn2,
-            asunto=(f"📊 Sentinel Omega — reporte ejecutivo "
-                    f"{local:%Y-%m-%d %H:%M} MX"),
-            cuerpo=contenido,
-            tipo="REPORTE",
+        from sentinel_omega.infrastructure.messaging.alert_service import AlertService, AlertTemplates
+        svc = AlertService()
+        msg = AlertTemplates.reporte_resumen(
+            fantasma=float(actual[1]) if actual else 0.0,
+            muro=f"{muros_act}/5" if actual else "n/d",
+            precursores=[],
+            consenso=f"{color} ({clasif})",
         )
-        conn2.close()
+        out_tg = svc.dispatch(msg, channels=["telegram", "log"])
+        print(f"Telegram: {'enviado/buffered' if out_tg.get('telegram') else 'buffered/fail'}")
     except Exception as e:
-        print(f"(aviso) no se pudo encolar el correo: {e}")
+        print(f"(aviso) no se pudo enviar por Telegram: {e}")
     return contenido
 
 

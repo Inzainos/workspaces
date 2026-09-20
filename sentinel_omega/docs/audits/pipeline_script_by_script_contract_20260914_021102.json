@@ -1,0 +1,317 @@
+[
+  {
+    "script": "infrastructure/pipeline/backcast.py",
+    "line_count": 537,
+    "doc_refs": [
+      [
+        "README.md",
+        426,
+        "│   │   ├── backcast.py                  # Carga histórica one-time (1994-2025, 1H)"
+      ],
+      [
+        "sentinel_omega/README.md",
+        426,
+        "│   │   ├── backcast.py                  # Carga histórica one-time (1994-2025, 1H)"
+      ]
+    ],
+    "doc_ref_count": 2,
+    "module_doc": "Historical Backcast Pipeline — ONE-TIME initial load. Loads 32 years of real data (1994-2026) from scientific APIs into SQLite. Once loaded, this script never runs again (idempoten",
+    "has_main": true,
+    "argparse": false,
+    "db_ops": true,
+    "net_ops": true,
+    "scheduler_ops": true,
+    "except_exception": 7,
+    "status": "OK",
+    "note": ""
+  },
+  {
+    "script": "infrastructure/pipeline/clima_gapfill_2026.py",
+    "line_count": 151,
+    "doc_refs": [],
+    "doc_ref_count": 0,
+    "module_doc": "",
+    "has_main": true,
+    "argparse": true,
+    "db_ops": true,
+    "net_ops": true,
+    "scheduler_ops": false,
+    "except_exception": 6,
+    "status": "SIN_CONTRATO_DIRECTO",
+    "note": "No referencia explícita por nombre en README/AGENTS/CLAUDE/CHANGELOG."
+  },
+  {
+    "script": "infrastructure/pipeline/data_pipeline.py",
+    "line_count": 551,
+    "doc_refs": [
+      [
+        "README.md",
+        381,
+        "│   │   ├── data_pipeline.py             # Pipeline base para ingesta de datos"
+      ],
+      [
+        "README.md",
+        424,
+        "│   │   ├── data_pipeline.py             # Pipeline maestro con LOCF"
+      ],
+      [
+        "CLAUDE.md",
+        176,
+        "│   │   ├── data_pipeline.py     # Pipeline base class"
+      ],
+      [
+        "sentinel_omega/README.md",
+        381,
+        "│   │   ├── data_pipeline.py             # Pipeline base para ingesta de datos"
+      ],
+      [
+        "sentinel_omega/README.md",
+        424,
+        "│   │   ├── data_pipeline.py             # Pipeline maestro con LOCF"
+      ],
+      [
+        "sentinel_omega/CLAUDE.md",
+        176,
+        "│   │   ├── data_pipeline.py     # Pipeline base class"
+      ]
+    ],
+    "doc_ref_count": 6,
+    "module_doc": "Data Pipeline — fetches from real APIs and formats for agent ingest(). Single pipeline: all 6 agents are part of one system. Agent data mapping: - Alfa-1: NOAA OMNI (Bz, solar wind",
+    "has_main": false,
+    "argparse": false,
+    "db_ops": true,
+    "net_ops": true,
+    "scheduler_ops": false,
+    "except_exception": 10,
+    "status": "OK",
+    "note": ""
+  },
+  {
+    "script": "infrastructure/pipeline/data_pipeline_locf_patch.py",
+    "line_count": 86,
+    "doc_refs": [],
+    "doc_ref_count": 0,
+    "module_doc": "Upgrade GeodynamicPipeline LOCF to persistent DB (tbl_locf_cache). Import once (launcher / data_pipeline package) to patch _locf_get/_locf_set and add bind_repository.",
+    "has_main": false,
+    "argparse": false,
+    "db_ops": false,
+    "net_ops": false,
+    "scheduler_ops": false,
+    "except_exception": 4,
+    "status": "SIN_CONTRATO_DIRECTO",
+    "note": "No referencia explícita por nombre en README/AGENTS/CLAUDE/CHANGELOG."
+  },
+  {
+    "script": "infrastructure/pipeline/entrenamiento.py",
+    "line_count": 1106,
+    "doc_refs": [],
+    "doc_ref_count": 0,
+    "module_doc": "Entrenamiento de firmas — two-phase training over the 30-year backcast. Fase 1 (reconocimiento, sin castigo): For every significant event in the historical catalog, extract the pre",
+    "has_main": false,
+    "argparse": false,
+    "db_ops": true,
+    "net_ops": true,
+    "scheduler_ops": false,
+    "except_exception": 5,
+    "status": "SIN_CONTRATO_DIRECTO",
+    "note": "No referencia explícita por nombre en README/AGENTS/CLAUDE/CHANGELOG."
+  },
+  {
+    "script": "infrastructure/pipeline/entrenar_paralelo.py",
+    "line_count": 160,
+    "doc_refs": [],
+    "doc_ref_count": 0,
+    "module_doc": "Entrenamiento paralelo por BOT — mismo resultado que el secuencial, en fracción del tiempo. Idea (de Elán, con el eje correcto): partir el trabajo y unir al final. El eje que NO fr",
+    "has_main": false,
+    "argparse": false,
+    "db_ops": true,
+    "net_ops": false,
+    "scheduler_ops": false,
+    "except_exception": 0,
+    "status": "SIN_CONTRATO_DIRECTO",
+    "note": "No referencia explícita por nombre en README/AGENTS/CLAUDE/CHANGELOG."
+  },
+  {
+    "script": "infrastructure/pipeline/juez_cycle_register.py",
+    "line_count": 86,
+    "doc_refs": [],
+    "doc_ref_count": 0,
+    "module_doc": "Register Juez predictions for Padre + every agent in agent_signals. Called from launcher after consensus. Ventana adaptativa (2h floor, lag empírica, tope 90d).",
+    "has_main": false,
+    "argparse": false,
+    "db_ops": false,
+    "net_ops": false,
+    "scheduler_ops": false,
+    "except_exception": 1,
+    "status": "SIN_CONTRATO_DIRECTO",
+    "note": "No referencia explícita por nombre en README/AGENTS/CLAUDE/CHANGELOG."
+  },
+  {
+    "script": "infrastructure/pipeline/layer_runners.py",
+    "line_count": 242,
+    "doc_refs": [
+      [
+        "README.md",
+        425,
+        "│   │   ├── layer_runners.py             # GeodynamicLayerRunner (8 agentes: SNT×5 + Omega + Loki + Padre)"
+      ],
+      [
+        "sentinel_omega/README.md",
+        425,
+        "│   │   ├── layer_runners.py             # GeodynamicLayerRunner (8 agentes: SNT×5 + Omega + Loki + Padre)"
+      ]
+    ],
+    "doc_ref_count": 2,
+    "module_doc": "Layer Runner — orchestrates fetch → ingest → analyze → consensus. Agents: Alfa-1, Alfa-2, Beta-1, Beta-2, Delta, Jupiter, Omega, Loki, Padre. Hierarchical validation: 1. All agents",
+    "has_main": false,
+    "argparse": false,
+    "db_ops": false,
+    "net_ops": false,
+    "scheduler_ops": false,
+    "except_exception": 5,
+    "status": "OK",
+    "note": ""
+  },
+  {
+    "script": "infrastructure/pipeline/legacy_loader.py",
+    "line_count": 247,
+    "doc_refs": [
+      [
+        "README.md",
+        427,
+        "│   │   └── legacy_loader.py             # Cargador de datos TITAN legacy"
+      ],
+      [
+        "sentinel_omega/README.md",
+        427,
+        "│   │   └── legacy_loader.py             # Cargador de datos TITAN legacy"
+      ]
+    ],
+    "doc_ref_count": 2,
+    "module_doc": "Legacy Data Loader — imports from CEREBRO_GOD.db and TITAN_MEMORY.db for SNT backtesting and historical analysis. CEREBRO_GOD.db schema: - historicos: 11,374 rows (1994–2026), dail",
+    "has_main": false,
+    "argparse": false,
+    "db_ops": true,
+    "net_ops": false,
+    "scheduler_ops": false,
+    "except_exception": 0,
+    "status": "OK",
+    "note": ""
+  },
+  {
+    "script": "infrastructure/pipeline/mantenimiento.py",
+    "line_count": 993,
+    "doc_refs": [],
+    "doc_ref_count": 0,
+    "module_doc": "Mantenimiento — barrido diario del historial operativo. Los ciclos escriben todo el día en las tablas operativas (cada ~2h). Una vez al día, el barrido se queda con lo SIGNIFICANTE",
+    "has_main": false,
+    "argparse": false,
+    "db_ops": true,
+    "net_ops": false,
+    "scheduler_ops": false,
+    "except_exception": 6,
+    "status": "SIN_CONTRATO_DIRECTO",
+    "note": "No referencia explícita por nombre en README/AGENTS/CLAUDE/CHANGELOG."
+  },
+  {
+    "script": "infrastructure/pipeline/reporte_engine.py",
+    "line_count": 142,
+    "doc_refs": [],
+    "doc_ref_count": 0,
+    "module_doc": "Sentinel Omega — ReportEngine unificado (refactor) Capa DRY sobre reporte_sentinel.py — mantiene compatibilidad total. Uso nuevo (recomendado): from sentinel_omega.infrastructure.p",
+    "has_main": false,
+    "argparse": false,
+    "db_ops": true,
+    "net_ops": false,
+    "scheduler_ops": false,
+    "except_exception": 1,
+    "status": "SIN_CONTRATO_DIRECTO",
+    "note": "No referencia explícita por nombre en README/AGENTS/CLAUDE/CHANGELOG."
+  },
+  {
+    "script": "infrastructure/pipeline/reporte_sentinel.py",
+    "line_count": 882,
+    "doc_refs": [],
+    "doc_ref_count": 0,
+    "module_doc": "Sentinel Omega — Generador de Reportes ======================================= Tres reportes independientes: 1. reporte_general(db_path) → resumen global de TODOS los bots (cada 2h",
+    "has_main": false,
+    "argparse": false,
+    "db_ops": true,
+    "net_ops": false,
+    "scheduler_ops": true,
+    "except_exception": 3,
+    "status": "SIN_CONTRATO_DIRECTO",
+    "note": "No referencia explícita por nombre en README/AGENTS/CLAUDE/CHANGELOG."
+  },
+  {
+    "script": "infrastructure/pipeline/scheduler_reportes.py",
+    "line_count": 149,
+    "doc_refs": [],
+    "doc_ref_count": 0,
+    "module_doc": "Sentinel Omega — Scheduler de Reportes ======================================= Corre en background junto al launcher principal. Frecuencias según los docstrings de reporte_sentinel",
+    "has_main": true,
+    "argparse": false,
+    "db_ops": false,
+    "net_ops": false,
+    "scheduler_ops": true,
+    "except_exception": 1,
+    "status": "SIN_CONTRATO_DIRECTO",
+    "note": "No referencia explícita por nombre en README/AGENTS/CLAUDE/CHANGELOG."
+  },
+  {
+    "script": "infrastructure/pipeline/sismos_refetch_recent.py",
+    "line_count": 71,
+    "doc_refs": [],
+    "doc_ref_count": 0,
+    "module_doc": "",
+    "has_main": true,
+    "argparse": true,
+    "db_ops": true,
+    "net_ops": true,
+    "scheduler_ops": false,
+    "except_exception": 1,
+    "status": "SIN_CONTRATO_DIRECTO",
+    "note": "No referencia explícita por nombre en README/AGENTS/CLAUDE/CHANGELOG."
+  },
+  {
+    "script": "infrastructure/pipeline/topologia_cascada.py",
+    "line_count": 564,
+    "doc_refs": [],
+    "doc_ref_count": 0,
+    "module_doc": "",
+    "has_main": true,
+    "argparse": true,
+    "db_ops": true,
+    "net_ops": true,
+    "scheduler_ops": true,
+    "except_exception": 3,
+    "status": "SIN_CONTRATO_DIRECTO",
+    "note": "No referencia explícita por nombre en README/AGENTS/CLAUDE/CHANGELOG."
+  },
+  {
+    "script": "infrastructure/pipeline/verificacion.py",
+    "line_count": 155,
+    "doc_refs": [
+      [
+        "CLAUDE.md",
+        231,
+        "por fila; ritmo auto-impuesto en `pipeline/verificacion.py`)."
+      ],
+      [
+        "sentinel_omega/CLAUDE.md",
+        231,
+        "por fila; ritmo auto-impuesto en `pipeline/verificacion.py`)."
+      ]
+    ],
+    "doc_ref_count": 2,
+    "module_doc": "Verificación del Juez — real vs predicción, cada 2 horas (mismo ritmo del ciclo). Cada ciclo del Padre (~2 h) registra predicciones; el Juez confronta las pendientes cuya ventana y",
+    "has_main": false,
+    "argparse": false,
+    "db_ops": true,
+    "net_ops": false,
+    "scheduler_ops": false,
+    "except_exception": 3,
+    "status": "OK",
+    "note": ""
+  }
+]

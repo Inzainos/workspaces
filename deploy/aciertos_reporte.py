@@ -54,34 +54,65 @@ def obtener_aciertos_recientes(db_path: str = DB_DEFAULT, dias: int = 30) -> Lis
     query = """
     SELECT
         j.timestamp as timestamp_prediccion,
-        j.timestamp_evento,
-        CAST((j.timestamp_evento - j.timestamp) / 86400.0 AS INTEGER) as dias_anticipacion,
+        j.resuelto_at,
+        ROUND(j.ventana_h / 24.0, 1) as dias_anticipacion,
         j.bot_name,
-        j.event_class,
-        j.magnitude,
-        j.location,
+        j.prediccion,
         j.confianza,
+        j.verdad,
+        j.detalles_json,
         j.fase,
-        j.veredicto
+        j.resultado
     FROM TBL_JUEZ_AUDITORIA j
-    WHERE j.veredicto = 'ACIERTO'
+    WHERE j.resultado = 'ACIERTO'
       AND j.timestamp >= ?
-    ORDER BY j.timestamp_evento DESC
+      AND j.fase = 'viva'
+    ORDER BY j.timestamp DESC
     """
 
     rows = conn.execute(query, (timestamp_cutoff,)).fetchall()
     conn.close()
 
+    import json
+    import re
+
     aciertos = []
     for row in rows:
+        event_class = "CALMA" if row["prediccion"] in ("neutral", "no_signal") else row["prediccion"].upper()
+        magnitude = None
+        location = "zonas monitoreadas"
+        ts_evento_dt = None
+
+        if row["detalles_json"]:
+            try:
+                det = json.loads(row["detalles_json"])
+                f_matches = det.get("firma_matches", [])
+                if f_matches:
+                    m0 = f_matches[0]
+                    event_class = m0.get("event_class", event_class)
+                    location = m0.get("nodo_nombre", location)
+            except Exception:
+                pass
+
+        if row["verdad"]:
+            m_mag = re.search(r"máx M([0-9.]+)", row["verdad"])
+            if m_mag:
+                magnitude = float(m_mag.group(1))
+
+        if row["resuelto_at"]:
+            try:
+                ts_evento_dt = datetime.fromisoformat(row["resuelto_at"].replace("Z", "+00:00"))
+            except Exception:
+                pass
+
         aciertos.append({
             "timestamp_prediccion": datetime.fromtimestamp(row["timestamp_prediccion"], tz=timezone.utc),
-            "timestamp_evento": datetime.fromtimestamp(row["timestamp_evento"], tz=timezone.utc) if row["timestamp_evento"] else None,
+            "timestamp_evento": ts_evento_dt,
             "dias_anticipacion": row["dias_anticipacion"],
             "bot": row["bot_name"],
-            "event_class": row["event_class"],
-            "magnitude": row["magnitude"],
-            "location": row["location"],
+            "event_class": event_class,
+            "magnitude": magnitude,
+            "location": location,
             "confianza": row["confianza"],
             "fase": row["fase"],
         })
@@ -106,12 +137,12 @@ def obtener_estadisticas_aciertos(db_path: str = DB_DEFAULT, dias: int = 90) -> 
     # Total general
     total_query = """
     SELECT
-        SUM(CASE WHEN veredicto = 'ACIERTO' THEN 1 ELSE 0 END) as aciertos,
-        SUM(CASE WHEN veredicto = 'FALLO' THEN 1 ELSE 0 END) as fallos,
-        SUM(CASE WHEN veredicto = 'FALSO_POSITIVO' THEN 1 ELSE 0 END) as falsos_positivos,
+        SUM(CASE WHEN resultado = 'ACIERTO' THEN 1 ELSE 0 END) as aciertos,
+        SUM(CASE WHEN resultado = 'FALLO' THEN 1 ELSE 0 END) as fallos,
+        SUM(CASE WHEN resultado = 'FALSO_POSITIVO' THEN 1 ELSE 0 END) as falsos_positivos,
         COUNT(*) as total
     FROM TBL_JUEZ_AUDITORIA
-    WHERE timestamp >= ?
+    WHERE timestamp >= ? AND fase = 'viva'
     """
 
     total_row = conn.execute(total_query, (timestamp_cutoff,)).fetchone()
@@ -120,12 +151,12 @@ def obtener_estadisticas_aciertos(db_path: str = DB_DEFAULT, dias: int = 90) -> 
     por_bot_query = """
     SELECT
         bot_name,
-        SUM(CASE WHEN veredicto = 'ACIERTO' THEN 1 ELSE 0 END) as aciertos,
+        SUM(CASE WHEN resultado = 'ACIERTO' THEN 1 ELSE 0 END) as aciertos,
         COUNT(*) as total,
         ROUND(AVG(confianza), 3) as confianza_promedio,
-        ROUND(AVG(CAST((timestamp_evento - timestamp) / 86400.0 AS FLOAT)), 1) as dias_anticipacion_promedio
+        ROUND(AVG(ventana_h / 24.0), 1) as dias_anticipacion_promedio
     FROM TBL_JUEZ_AUDITORIA
-    WHERE timestamp >= ? AND veredicto IN ('ACIERTO', 'FALLO')
+    WHERE timestamp >= ? AND fase = 'viva' AND resultado IN ('ACIERTO', 'FALLO', 'FALSO_POSITIVO')
     GROUP BY bot_name
     ORDER BY aciertos DESC
     """

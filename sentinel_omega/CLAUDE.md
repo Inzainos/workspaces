@@ -190,12 +190,32 @@ sentinel_omega/
 │   └── geodynamic/              # All 6 agents: alfa1, alfa2, beta1, beta2, delta,Omega, padre
 ├── infrastructure/
 │   ├── api/                     # NOAA, USGS, Schumann, ESA, OWM, Crypto, Bolsa, Telegram
-│   ├── pipeline/                # GeodynamicPipeline + GeodynamicLayerRunner + backcast
+│   ├── pipeline/                # GeodynamicPipeline + runners + backcast + entrenamiento + mantenimiento + reportes
 │   ├── database/                # SQLite schema, repository, 125-node seed
 │   └── dashboard/               # Streamlit + Plotly dashboard (9 tabs)
 ├── data/                        # SQLite databases
 └── tests/                       # 396 tests
 ```
+
+### Pipeline scripts (operational map)
+
+- Core runtime:
+  - `infrastructure/pipeline/data_pipeline.py` — ingesta multi-fuente + LOCF.
+  - `infrastructure/pipeline/layer_runners.py` — ciclo fetch→ingest→analyze→consensus.
+  - `infrastructure/pipeline/juez_cycle_register.py` — registro de predicciones por ciclo.
+- One-time / batch:
+  - `infrastructure/pipeline/backcast.py` — carga histórica one-time.
+  - `infrastructure/pipeline/entrenamiento.py` + `entrenar_paralelo.py` — aprendizaje por fases.
+  - `infrastructure/pipeline/mantenimiento.py` — barrido diario/correlaciones/sesgo/poda.
+- Reporting:
+  - `infrastructure/pipeline/reporte_sentinel.py` — reportes general/padre/omega.
+  - `infrastructure/pipeline/reporte_engine.py` — envoltura DRY + versionado estado/historial.
+  - `infrastructure/pipeline/scheduler_reportes.py` — scheduler 2h/6h (normalmente deshabilitado para evitar duplicidad con `sentinel-omega.service`).
+- Recovery / data fixes (on demand):
+  - `infrastructure/pipeline/sismos_refetch_recent.py` — refetch incremental USGS.
+  - `infrastructure/pipeline/topologia_cascada.py` — ETL/recalculo topológico.
+  - `infrastructure/pipeline/clima_gapfill_2026.py` — fill puntual 2026 de clima espacial.
+  - `infrastructure/pipeline/data_pipeline_locf_patch.py` — parche LOCF persistente.
 
 > El repositorio raíz tiene un `AGENTS.md` (estándar neutral para cualquier
 > agente de IA). Este `CLAUDE.md` es la guía específica de Claude Code y tiene

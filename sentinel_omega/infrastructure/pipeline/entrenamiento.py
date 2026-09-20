@@ -67,26 +67,35 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     "omega": ["fase_lunar", "es_sicigia", "schumann_mean", "schumann_std",
               "kp_max", "kp_max_72h", "bz_min", "proton_max",
               "delta_schumann_coupling"],
+    # Loki — Fractal-Bayesian: Bz, Solar Wind, Schumann, VIX, LOD
+    "loki": ["bz", "solar_wind", "schumann_activity", "vix", "lod"],
+    # Jupiter — collective attention: Kp, X-ray, Trends, Schumann
+    "jupiter": ["latest_kp", "storm_active", "attention_z", "corr_significant",
+                "kp_mean", "xray_mean", "trends_mean", "schumann_mean"],
     "padre": None,  # full vector
 }
 
 MIN_FEATURES_POR_BOT = {"alfa1": 3, "beta1": 3, "beta2": 4, "delta": 4,
-                         "alfa2": 2, "omega": 4, "padre": 5}
+                         "alfa2": 2, "omega": 4, "loki": 3, "jupiter": 3, "padre": 5}
 
 # Each bot only trains inside its own historical window (data availability):
 # beta2 = desde 2012 (catálogo volcánico NASA MSVOLSO2L4)
 # delta = desde 2016 (BTC/cripto/tendencias)
+# loki = desde 2014 (necesita datos financieros VIX + espacio + Schumann)
+# jupiter = desde 2014 (necesita datos financieros + Kp histórico)
 # alfa2 NO tiene ventana de arranque fija: entrena solo desde la primera fila
 # de tbl_cobertura_satelital (datos en vivo). El backcast no la incluye.
 BOT_DESDE: Dict[str, str] = {
     "beta2": "2012-01-01",
     "delta": "2016-01-01",
+    "loki": "2014-01-01",
+    "jupiter": "2014-01-01",
 }
 
 # Bots que solo entrenan desde datos EN VIVO (no tienen backcast en la DB).
 # El loop de Fase 1 los salta si la fuente es tbl_historico_sismico_raw
 # sin filas de tbl_cobertura_satelital en el mismo periodo.
-BOTS_LIVE_ONLY = {"alfa2"}
+BOTS_LIVE_ONLY = {"alfa2", "jupiter", "loki"}
 
 
 def _event_class(mag: float) -> str:

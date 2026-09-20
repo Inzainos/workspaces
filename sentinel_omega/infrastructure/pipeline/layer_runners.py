@@ -40,8 +40,11 @@ logger = logging.getLogger(__name__)
 
 class GeodynamicLayerRunner:
 
-    def __init__(self, enable_satellite: bool = True):
+    def __init__(self, enable_satellite: bool = True, repo=None):
         self.pipeline = GeodynamicPipeline()
+        # Repo para persistir el catálogo sísmico vivo en la operativa que lee
+        # el Juez. Lazy: si no se inyecta, se crea contra la DB canónica.
+        self._repo = repo
         self.alfa1 = Alfa1Agent()
         self.alfa2 = Alfa2Agent() if enable_satellite else None
         self.beta1 = Beta1Agent()
@@ -58,6 +61,31 @@ class GeodynamicLayerRunner:
         self.last_risk: Optional[PrecursorRisk] = None
         self.last_detections: List[PrecursorDetection] = []
         self.last_muro: Optional[MuroResult] = None
+
+    def _get_repo(self):
+        """Repo lazy contra la DB canónica (per-thread connection)."""
+        if self._repo is None:
+            from sentinel_omega.infrastructure.database.repository import (
+                SentinelRepository,
+            )
+            self._repo = SentinelRepository()
+        return self._repo
+
+    def _persist_sismos(self, beta1_data: Dict) -> None:
+        """Persiste el catálogo sísmico vivo en TBL_HISTORICO_SISMICO (Juez).
+
+        Fail-soft: nunca bloquea el ciclo. INSERT OR IGNORE dedup por event_id.
+        """
+        eventos = beta1_data.get("seismic_events") if isinstance(beta1_data, dict) else None
+        if not eventos:
+            return
+        try:
+            n = self._get_repo().bulk_insert_sismos(eventos)
+            logger.info(
+                "Sismos → operativa (Juez): +%d nuevos de %d vivos", n, len(eventos)
+            )
+        except Exception as exc:  # noqa: BLE001 — fail-soft por diseño
+            logger.warning("Persistencia sísmica falló (no bloqueante): %s", exc)
 
     def _compute_precursor_risk(
         self,
@@ -131,6 +159,10 @@ class GeodynamicLayerRunner:
         beta1_data = self.pipeline.fetch_beta1_data()
         beta2_data = self.pipeline.fetch_beta2_data()
         delta_data = self.pipeline.fetch_delta_data()
+
+        # El fetch de Beta-1 ya trajo el catálogo USGS: registrarlo en la
+        # operativa que lee el Juez (antes se descartaba → Juez ciego).
+        self._persist_sismos(beta1_data)
 
         risk = self._compute_precursor_risk(alfa1_data, beta1_data, beta2_data)
 

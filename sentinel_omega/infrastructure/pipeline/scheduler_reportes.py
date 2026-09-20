@@ -18,10 +18,12 @@ El postStart.sh lo arranca automáticamente en el Codespace.
 import io
 import contextlib
 import logging
+import os
 import signal
 import sys
 import time
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 _WORKSPACE_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -36,15 +38,29 @@ DB_PATH = (
 LOG_DIR = DB_PATH.parent
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
+_LOG_MAX_BYTES = int(os.environ.get("SENTINEL_SCHEDULER_LOG_MAX_BYTES", str(20 * 1024 * 1024)))
+_LOG_BACKUP_COUNT = int(os.environ.get("SENTINEL_SCHEDULER_LOG_BACKUP_COUNT", "5"))
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [SCHEDULER] %(levelname)s %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOG_DIR / "scheduler_reportes.log", mode="a"),
+        RotatingFileHandler(
+            LOG_DIR / "scheduler_reportes.log",
+            mode="a",
+            maxBytes=_LOG_MAX_BYTES,
+            backupCount=_LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        ),
     ],
 )
 logger = logging.getLogger(__name__)
+logger.info(
+    "Scheduler log rotation enabled (maxBytes=%s, backupCount=%s)",
+    _LOG_MAX_BYTES,
+    _LOG_BACKUP_COUNT,
+)
 
 _INTERVAL_GENERAL  = 2 * 3600   # 2 horas
 _INTERVAL_PROFUNDO = 6 * 3600   # 6 horas

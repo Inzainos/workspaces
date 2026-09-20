@@ -334,9 +334,15 @@ def evaluar_sesgo_aprendizaje(
 
     # Incluye 'omega' en el dominio de evaluación aunque no esté en BOT_FEATURES
     # (Omega usa None como keys → vector completo)
+    # También incluye jupiter y loki que no están en BOT_FEATURES
     bots_evaluar = dict(BOT_FEATURES)
     if "omega" not in bots_evaluar:
         bots_evaluar["omega"] = None  # None → vector completo (igual que el Padre)
+    # Jupiter y Loki: evaluar con vector completo (None keys = vector completo)
+    if "jupiter" not in bots_evaluar:
+        bots_evaluar["jupiter"] = None
+    if "loki" not in bots_evaluar:
+        bots_evaluar["loki"] = None
 
     # Firmas consolidadas por bot + timestamp más temprano de su memoria.
     # El t0 (primer avistamiento) sale de MIN(ts_evento) en la tabla hija —
@@ -394,6 +400,20 @@ def evaluar_sesgo_aprendizaje(
     resultado = {}
     for bot, c in conteo.items():
         if c["n"] == 0:
+            # Bots sin firmas consolidadas todavía (p.ej. alfa2/jupiter/loki,
+            # que no tienen backcast histórico y solo acumulan en vivo): no
+            # hay nada que medir de verdad, pero se persiste una fila con
+            # n=0 / valores NULL en vez de omitirlos en silencio — antes
+            # quedaban invisibles en tbl_sesgo_aprendizaje y en /api/sesgo
+            # aunque el resto del pipeline (Fase 2/auditoria) ya los evalúa.
+            conn.execute(
+                "INSERT OR REPLACE INTO tbl_sesgo_aprendizaje "
+                "(bot, n, recon_insample, recon_causal, sesgo, castigos) "
+                "VALUES (?,?,?,?,?,?)",
+                (bot, 0, None, None, None, 0),
+            )
+            resultado[bot] = {"insample": None, "causal": None, "sesgo": None,
+                               "castigos": 0, "n": 0}
             continue
         insample = c["insample"] / c["n"]
         causal = c["causal"] / c["n"]

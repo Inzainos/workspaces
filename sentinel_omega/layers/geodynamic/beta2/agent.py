@@ -132,20 +132,29 @@ class Beta2Agent(BaseAgent):
         pressure_score = self._pressure_stress()
         chemical_score = self._chemical_stress()
         node_anomalies = self._global_node_anomalies()
+        fog_detected = any(
+            r.get("visibility_m", 10000) < self.FOG_VISIBILITY_THRESHOLD
+            for r in self._atmospheric_readings
+        )
         combined_stress = (pressure_score * 0.4) + (chemical_score * 0.4) + min(0.2, len(node_anomalies) * 0.1)
 
         final_confidence = figure_analysis["confidence"] * 0.7 + combined_stress * 0.3
+        effective_confidence = max(final_confidence, combined_stress * 0.75)
+
         signal_data = {
             "figure_match": figure_analysis["match_found"],
             "similar_mag": figure_analysis.get("similar_magnitude", 0.0),
             "stress_score": combined_stress,
+            "pressure_stress": pressure_score,
+            "chemical_stress": chemical_score,
+            "fog_detected": fog_detected,
             "node_anomalies": node_anomalies,
             "figure_confidence": figure_analysis["confidence"]
         }
 
-        if figure_analysis["match_found"] and final_confidence > 0.6:
+        if figure_analysis["match_found"] and effective_confidence > 0.6:
             return self.emit_signal(
-                SignalType.ALERT, min(final_confidence, 0.98),
+                SignalType.ALERT, min(effective_confidence, 0.98),
                 data=signal_data,
                 reasoning=(
                     f"Cymatic Pattern Match (M{figure_analysis.get('similar_magnitude')}) "
@@ -153,11 +162,11 @@ class Beta2Agent(BaseAgent):
                 )
             )
 
-        if final_confidence > 0.35:
+        if effective_confidence > 0.35 or pressure_score > 0.3 or fog_detected:
             return self.emit_signal(
-                SignalType.WATCH, min(final_confidence, 0.8),
+                SignalType.WATCH, min(max(effective_confidence, 0.4), 0.8),
                 data=signal_data,
-                reasoning=f"Moderate cymatic/atmospheric resonance (score={final_confidence:.2f})"
+                reasoning=f"Moderate cymatic/atmospheric resonance (score={effective_confidence:.2f})"
             )
 
         return self.emit_signal(

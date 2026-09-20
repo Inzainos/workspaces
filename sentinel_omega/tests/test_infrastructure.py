@@ -21,7 +21,7 @@ from sentinel_omega.config.sentinel_config import (
     DatabaseConfig,
     SNTConfig,
 )
-from orchestrator import SentinelOrchestrator, SystemStatus
+from sentinel_omega.orchestrator import SentinelOrchestrator, SystemStatus
 from sentinel_omega.core.shared.agent_base import ConsensusResult, SignalType
 
 
@@ -151,7 +151,7 @@ class TestConfig:
 
     def test_default_config(self):
         config = SentinelOmegaConfig()
-        assert config.version == "2.5.0-shadow-node"
+        assert config.version == "2.5.4"
         assert "Elán" in config.author
         assert len(config.layers) == 2
 

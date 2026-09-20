@@ -9,7 +9,7 @@ Uso (lo agenda Roy Vigilante):
 Cada reporte:
   - Se escribe en estado/ (versionado por el vigilante).
   - Genera gráficas PNG (matplotlib, fail-soft si no está) en estado/graficas/.
-  - Se encola por correo (tbl_correo_salida) con las gráficas adjuntas.
+  - Se envía por Telegram (vía Consenso Vigilante) con las gráficas adjuntas.
 """
 
 import argparse
@@ -127,6 +127,51 @@ def _barra(pct: float, ancho: int = 10) -> str:
         return ""
     llenos = round(max(0.0, min(1.0, pct)) * ancho)
     return "▓" * llenos + "░" * (ancho - llenos)
+
+
+def _nivel_fantasma(v) -> str:
+    """Etiqueta de riesgo del índice Fantasma (TITAN V32)."""
+    if v is None:
+        return "—"
+    if v < 5:
+        return "LOW · calma"
+    if v < 15:
+        return "MODERATE · atención"
+    if v < 30:
+        return "HIGH · avisar"
+    return "CRITICAL · protocolo"
+
+
+# Glosario común: hace el reporte legible para cualquiera, no solo para el operador.
+GLOSARIO = """## ℹ️ Cómo leer este reporte
+
+- **Fantasma** — índice de *riesgo cósmico* (TITAN V32). **No es un sismo**: mide la
+  tensión del sistema combinando campo magnético (Bz), viento solar, resonancia
+  Schumann, presión y más. Escala: **LOW <5** (calma) · **MODERATE 5–15** (atención)
+  · **HIGH 15–30** (avisar) · **CRITICAL ≥30** (protocolo).
+- **Muro de los 5 Eventos** — cinco "paredes" de correlación (geofísica, atmosférica,
+  oceánica, solar/geomagnética y financiera). Hay *breach* cuando **3 o más** se
+  activan a la vez.
+- **Asertividad viva** — de las predicciones ya verificadas contra la realidad (USGS),
+  qué porcentaje resultó **ACIERTO**. Verdad por fila, ventana de 72 h; el Juez
+  audita aparte (nunca predice).
+- **Cimática** — patrones de telemetría que el sistema ve repetirse; si un patrón
+  antecede a un evento real se etiqueta con su clase (SISMO_M4…M7, ERUPCION_VEI…).
+  La frecuencia es cuántas veces se ha visto ese patrón.
+- **Anticipación** — días de adelanto promedio entre la señal y el evento.
+"""
+
+
+def _lectura_rapida(fant_media, breaches, viva) -> str:
+    """Una línea en lenguaje llano que resume el estado del periodo."""
+    tranquilo = (fant_media or 0) < 15 and not breaches
+    partes = [f"el sistema estuvo **{'en calma' if tranquilo else 'inquieto'}**"]
+    if fant_media is not None:
+        partes.append(f"Fantasma medio **{fant_media:.1f}** ({_nivel_fantasma(fant_media)})")
+    partes.append("Muro **sin roturas**" if not breaches else f"Muro con **{breaches} breach(es)**")
+    if viva is not None:
+        partes.append(f"asertividad viva **{viva:.0%}**")
+    return "> **Lectura rápida:** " + " · ".join(partes) + "."
 
 
 def _grafica_aciertos_pastel(stats: dict, nombre: str) -> str:
@@ -314,6 +359,7 @@ def comparativo(conn) -> tuple:
         f"| Patrones cimáticos (total / nuevos 24h) | "
         f"{cim[0]} | — | +{cim[1] or 0} |",
         "",
+        _lectura_rapida(_v(hoy, "fantasma_media"), _v(hoy, "breaches"), viva_hoy), "",
     ]
 
     aciertos_sec, aciertos_imgs = _seccion_aciertos(DB_DEFAULT, 1, "Aciertos — Últimas 24 horas")
@@ -326,6 +372,7 @@ def comparativo(conn) -> tuple:
         "comparativo_fantasma.png", resalta_max=True)
     if grafica:
         lineas.append("![Fantasma 7 días](graficas/comparativo_fantasma.png)")
+    lineas += ["", GLOSARIO]
     ruta = DIR_ESTADO / "REPORTE_COMPARATIVO.md"
     ruta.write_text("\n".join(lineas), encoding="utf-8")
 
@@ -351,11 +398,13 @@ def _resumen_rango(conn, n_dias, titulo, archivo, prefijo_grafica):
     tot_ciclos = sum(d["n_ciclos"] or 0 for d in dias)
     tot_breach = sum(d["breaches"] or 0 for d in dias)
     fant = [d["fantasma_media"] for d in dias if d["fantasma_media"]]
+    fant_media_val = (sum(fant) / len(fant)) if fant else None
 
     lineas = [
         f"# {titulo}",
         f"*Generado {ahora.strftime('%Y-%m-%d %H:%M')} hora MX — "
         f"ventana {n_dias} días*", "",
+        _lectura_rapida(fant_media_val, tot_breach, viva), "",
         "## Resumen",
         f"- Ciclos corridos: **{tot_ciclos}**",
         f"- Fantasma medio del periodo: "
@@ -399,9 +448,53 @@ def _resumen_rango(conn, n_dias, titulo, archivo, prefijo_grafica):
         if g:
             adjuntos.append(str(g))
             lineas.append(f"![{tit}](graficas/{nombre})")
+    lineas += ["", GLOSARIO]
     ruta = DIR_ESTADO / archivo
     ruta.write_text("\n".join(lineas), encoding="utf-8")
     return ruta, lineas, adjuntos
+
+
+def _texto_telegram(lineas: list) -> str:
+    """Resumen plano para Telegram: sin tablas, imágenes ni glosario largo."""
+    out = []
+    for ln in lineas:
+        if ln.startswith("![") or ln.startswith("|"):
+            continue
+        if ln.startswith("## ℹ️"):        # corta antes del glosario
+            break
+        out.append(ln)
+    txt = "\n".join(out).replace("**", "").replace("`", "").replace("> ", "")
+    while "\n\n\n" in txt:
+        txt = txt.replace("\n\n\n", "\n\n")
+    return txt.strip()[:3900]
+
+
+def _enviar_telegram(lineas: list, adjuntos: list, ruta_md: Path) -> bool:
+    """Envía el reporte a Telegram: resumen + gráficas + el .md como documento.
+
+    Fail-soft: sin TELEGRAM_BOT_TOKEN/CHAT_ID no envía (las funciones retornan
+    False). Respeta SENTINEL_DRY_RUN para las fotos.
+    """
+    try:
+        from sentinel_omega.infrastructure.api.telegram import (
+            send_alert, send_photo, send_document,
+        )
+    except Exception as e:
+        print(f"Telegram no disponible: {e}")
+        return False
+    ok = send_alert(_texto_telegram(lineas))
+    for img in adjuntos:
+        try:
+            send_photo(str(img), caption=Path(img).stem)
+        except Exception:
+            pass
+    try:
+        send_document(str(ruta_md), caption=ruta_md.stem)
+    except Exception:
+        pass
+    print(f"Telegram: resumen={'ok' if ok else 'no enviado (sin credenciales?)'}, "
+          f"{len(adjuntos)} gráfica(s) + documento")
+    return ok
 
 
 def main():
@@ -410,31 +503,31 @@ def main():
     ap.add_argument("--semanal", action="store_true")
     ap.add_argument("--mensual", action="store_true")
     ap.add_argument("--db", default=DB_DEFAULT)
+    ap.add_argument("--no-telegram", action="store_true",
+                    help="No enviar a Telegram (solo archivo)")
     args = ap.parse_args()
 
     conn = sqlite3.connect(args.db)
-    from sentinel_omega.infrastructure.api.correo import encolar_correo
     ahora = _ahora_mx().strftime("%Y-%m-%d %H:%M")
 
     if args.comparativo:
         ruta, lineas, adj = comparativo(conn)
-        encolar_correo(conn, f"🔄 Sentinel Omega — comparativo diario {ahora} MX",
-                       "\n".join(lineas), tipo="REPORTE", adjuntos=adj)
     elif args.semanal:
         ruta, lineas, adj = _resumen_rango(
             conn, 7, "📅 Reporte semanal — Sentinel Omega",
             "REPORTE_SEMANAL.md", "semanal")
-        encolar_correo(conn, f"📅 Sentinel Omega — reporte semanal {ahora} MX",
-                       "\n".join(lineas), tipo="REPORTE", adjuntos=adj)
     elif args.mensual:
         ruta, lineas, adj = _resumen_rango(
             conn, 31, "🗓️ Reporte mensual — Sentinel Omega",
             "REPORTE_MENSUAL.md", "mensual")
-        encolar_correo(conn, f"🗓️ Sentinel Omega — reporte mensual {ahora} MX",
-                       "\n".join(lineas), tipo="REPORTE", adjuntos=adj)
     else:
         ap.error("indica --comparativo, --semanal o --mensual")
     print(f"Reporte generado: {ruta}")
+
+    if not args.no_telegram:
+        _enviar_telegram(lineas, adj, ruta)
+    else:
+        print("Telegram: deshabilitado (--no-telegram)")
 
 
 if __name__ == "__main__":

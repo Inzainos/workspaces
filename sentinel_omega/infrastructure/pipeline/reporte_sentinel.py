@@ -409,6 +409,17 @@ def reporte_general(db_path: str) -> Dict:
                 deltas_json TEXT
             )"""
         )
+        # Forward-only migration: si la tabla ya existía sin columnas nuevas,
+        # agregarlas en caliente para no romper el reporte.
+        cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(tbl_salud_sistema)").fetchall()
+        }
+        if "asertividad_viva" not in cols:
+            conn.execute("ALTER TABLE tbl_salud_sistema ADD COLUMN asertividad_viva REAL")
+        if "deltas_json" not in cols:
+            conn.execute("ALTER TABLE tbl_salud_sistema ADD COLUMN deltas_json TEXT")
+
         asert_aciertos = sum(d["ACIERTO"] for d in juez_pivot.values())
         asert_resueltos = sum(d["ACIERTO"] + d["FALLO"] for d in juez_pivot.values())
         asertividad_viva = asert_aciertos / max(1, asert_resueltos)

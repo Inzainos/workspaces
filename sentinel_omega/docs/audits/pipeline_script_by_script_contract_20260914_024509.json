@@ -1,0 +1,126 @@
+[
+  {
+    "script": "infrastructure/pipeline/backcast.py",
+    "documented_by_name": true,
+    "kind": "one-shot/proceso",
+    "cli_flags": [],
+    "doc": "Historical Backcast Pipeline — ONE-TIME initial load. Loads 32 years of real data (1994-2026) from scientific APIs into SQLite. Once loaded,"
+  },
+  {
+    "script": "infrastructure/pipeline/clima_gapfill_2026.py",
+    "documented_by_name": true,
+    "kind": "one-shot/proceso",
+    "cli_flags": [
+      "--db",
+      "--dry-run"
+    ],
+    "doc": "One-shot fill tbl_clima_espacial_raw 2026 hours from NOAA feeds (fail-soft)."
+  },
+  {
+    "script": "infrastructure/pipeline/data_pipeline.py",
+    "documented_by_name": true,
+    "kind": "módulo interno",
+    "cli_flags": [],
+    "doc": "Data Pipeline — fetches from real APIs and formats for agent ingest(). Single pipeline: all 6 agents are part of one system. Agent data mapp"
+  },
+  {
+    "script": "infrastructure/pipeline/data_pipeline_locf_patch.py",
+    "documented_by_name": true,
+    "kind": "módulo interno",
+    "cli_flags": [],
+    "doc": "Upgrade GeodynamicPipeline LOCF to persistent DB (tbl_locf_cache). Import once (launcher / data_pipeline package) to patch _locf_get/_locf_s"
+  },
+  {
+    "script": "infrastructure/pipeline/entrenamiento.py",
+    "documented_by_name": true,
+    "kind": "módulo interno",
+    "cli_flags": [],
+    "doc": "Entrenamiento de firmas — two-phase training over the 30-year backcast. Fase 1 (reconocimiento, sin castigo): For every significant event in"
+  },
+  {
+    "script": "infrastructure/pipeline/entrenar_paralelo.py",
+    "documented_by_name": true,
+    "kind": "módulo interno",
+    "cli_flags": [],
+    "doc": "Entrenamiento paralelo por BOT — mismo resultado que el secuencial, en fracción del tiempo. Idea (de Elán, con el eje correcto): partir el t"
+  },
+  {
+    "script": "infrastructure/pipeline/juez_cycle_register.py",
+    "documented_by_name": true,
+    "kind": "módulo interno",
+    "cli_flags": [],
+    "doc": "Register Juez predictions for Padre + every agent in agent_signals. Called from launcher after consensus. Ventana adaptativa (2h floor, lag "
+  },
+  {
+    "script": "infrastructure/pipeline/layer_runners.py",
+    "documented_by_name": true,
+    "kind": "módulo interno",
+    "cli_flags": [],
+    "doc": "Layer Runner — orchestrates fetch → ingest → analyze → consensus. Agents: Alfa-1, Alfa-2, Beta-1, Beta-2, Delta, Jupiter, Omega, Loki, Padre"
+  },
+  {
+    "script": "infrastructure/pipeline/legacy_loader.py",
+    "documented_by_name": true,
+    "kind": "módulo interno",
+    "cli_flags": [],
+    "doc": "Legacy Data Loader — imports from CEREBRO_GOD.db and TITAN_MEMORY.db for SNT backtesting and historical analysis. CEREBRO_GOD.db schema: - h"
+  },
+  {
+    "script": "infrastructure/pipeline/mantenimiento.py",
+    "documented_by_name": true,
+    "kind": "módulo interno",
+    "cli_flags": [],
+    "doc": "Mantenimiento — barrido diario del historial operativo. Los ciclos escriben todo el día en las tablas operativas (cada ~2h). Una vez al día,"
+  },
+  {
+    "script": "infrastructure/pipeline/reporte_engine.py",
+    "documented_by_name": true,
+    "kind": "módulo interno",
+    "cli_flags": [],
+    "doc": "Sentinel Omega — ReportEngine unificado (refactor) Capa DRY sobre reporte_sentinel.py — mantiene compatibilidad total. Uso nuevo (recomendad"
+  },
+  {
+    "script": "infrastructure/pipeline/reporte_sentinel.py",
+    "documented_by_name": true,
+    "kind": "módulo interno",
+    "cli_flags": [],
+    "doc": "Sentinel Omega — Generador de Reportes ======================================= Tres reportes independientes: 1. reporte_general(db_path) → r"
+  },
+  {
+    "script": "infrastructure/pipeline/scheduler_reportes.py",
+    "documented_by_name": true,
+    "kind": "one-shot/proceso",
+    "cli_flags": [],
+    "doc": "Sentinel Omega — Scheduler de Reportes ======================================= Corre en background junto al launcher principal. Frecuencias "
+  },
+  {
+    "script": "infrastructure/pipeline/sismos_refetch_recent.py",
+    "documented_by_name": true,
+    "kind": "one-shot/proceso",
+    "cli_flags": [
+      "--days",
+      "--db",
+      "--dry-run"
+    ],
+    "doc": "Incremental USGS refetch for tbl_eventos_sismicos_fuente (safe, no wipe)."
+  },
+  {
+    "script": "infrastructure/pipeline/topologia_cascada.py",
+    "documented_by_name": true,
+    "kind": "one-shot/proceso",
+    "cli_flags": [
+      "--db-path",
+      "--dry-run",
+      "--refetch",
+      "--solo-recalcular"
+    ],
+    "doc": "Topologia en Cascada — ETL reusable para Sentinel Omega v1.0 — 13 ago 2026 CONTEXTO -------- Origen: bug de localizacion encontrado el 10-13"
+  },
+  {
+    "script": "infrastructure/pipeline/verificacion.py",
+    "documented_by_name": true,
+    "kind": "módulo interno",
+    "cli_flags": [],
+    "doc": "Verificación del Juez — real vs predicción, cada 2 horas (mismo ritmo del ciclo). Cada ciclo del Padre (~2 h) registra predicciones; el Juez"
+  }
+]
