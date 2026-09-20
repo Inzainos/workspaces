@@ -567,6 +567,80 @@ def fetch_trends(
 # Main entry point
 # ---------------------------------------------------------------------------
 
+def _space_weather_from_db(days: int) -> Optional[SpaceWeather]:
+    """Drivers geofísicos desde tbl_clima_espacial_raw (agregado diario).
+
+    NOAA descontinuó products/solar-wind/{mag,plasma}-7-day.json (404 toda la
+    familia) y los rtsw solo cubren ~24 h, insuficiente para la ventana de 14
+    días. El sistema ya guarda este histórico por hora, así que se usa como
+    fuente en vez de depender de una API muerta. Mismo patrón que
+    _schumann_from_db. `solar_wind_density` no existe en esa tabla: se deja
+    como NaN, nunca un cero inventado.
+    """
+    import sqlite3
+    from pathlib import Path as _P
+    candidates = [
+        _P("/home/deamon/workspaces/sentinel_omega/data/SENTINEL_OMEGA_PRO.db"),
+        _P(__file__).resolve().parents[2] / "data" / "SENTINEL_OMEGA_PRO.db",
+    ]
+    db = next((p for p in candidates if p.exists()), None)
+    if db is None:
+        return None
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        rows = con.execute(
+            "SELECT substr(timestamp_blk,1,10) AS d, "
+            "       MAX(kp_max), AVG(kp_promedio), MIN(bz_min), AVG(bz_promedio), "
+            "       AVG(viento_solar_avg), MAX(proton_flux_10mev) "
+            "FROM tbl_clima_espacial_raw "
+            "WHERE substr(timestamp_blk,1,10) >= ? "
+            "GROUP BY d ORDER BY d",
+            (cutoff,),
+        ).fetchall()
+        con.close()
+    except Exception as exc:
+        logger.warning("Space-weather DB fallback failed: %s", exc)
+        return None
+    if not rows:
+        return None
+
+    def col(i):
+        return np.array([np.nan if r[i] is None else float(r[i]) for r in rows], dtype=float)
+
+    dates = [r[0] for r in rows]
+    logger.info("Space weather desde DB: %d días (%s … %s)", len(dates), dates[0], dates[-1])
+    return SpaceWeather(
+        dates=dates,
+        kp_max=col(1),
+        kp_mean=col(2),
+        bz_min=col(3),
+        bz_mean=col(4),
+        solar_wind_speed=col(5),
+        solar_wind_density=np.full(len(rows), np.nan),  # no está en la tabla
+        proton_flux=col(6),
+    )
+
+
+def _mejor_space_weather(days: int) -> Optional[SpaceWeather]:
+    """La fuente con más cobertura: API si alcanza, si no la DB."""
+    api = None
+    try:
+        api = fetch_space_weather(days)
+    except Exception as exc:
+        logger.warning("fetch_space_weather falló: %s", exc)
+    n_api = len(api.dates) if api is not None else 0
+    # con menos de la mitad de la ventana no hay con qué correlacionar
+    if n_api >= max(2, days // 2):
+        return api
+    db = _space_weather_from_db(days)
+    n_db = len(db.dates) if db is not None else 0
+    if n_db > n_api:
+        logger.info("Space weather: usando DB (%d días) en vez de API (%d)", n_db, n_api)
+        return db
+    return api
+
+
 def fetch_all(days: int = 30, trends_geo: str = "") -> FetchedData:
     """
     Fetch all data sources for a `days`-day window.
@@ -577,7 +651,7 @@ def fetch_all(days: int = 30, trends_geo: str = "") -> FetchedData:
         window_days=days,
         fetched_at=datetime.now(timezone.utc).isoformat(),
         prices=fetch_prices(days),
-        space_weather=fetch_space_weather(days),
+        space_weather=_mejor_space_weather(days),
         schumann=fetch_schumann(days),
         trends=fetch_trends(days, geo=trends_geo),
     )
