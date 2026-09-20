@@ -625,6 +625,67 @@ class SentinelRepository:
         cur = self._execute(f"PRAGMA table_info({table})")
         return [row[1] for row in cur.fetchall()]
 
+
+    # ── LOCF persistente (tbl_locf_cache) ──────────────────────────────
+    # Nombres EXACTOS que invoca data_pipeline_locf_patch: save_locf /
+    # load_locf. El patch los llama dentro de try/except, así que si no
+    # existen el fallo se traga en silencio y la cache queda vacía.
+
+    @staticmethod
+    def _locf_default(o: Any) -> Any:
+        """numpy array/escalar → tipo nativo. Preserva el valor real."""
+        if hasattr(o, "tolist"):
+            return o.tolist()
+        if hasattr(o, "item"):
+            return o.item()
+        raise TypeError(f"no serializable: {type(o).__name__}")
+
+    def save_locf(self, source_key: str, payload: Dict[str, Any]) -> None:
+        """Guarda el último snapshot REAL de una fuente. Cero sintético:
+        solo persiste lo que el fetch trajo; omite lo no serializable
+        (p.ej. DataFrames) sin inventar sustitutos."""
+        if not payload:
+            return
+        limpio: Dict[str, Any] = {}
+        omitidos: List[str] = []
+        for k, v in payload.items():
+            try:
+                json.dumps(v, default=self._locf_default)
+                limpio[k] = v
+            except (TypeError, ValueError):
+                omitidos.append(str(k))
+        if not limpio:
+            return
+        self._execute(
+            """INSERT INTO tbl_locf_cache (source_key, payload_json, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(source_key) DO UPDATE SET
+                payload_json = excluded.payload_json,
+                updated_at   = excluded.updated_at""",
+            (source_key, json.dumps(limpio, default=self._locf_default), time.time()),
+        )
+        self._conn.commit()
+        if omitidos:
+            logger.debug("LOCF %s: omitidas no serializables %s", source_key, omitidos)
+
+    def load_locf(self, source_key: str) -> Optional[Dict[str, Any]]:
+        """Último snapshot real de la fuente, con `_locf_updated_at`."""
+        row = self._execute(
+            "SELECT payload_json, updated_at FROM tbl_locf_cache WHERE source_key = ?",
+            (source_key,),
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            data = json.loads(row[0])
+        except (TypeError, ValueError) as exc:
+            logger.warning("LOCF %s: payload corrupto (%s)", source_key, exc)
+            return None
+        if not isinstance(data, dict):
+            return None
+        data["_locf_updated_at"] = float(row[1])
+        return data
+
     def close(self) -> None:
         conn = getattr(self._local, "conn", None)
         if conn is not None:
