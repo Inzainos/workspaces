@@ -53,6 +53,14 @@ export type Overview = {
   };
 };
 
+export type ApiHealthEntry = {
+  status: string;          // LIVE | STALE | LOCF_ACTIVE
+  age_h: number;
+  last_data_ts?: number;
+  updated_at?: string;
+};
+export type ApiHealth = Record<string, ApiHealthEntry>;
+
 export type Health = {
   status: string;
   db_path: string;
@@ -70,6 +78,7 @@ export type Health = {
 
 export const api = {
   health: () => getJson<Health>("/api/health"),
+  healthApis: () => getJson<ApiHealth>("/api/health/apis"),
   overview: () => getJson<Overview>("/api/overview"),
   precursores: (limit = 50) =>
     getJson<Record<string, unknown>[]>(`/api/precursores?limit=${limit}`),
