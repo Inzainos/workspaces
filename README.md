@@ -5,7 +5,7 @@ Actualmente contiene como proyecto principal **Sentinel Omega** y su operación
 completa (código, despliegue, reportes y automatizaciones).
 
 
-## Estado reciente (2026-08-19)
+## Estado reciente (2026-09-03)
 
 Sesión de cableado para llevar el pipeline a operación completa:
 
@@ -124,3 +124,8 @@ El script:
 8. Genera reportes (REPORTE.md + REPORTE_EJECUTIVO.md)
 
 Reporte final en `estado/REPORTE_REBUILD.md`.
+
+## Observabilidad y Resiliencia (2026-09-15)
+- Endpoint /api/health/apis en el Dashboard (monitor en vivo de fuentes vs LOCF vs Stale).
+- Persistencia LOCF (Last Observation Carried Forward) directamente en BD.
+- Recuperación automática de gaps delegada en el barrido diario (mantenimiento.py).
