@@ -532,6 +532,19 @@ class GeodynamicPipeline:
         except Exception as exc:
             logger.warning(f"Delta enriched pipeline failed (non-blocking): {exc}")
 
+        # Claves que consume el scanner (_scan_financial_correlation). El dato
+        # ya existía con otro nombre: btc_ret_win es el cambio porcentual de
+        # BTC en la ventana, idéntico a lo que el scanner llama btc_change_pct.
+        # Sin esto, 2 de sus 4 señales nunca podían activarse y la 5ª muralla
+        # (FINANCIERO) quedaba el doble de restrictiva de lo diseñado.
+        if result.get("btc_ret_win") is not None:
+            result["btc_change_pct"] = result["btc_ret_win"]
+        # market_signal según la regla documentada del proyecto:
+        # "Delta (Fin stress — ALERT si combined>0.6)".
+        _comb = result.get("delta_composite_score")
+        if _comb is not None:
+            result["market_signal"] = "alert" if float(_comb) > 0.6 else "neutral"
+
         logger.info(
             f"Delta pipeline: FGI={result.get('fear_greed', '?')}, "
             f"VIX={result.get('vix', '?')}, "
