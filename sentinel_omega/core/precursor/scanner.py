@@ -69,6 +69,7 @@ class PrecursorScanner:
         delta_data: Dict[str, Any],
         hurricane_data: Optional[Dict[str, Any]] = None,
         financial_data: Optional[Dict[str, Any]] = None,
+        risk: Optional[Any] = None,
     ) -> List[PrecursorDetection]:
         detections: List[PrecursorDetection] = []
 
@@ -99,6 +100,7 @@ class PrecursorScanner:
         detections.extend(
             self._scan_seismic_cluster(seismic_mags, beta1_data.get("m4_count_24h"))
         )
+        detections.extend(self._scan_fantasma(risk))
         detections.extend(self._scan_volcanic(air_quality, seismic_mags, atmospheric))
         detections.extend(self._scan_schumann(schumann_hz, schumann_pct))
         detections.extend(self._scan_tormenta_solar(bz, kp_mean, viento))
@@ -209,6 +211,40 @@ class PrecursorScanner:
                 "kp_mean": kp_mean,
                 "calm_duration_h": len(kp_list) * 3,
             },
+        )]
+
+    def _scan_fantasma(self, risk: Optional[Any]) -> List[PrecursorDetection]:
+        """Emite el Índice Fantasma (TITAN V32) como precursor de la muralla
+        geofísica.
+
+        FANTASMA figuraba en WALL_MEMBERS[WALL_GEOFISICO] desde siempre, pero
+        ningún scanner lo emitía: el índice central del sistema nunca llegaba
+        al Muro. Umbral HIGH (>=15) según los niveles documentados
+        (LOW<5, MODERATE 5-15, HIGH 15-30, CRITICAL>=30); sobre 3.380 ciclos
+        reales MODERATE es el estado normal (77%) y HIGH aparece en el 22.8%,
+        así que discrimina. Se elige HIGH y no CRITICAL por la pérdida
+        asimétrica (miss = 10x).
+        """
+        if risk is None:
+            return []
+        valor = getattr(risk, "fantasma", None)
+        if valor is None:
+            return []
+        try:
+            valor = float(valor)
+        except (TypeError, ValueError):
+            return []
+        if valor < 15.0:
+            return []
+        nivel = str(getattr(risk, "risk_level", "") or "")
+        return [PrecursorDetection(
+            tipo=PrecursorType.FANTASMA,
+            display_name=PRECURSOR_DISPLAY_NAMES[PrecursorType.FANTASMA],
+            station="global",
+            lat=None,
+            lon=None,
+            confidence=0.85 if valor >= 30.0 else 0.7,
+            values={"fantasma": round(valor, 2), "nivel_riesgo": nivel},
         )]
 
     def _scan_seismic_cluster(
