@@ -87,6 +87,32 @@ def fetch_electron_flux() -> Optional[pd.DataFrame]:
 
 
 @circuit("noaa")
+def fetch_proton_flux(energy: str = ">=10 MeV") -> Optional[pd.DataFrame]:
+    """Fetch GOES integral proton flux for one energy channel.
+
+    El canal por defecto (>=10 MeV) es el mismo que el histórico
+    `tbl_clima_espacial_raw.proton_flux_10mev`, para que el dato vivo y el
+    entrenado sean comparables. Alimenta TBL_PRECURSORES_COSMICOS.protones.
+    """
+    url = "https://services.swpc.noaa.gov/json/goes/primary/integral-protons-6-hour.json"
+    try:
+        resp = get_session().get(url, timeout=TIMEOUT)
+        resp.raise_for_status()
+        df = pd.DataFrame(resp.json())
+        if {"time_tag", "flux", "energy"}.issubset(df.columns):
+            df = df[df["energy"] == energy].copy()
+            df["time_tag"] = pd.to_datetime(df["time_tag"])
+            df["flux"] = pd.to_numeric(df["flux"], errors="coerce")
+            df = df.dropna(subset=["flux"])
+            if not df.empty:
+                logger.info(f"Fetched {len(df)} GOES proton flux records ({energy})")
+                return df[["time_tag", "flux"]].sort_values("time_tag")
+    except Exception as e:
+        logger.error(f"GOES proton flux fetch failed: {e}")
+    return None
+
+
+@circuit("noaa")
 def fetch_solar_wind() -> Optional[pd.DataFrame]:
     """Fetch real-time solar wind data (Bz, speed, density)."""
     url = f"{NOAA_BASE}rtsw/rtsw_wind_1m.json"

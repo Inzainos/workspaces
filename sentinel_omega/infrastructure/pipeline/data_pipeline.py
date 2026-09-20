@@ -27,6 +27,7 @@ from sentinel_omega.infrastructure.api.noaa import (
     fetch_solar_wind,
     fetch_mag_field,
     fetch_electron_flux,
+    fetch_proton_flux,
 )
 from sentinel_omega.infrastructure.api.gfz_kp import fetch_kp_history
 from sentinel_omega.infrastructure.api.google_trends import fetch_solar_storm_trends
@@ -131,6 +132,16 @@ class GeodynamicPipeline:
         omni_df = omni_df.sort_index().ffill().dropna(how="all")
         logger.info(f"Alfa-1 pipeline: {len(omni_df)} records, {list(omni_df.columns)}")
         result = {"omni_dataframe": omni_df.reset_index(names=["time_tag"])}
+        # Flujo de protones >=10 MeV (mismo canal que el histórico
+        # proton_flux_10mev). El launcher lo lee como `proton_flux` para
+        # TBL_PRECURSORES_COSMICOS.protones, que estaba 100% en cero porque
+        # nadie producía esta clave. Fail-soft: si no hay dato, no se inventa.
+        try:
+            prot_df = fetch_proton_flux()
+            if prot_df is not None and len(prot_df):
+                result["proton_flux"] = float(prot_df["flux"].iloc[-1])
+        except Exception as exc:  # noqa: BLE001 — no bloquea el ciclo
+            logger.warning("Proton flux fetch failed (non-blocking): %s", exc)
         self._locf_set("alfa1", result)
         return result
 
