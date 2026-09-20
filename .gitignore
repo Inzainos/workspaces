@@ -28,3 +28,6 @@ sentinel_omega/sentinel_omega/
 *.db-shm
 *.db-journal
 .claude/worktrees/
+
+# PID del launcher (estado vivo, lo borra ExecStartPre del .service)
+sentinel_omega/data/*.pid
