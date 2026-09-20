@@ -412,6 +412,13 @@ def run_composite(
 
     # 8 — Labels & narrative
     regime_label = _regime_label(dominant_crypto, dominant_equity, geo)
+    # 2026-09-10: do not advertise fake EQUILIBRIUM when almost no sources loaded
+    if data_completeness <= 0.0:
+        regime_label = "NO_DATA"
+        confidence = 0.0
+    elif data_completeness < 0.5 and regime_label == "EQUILIBRIUM":
+        regime_label = "INCOMPLETE"
+        confidence = min(confidence, 0.2)
     narrative = _build_narrative(
         dominant_crypto, dominant_equity, cross, geo, trends_stress, composite_score
     )

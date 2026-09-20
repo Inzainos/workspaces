@@ -1,4 +1,4 @@
-"""Tests de cimática (snapshot de patrones) y outbox de correo."""
+"""Tests de cimática (snapshot de patrones)."""
 
 import pytest
 
@@ -9,10 +9,6 @@ from sentinel_omega.core.firmas.cimatica import (
     clave_patron,
     patrones_consistentes,
     registrar_snapshot,
-)
-from sentinel_omega.infrastructure.api.correo import (
-    encolar_correo,
-    enviar_pendientes,
 )
 
 
@@ -196,30 +192,3 @@ class TestEntrenarCimatica:
             "SELECT ambito, event_class FROM tbl_cimatica_patrones").fetchall()
         assert ("general", "SISMO_M5") in filas
         assert ("nodo", "SISMO_M5") in filas
-
-
-class TestCorreo:
-
-    def test_encolar(self, db):
-        cid = encolar_correo(db, "asunto x", "cuerpo y", tipo="REPORTE")
-        fila = db.execute(
-            "SELECT destinatario, tipo, estado FROM tbl_correo_salida "
-            "WHERE correo_id = ?", (cid,)).fetchone()
-        assert fila[0] == "elan.zainos.corona@gmail.com"
-        assert fila[1] == "REPORTE"
-        assert fila[2] == "PENDIENTE"
-
-    def test_sin_credenciales_queda_pendiente(self, db, monkeypatch):
-        monkeypatch.delenv("SMTP_USER", raising=False)
-        monkeypatch.delenv("SMTP_PASS", raising=False)
-        encolar_correo(db, "alerta", "cuerpo")
-        r = enviar_pendientes(db)
-        assert r["enviados"] == 0
-        assert r["pendientes"] == 1
-        estado = db.execute(
-            "SELECT estado FROM tbl_correo_salida").fetchone()[0]
-        assert estado == "PENDIENTE"
-
-    def test_outbox_vacio(self, db):
-        r = enviar_pendientes(db)
-        assert r == {"enviados": 0, "pendientes": 0, "fallidos": 0}

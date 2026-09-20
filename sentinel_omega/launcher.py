@@ -20,7 +20,8 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime as _dt
+from logging.handlers import RotatingFileHandler
+from datetime import datetime as _dt, timezone as _tz
 from pathlib import Path
 
 # Ensure the workspace root is importable when run as a script
@@ -34,15 +35,29 @@ LOGFILE = Path(__file__).parent / "data" / "sentinel_omega.log"
 # data/ está en .gitignore: en un checkout limpio (GitHub Actions) no existe
 LOGFILE.parent.mkdir(parents=True, exist_ok=True)
 
+_LOG_MAX_BYTES = int(os.environ.get("SENTINEL_LOG_MAX_BYTES", str(50 * 1024 * 1024)))
+_LOG_BACKUP_COUNT = int(os.environ.get("SENTINEL_LOG_BACKUP_COUNT", "5"))
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [LAUNCHER] %(levelname)s %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOGFILE, mode="a"),
+        RotatingFileHandler(
+            LOGFILE,
+            mode="a",
+            maxBytes=_LOG_MAX_BYTES,
+            backupCount=_LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        ),
     ],
 )
 logger = logging.getLogger(__name__)
+logger.info(
+    "Log rotation enabled (maxBytes=%s, backupCount=%s)",
+    _LOG_MAX_BYTES,
+    _LOG_BACKUP_COUNT,
+)
 
 _shutdown_requested = False
 
@@ -130,7 +145,7 @@ def _run_reportes(db_path: str) -> None:
         reporte_padre,
     )
 
-    ts = _dt.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = _dt.now(_tz.utc).strftime("%Y%m%d_%H%M%S")
     out_dir = Path(db_path).parent
     general_path = out_dir / f"reporte_general_{ts}.txt"
     padre_path = out_dir / f"reporte_padre_{ts}.txt"
@@ -455,7 +470,7 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
         try:
             alfa2_data = getattr(runner, "_last_alfa2_data", None)
             if alfa2_data and alfa2_data.get("zone_coverages"):
-                ts_blk = _dt.utcnow().strftime("%Y-%m-%d %H:00:00")
+                ts_blk = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:00:00")
                 for zona, cov in alfa2_data["zone_coverages"].items():
                     cloud_covers = cov.get("s2_cloud_covers", [])
                     clear_passes = sum(1 for cc in cloud_covers if cc < 20.0)
@@ -483,7 +498,7 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
         try:
             delta_cache = getattr(runner.pipeline, "_cache", {}).get("delta") or {}
             if delta_cache.get("cross_coupling") is not None:
-                ts_blk = _dt.utcnow().strftime("%Y-%m-%d %H:00:00")
+                ts_blk = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:00:00")
                 repo.insert_delta_cross(
                     timestamp_blk=ts_blk,
                     cross_coupling=delta_cache.get("cross_coupling", 0.0),
@@ -631,7 +646,7 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         from sentinel_omega.core.firmas.signature_engine import FirmaMemoria
         from sentinel_omega.core.juez.juez import Juez
 
-        conn = repo._conn_safe
+        conn = repo._conn
         memoria = FirmaMemoria(conn)
         juez = Juez(conn)
 
@@ -647,30 +662,53 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                 "CREATE TABLE IF NOT EXISTS tbl_schumann_vivo ("
                 "timestamp_blk TEXT PRIMARY KEY, schumann_hz REAL, "
                 "schumann_activity REAL, creada_at TEXT DEFAULT (datetime('now')))")
-            # LOCF (Last Observation Carried Forward): si la API de Tomsk se
-            # cortó (activity == 0.0 exacto = descarga fallida, no calma real),
-            # arrastramos el último valor conocido en vez de escribir un cero
-            # falso. Tomsk solo sirve la imagen ACTUAL (no hay histórico que
-            # rebobinar), así que el LOCF cubre el hueco; las APIs que sí sirven
-            # historia (USGS days=7, NOAA) ya rellenan su ventana solas.
-            señal_viva = sch_act is not None and sch_act != 0.0
-            if not señal_viva:
+
+            def _as_float(v):
+                try:
+                    if v is None:
+                        return None
+                    return float(v)
+                except (TypeError, ValueError):
+                    return None
+
+            def _is_dead(hz, act) -> bool:
+                """No-signal or historical fake: missing, or activity exactly 0."""
+                hz_f, act_f = _as_float(hz), _as_float(act)
+                if hz_f is None or act_f is None:
+                    return True
+                if act_f == 0.0:
+                    return True
+                return False
+
+            if _is_dead(sch_hz, sch_act):
                 ult = conn.execute(
                     "SELECT schumann_hz, schumann_activity FROM tbl_schumann_vivo "
-                    "ORDER BY timestamp_blk DESC LIMIT 1").fetchone()
+                    "WHERE schumann_activity IS NOT NULL AND schumann_activity != 0 "
+                    "ORDER BY timestamp_blk DESC LIMIT 1"
+                ).fetchone()
                 if ult:
-                    sch_hz = sch_hz or ult[0]
-                    sch_act = ult[1]   # arrastra el último medido
+                    sch_hz, sch_act = float(ult[0]), float(ult[1])
                     logger.info(
-                        f"Schumann: API sin señal — LOCF del último valor "
-                        f"({sch_act}%)")
-            if sch_hz is not None or sch_act is not None:
+                        "Schumann LOCF from tbl_schumann_vivo -> %s / %s",
+                        sch_hz, sch_act,
+                    )
+                else:
+                    sch_hz, sch_act = None, None
+
+            if not _is_dead(sch_hz, sch_act):
                 ts_blk = _t.strftime("%Y-%m-%d %H:00", _t.gmtime())
                 conn.execute(
                     "INSERT OR REPLACE INTO tbl_schumann_vivo "
-                    "(timestamp_blk, schumann_hz, schumann_activity) VALUES (?,?,?)",
-                    (ts_blk, sch_hz, sch_act))
+                    "(timestamp_blk, schumann_hz, schumann_activity, creada_at) "
+                    "VALUES (?,?,?,datetime('now'))",
+                    (ts_blk, float(sch_hz), float(sch_act)),
+                )
                 conn.commit()
+            else:
+                logger.warning(
+                    "Skip tbl_schumann_vivo INSERT (no live signal and no LOCF)"
+                )
+
         except Exception as e:
             logger.warning(f"Persistencia Schumann viva falló (non-blocking): {e}")
 
@@ -733,8 +771,14 @@ def _auditar_ciclo(geo, repo, runner) -> None:
             from sentinel_omega.core.precursor.muro_lags import (
                 evaluar_muro_lags,
                 format_muro_lags,
+                cargar_estado_muro_lags,
+                guardar_estado_muro_lags,
             )
-            muro_lags = evaluar_muro_lags(matches)
+            # Memoria: si la MISMA convergencia persiste, conserva el ancla y
+            # descuenta días (no re-proyecta desde ahora cada ciclo).
+            estado_previo = cargar_estado_muro_lags(conn)
+            muro_lags = evaluar_muro_lags(matches, estado_previo=estado_previo)
+            guardar_estado_muro_lags(conn, muro_lags)
             if muro_lags.get("activo"):
                 logger.warning(format_muro_lags(muro_lags))
         except Exception as e:
@@ -760,12 +804,12 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         # ── Cimática: snapshot del sistema → patrón nuevo o frecuencia+1 ──
         # Todo alta/incremento dispara la revisión del Padre; si el patrón
         # es nuevo con el Padre activo, o se volvió consistente y está
-        # asociado a un tipo de evento, se encola la alerta por correo.
+        # asociado a un tipo de evento, se envía alerta por Telegram.
         try:
             from sentinel_omega.core.firmas.cimatica import (
                 FRECUENCIA_CONSISTENTE, registrar_snapshot,
             )
-            from sentinel_omega.infrastructure.api.correo import encolar_correo
+            from sentinel_omega.infrastructure.messaging.alert_service import AlertService, AlertTemplates
 
             if features:
                 ec_top = matches[0]["event_class"] if matches else None
@@ -786,37 +830,28 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                         f"{f', nodo {id_nodo}' if id_nodo else ', general'})"
                     )
                     if es_nuevo and padre_activo:
-                        encolar_correo(
-                            conn,
-                            asunto=(f"🌀 Sentinel Omega — patrón cimático "
-                                    f"NUEVO con Padre en "
-                                    f"{geo.final_signal.value.upper()}"),
-                            cuerpo=(
-                                f"Patrón de telemetría nunca visto "
-                                f"(id {pid_c}, "
-                                f"{'nodo ' + str(id_nodo) if id_nodo else 'general'}) "
-                                f"mientras el Padre está en "
-                                f"{geo.final_signal.value.upper()} "
-                                f"({geo.confidence:.0%}).\n"
-                                f"Telemetría completa guardada en "
-                                f"tbl_cimatica_patrones."
-                            ),
-                            tipo="ALERTA",
+                        svc = AlertService()
+                        msg = AlertTemplates.cimatica_nuevo(
+                            patron_id=pid_c,
+                            clave=str(features),
+                            ambito="general" if id_nodo is None else "nodo",
+                            id_nodo=id_nodo,
+                            event_class=ec_top,
                         )
+                        svc.dispatch(msg, channels=["telegram", "log"], conn=conn,
+                                     extra={"es_nuevo": True, "frecuencia": frec})
                     elif frec == FRECUENCIA_CONSISTENTE and ec:
-                        encolar_correo(
-                            conn,
-                            asunto=(f"🔁 Sentinel Omega — cimática "
-                                    f"CONSISTENTE para {ec}"),
-                            cuerpo=(
-                                f"El patrón {pid_c} "
-                                f"({'nodo ' + str(id_nodo) if id_nodo else 'general'}) "
-                                f"alcanzó frecuencia {frec} asociado a {ec}: "
-                                f"ya no es coincidencia, es cimática del "
-                                f"sistema. El Padre lo tiene en revisión."
-                            ),
-                            tipo="ALERTA",
+                        svc = AlertService()
+                        msg = AlertTemplates.cimatica_consistente(
+                            patron_id=pid_c,
+                            clave=str(features),
+                            frecuencia=frec,
+                            event_class=ec,
+                            ambito="general" if id_nodo is None else "nodo",
+                            id_nodo=id_nodo,
                         )
+                        svc.dispatch(msg, channels=["telegram", "log"], conn=conn,
+                                     extra={"frecuencia": frec})
         except Exception as e:
             logger.warning(f"Cimática falló (non-blocking): {e}")
 

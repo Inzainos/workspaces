@@ -421,9 +421,20 @@ sentinel_omega/
 │   │   ├── bolsa.py                     # Yahoo Finance + Alpha Vantage (Delta)
 │   │   └── telegram.py                  # Telegram Bot API
 │   ├── pipeline/
-│   │   ├── data_pipeline.py             # Pipeline maestro con LOCF
+│   │   ├── data_pipeline.py             # Pipeline maestro con LOCF (ingesta de fuentes)
+│   │   ├── data_pipeline_locf_patch.py  # Parche LOCF persistente (tbl_locf_cache) aplicado al pipeline
 │   │   ├── layer_runners.py             # GeodynamicLayerRunner (8 agentes: SNT×5 + Omega + Loki + Padre)
+│   │   ├── juez_cycle_register.py       # Registro por ciclo de predicciones del Juez (Padre + agentes)
 │   │   ├── backcast.py                  # Carga histórica one-time (1994-2025, 1H)
+│   │   ├── entrenamiento.py             # Entrenamiento por fases (1, 1b, 2) sobre backcast
+│   │   ├── entrenar_paralelo.py         # Entrenamiento paralelo por bot (misma lógica, menor tiempo)
+│   │   ├── mantenimiento.py             # Barrido diario: compactación, correlaciones, sesgo, poda cimática
+│   │   ├── reporte_sentinel.py          # Generador de reportes (general/padre/omega)
+│   │   ├── reporte_engine.py            # Capa unificada + versionado estado/historial
+│   │   ├── scheduler_reportes.py        # Scheduler de reportes (2h/6h), separado del launcher
+│   │   ├── sismos_refetch_recent.py     # Refetch incremental USGS (sin wipe)
+│   │   ├── topologia_cascada.py         # ETL de topología/cascada + recalculo de nodos
+│   │   ├── clima_gapfill_2026.py        # Relleno one-shot 2026 para clima espacial (fail-soft)
 │   │   └── legacy_loader.py             # Cargador de datos TITAN legacy
 │   ├── database/
 │   │   ├── schema.py                    # Schema SQLite + WAL + triggers + backcast + migración
@@ -564,6 +575,26 @@ python sentinel_omega/reboot.py
 python sentinel_omega/reboot.py --dashboard --dry-run
 ```
 
+### Scripts auxiliares del pipeline (auditados)
+
+Estos scripts también forman parte del pipeline operativo aunque no siempre se invocan desde CLI diaria:
+
+| Script | Tipo | Qué hace |
+|---|---|---|
+| `infrastructure/pipeline/data_pipeline_locf_patch.py` | módulo interno | Parchea `GeodynamicPipeline` para que LOCF use caché persistente en DB (`tbl_locf_cache`). |
+| `infrastructure/pipeline/entrenamiento.py` | módulo interno | Entrenamiento por fases (F1/F1b/F2), lags y correlaciones sobre backcast. |
+| `infrastructure/pipeline/entrenar_paralelo.py` | módulo interno | Variante paralela del entrenamiento por bot (misma lógica funcional). |
+| `infrastructure/pipeline/juez_cycle_register.py` | módulo interno | Registra predicciones del ciclo para auditoría del Juez (Padre + agentes). |
+| `infrastructure/pipeline/mantenimiento.py` | módulo interno | Barrido diario del historial operativo + correlaciones + sesgo + poda cimática. |
+| `infrastructure/pipeline/reporte_sentinel.py` | módulo interno | Genera reportes `general`, `padre`, `omega`. |
+| `infrastructure/pipeline/reporte_engine.py` | módulo interno | Capa DRY para reportes + versionado en `estado/historial` y actualización de `REPORTE.md`. |
+| `infrastructure/pipeline/scheduler_reportes.py` | proceso opcional | Scheduler de reportes (2h/6h). En operación actual, se mantiene deshabilitado para evitar duplicidad con `sentinel-omega.service`. |
+| `infrastructure/pipeline/sismos_refetch_recent.py` | one-shot CLI | Refetch incremental de sismos recientes (`--db`, `--days`, `--dry-run`). |
+| `infrastructure/pipeline/topologia_cascada.py` | one-shot CLI | ETL/re-cálculo de topología en cascada (`--db-path`, `--refetch`, `--solo-recalcular`, `--dry-run`). |
+| `infrastructure/pipeline/clima_gapfill_2026.py` | one-shot CLI | Relleno puntual 2026 para `tbl_clima_espacial_raw` desde NOAA (`--db`, `--dry-run`). |
+
+Regla operativa: los scripts `one-shot CLI` se ejecutan bajo demanda y preferentemente en `--dry-run` primero; los `módulo interno` se consumen vía launcher/orquestación.
+
 ---
 
 ## Integración Telegram Bidireccional (v2.5.3+)
@@ -605,6 +636,24 @@ cd /home/deamon/consensus-expert-agent
 # O directamente:
 python telegram_bot.py
 ```
+
+### Dashboard React (moderno) persistente via systemd --user
+```bash
+# API FastAPI (RO, DB prod) + React Vite (proxy /api -> :8787)
+systemctl --user daemon-reload
+systemctl --user enable --now sentinel-omega-dashboard-api.service sentinel-omega-dashboard-web.service
+
+# Estado
+systemctl --user status sentinel-omega-dashboard-api.service
+systemctl --user status sentinel-omega-dashboard-web.service
+```
+Acceso moderno:
+- UI local: `http://127.0.0.1:5173`
+- API local: `http://127.0.0.1:8787/api/health`
+- UI LAN (WSL host): `http://192.168.1.144:5173`
+- API LAN (WSL host): `http://192.168.1.144:8787/api/health`
+
+> Nota operativa: el servicio `sentinel-omega-dashboard.service` en `:8510` es **legacy Streamlit** y puede coexistir mientras no se deshabilite con privilegios de administrador.
 
 ### Dashboard Streamlit (Sentinel Omega)
 ```bash

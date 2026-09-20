@@ -145,11 +145,39 @@ class GeodynamicPipeline:
         eq_df = fetch_earthquakes(min_magnitude=2.5, days=30)
         if eq_df is not None and "magnitude" in eq_df.columns:
             result["seismic_magnitudes"] = eq_df["magnitude"].values.astype(float)
+            # No descartar el catálogo: el Juez lee TBL_HISTORICO_SISMICO y hay
+            # que persistir estos sismos (el runner los inserta, INSERT OR IGNORE
+            # dedup por event_id). Se exponen mapeados y filtrados. Cero
+            # sintético: se omite toda fila sin event_id/time/lat/lon/magnitud.
+            eventos = []
+            if {"event_id", "time", "latitude", "longitude"}.issubset(eq_df.columns):
+                for _, r in eq_df.iterrows():
+                    eid, t = r.get("event_id"), r.get("time")
+                    lat, lon, mag = r.get("latitude"), r.get("longitude"), r.get("magnitude")
+                    if not eid or pd.isna(t) or pd.isna(lat) or pd.isna(lon) or pd.isna(mag):
+                        continue
+                    depth = r.get("depth_km")
+                    eventos.append({
+                        "event_id": str(eid),
+                        "timestamp": float(pd.Timestamp(t).timestamp()),
+                        "lat": float(lat),
+                        "lon": float(lon),
+                        "depth_km": 0.0 if pd.isna(depth) else float(depth),
+                        "magnitude": float(mag),
+                        "region": str(r.get("place") or ""),
+                        "source": "USGS",
+                    })
+            if eventos:
+                result["seismic_events"] = eventos
 
         try:
-            schumann_hz, schumann_pct = fetch_schumann_resonance(cleanup=True)
-            result["schumann_frequency"] = schumann_hz
-            result["schumann_activity"] = schumann_pct
+            sch = fetch_schumann_resonance(cleanup=True)
+            if sch is None:
+                logger.warning("Schumann fetch returned no-signal (skip cache write of 7.83/0)")
+            else:
+                schumann_hz, schumann_pct = sch
+                result["schumann_frequency"] = schumann_hz
+                result["schumann_activity"] = schumann_pct
         except Exception as e:
             logger.warning(f"Schumann fetch failed: {e}")
 
@@ -297,12 +325,21 @@ class GeodynamicPipeline:
         """
         result: Dict[str, Any] = {}
 
+        failures = []
+        sources_ok = []
         fg = fetch_fear_greed_index()
-        result["fear_greed"] = fg["value"] if fg else 50.0
+        if fg and fg.get("value") is not None:
+            result["fear_greed"] = fg["value"]
+            sources_ok.append("fgi")
+        else:
+            failures.append("fgi")
 
         dominance = fetch_coingecko_dominance()
-        if dominance:
-            result["btc_dominance"] = dominance.get("btc", 50.0) / 100.0
+        if dominance and dominance.get("btc") is not None:
+            result["btc_dominance"] = float(dominance.get("btc")) / 100.0
+            sources_ok.append("btc_dominance")
+        else:
+            failures.append("btc_dominance")
 
         crypto_ratios: Dict[str, float] = {}
         for symbol in ("ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"):
@@ -316,8 +353,11 @@ class GeodynamicPipeline:
             result["crypto_ratios"] = crypto_ratios
 
         vix_df = fetch_vix()
-        if vix_df is not None and "close" in vix_df.columns:
+        if vix_df is not None and "close" in vix_df.columns and len(vix_df):
             result["vix"] = float(vix_df["close"].iloc[-1])
+            sources_ok.append("vix")
+        else:
+            failures.append("vix")
 
         # BTC volatility window (Yahoo, no key) — same units as Delta's
         # trained firma features, so live states can match trained memory.
@@ -336,6 +376,9 @@ class GeodynamicPipeline:
         spread = fetch_yield_spread()
         if spread is not None:
             result["yield_spread"] = spread
+            sources_ok.append("yield_spread")
+        else:
+            failures.append("yield_spread")
 
         sector_dfs = fetch_sector_etfs(days=30)
         sector_caps: Dict[str, float] = {}
@@ -347,7 +390,9 @@ class GeodynamicPipeline:
         if sector_caps:
             result["sector_market_caps"] = sector_caps
 
-        if not result or (result.get("fear_greed") == 50.0 and "vix" not in result):
+        result["fetch_failures"] = failures
+        result["sources_ok"] = sources_ok
+        if not sources_ok:
             cached = self._locf_get("delta")
             if cached:
                 return cached
@@ -365,14 +410,20 @@ class GeodynamicPipeline:
             enriched_data = fetch_all(days=14)
             enriched = run_composite(enriched_data, window_days=14)
 
-            result["cross_coupling"] = round(enriched.cross.composite_coupling, 4) if enriched.cross else 0.0
-            result["geo_coupling"] = round(enriched.cross.geomagnetic_coupling, 4) if enriched.cross else 0.0
-            result["schumann_coupling"] = round(enriched.cross.schumann_coupling, 4) if enriched.cross else 0.0
+            result["delta_data_completeness"] = round(enriched.data_completeness, 2)
             result["delta_composite_score"] = round(enriched.composite_score, 4)
             result["delta_regime_label"] = enriched.regime_label
             result["delta_narrative"] = enriched.narrative
             result["delta_confidence"] = round(enriched.confidence, 4)
-            result["delta_data_completeness"] = round(enriched.data_completeness, 2)
+            if enriched.data_completeness and enriched.data_completeness > 0 and enriched.cross:
+                result["cross_coupling"] = round(enriched.cross.composite_coupling, 4)
+                result["geo_coupling"] = round(enriched.cross.geomagnetic_coupling, 4)
+                result["schumann_coupling"] = round(enriched.cross.schumann_coupling, 4)
+            else:
+                logger.warning(
+                    "Delta enriched completeness=%.2f — omitting coupling keys (no zero write)",
+                    float(enriched.data_completeness or 0.0),
+                )
 
             if enriched.geophysical:
                 geo = enriched.geophysical
@@ -381,9 +432,11 @@ class GeodynamicPipeline:
                 result["geo_schumann_deviation"] = geo.schumann_freq_deviation
 
             logger.info(
-                f"Delta enriquecido: composite={result['delta_composite_score']:.3f}, "
-                f"cross_coupling={result['cross_coupling']:.3f}, "
-                f"regime={result['delta_regime_label']}"
+                "Delta enriquecido: composite=%s, cross_coupling=%s, regime=%s, completeness=%s",
+                result.get("delta_composite_score"),
+                result.get("cross_coupling"),
+                result.get("delta_regime_label"),
+                result.get("delta_data_completeness"),
             )
         except Exception as exc:
             logger.warning(f"Delta enriched pipeline failed (non-blocking): {exc}")
@@ -394,11 +447,96 @@ class GeodynamicPipeline:
             f"{len(crypto_ratios)} crypto ratios, "
             f"{len(sector_caps)} sectors"
         )
+        try:
+            self._persist_delta(result)
+        except Exception as exc:
+            logger.warning("Delta persist failed (non-blocking): %s", exc)
         self._locf_set("delta", result)
         return result
 
     # Google Trends is rate-limited (HTTP 429): refresh it at most every 6 h.
     _TRENDS_TTL_S = 6 * 3600
+
+    def _persist_delta(self, result: Dict[str, Any]) -> None:
+        """Write measured Delta snapshot to tbl_delta_cross / psique. No invented numbers.
+
+        2026-09-10: skip INSERT when data_completeness==0 or all couplings ~0
+        (was poisoning hourly rows with EQUILIBRIUM / conf=0.15 junk).
+        """
+        from datetime import datetime, timezone
+        from pathlib import Path as _P
+        import sqlite3 as _sq
+        db = _P(__file__).resolve().parents[2] / "data" / "SENTINEL_OMEGA_PRO.db"
+        if not db.exists():
+            return
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:00:00")
+        conn = _sq.connect(str(db), timeout=15)
+        try:
+            from sentinel_omega.core.delta_enriched.historico import ensure_schema, log_fetch
+            ensure_schema(conn)
+            for src in result.get("sources_ok") or []:
+                log_fetch(conn, f"live/{src}", True, 1, "")
+            for src in result.get("fetch_failures") or []:
+                log_fetch(conn, f"live/{src}", False, 0, "fetch returned no data")
+
+            completeness = result.get("delta_data_completeness")
+            if completeness is None:
+                completeness = len(result.get("sources_ok") or []) / 4.0
+            try:
+                completeness = float(completeness or 0.0)
+            except (TypeError, ValueError):
+                completeness = 0.0
+
+            couplings = [
+                result.get("cross_coupling"),
+                result.get("geo_coupling"),
+                result.get("schumann_coupling"),
+            ]
+            def _f(x):
+                try:
+                    return float(x)
+                except (TypeError, ValueError):
+                    return None
+            coup_vals = [_f(c) for c in couplings]
+            all_zeroish = all(v is None or abs(v) < 1e-12 for v in coup_vals)
+            if completeness <= 0.0 or (all_zeroish and completeness < 0.5):
+                logger.warning(
+                    "Skip tbl_delta_cross INSERT junk row completeness=%.3f couplings=%s ts=%s",
+                    completeness, coup_vals, ts,
+                )
+                conn.commit()
+                return
+
+            regime = result.get("delta_regime_label") or ""
+            conf = float(result.get("delta_confidence") or 0.0)
+            if completeness < 0.5 and regime == "EQUILIBRIUM":
+                regime = "INCOMPLETE"
+                conf = min(conf, 0.2)
+
+            conn.execute(
+                "INSERT OR REPLACE INTO tbl_delta_cross "
+                "(timestamp_blk, cross_coupling, geomagnetic_coupling, schumann_coupling, "
+                " sentiment_coupling, composite_score, regime_label, confidence, "
+                " data_completeness, geo_kp_max_3d, geo_storm_active, geo_schumann_deviation) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    ts,
+                    result.get("cross_coupling"),
+                    result.get("geo_coupling"),
+                    result.get("schumann_coupling"),
+                    None if result.get("fear_greed") is None else abs(float(result["fear_greed"]) - 50) / 50.0,
+                    result.get("delta_composite_score") or 0.0,
+                    regime,
+                    conf,
+                    completeness,
+                    result.get("geo_kp_max_3d"),
+                    int(result.get("geo_storm_active") or 0),
+                    result.get("geo_schumann_deviation"),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def fetch_jupiter_data(
         self, schumann_series: Optional[Any] = None

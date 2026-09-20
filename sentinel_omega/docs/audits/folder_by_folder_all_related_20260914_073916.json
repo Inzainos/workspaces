@@ -1,0 +1,3856 @@
+[
+  {
+    "root": "/home/deamon/workspaces/sentinel_omega",
+    "items": [
+      {
+        "dir": ".",
+        "docs": [
+          {
+            "file": "AGENTS.md",
+            "heading": "Sentinel Omega — Agents Registry (v2.5.4)",
+            "tags": "telegram"
+          },
+          {
+            "file": "CHANGELOG.md",
+            "heading": "2026-09-13 — Duelo launcher cerrado, watchdog/ops, Schumann/Alfa2 tests",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "CLAUDE.md",
+            "heading": "Sentinel Omega",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "LAUNCHER_AGENT_SIGNALS_PATCH.md",
+            "heading": "Parche launcher — agent_signals + ventana adaptativa",
+            "tags": "telegram"
+          },
+          {
+            "file": "README.md",
+            "heading": "Sentinel Omega v2.5.4 — The Third Act",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "alfa2_baseline_historical.json",
+            "heading": "{",
+            "tags": ""
+          },
+          {
+            "file": "api_log.txt",
+            "heading": "",
+            "tags": ""
+          },
+          {
+            "file": "pyproject.toml",
+            "heading": "[build-system]",
+            "tags": "dashboard"
+          },
+          {
+            "file": "requirements.txt",
+            "heading": "Sentinel Omega — dependencias core",
+            "tags": "dashboard"
+          }
+        ],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "launcher.py",
+            "syntax": "ok",
+            "exceptE": 18,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "launcher_fixed.py",
+            "syntax": "ok",
+            "exceptE": 18,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "orchestrator.py",
+            "syntax": "ok",
+            "exceptE": 6,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "reboot.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "shutdown.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": true
+          }
+        ],
+        "other_count": 4,
+        "flags": {
+          "dashboard": 9,
+          "watchdog": 4,
+          "telegram": 9
+        }
+      },
+      {
+        "dir": "_archive",
+        "docs": [],
+        "py": [],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "_archive/20260913",
+        "docs": [
+          {
+            "file": "README.md",
+            "heading": "Archive 2026-09-13 (Agente-C)",
+            "tags": ""
+          }
+        ],
+        "py": [],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "_archive/20260913/models_nested",
+        "docs": [
+          {
+            "file": "models_meta.json",
+            "heading": "{",
+            "tags": "telegram"
+          }
+        ],
+        "py": [],
+        "other_count": 6,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "_archive/20260913/schema",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "config",
+        "docs": [
+          {
+            "file": "sentinel.yaml",
+            "heading": "app:",
+            "tags": "dashboard,telegram"
+          }
+        ],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "onnx_config.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "sentinel_config.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 0,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "core",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "onnx_engine.py",
+            "syntax": "ok",
+            "exceptE": 4,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "onnx_mixin.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 0,
+          "telegram": 2
+        }
+      },
+      {
+        "dir": "core/delta_enriched",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "composite.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "cross.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "delta_engine.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "fetchers.py",
+            "syntax": "ok",
+            "exceptE": 13,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "historico.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "market_mapping.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 7,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "core/firmas",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "cimatica.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "signature_engine.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 0,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "core/juez",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "juez.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "pesos.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "core/precursor",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "assertivity.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "baseline.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "jupiter.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "muro_cinco_eventos.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "muro_lags.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "precursor_types.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "risk_calculator.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "scanner.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 0,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "core/shared",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent_base.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "data_pipeline.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "geometria_uvg.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "core/snt_engine",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "asi.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "corpus.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "friction.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "nbody.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "satellization.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "docs",
+        "docs": [
+          {
+            "file": "DASHBOARD_6TABS_DONE.md",
+            "heading": "Dashboard 6 tabs DONE",
+            "tags": "dashboard,watchdog"
+          },
+          {
+            "file": "INGEST_FIX_2026-09-10.md",
+            "heading": "Ingest Fix — 2026-09-10",
+            "tags": "dashboard,watchdog"
+          },
+          {
+            "file": "SESSION_2026-09-10.md",
+            "heading": "Sesión Sentinel Omega / Concilio — 2026-09-10 → 11",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "SESSION_2026-09-13.md",
+            "heading": "Sesión Sentinel Omega — 2026-09-11 → 13",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "SYSTEM_HEALTH_2026-09-10.md",
+            "heading": "System Health — 2026-09-10/11",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "SYSTEM_HEALTH_2026-09-13.md",
+            "heading": "System Health — 2026-09-13",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "TRAIN_INGEST_VERDICT_2026-09-10.md",
+            "heading": "TRAIN / INGEST VERDICT — 2026-09-10 (America/Mexico_City)",
+            "tags": "dashboard,watchdog"
+          },
+          {
+            "file": "TRAIN_RESTART_2026-09-10.md",
+            "heading": "TRAIN RESTART — 2026-09-10",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "WEIGHTS_BACKUP_LIST_PROD_2026-09-10.md",
+            "heading": "Prod ONNX before wipe 2026-09-10",
+            "tags": ""
+          }
+        ],
+        "py": [],
+        "other_count": 1,
+        "flags": {
+          "dashboard": 8,
+          "watchdog": 8,
+          "telegram": 5
+        }
+      },
+      {
+        "dir": "docs/audit",
+        "docs": [
+          {
+            "file": "00_README.md",
+            "heading": "Pipeline de auditoría — Sistema Omega",
+            "tags": ""
+          },
+          {
+            "file": "01_pgbouncer_pooling.md",
+            "heading": "Auditoría — Pooling de conexiones (PgBouncer)",
+            "tags": "dashboard"
+          },
+          {
+            "file": "02_cold_storage_export.md",
+            "heading": "Auditoría — Exportación a almacenamiento frío",
+            "tags": "dashboard"
+          },
+          {
+            "file": "03_incident_runbook.md",
+            "heading": "Auditoría — Runbook de incidentes",
+            "tags": "dashboard"
+          },
+          {
+            "file": "04_investigation_queries.md",
+            "heading": "Auditoría — Consultas de investigación",
+            "tags": "dashboard"
+          }
+        ],
+        "py": [],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 4,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "docs/audits",
+        "docs": [
+          {
+            "file": "component_audit_dashboard_watchdog_telegram_20260914_073641.json",
+            "heading": "[",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "component_audit_dashboard_watchdog_telegram_20260914_073641.md",
+            "heading": "Auditoría enfocada: dashboard + watchdog + bot telegram",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "folder_by_folder_review_20260914_073903.json",
+            "heading": "[",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "folder_by_folder_review_20260914_073903.md",
+            "heading": "Revisión carpeta por carpeta (Sentinel Omega)",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "scripts_audit_20260914_073252.json",
+            "heading": "[",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "scripts_audit_full_20260914.md",
+            "heading": "Auditoría completa por script (Sentinel Omega)",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "scripts_audit_summary_20260914_073252.md",
+            "heading": "Auditoría de scripts Sentinel Omega",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "scripts_audit_with_deploy_20260914_073329.json",
+            "heading": "[",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "scripts_audit_with_deploy_20260914_073329.md",
+            "heading": "Auditoría completa Sentinel Omega + deploy",
+            "tags": "dashboard,watchdog,telegram"
+          }
+        ],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 9,
+          "watchdog": 9,
+          "telegram": 9
+        }
+      },
+      {
+        "dir": "infrastructure",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/api",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "_http.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "bolsa.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "circuit_breaker.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "correo.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "crypto.py",
+            "syntax": "ok",
+            "exceptE": 5,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "esa_sentinel.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "geophysical.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "gfz_kp.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "google_trends.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "nasa_neo.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "noaa.py",
+            "syntax": "ok",
+            "exceptE": 5,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "noaa_hazards.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "openweathermap.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "schumann.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "telegram.py",
+            "syntax": "ok",
+            "exceptE": 6,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "usgs.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 14,
+          "watchdog": 0,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard",
+        "docs": [
+          {
+            "file": "README.md",
+            "heading": "Sentinel Omega Dashboard",
+            "tags": "dashboard,telegram"
+          }
+        ],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent_tab.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "api.py",
+            "syntax": "ok",
+            "exceptE": 12,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "app.py",
+            "syntax": "ok",
+            "exceptE": 4,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "ask_faq.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 5,
+          "watchdog": 2,
+          "telegram": 4
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/static",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/web",
+        "docs": [
+          {
+            "file": "components.json",
+            "heading": "{",
+            "tags": "dashboard"
+          },
+          {
+            "file": "package-lock.json",
+            "heading": "{",
+            "tags": "dashboard,telegram"
+          },
+          {
+            "file": "package.json",
+            "heading": "{",
+            "tags": "dashboard"
+          },
+          {
+            "file": "tsconfig.json",
+            "heading": "{",
+            "tags": ""
+          },
+          {
+            "file": "tsconfig.node.json",
+            "heading": "{",
+            "tags": "dashboard"
+          },
+          {
+            "file": "web_log.txt",
+            "heading": "npm notice run sentinel-omega-dashboard@0.1.0 dev",
+            "tags": "dashboard"
+          }
+        ],
+        "py": [],
+        "other_count": 5,
+        "flags": {
+          "dashboard": 5,
+          "watchdog": 0,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/web/dist",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/web/dist/assets",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/web/public",
+        "docs": [],
+        "py": [],
+        "other_count": 1,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/web/src",
+        "docs": [],
+        "py": [],
+        "other_count": 4,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/web/src/components",
+        "docs": [],
+        "py": [],
+        "other_count": 4,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/web/src/components/charts",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/web/src/components/maps",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/web/src/components/tabs",
+        "docs": [],
+        "py": [],
+        "other_count": 11,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/web/src/components/ui",
+        "docs": [],
+        "py": [],
+        "other_count": 3,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/web/src/hooks",
+        "docs": [],
+        "py": [],
+        "other_count": 1,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/dashboard/web/src/lib",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/database",
+        "docs": [
+          {
+            "file": "RESTORE_SCHEMA_V11.md",
+            "heading": "PLACEHOLDER",
+            "tags": ""
+          },
+          {
+            "file": "referencia_legacy.json",
+            "heading": "{",
+            "tags": ""
+          }
+        ],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "locf_store.py",
+            "syntax": "ok",
+            "exceptE": 4,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "migrate_v11.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "repository.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "schema.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "seed_nodos.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 2,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "infrastructure/database/audit",
+        "docs": [],
+        "py": [],
+        "other_count": 6,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/database/schema_parts",
+        "docs": [],
+        "py": [],
+        "other_count": 4,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/health",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "checks.py",
+            "syntax": "ok",
+            "exceptE": 5,
+            "bare": 0,
+            "main": true
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 2,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/logging",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "formatter.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/messaging",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent_bridge.py",
+            "syntax": "ok",
+            "exceptE": 7,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "alert_enrichment.py",
+            "syntax": "ok",
+            "exceptE": 9,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "alert_service.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "charts.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "consenso_vigilante.py",
+            "syntax": "ok",
+            "exceptE": 15,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 2,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "infrastructure/pipeline",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "backcast.py",
+            "syntax": "ok",
+            "exceptE": 7,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "clima_gapfill_2026.py",
+            "syntax": "ok",
+            "exceptE": 6,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "data_pipeline.py",
+            "syntax": "ok",
+            "exceptE": 10,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "data_pipeline_locf_patch.py",
+            "syntax": "ok",
+            "exceptE": 4,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "entrenamiento.py",
+            "syntax": "ok",
+            "exceptE": 5,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "entrenar_paralelo.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "juez_cycle_register.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "layer_runners.py",
+            "syntax": "ok",
+            "exceptE": 5,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "legacy_loader.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "mantenimiento.py",
+            "syntax": "ok",
+            "exceptE": 6,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "reporte_engine.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "reporte_sentinel.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "scheduler_reportes.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "sismos_refetch_recent.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "topologia_cascada.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "verificacion.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 1,
+        "flags": {
+          "dashboard": 12,
+          "watchdog": 1,
+          "telegram": 9
+        }
+      },
+      {
+        "dir": "infrastructure/pipeline/logs",
+        "docs": [],
+        "py": [],
+        "other_count": 82,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "infrastructure/telegram",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "bot.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 2
+        }
+      },
+      {
+        "dir": "infrastructure/watchdog",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "network_watchdog.py",
+            "syntax": "ok",
+            "exceptE": 7,
+            "bare": 0,
+            "main": true
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 1,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "launcher_hex",
+        "docs": [],
+        "py": [],
+        "other_count": 13,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "layers",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "layers/geodynamic",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "layers/geodynamic/alfa1",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 1,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "layers/geodynamic/alfa2",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "layers/geodynamic/beta1",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "layers/geodynamic/beta2",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "layers/geodynamic/delta",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "layers/geodynamic/jupiter",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "layers/geodynamic/loki",
+        "docs": [],
+        "py": [
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "layers/geodynamic/omega",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 1,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "layers/geodynamic/padre",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 0,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "layers/lottery_standalone",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "logs",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "notebooks",
+        "docs": [
+          {
+            "file": "README.md",
+            "heading": "Sentinel Omega — Jupyter Notebooks",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "requirements_jupyter.txt",
+            "heading": "Sentinel Omega — Jupyter Requirements",
+            "tags": "dashboard"
+          }
+        ],
+        "py": [],
+        "other_count": 1,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 1,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "sentinel_omega",
+        "docs": [
+          {
+            "file": "CHANGELOG.md",
+            "heading": "Changelog - Sentinel Omega",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "CLAUDE.md",
+            "heading": "Sentinel Omega",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "README.md",
+            "heading": "Sentinel Omega v2.5.4 — The Third Act",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "pyproject.toml",
+            "heading": "[build-system]",
+            "tags": "dashboard"
+          },
+          {
+            "file": "requirements.txt",
+            "heading": "Sentinel Omega — dependencias core",
+            "tags": "dashboard"
+          }
+        ],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 5,
+          "watchdog": 3,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "sentinel_omega/config",
+        "docs": [
+          {
+            "file": "sentinel.yaml",
+            "heading": "app:",
+            "tags": "dashboard,telegram"
+          }
+        ],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "onnx_config.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "sentinel_config.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 0,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "sentinel_omega/core",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "onnx_engine.py",
+            "syntax": "ok",
+            "exceptE": 4,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "onnx_mixin.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 0,
+          "telegram": 2
+        }
+      },
+      {
+        "dir": "sentinel_omega/core/delta_enriched",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "composite.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "cross.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "delta_engine.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "fetchers.py",
+            "syntax": "ok",
+            "exceptE": 13,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "historico.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "market_mapping.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 7,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/core/firmas",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "cimatica.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "signature_engine.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 0,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "sentinel_omega/core/juez",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "juez.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "pesos.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "sentinel_omega/core/precursor",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "assertivity.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "baseline.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "jupiter.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "muro_cinco_eventos.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "muro_lags.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "precursor_types.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "risk_calculator.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "scanner.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 0,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "sentinel_omega/core/shared",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent_base.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "data_pipeline.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "geometria_uvg.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/core/snt_engine",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "asi.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "corpus.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "friction.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "nbody.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "satellization.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/docs",
+        "docs": [
+          {
+            "file": "DASHBOARD_6TABS_DONE.md",
+            "heading": "Dashboard 6 tabs DONE",
+            "tags": "dashboard,watchdog"
+          },
+          {
+            "file": "INGEST_FIX_2026-09-10.md",
+            "heading": "Ingest Fix — 2026-09-10",
+            "tags": "dashboard,watchdog"
+          },
+          {
+            "file": "SESSION_2026-09-10.md",
+            "heading": "Sesión Sentinel Omega / Concilio — 2026-09-10 → 11",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "SYSTEM_HEALTH_2026-09-10.md",
+            "heading": "System Health — 2026-09-10/11",
+            "tags": "dashboard,watchdog,telegram"
+          }
+        ],
+        "py": [],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 4,
+          "watchdog": 4,
+          "telegram": 2
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/api",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "_http.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "bolsa.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "circuit_breaker.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "correo.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "crypto.py",
+            "syntax": "ok",
+            "exceptE": 5,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "esa_sentinel.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "geophysical.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "gfz_kp.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "google_trends.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "nasa_neo.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "noaa.py",
+            "syntax": "ok",
+            "exceptE": 5,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "noaa_hazards.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "openweathermap.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "schumann.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "telegram.py",
+            "syntax": "ok",
+            "exceptE": 6,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "usgs.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 14,
+          "watchdog": 0,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard",
+        "docs": [
+          {
+            "file": "README.md",
+            "heading": "Sentinel Omega Dashboard",
+            "tags": "dashboard,telegram"
+          }
+        ],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent_tab.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "api.py",
+            "syntax": "ok",
+            "exceptE": 12,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "app.py",
+            "syntax": "ok",
+            "exceptE": 4,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "ask_faq.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 5,
+          "watchdog": 2,
+          "telegram": 4
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/static",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/web",
+        "docs": [
+          {
+            "file": "components.json",
+            "heading": "{",
+            "tags": "dashboard"
+          },
+          {
+            "file": "package-lock.json",
+            "heading": "{",
+            "tags": "dashboard,telegram"
+          },
+          {
+            "file": "package.json",
+            "heading": "{",
+            "tags": "dashboard"
+          },
+          {
+            "file": "tsconfig.json",
+            "heading": "{",
+            "tags": ""
+          },
+          {
+            "file": "tsconfig.node.json",
+            "heading": "{",
+            "tags": "dashboard"
+          }
+        ],
+        "py": [],
+        "other_count": 4,
+        "flags": {
+          "dashboard": 4,
+          "watchdog": 0,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/web/dist",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/web/dist/assets",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/web/public",
+        "docs": [],
+        "py": [],
+        "other_count": 1,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/web/src",
+        "docs": [],
+        "py": [],
+        "other_count": 4,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/web/src/components",
+        "docs": [],
+        "py": [],
+        "other_count": 4,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/web/src/components/charts",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/web/src/components/maps",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/web/src/components/tabs",
+        "docs": [],
+        "py": [],
+        "other_count": 11,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/web/src/components/ui",
+        "docs": [],
+        "py": [],
+        "other_count": 3,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/web/src/hooks",
+        "docs": [],
+        "py": [],
+        "other_count": 1,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/dashboard/web/src/lib",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/database",
+        "docs": [
+          {
+            "file": "RESTORE_SCHEMA_V11.md",
+            "heading": "PLACEHOLDER",
+            "tags": ""
+          },
+          {
+            "file": "referencia_legacy.json",
+            "heading": "{",
+            "tags": ""
+          }
+        ],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "locf_store.py",
+            "syntax": "ok",
+            "exceptE": 4,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "migrate_v11.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "repository.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "schema.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "seed_nodos.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 2,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/database/audit",
+        "docs": [],
+        "py": [],
+        "other_count": 6,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/database/schema_parts",
+        "docs": [],
+        "py": [],
+        "other_count": 4,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/health",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "checks.py",
+            "syntax": "ok",
+            "exceptE": 5,
+            "bare": 0,
+            "main": true
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 2,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/logging",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "formatter.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/messaging",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent_bridge.py",
+            "syntax": "ok",
+            "exceptE": 7,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "alert_enrichment.py",
+            "syntax": "ok",
+            "exceptE": 9,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "alert_service.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "charts.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "consenso_vigilante.py",
+            "syntax": "ok",
+            "exceptE": 15,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 2,
+          "watchdog": 2,
+          "telegram": 3
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/pipeline",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "backcast.py",
+            "syntax": "ok",
+            "exceptE": 7,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "clima_gapfill_2026.py",
+            "syntax": "ok",
+            "exceptE": 6,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "data_pipeline.py",
+            "syntax": "ok",
+            "exceptE": 10,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "data_pipeline_locf_patch.py",
+            "syntax": "ok",
+            "exceptE": 4,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "entrenamiento.py",
+            "syntax": "ok",
+            "exceptE": 5,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "entrenar_paralelo.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "juez_cycle_register.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "layer_runners.py",
+            "syntax": "ok",
+            "exceptE": 5,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "legacy_loader.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "mantenimiento.py",
+            "syntax": "ok",
+            "exceptE": 6,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "reporte_engine.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "reporte_sentinel.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "scheduler_reportes.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "sismos_refetch_recent.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "topologia_cascada.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "verificacion.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 1,
+        "flags": {
+          "dashboard": 12,
+          "watchdog": 1,
+          "telegram": 9
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/pipeline/logs",
+        "docs": [],
+        "py": [],
+        "other_count": 57,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/telegram",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "bot.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 2
+        }
+      },
+      {
+        "dir": "sentinel_omega/infrastructure/watchdog",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "network_watchdog.py",
+            "syntax": "ok",
+            "exceptE": 7,
+            "bare": 0,
+            "main": true
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 1,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "sentinel_omega/layers",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/layers/geodynamic",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/layers/geodynamic/alfa1",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 1,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "sentinel_omega/layers/geodynamic/alfa2",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/layers/geodynamic/beta1",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/layers/geodynamic/beta2",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/layers/geodynamic/delta",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/layers/geodynamic/jupiter",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/layers/geodynamic/loki",
+        "docs": [],
+        "py": [
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 1,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "sentinel_omega/layers/geodynamic/omega",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 1,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "sentinel_omega/layers/geodynamic/padre",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "agent.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 0,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "sentinel_omega/layers/lottery_standalone",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "tests",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_agents.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_api_connectors.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_cimatica_correo.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_consenso_vigilante.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_entrenar_paralelo.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_firmas.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_infrastructure.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_jupiter.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_normalizacion.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_pipeline.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_precursor.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_reporte_agentes.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_schumann_filter.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "test_snt_engine.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 9,
+          "watchdog": 5,
+          "telegram": 8
+        }
+      }
+    ]
+  },
+  {
+    "root": "/home/deamon/workspaces/deploy",
+    "items": [
+      {
+        "dir": ".",
+        "docs": [
+          {
+            "file": "ATAJO_IOS.md",
+            "heading": "Atajos de iOS — Roy en el bolsillo",
+            "tags": "dashboard"
+          },
+          {
+            "file": "DEPLOY.md",
+            "heading": "Despliegue de Sentinel Omega — servidor permanente",
+            "tags": "dashboard,watchdog,telegram"
+          }
+        ],
+        "py": [
+          {
+            "file": "aciertos_reporte.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "bootstrap_omega.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "enviar_correos.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "generar_reporte.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "jupiter_correlaciones.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "rebuild_completo.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "reporte_ejecutivo.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "reporte_periodico.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "tuning_db.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "verificacion_juez.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": true
+          }
+        ],
+        "other_count": 20,
+        "flags": {
+          "dashboard": 7,
+          "watchdog": 1,
+          "telegram": 7
+        }
+      }
+    ]
+  },
+  {
+    "root": "/home/deamon/consensus-expert-agent",
+    "items": [
+      {
+        "dir": ".",
+        "docs": [
+          {
+            "file": "AGENTS.md",
+            "heading": "AGENTS.md — consensus-expert-agent (Concilio)",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "CHANGELOG.md",
+            "heading": "[docs] - 2026-09-13 — Auditoría GitHub (Claude/Copilot)",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "CONCILIO.md",
+            "heading": "Sequential Concilio",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "README.md",
+            "heading": "Consenso de Expertos Multi-Modelo — Concilio",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "TELEGRAM_BOT_README.md",
+            "heading": "Telegram Bot — Consensus Expert Agent + Sentinel Omega Bridge",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "config.yaml",
+            "heading": "=============================================================================",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "requirements.txt",
+            "heading": "rich>=13.7.0",
+            "tags": "dashboard,telegram"
+          }
+        ],
+        "py": [
+          {
+            "file": "alert_queue.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "cli.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "main.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "smoke_fast.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "telegram_bot.py",
+            "syntax": "ok",
+            "exceptE": 16,
+            "bare": 0,
+            "main": true
+          },
+          {
+            "file": "web_ui.py",
+            "syntax": "ok",
+            "exceptE": 6,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 11,
+        "flags": {
+          "dashboard": 11,
+          "watchdog": 9,
+          "telegram": 10
+        }
+      },
+      {
+        "dir": "agents",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "base_agent.py",
+            "syntax": "ok",
+            "exceptE": 3,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "coder.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "optimizer.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "researcher.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 3,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "deploy",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "docs",
+        "docs": [
+          {
+            "file": "CONCILIO.md",
+            "heading": "Sequential Concilio",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "FUNCIONAMIENTO_TELEGRAM.md",
+            "heading": "Funcionamiento — Bot Telegram + Mini App (Consensus / Concilio)",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "HANDOFF_GEMMA_MEMORIA.md",
+            "heading": "Handoff — Cargar memoria al modelo Gemma (árbitro del Concilio)",
+            "tags": "dashboard,watchdog,telegram"
+          },
+          {
+            "file": "TELEGRAM_CONSENSUS_TODO.md",
+            "heading": "Telegram + Consensus — trabajo pendiente (cuando X-Deamon esté online)",
+            "tags": "dashboard,watchdog,telegram"
+          }
+        ],
+        "py": [],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 4,
+          "watchdog": 4,
+          "telegram": 4
+        }
+      },
+      {
+        "dir": "engine",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "concilio_session.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "model_lifecycle.py",
+            "syntax": "ok",
+            "exceptE": 4,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "ollama_lifecycle.py",
+            "syntax": "ok",
+            "exceptE": 4,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "orchestrator.py",
+            "syntax": "ok",
+            "exceptE": 8,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "router.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 3,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 1,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "logs",
+        "docs": [],
+        "py": [],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "memory",
+        "docs": [],
+        "py": [
+          {
+            "file": "__init__.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "anti_injection.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "blackboard.py",
+            "syntax": "ok",
+            "exceptE": 1,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "concilio_session.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "concilio_store.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "memory_pack.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "persistent_store.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "repository_context.py",
+            "syntax": "ok",
+            "exceptE": 2,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "session_store.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          },
+          {
+            "file": "shared_context.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": false
+          }
+        ],
+        "other_count": 0,
+        "flags": {
+          "dashboard": 8,
+          "watchdog": 1,
+          "telegram": 1
+        }
+      },
+      {
+        "dir": "modelfiles",
+        "docs": [
+          {
+            "file": "README.md",
+            "heading": "Thin Modelfiles (Concilio)",
+            "tags": ""
+          }
+        ],
+        "py": [],
+        "other_count": 9,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "scripts",
+        "docs": [],
+        "py": [
+          {
+            "file": "build_memory_pack.py",
+            "syntax": "ok",
+            "exceptE": 0,
+            "bare": 0,
+            "main": true
+          }
+        ],
+        "other_count": 2,
+        "flags": {
+          "dashboard": 1,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      },
+      {
+        "dir": "static",
+        "docs": [],
+        "py": [],
+        "other_count": 1,
+        "flags": {
+          "dashboard": 0,
+          "watchdog": 0,
+          "telegram": 0
+        }
+      }
+    ]
+  }
+]

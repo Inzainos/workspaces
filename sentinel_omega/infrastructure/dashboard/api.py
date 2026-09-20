@@ -38,17 +38,23 @@ STALE_SECONDS = 600.0
 
 
 def _resolve_db() -> Path:
+    """Prefer SENTINEL_DB, then prod DB, then this tree's data/. Never default to Dev."""
     env = os.environ.get("SENTINEL_DB")
     if env:
         return Path(env)
+    prod = Path("/home/deamon/workspaces/sentinel_omega/data/SENTINEL_OMEGA_PRO.db")
     for cand in (
+        prod,
         _PKG_DIR / "data" / "SENTINEL_OMEGA_PRO.db",
         _REPO_ROOT / "data" / "SENTINEL_OMEGA_PRO.db",
-        Path("/home/deamon/workspaces-dev/sentinel_omega/data/SENTINEL_OMEGA_PRO.db"),
     ):
+        # Skip any path under workspaces-dev unless explicitly set via SENTINEL_DB
+        if "workspaces-dev" in str(cand):
+            continue
         if cand.exists():
             return cand
-    return _PKG_DIR / "data" / "SENTINEL_OMEGA_PRO.db"
+    return prod
+
 
 
 DB_PATH = _resolve_db()
@@ -57,7 +63,7 @@ DB_URI = f"file:{DB_PATH}?mode=ro"
 app = FastAPI(
     title="Sentinel Omega Dashboard API",
     version="0.2.0",
-    description="Read-only command dashboard API (React). Dev/test first.",
+    description="Read-only command dashboard API (React). Defaults to Prod DB.",
 )
 
 app.add_middleware(
@@ -82,7 +88,10 @@ class ReadOnlyRepository(SentinelRepository):
     """SentinelRepository with forced URI read-only connections."""
 
     def __init__(self, db_path: Optional[str] = None):
-        super().__init__(db_path=db_path or str(DB_PATH))
+        # No llamamos a super().__init__ para evitar que get_connection()
+        # dispare init_database() y bloquee la DB.
+        self._db_path = db_path or str(DB_PATH)
+        self._tls = threading.local()
 
     @property
     def _conn_safe(self) -> sqlite3.Connection:
@@ -600,6 +609,38 @@ def lag() -> Dict[str, Any]:
     )
 
 
+@app.get("/api/muro_lags")
+def muro_lags() -> Dict[str, Any]:
+    """Ventana temporal activa (muro de lags) con countdown que decrementa."""
+    if not _table_exists("tbl_muro_lags_estado"):
+        return {"activo": False}
+    rows = _rows(
+        "SELECT activo, firmas_ids, clases, detectado_en, fecha_inicio, fecha_fin, "
+        "ventana_ini, ventana_fin, similitud_max, actualizado "
+        "FROM tbl_muro_lags_estado WHERE id=1"
+    )
+    if not rows or not rows[0].get("activo"):
+        return {"activo": False}
+    r = dict(rows[0])
+    import json as _json
+    from datetime import datetime as _dt
+    try:
+        r["clases"] = _json.loads(r.get("clases") or "[]")
+        r["firmas_ids"] = _json.loads(r.get("firmas_ids") or "[]")
+    except Exception:
+        pass
+    try:
+        hoy = _dt.utcnow().date()
+        dini = _dt.strptime(r["fecha_inicio"], "%Y-%m-%d").date()
+        dfin = _dt.strptime(r["fecha_fin"], "%Y-%m-%d").date()
+        t0 = _dt.strptime(r["detectado_en"], "%Y-%m-%d %H:%M")
+        r["dias_restantes"] = [max(0, (dini - hoy).days), max(0, (dfin - hoy).days)]
+        r["dias_transcurridos"] = max(0, (_dt.utcnow() - t0).days)
+    except Exception:
+        pass
+    return _jsonable(r)
+
+
 @app.get("/api/juez")
 def juez(
     limit: int = Query(100, ge=1, le=500),
@@ -643,6 +684,7 @@ def layers() -> Dict[str, Any]:
         "beta2": "Beta-2 (Atmospheric)",
         "delta": "Delta (Financial)",
         "omega": "Omega (Dual-Ask)",
+        "loki": "Loki (Campo Unificado)",
         "jupiter": "Jupiter",
         "padre": "Padre",
     }
@@ -918,165 +960,322 @@ def unificado() -> Dict[str, Any]:
             },
             "cimatica_total": cim_n,
             "engine_in_prod": False,
-            "caption": "Motor Campo Unificado / Fractal-Bayesiano NO está en producción. Esta vista combina la teoría con sensores vivos (overview/nodos/cimática).",
+            "caption": "Loki is the Campo Unificado native bot (third act). Not on prod systemd. Beta-1 draws figuritas; Beta-2 looks up the mixed library (no live training).",
         }
     )
 
 
 
 
-# ── Compat layer for React frontend (api.ts expects non-/api paths) ──
-@app.get("/health")
-def health_alias():
-    h = health()
-    # Adapt to frontend expected shape {version, db:{connected,path}, agents:[]}
-    # health() returns {status, db_exists, db_path, version?, agentes?}
-    db_connected = bool(h.get("db_exists") or h.get("db_readable"))
-    db_path = h.get("db_path") or str(h.get("db_path",""))
-    version = h.get("version") or h.get("app_version") or "2.5.4"
-    # agents from TBL_PESOS_BOTS if not in h
-    agents = h.get("agents") or []
-    if not agents:
-        try:
-            rows = _rows("SELECT bot_name as name, peso FROM TBL_PESOS_BOTS ORDER BY bot_name") if _table_exists("TBL_PESOS_BOTS") else []
-            for r in rows:
-                agents.append({"name": str(r.get("name")), "status": "ok" if float(r.get("peso") or 1)>0.5 else "warn", "last_run": ""})
-            if not agents:
-                agents = [{"name": n, "status": "ok", "last_run": ""} for n in ["alfa1","alfa2","beta1","beta2","delta","omega","loki","padre"]]
-        except:
-            agents = []
-    return _jsonable({"version": version, "db": {"connected": db_connected, "path": db_path}, "agents": agents, **h})
-
-@app.get("/kpis")
-def kpis_alias():
+@app.get("/api/cimatica/ahora")
+def cimatica_ahora() -> Dict[str, Any]:
+    """Current cymatic state. Uses historical lookup when helper module exists."""
     try:
-        total = int(_scalar("SELECT COUNT(*) FROM TBL_HISTORICO_SISMICO", default=0) or 0)
-    except: total = 0
+        from sentinel_omega.core.firmas.biblioteca_cimatica import consultar, ensure_biblioteca
+        lookup_available = True
+    except Exception:
+        consultar = None
+        ensure_biblioteca = None
+        lookup_available = False
+
+    db = DB_PATH
+    import sqlite3
+
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=8)
+    con.row_factory = sqlite3.Row
     try:
-        alerts_24h = int(_scalar("SELECT COUNT(*) FROM TBL_CICLOS WHERE geo_signal='alert' AND timestamp > ?", params=(__import__('time').time()-86400,), default=0) or 0)
-    except: alerts_24h = 0
-    try:
-        cycles = int(_scalar("SELECT COUNT(*) FROM TBL_CICLOS", default=0) or 0)
-    except: cycles = 0
-    try:
-        avg_phi = float(_scalar("SELECT AVG(fantasma) FROM TBL_PRECURSORES_COSMICOS WHERE fantasma IS NOT NULL", default=0) or 0)
-        avg_phi = round(avg_phi / 30.0, 3) if avg_phi else 0.0
-    except: avg_phi = 0.0
-    return _jsonable({"total_quakes": total, "alerts_24h": alerts_24h, "consensus_cycles": cycles, "avg_phi": avg_phi})
+        n_pat = con.execute("SELECT COUNT(*) FROM tbl_cimatica_patrones").fetchone()[0] if _table_exists("tbl_cimatica_patrones") else 0
+        latest_pat = None
+        if _table_exists("tbl_cimatica_patrones"):
+            latest_pat = con.execute(
+                """SELECT patron_id, clave, ambito, id_nodo, event_class, frecuencia, primera_vez, ultima_vez
+                   FROM tbl_cimatica_patrones ORDER BY ultima_vez DESC LIMIT 1"""
+            ).fetchone()
 
-@app.get("/telemetry/latest")
-def telemetry_latest_alias():
-    prec = _rows("SELECT timestamp, kp, schumann_hz FROM TBL_PRECURSORES_COSMICOS ORDER BY timestamp DESC LIMIT 20")
-    history = []
-    for r in reversed(prec):
-        history.append({"ts": str(r.get("timestamp")), "kp": float(r.get("kp") or 0), "schumann": float(r.get("schumann_hz") or 7.83), "lunar_phase": 0.5, "rotation": 0.0})
-    latest = history[-1] if history else None
-    return _jsonable({"latest": latest, "history": history[-20:]})
+        n_lib = 0
+        by_ec = []
+        if lookup_available and ensure_biblioteca is not None:
+            try:
+                ensure_biblioteca(con)
+            except Exception:
+                pass
+        if _table_exists("tbl_cimatica_biblioteca"):
+            n_lib = int(con.execute("SELECT COUNT(*) FROM tbl_cimatica_biblioteca").fetchone()[0] or 0)
+            by_ec = _rows(
+                "SELECT event_class, COUNT(*) n, SUM(COALESCE(n_eventos,0)) eventos "
+                "FROM tbl_cimatica_biblioteca GROUP BY 1 ORDER BY 3 DESC LIMIT 20"
+            ) if n_lib else []
 
-@app.get("/telemetry/history")
-def telemetry_history_alias(hours: int = Query(24, ge=1, le=720)):
-    prec = _rows("SELECT timestamp, kp, schumann_hz FROM TBL_PRECURSORES_COSMICOS ORDER BY timestamp DESC LIMIT ?", params=(min(hours, 500),))
-    history = []
-    for r in reversed(prec):
-        history.append({"ts": str(r.get("timestamp")), "kp": float(r.get("kp") or 0), "schumann": float(r.get("schumann_hz") or 7.83), "lunar_phase": 0.5, "rotation": 0.0})
-    return _jsonable({"history": history})
+        # Intento de lookup live (si existe helper), de lo contrario salida honesta parcial.
+        figura, factores, clave_fig = {}, {}, ""
+        if latest_pat is not None:
+            try:
+                clave_fig = str(latest_pat["clave"] or "")
+            except Exception:
+                clave_fig = ""
+        if lookup_available:
+            try:
+                row = con.execute(
+                    "SELECT detalles_json FROM TBL_JUEZ_AUDITORIA "
+                    "WHERE bot_name='beta1' AND fase='viva' ORDER BY timestamp DESC LIMIT 1"
+                ).fetchone()
+                if row and row[0]:
+                    det = json.loads(row[0])
+                    figura = det.get("figura") or {}
+                    factores = det.get("factores") or {}
+                    clave_fig = det.get("clave_figura") or ""
+            except Exception:
+                figura, factores, clave_fig = {}, {}, ""
 
-@app.get("/consenso/historial")
-def consenso_historial_alias(limit: int = Query(100, ge=1, le=500)):
-    rows = _rows("SELECT timestamp, geo_signal, fantasma FROM TBL_CICLOS ORDER BY timestamp DESC LIMIT ?", params=(limit,))
-    historial = []
-    for i, r in enumerate(rows):
-        fantasma = float(r.get("fantasma") or 0)
-        base = min(fantasma/30.0, 0.95)
-        historial.append({"timestamp": str(r.get("timestamp")), "evento_id": f"evt-{i:04d}", "alfa_score": round(base*0.9,3), "beta_score": round(base*0.85,3), "delta_score": round(base*0.7,3), "omega_score": round(base*0.8,3), "omega_phi": round(base*1.618%1,3), "loki_score": round(base*0.75,3), "loki_dim": round(1.2+base*0.8,3), "padre_decision": "ALERT" if r.get("geo_signal")=="alert" else "WATCH" if r.get("geo_signal")=="watch" else "NEUTRAL", "padre_prob": round(base,3)})
-    if not historial:
-        historial = [{"timestamp": str(__import__('time').time()), "evento_id": "evt-0000", "alfa_score": 0.1, "beta_score": 0.1, "delta_score": 0.1, "omega_score": 0.1, "omega_phi": 0.2, "loki_score": 0.1, "loki_dim": 1.5, "padre_decision": "NEUTRAL", "padre_prob": 0.1}]
-    return _jsonable({"historial": historial})
+        hit = {
+            "similares": [],
+            "n_hits": 0,
+            "best_similarity": 0,
+            "live_train": False,
+            "lookup_available": lookup_available,
+        }
+        if lookup_available and consultar is not None and (figura or clave_fig):
+            try:
+                hit = consultar(con, figura, factores, clave_figura=clave_fig)
+                hit["lookup_available"] = True
+            except Exception as exc:
+                hit = {
+                    "similares": [],
+                    "n_hits": 0,
+                    "best_similarity": 0,
+                    "live_train": False,
+                    "lookup_available": True,
+                    "reason": str(exc),
+                }
 
-@app.get("/analysis/patrones")
-def analysis_patrones_alias():
-    try:
-        rows = _rows("SELECT patron_id as id, clave as patron, frecuencia as ocurrencias, ultima_vez FROM tbl_cimatica_patrones ORDER BY frecuencia DESC LIMIT 50") if _table_exists("tbl_cimatica_patrones") else []
-        patrones = [{"id": str(r.get("id")), "patron": str(r.get("patron") or ""), "confianza": 0.5, "ocurrencias": int(r.get("ocurrencias") or 0), "ultima_vez": str(r.get("ultima_vez") or ""), "similares": 0} for r in rows]
-    except: patrones = []
-    return _jsonable({"patrones": patrones})
-
-@app.get("/analysis/replicas")
-def analysis_replicas_alias():
-    try:
-        rows = _rows("SELECT firma_id as id, bot_name, prediccion FROM TBL_FIRMAS WHERE fase='viva' ORDER BY updated_at DESC LIMIT 20") if _table_exists("TBL_FIRMAS") else []
-        replicas = [{"id": str(r.get("id")), "evento_actual": str(r.get("bot_name") or ""), "evento_historico": str(r.get("prediccion") or "")[:30], "similitud": 75.0, "ventana_dias": 3, "magnitud_diff": 0.5} for r in rows]
-    except: replicas = []
-    return _jsonable({"replicas": replicas})
-
-@app.get("/agents/status")
-def agents_status_alias():
-    try:
-        pesos = _rows("SELECT bot_name as name, peso FROM TBL_PESOS_BOTS ORDER BY bot_name") if _table_exists("TBL_PESOS_BOTS") else []
-        status = []
-        for r in pesos:
-            peso = float(r.get("peso") or 1.0)
-            st = "ok" if peso >=0.8 else "warn" if peso >=0.5 else "error"
-            status.append({"name": str(r.get("name")), "status": st, "last_run": "", "runs_24h": 12, "errors_24h": 0 if peso>=0.6 else 2, "version": "2.5.4"})
-        if not status:
-            status = [{"name": n, "status": "ok", "last_run": "", "runs_24h": 0, "errors_24h": 0, "version": "2.5.4"} for n in ["alfa1","alfa2","beta1","beta2","delta","omega","loki","padre"]]
-    except: status = []
-    return _jsonable({"status": status})
-
-@app.get("/system/overview")
-def system_overview_alias():
-    try: total = int(_scalar("SELECT COUNT(*) FROM TBL_HISTORICO_SISMICO", default=0) or 0)
-    except: total=0
-    try: cycles_24h = int(_scalar("SELECT COUNT(*) FROM TBL_CICLOS WHERE timestamp > ?", params=(__import__('time').time()-86400,), default=0) or 0)
-    except: cycles_24h=0
-    try:
-        from pathlib import Path as _P
-        dbp = _P(DB_PATH) if "DB_PATH" in globals() else _P("data/SENTINEL_OMEGA_PRO.db")
-        sz = dbp.stat().st_size/1024/1024 if dbp.exists() else 0
-    except: sz=0
-    return _jsonable({"db_size_mb": round(sz,1), "quakes_total": total, "cycles_24h": cycles_24h, "avg_latency_ms": 120.5})
-
-@app.get("/system/familias")
-def system_familias_alias():
-    try: pesos = {r["name"]: float(r.get("peso") or 1.0) for r in _rows("SELECT bot_name as name, peso FROM TBL_PESOS_BOTS") } if _table_exists("TBL_PESOS_BOTS") else {}
-    except: pesos={}
-    def fam(names):
-        vals = [pesos.get(n,0.5) for n in names]
-        avg = sum(vals)/len(vals) if vals else 0.5
-        return {"score": round(avg,3), "confianza": round(avg*0.9,3), "componentes": {n: round(pesos.get(n,0.5),3) for n in names}}
-    return _jsonable({"alfa": fam(["alfa1","alfa2"]), "beta": fam(["beta1","beta2"]), "delta": fam(["delta"])})
-
-@app.get("/system/omega")
-def system_omega_alias():
-    try:
-        fantasma = float(_scalar("SELECT fantasma FROM TBL_PRECURSORES_COSMICOS ORDER BY timestamp DESC LIMIT 1", default=0) or 0)
-        phi = round((fantasma%5)/5*1.618,3) if fantasma else 0.382
-        score = round(min(fantasma/30,0.95),3) if fantasma else 0.2
-        decision = "ALERT" if fantasma>15 else "WATCH" if fantasma>5 else "NEUTRAL"
-    except: score, phi, decision = 0.2, 0.382, "NEUTRAL"
-    return _jsonable({"score": score, "phi": phi, "decision": decision, "componentes": {"schumann": score*0.4, "lunar": score*0.3, "solar": score*0.3}})
-
-@app.get("/system/loki")
-def system_loki_alias():
-    try:
-        fantasma = float(_scalar("SELECT fantasma FROM TBL_PRECURSORES_COSMICOS ORDER BY timestamp DESC LIMIT 1", default=0) or 0)
-        score = round(min(fantasma/30*0.8,0.9),3) if fantasma else 0.15
-    except: score=0.15
-    return _jsonable({"score": score, "dimension_fractal": round(1.2+score,3), "bayesian_prior": round(score*0.6,3), "bayesian_posterior": round(score,3), "componentes": {"fractal": score*0.5, "bayes": score*0.5}})
-
-@app.get("/system/padre")
-def system_padre_alias():
-    try:
-        last = _rows("SELECT geo_signal, fantasma FROM TBL_CICLOS ORDER BY timestamp DESC LIMIT 1") if _table_exists("TBL_CICLOS") else []
-        sig = (last[0].get("geo_signal") if last else "neutral") or "neutral"
-        fantasma = float(last[0].get("fantasma") or 0) if last else 0
-        prob = round(min(fantasma/30,0.95),3) if fantasma else 0.2
-        decision = sig.upper() if sig.upper() in ["ALERT","WATCH"] else "NEUTRAL"
-    except: decision, prob = "NEUTRAL", 0.2
-    return _jsonable({"decision": decision, "probabilidad": prob, "regla_aplicada": "three_acts" if decision=="ALERT" else "cross_family", "detalles": {"familias": 2, "schumann": 0.4}})
+        current_clave = clave_fig or (str(latest_pat["clave"]) if latest_pat else "")
+        return _jsonable({
+            "present": True,
+            "live_train": False,
+            "biblioteca_n": n_lib,
+            "patrones_n": n_pat,
+            "current_figura": figura,
+            "current_clave": current_clave,
+            "latest_pattern": dict(latest_pat) if latest_pat else None,
+            "library": hit,
+            "by_event_class": by_ec,
+            "caption": (
+                "Live lookup of (figure + factors) against historical library. No live training."
+                if lookup_available
+                else "biblioteca_cimatica module unavailable: showing live pattern counts only."
+            ),
+        })
+    finally:
+        con.close()
 
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+
+@app.get("/api/heatmaps")
+def heatmaps() -> Dict[str, Any]:
+    """Padre+Juez heatmaps from real tables. Empty cells stay empty — no invented metrics."""
+    # --- models × models: daily asertividad co-presence (last 30d viva) ---
+    models = {"present": False, "bots": [], "matrix": [], "caption": "", "source": "TBL_JUEZ_AUDITORIA"}
+    if _table_exists("TBL_JUEZ_AUDITORIA"):
+        daily = _rows(
+            """SELECT bot_name,
+                      date(timestamp, 'unixepoch') AS dia,
+                      SUM(CASE WHEN resultado='ACIERTO' THEN 1 ELSE 0 END) * 1.0
+                        / NULLIF(SUM(CASE WHEN resultado IN ('ACIERTO','FALLO','FALSO_POSITIVO') THEN 1 ELSE 0 END), 0)
+                        AS rate
+               FROM TBL_JUEZ_AUDITORIA
+               WHERE fase='viva'
+                 AND resultado IN ('ACIERTO','FALLO','FALSO_POSITIVO')
+                 AND timestamp >= strftime('%s','now','-30 days')
+               GROUP BY bot_name, dia"""
+        )
+        by_bot: Dict[str, Dict[str, float]] = {}
+        for r in daily:
+            b = str(r.get("bot_name") or "")
+            if not b or r.get("rate") is None:
+                continue
+            by_bot.setdefault(b, {})[str(r["dia"])] = float(r["rate"])
+        bots = sorted(by_bot.keys())
+        matrix = []
+        for a in bots:
+            row = []
+            days_a = by_bot[a]
+            for b in bots:
+                if a == b:
+                    vals = list(days_a.values())
+                    row.append(round(sum(vals) / len(vals), 4) if vals else None)
+                    continue
+                days_b = by_bot[b]
+                common = [days_a[d] for d in days_a if d in days_b]
+                common_b = [days_b[d] for d in days_a if d in days_b]
+                if len(common) < 3:
+                    row.append(None)
+                    continue
+                # Pearson-lite on shared days
+                n = len(common)
+                ma = sum(common) / n
+                mb = sum(common_b) / n
+                num = sum((x - ma) * (y - mb) for x, y in zip(common, common_b))
+                da = sum((x - ma) ** 2 for x in common) ** 0.5
+                db = sum((y - mb) ** 2 for y in common_b) ** 0.5
+                row.append(round(num / (da * db), 4) if da and db else None)
+            matrix.append(row)
+        models = {
+            "present": bool(bots),
+            "bots": bots,
+            "matrix": matrix,
+            "caption": "Correlación de asertividad diaria entre bots (Juez viva, 30 días). Diagonal = media propia. Celdas vacías = <3 días en común.",
+            "source": "TBL_JUEZ_AUDITORIA",
+        }
+
+    # --- telemetry × telemetry via tbl_patrones_correlacion (feature×event ratios) ---
+    telemetry = {"present": False, "features": [], "events": [], "matrix": [], "caption": "", "source": "tbl_patrones_correlacion"}
+    if _table_exists("tbl_patrones_correlacion"):
+        items = _rows(
+            "SELECT event_class, feature, ratio, n_firmas FROM tbl_patrones_correlacion ORDER BY feature, event_class"
+        )
+        features = sorted({str(r["feature"]) for r in items})
+        events = sorted({str(r["event_class"]) for r in items})
+        lookup = {(str(r["feature"]), str(r["event_class"])): r.get("ratio") for r in items}
+        matrix = [[lookup.get((f, e)) for e in events] for f in features]
+        telemetry = {
+            "present": bool(items),
+            "features": features,
+            "events": events,
+            "matrix": matrix,
+            "caption": "Ratio media(feature|clase) / media global. >1 = elevado antes de esa clase. Fuente tbl_patrones_correlacion.",
+            "source": "tbl_patrones_correlacion",
+            "n": len(items),
+        }
+
+    # --- climatic factors: lag features matching kp/schumann/atmosphere + ciclo KPIs ---
+    climatic = {"present": False, "items": [], "caption": "", "source": "tbl_factores_lag + TBL_CICLOS"}
+    lag_items = []
+    if _table_exists("tbl_factores_lag"):
+        lag_items = _rows(
+            "SELECT feature, media_rapidas, media_lentas, diferencia_norm, updated_at "
+            "FROM tbl_factores_lag ORDER BY ABS(diferencia_norm) DESC"
+        )
+    keys = ("kp", "schumann", "bz", "wind", "viento", "atm", "press", "temp", "humid", "omni", "dst")
+    clim_rows = [
+        r for r in lag_items
+        if any(k in str(r.get("feature") or "").lower() for k in keys)
+    ]
+    ciclo_clim = []
+    if _table_exists("TBL_CICLOS"):
+        # recent fantasma vs muro / precursors — real columns only
+        ciclo_clim = _rows(
+            """SELECT timestamp, fantasma, nivel_riesgo, muro_walls_active, precursors_count
+               FROM TBL_CICLOS ORDER BY timestamp DESC LIMIT 40"""
+        )
+    climatic = {
+        "present": bool(clim_rows or ciclo_clim),
+        "lag_climatic": clim_rows,
+        "lag_all_n": len(lag_items),
+        "ciclos_recent": ciclo_clim,
+        "caption": (
+            "Factores climáticos/espaciales desde tbl_factores_lag (kp/schumann/bz/viento/atm…) "
+            "y últimos ciclos (fantasma/muro). Si lag_climatic está vacío, no hay features con esos nombres."
+        ),
+        "source": "tbl_factores_lag + TBL_CICLOS",
+    }
+
+    # padre/omega correlaciones (may be empty)
+    padre_corr = []
+    omega_corr = []
+    if _table_exists("tbl_correlaciones_padre"):
+        padre_corr = _rows(
+            "SELECT patron, event_class, n, fuerza FROM tbl_correlaciones_padre ORDER BY fuerza DESC LIMIT 40"
+        )
+    if _table_exists("tbl_correlaciones_omega"):
+        omega_corr = _rows(
+            "SELECT patron, event_class, n, fuerza FROM tbl_correlaciones_omega ORDER BY fuerza DESC LIMIT 40"
+        )
+
+    return _jsonable(
+        {
+            "models_x_models": models,
+            "telemetry_x_events": telemetry,
+            "climatic": climatic,
+            "padre_corr": {"present": bool(padre_corr), "items": padre_corr, "source": "tbl_correlaciones_padre"},
+            "omega_corr": {"present": bool(omega_corr), "items": omega_corr, "source": "tbl_correlaciones_omega"},
+        }
+    )
+
+
+
+
+@app.get("/api/consenso")
+def consenso(limit: int = Query(50, ge=1, le=500)) -> Dict[str, Any]:
+    """Consensus state: recent cycles + bot weights + latest layer signals."""
+    if not _table_exists("TBL_CICLOS"):
+        return {"present": False, "cycles": [], "bots": [], "latest": None}
+    
+    cycles = _rows("""SELECT id, timestamp, geo_signal, geo_confidence, geo_consensus,
+                          fantasma, nivel_riesgo, precursors_count, precursor_types,
+                          muro_walls_active, muro_breach, alerts_dispatched
+                   FROM TBL_CICLOS ORDER BY timestamp DESC LIMIT ?""", (limit,))
+    
+    bots = _rows("SELECT bot_name, peso, aciertos, fallos, updated_at FROM TBL_PESOS_BOTS ORDER BY bot_name")
+    
+    # Enrich bots with asertividad
+    enriched_bots = []
+    for r in bots:
+        a = int(r.get('aciertos') or 0)
+        f = int(r.get('fallos') or 0)
+        den = a + f
+        rate = (a / den) if den else None
+        enriched_bots.append({**r, 'asertividad_viva': rate, 'n': den})
+    
+    latest = cycles[0] if cycles else None
+    
+    return _jsonable({
+        'present': True,
+        'cycles': cycles,
+        'bots': enriched_bots,
+        'latest': latest,
+        'source': 'TBL_CICLOS + TBL_PESOS_BOTS',
+        'caption': 'Consenso jerárquico: ciclos recientes + pesos de credibilidad por bot.'
+    })
+
+
+@app.get("/api/telegram/status")
+def telegram_status() -> Dict[str, Any]:
+    """Telegram bot configuration and connectivity status."""
+    import os
+    token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID', '').strip()
+    webapp_url = os.environ.get('TELEGRAM_WEBAPP_URL', '').strip()
+    
+    configured = bool(token and chat_id and 'TU_TOKEN' not in token and not token.startswith('REPLACE'))
+    
+    return _jsonable({
+        'configured': configured,
+        'has_token': bool(token),
+        'has_chat_id': bool(chat_id),
+        'has_webapp_url': bool(webapp_url),
+        'webapp_url': webapp_url if webapp_url else None,
+        'dry_run': os.environ.get('SENTINEL_DRY_RUN', '').lower() in ('1', 'true', 'yes'),
+        'cooldown_s': int(os.environ.get('TELEGRAM_COOLDOWN_S', '1800')),
+        'heartbeat_s': int(os.environ.get('TELEGRAM_HEARTBEAT_S', '14400')),
+    })
+
+
+@app.post("/api/telegram/test")
+def telegram_test(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    """Send a test Telegram message."""
+    from sentinel_omega.infrastructure.api.telegram import send_alert
+    
+    message = payload.get('message', '🧪 Test desde Sentinel Omega Dashboard')
+    ok = send_alert(message)
+    
+    return _jsonable({
+        'sent': ok,
+        'message': message,
+    })
+
 
 
 @app.get("/mini", response_class=HTMLResponse)
@@ -1087,6 +1286,138 @@ def mini_app():
     if not page.exists():
         return HTMLResponse("<h1>mini.html missing</h1>", status_code=404)
     return FileResponse(page, media_type="text/html; charset=utf-8")
+
+
+
+# === 6-tab dashboard API extensions (RO, capped) ===
+
+@app.get("/api/schumann_vivo")
+def schumann_vivo(limit: int = Query(120, ge=1, le=500)) -> Dict[str, Any]:
+    """Serie Schumann vivo desde tbl_schumann_vivo."""
+    if not _table_exists("tbl_schumann_vivo"):
+        return {"present": False, "items": [], "latest": None, "source": "tbl_schumann_vivo", "caption": "Tabla ausente en esta DB."}
+    items = _rows(
+        "SELECT timestamp_blk, schumann_hz, schumann_activity, creada_at "
+        "FROM tbl_schumann_vivo ORDER BY timestamp_blk DESC LIMIT ?",
+        (limit,),
+    )
+    return _jsonable({
+        "present": bool(items),
+        "items": items,
+        "latest": items[0] if items else None,
+        "n": len(items),
+        "source": "tbl_schumann_vivo",
+        "caption": "Hz y actividad WPC vivos. Limite capped. Solo lectura.",
+    })
+
+
+@app.get("/api/delta")
+def delta_family(limit: int = Query(80, ge=1, le=400)) -> Dict[str, Any]:
+    """Delta cross + psique financiera para Familias/Delta."""
+    delta_items = []
+    psi_items = []
+    sources = []
+    if _table_exists("tbl_delta_cross"):
+        delta_items = _rows(
+            "SELECT timestamp_blk, cross_coupling, geomagnetic_coupling, schumann_coupling, "
+            "sentiment_coupling, composite_score, regime_label, confidence, data_completeness, "
+            "geo_kp_max_3d, geo_storm_active, geo_schumann_deviation "
+            "FROM tbl_delta_cross ORDER BY timestamp_blk DESC LIMIT ?",
+            (limit,),
+        )
+        sources.append("tbl_delta_cross")
+    if _table_exists("tbl_psique_financiera"):
+        psi_items = _rows(
+            "SELECT timestamp_blk, btc_precio_usd, volatilidad_24h, vix, fear_greed, "
+            "yield_spread, btc_dominance, fetch_flags "
+            "FROM tbl_psique_financiera ORDER BY timestamp_blk DESC LIMIT ?",
+            (limit,),
+        )
+        sources.append("tbl_psique_financiera")
+    return _jsonable({
+        "present": bool(delta_items or psi_items),
+        "delta": delta_items,
+        "psique": psi_items,
+        "latest_delta": delta_items[0] if delta_items else None,
+        "latest_psique": psi_items[0] if psi_items else None,
+        "source": " + ".join(sources) if sources else "none",
+        "caption": "Cross-coupling + VIX/Fear&Greed/BTC. No es consejo financiero.",
+    })
+
+
+@app.get("/api/clima_espacial")
+def clima_espacial(limit: int = Query(80, ge=1, le=400)) -> Dict[str, Any]:
+    """Muestras Bz/Kp/viento para Alfa."""
+    if not _table_exists("tbl_clima_espacial_raw"):
+        return {"present": False, "items": [], "latest": None, "source": "tbl_clima_espacial_raw", "caption": "Tabla ausente."}
+    items = _rows(
+        "SELECT timestamp_blk, bz_promedio, bz_derivada, bz_min, bz_max, "
+        "viento_solar_avg, viento_solar_max, kp_max, kp_promedio, proton_flux_10mev "
+        "FROM tbl_clima_espacial_raw ORDER BY timestamp_blk DESC LIMIT ?",
+        (limit,),
+    )
+    return _jsonable({
+        "present": bool(items),
+        "items": items,
+        "latest": items[0] if items else None,
+        "n": len(items),
+        "source": "tbl_clima_espacial_raw",
+        "caption": "OMNI-ish Bz/Kp/viento/protones. Solo lectura.",
+    })
+
+
+
+@app.get("/api/health/apis")
+def api_health() -> Dict[str, Any]:
+    """Devuelve el estado de las APIs revisando el LOCF cache y las tablas."""
+    import time
+    from datetime import datetime, timezone
+    
+    health = {}
+    now = time.time()
+    
+    # LOCF status
+    if _table_exists("tbl_locf_cache"):
+        locf_rows = _rows("SELECT source_key, updated_at FROM tbl_locf_cache")
+        for r in locf_rows:
+            try:
+                dt = datetime.strptime(r['updated_at'], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                age_h = (now - dt.timestamp()) / 3600
+                health[r['source_key']] = {
+                    "status": "STALE" if age_h > 24 else "LOCF_ACTIVE",
+                    "age_h": round(age_h, 1),
+                    "updated_at": r['updated_at']
+                }
+            except Exception:
+                pass
+                
+    # Direct DB status for USGS
+    if _table_exists("TBL_HISTORICO_SISMICO"):
+        usgs_ts = _scalar("SELECT MAX(timestamp) FROM TBL_HISTORICO_SISMICO")
+        if usgs_ts:
+            age_h = (now - usgs_ts) / 3600
+            health["usgs"] = {
+                "status": "LIVE" if age_h < 24 else "STALE",
+                "age_h": round(age_h, 1),
+                "last_data_ts": usgs_ts
+            }
+            
+    # Direct DB status for Schumann vivo
+    if _table_exists("tbl_schumann_vivo"):
+        sch_ts = _scalar("SELECT MAX(creada_at) FROM tbl_schumann_vivo")
+        if sch_ts:
+            try:
+                dt = datetime.strptime(sch_ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                age_h = (now - dt.timestamp()) / 3600
+                health["beta1"] = {
+                    "status": "LIVE" if age_h < 6 else "STALE",
+                    "age_h": round(age_h, 1),
+                    "last_data_ts": dt.timestamp()
+                }
+            except Exception:
+                pass
+
+    return _jsonable(health)
 
 
 @app.exception_handler(Exception)

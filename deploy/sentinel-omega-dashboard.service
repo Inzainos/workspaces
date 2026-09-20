@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=__REPO_DIR__
 EnvironmentFile=__REPO_DIR__/deploy/.env
-ExecStart=__REPO_DIR__/.venv/bin/streamlit run sentinel_omega/infrastructure/dashboard/app.py --server.address 0.0.0.0 --server.port 8501 --server.headless true
+ExecStart=__REPO_DIR__/.venv/bin/streamlit run sentinel_omega/infrastructure/dashboard/app.py --server.address 127.0.0.1 --server.port 8510 --server.headless true
 Restart=always
 RestartSec=30
 

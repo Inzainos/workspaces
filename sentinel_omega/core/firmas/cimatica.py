@@ -11,8 +11,8 @@ Primero se compara contra los patrones ya vistos:
 Así se va distinguiendo la cimática dentro de la telemetría, por nodo o
 general, cuando resulta consistente para algún tipo de evento. Cualquier
 alta o incremento dispara la revisión del Padre (trigger en Python); si el
-patrón es consistente y está asociado a un tipo de evento, se encola una
-alerta por correo.
+patrón es consistente y está asociado a un tipo de evento, se envía una
+alerta por Telegram (vía Consenso Vigilante).
 
 La huella (clave) se construye con bandas logarítmicas con signo: es libre
 de escala, agrupa estados parecidos bajo la misma clave y no necesita

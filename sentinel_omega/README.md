@@ -153,28 +153,35 @@ general). El histórico de 30 años la pre-puebla vía `entrenar_cimatica()`.
 
 ---
 
-## Arquitectura — 6 Agentes, Sistema Único
+## Arquitectura — 8 Agentes + Padre + Juez, Sistema Único
 
 ```
-Orchestrator -> GeodynamicLayerRunner -> 6 Agentes -> Consenso del Padre
-|
-+-- Alfa-1 (Geodinámico: Bz, viento solar, sísmico) — 30 años entrenamiento
-|       ^ valida
-+-- Alfa-2 (Satélite: ESA Sentinel) — 14 años
-|
-+-- Beta-1 (Schumann / cimática / energía liberada) — 30 años  <- LATIDO
-|       ^ valida
-+-- Beta-2 (Química atmosférica) — 14 años
-|
-+-- Delta  (Financiero: crypto + bolsa + humor de la tierra) — 10 años
-|
-+-- Padre  (Validador jerárquico cruzado entre familias)
-        +-- Índice de Riesgo Fantasma TITAN V32
-        +-- Scanner de Precursores (15 tipos)
-        +-- Muro de los 5 Eventos
+Orchestrator → GeodynamicLayerRunner → 8 Agentes SNT + Omega + Loki → Padre → Juez
+│
+├── Alfa-1 (Geodinámico: Bz, viento solar, sísmico) — 30 años entrenamiento
+│       ↑ valida
+├── Alfa-2 (Satélite: ESA Sentinel) — 14 años
+│
+├── Beta-1 (The Artist — Cymatic Figure) — 30 años  ← LATIDO
+│       ↑ valida
+├── Beta-2 (The Analyst — réplica histórica + gas/presión) — 14 años
+│
+├── Delta  (Fin stress — ALERT si combined>0.6) — 10 años
+│
+├── Jupiter (Atención colectiva tormentas solares) — en vivo
+│
+├── Omega  (Memoria/correlación: ritmo cósmico — luna, Schumann, envolvente
+│           solar, acoplamiento Schumann↔mercado) — 30 años, NO es agente en vivo
+│
+├── Loki  (Fractal-Bayesiano: Gauss-Jordan→Fourier→Bayes, nodo Tlaxcala)
+│
+└── Padre  (Validador jerárquico cruzado entre familias)
+        ├── TITAN V32 Fantasma Risk Index
+        ├── Precursor Scanner (15 tipos)
+        └── Muro de los 5 Eventos
 ```
 
-**Jerarquía**: Los agentes #2 reportan al #1 -> el Padre valida entre familias.
+**Jerarquía**: #2 agents → report to #1 → Padre cross-validates across families.
 **Schumann es el latido**: Todo se correlaciona contra la resonancia Schumann (Beta-1).
 Si Schumann está perturbado junto con cualquier otra señal = precursor detectado.
 
@@ -182,19 +189,20 @@ Si Schumann está perturbado junto con cualquier otra señal = precursor detecta
 - `space_weather`: Alfa-1, Alfa-2
 - `schumann_cymatics`: Beta-1, Beta-2
 - `financial_sentiment`: Delta
+- ` Correlation Alpha's Telemetry, Schumann Resonance, Delta and Beta's Patterns':Omega
 
-**El consenso requiere**: >= 2 familias activas + >= 2 alertas + correlación_schumann > 0.3
+**Consenso requiere**: >= 2 familias activas + >= 2 alertas + schumann_correlation > 0.3
 
 ### Ciclo del Orquestador
 
-1. **GeodynamicPipeline** obtiene datos para todos los agentes (alfa1, beta1, beta2, delta, alfa2)
+1. **GeodynamicPipeline** obtiene datos para todos los agentes (alfa1, beta1, beta2, delta, alfa2, jupiter)
 2. **Fantasma V32** calcula el riesgo precursor de las señales crudas
 3. **Datos de huracán** se obtienen (non-blocking)
 4. **Scanner** evalúa los 15 tipos de precursor contra los datos del ciclo
 5. **Muro de los 5 Eventos** evalúa la correlación de 5 dominios
-6. Todos los agentes ingestan + analizan -> señales
-7. **Padre** evalúa el consenso (jerárquico + correlación Schumann)
-8. Las alertas se despachan vía Telegram + registro en SQLite
+6. Todos los agentes ingestan + analizan -> señales (SNT 5 + Jupiter + Omega + Loki)
+7. **Padre** evalúa el consenso (jerárquico: SNT Families → Omega → Loki)
+8. Las alertas se despachan vía email (outbox) + registro en SQLite
 
 ### Señales del Sistema
 
@@ -285,7 +293,6 @@ Se aplica a:
 | tbl_orden_precursores / _veredictos | El Padre ve el ORDEN de los precursores en la víspera y discierne contando si la secuencia importa o es indiferente. |
 | tbl_sesgo_aprendizaje      | Realidad vs fantasía por bot: reconocimiento causal (memoria ANTERIOR al evento) vs in-sample. Medido PRE (sin castigo) y POST (con castigo) en cada entrenamiento. |
 | **tbl_cimatica_patrones**  | Snapshot de telemetría por ciclo (huella de bandas logarítmicas). Patrón nuevo = telemetría completa; repetido = frecuencia+1. Retro-etiquetado por eventos reales y poda del ruido (30 días de gracia). |
-| **tbl_correo_salida**      | Outbox de ALERTAS y REPORTES por email (fail-soft: sin SMTP quedan PENDIENTES). |
 | tbl_salud_sistema          | Bitácora por corte: versión, pesos, asertividad viva, deltas. |
 | tbl_resumen_diario         | Barrido diario: lo compactado no se pierde, se resume. |
 
@@ -421,9 +428,20 @@ sentinel_omega/
 │   │   ├── bolsa.py                     # Yahoo Finance + Alpha Vantage (Delta)
 │   │   └── telegram.py                  # Telegram Bot API
 │   ├── pipeline/
-│   │   ├── data_pipeline.py             # Pipeline maestro con LOCF
+│   │   ├── data_pipeline.py             # Pipeline maestro con LOCF (ingesta de fuentes)
+│   │   ├── data_pipeline_locf_patch.py  # Parche LOCF persistente (tbl_locf_cache) aplicado al pipeline
 │   │   ├── layer_runners.py             # GeodynamicLayerRunner (8 agentes: SNT×5 + Omega + Loki + Padre)
+│   │   ├── juez_cycle_register.py       # Registro por ciclo de predicciones del Juez (Padre + agentes)
 │   │   ├── backcast.py                  # Carga histórica one-time (1994-2025, 1H)
+│   │   ├── entrenamiento.py             # Entrenamiento por fases (1, 1b, 2) sobre backcast
+│   │   ├── entrenar_paralelo.py         # Entrenamiento paralelo por bot (misma lógica, menor tiempo)
+│   │   ├── mantenimiento.py             # Barrido diario: compactación, correlaciones, sesgo, poda cimática
+│   │   ├── reporte_sentinel.py          # Generador de reportes (general/padre/omega)
+│   │   ├── reporte_engine.py            # Capa unificada + versionado estado/historial
+│   │   ├── scheduler_reportes.py        # Scheduler de reportes (2h/6h), separado del launcher
+│   │   ├── sismos_refetch_recent.py     # Refetch incremental USGS (sin wipe)
+│   │   ├── topologia_cascada.py         # ETL de topología/cascada + recalculo de nodos
+│   │   ├── clima_gapfill_2026.py        # Relleno one-shot 2026 para clima espacial (fail-soft)
 │   │   └── legacy_loader.py             # Cargador de datos TITAN legacy
 │   ├── database/
 │   │   ├── schema.py                    # Schema SQLite + WAL + triggers + backcast + migración
@@ -550,7 +568,7 @@ python deploy/reporte_periodico.py --comparativo
 python deploy/reporte_periodico.py --semanal
 python deploy/reporte_periodico.py --mensual
 
-# Despacho del outbox de correo
+# Despacho de reportes/alertas por Telegram (hourly digest)
 python deploy/enviar_correos.py
 
 # Detener gracefully (SIGTERM -> espera 30s)
@@ -563,6 +581,26 @@ python sentinel_omega/shutdown.py --force
 python sentinel_omega/reboot.py
 python sentinel_omega/reboot.py --dashboard --dry-run
 ```
+
+### Scripts auxiliares del pipeline (auditados)
+
+Estos scripts también forman parte del pipeline operativo aunque no siempre se invocan desde CLI diaria:
+
+| Script | Tipo | Qué hace |
+|---|---|---|
+| `infrastructure/pipeline/data_pipeline_locf_patch.py` | módulo interno | Parchea `GeodynamicPipeline` para que LOCF use caché persistente en DB (`tbl_locf_cache`). |
+| `infrastructure/pipeline/entrenamiento.py` | módulo interno | Entrenamiento por fases (F1/F1b/F2), lags y correlaciones sobre backcast. |
+| `infrastructure/pipeline/entrenar_paralelo.py` | módulo interno | Variante paralela del entrenamiento por bot (misma lógica funcional). |
+| `infrastructure/pipeline/juez_cycle_register.py` | módulo interno | Registra predicciones del ciclo para auditoría del Juez (Padre + agentes). |
+| `infrastructure/pipeline/mantenimiento.py` | módulo interno | Barrido diario del historial operativo + correlaciones + sesgo + poda cimática. |
+| `infrastructure/pipeline/reporte_sentinel.py` | módulo interno | Genera reportes `general`, `padre`, `omega`. |
+| `infrastructure/pipeline/reporte_engine.py` | módulo interno | Capa DRY para reportes + versionado en `estado/historial` y actualización de `REPORTE.md`. |
+| `infrastructure/pipeline/scheduler_reportes.py` | proceso opcional | Scheduler de reportes (2h/6h). En operación actual, se mantiene deshabilitado para evitar duplicidad con `sentinel-omega.service`. |
+| `infrastructure/pipeline/sismos_refetch_recent.py` | one-shot CLI | Refetch incremental de sismos recientes (`--db`, `--days`, `--dry-run`). |
+| `infrastructure/pipeline/topologia_cascada.py` | one-shot CLI | ETL/re-cálculo de topología en cascada (`--db-path`, `--refetch`, `--solo-recalcular`, `--dry-run`). |
+| `infrastructure/pipeline/clima_gapfill_2026.py` | one-shot CLI | Relleno puntual 2026 para `tbl_clima_espacial_raw` desde NOAA (`--db`, `--dry-run`). |
+
+Regla operativa: los scripts `one-shot CLI` se ejecutan bajo demanda y preferentemente en `--dry-run` primero; los `módulo interno` se consumen vía launcher/orquestación.
 
 ---
 
@@ -605,6 +643,24 @@ cd /home/deamon/consensus-expert-agent
 # O directamente:
 python telegram_bot.py
 ```
+
+### Dashboard React (moderno) persistente via systemd --user
+```bash
+# API FastAPI (RO, DB prod) + React Vite (proxy /api -> :8787)
+systemctl --user daemon-reload
+systemctl --user enable --now sentinel-omega-dashboard-api.service sentinel-omega-dashboard-web.service
+
+# Estado
+systemctl --user status sentinel-omega-dashboard-api.service
+systemctl --user status sentinel-omega-dashboard-web.service
+```
+Acceso moderno:
+- UI local: `http://127.0.0.1:5173`
+- API local: `http://127.0.0.1:8787/api/health`
+- UI LAN (WSL host): `http://192.168.1.144:5173`
+- API LAN (WSL host): `http://192.168.1.144:8787/api/health`
+
+> Nota operativa: el servicio `sentinel-omega-dashboard.service` en `:8510` es **legacy Streamlit** y puede coexistir mientras no se deshabilite con privilegios de administrador.
 
 ### Dashboard Streamlit (Sentinel Omega)
 ```bash
@@ -654,16 +710,13 @@ El launcher:
 ## Variables de Entorno
 
 ```bash
-export SMTP_USER="..."                 # Cuenta emisora de correo (canal de alertas)
-export SMTP_PASS="..."                 # App password de Gmail
-export CORREO_DESTINO="..."            # Destinatario (default elan.zainos.corona@gmail.com)
 export OPENWEATHERMAP_KEY="..."        # Datos atmosféricos (presión, humedad)
 export COINGECKO_API_KEY="..."         # Datos de mercado crypto
 export ALPHA_VANTAGE_KEY="..."         # Datos bursátiles
 export BITSO_API_KEY="..."             # Exchange Bitso
 export BITSO_API_SECRET="..."          # Exchange Bitso
-export TELEGRAM_BOT_TOKEN="..."        # Telegram (en pausa: el canal es correo)
-export TELEGRAM_CHAT_ID="..."          # Telegram (en pausa)
+export TELEGRAM_BOT_TOKEN="..."        # Telegram Bot token (alertas y reportes)
+export TELEGRAM_CHAT_ID="..."          # Telegram Chat ID
 export LOG_LEVEL="INFO"                # DEBUG/INFO/WARNING/ERROR (yaml: logging.level)
 export LOG_FORMAT="json"               # json/text
 export CB_FAILURE_THRESHOLD="5"         # Circuit breaker: fallos para abrir
@@ -681,10 +734,10 @@ export CB_RECOVERY_TIMEOUT="60"         # Circuit breaker: segundos para HALF_OP
 | V32      | TITAN V32        | Fórmula Fantasma, Schumann WPC, 2 muros (Geo+Solar) |
 | V46      | TITAN V46        | Asertividad, validación contra USGS, hits/misses     |
 | V53      | TITAN V53        | Patrones WPC, Lorenz-X/Lyapunov, multi-horizonte     |
-| v2.5     | Sentinel Omega   | 15 precursores, 5 muros, 125 nodos, 6 agentes, dashboard, backcast 1H |
+| v2.5     | Sentinel Omega   | 15 precursores, 5 muros, 125 nodos, 8 agentes + Omega + Loki + Padre, dashboard, backcast 1H |
 | v2.5.2   | Sentinel Omega   | Observabilidad: logging JSON + health + circuit breaker/tenacity + YAML + ruff/mypy |
 | v2.5.4   | Sentinel Omega   | The Third Act: Loki Fractal-Bayesiano + SNT Artist/Analyst + Fin stress + FastAPI compat (React 6 tabs) |
-| v2.5.1   | Sentinel Omega   | Honestidad total: fase estricta + viva_real, verdad por fila con nodos propios, línea base de Molchan, agentes honestos (beta1 Schumann medido, alfa1 ONNX real, delta contexto, alfa2 proxy degradado), Omega (ritmo cósmico), cimática con retro-etiquetado y poda, correo con gráficas, rutinas 24/7 |
+| v2.5.1   | Sentinel Omega   | Honestidad total: fase estricta + viva_real, verdad por fila con nodos propios, línea base de Molchan, agentes honestos (beta1 Schumann medido, alfa1 ONNX real, delta contexto, alfa2 proxy degradado), Omega (ritmo cósmico), cimática con retro-etiquetado y poda, Telegram (hourly digest), rutinas 24/7 |
 
 ---
 

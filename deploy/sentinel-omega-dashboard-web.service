@@ -1,0 +1,16 @@
+[Unit]
+Description=Sentinel Omega Dashboard Web (React/Vite)
+After=network-online.target sentinel-omega-dashboard-api.service
+Wants=network-online.target sentinel-omega-dashboard-api.service
+
+[Service]
+Type=simple
+User=deamon
+WorkingDirectory=/home/deamon/workspaces/sentinel_omega/infrastructure/dashboard/web
+Environment=NODE_ENV=development
+ExecStart=/usr/bin/env npm run dev -- --host 0.0.0.0 --port 5173
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

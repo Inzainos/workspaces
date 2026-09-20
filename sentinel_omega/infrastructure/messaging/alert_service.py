@@ -1,6 +1,6 @@
 """
 Sentinel Omega — AlertService unificado
-Centraliza reportes, alertas y mensajes de Telegram/Correo/Log.
+Centraliza reportes, alertas y mensajes de Telegram/Log.
 Antes: formatos dispersos en telegram.py, correo.py, muro_*.py, risk_calculator.py
 Ahora: unico punto con templates versionables y despacho multi-canal.
 
@@ -8,14 +8,14 @@ Telegram (canal Padre / consenso):
   AlertService.dispatch → ConsensoVigilante
     - digest horario SIEMPRE (TG_DIGEST_MINUTES, default 60)
     - envío inmediato SOLO si is_unprecedented (sin registro previo)
-  Correo y log no pasan por el vigilante.
+  Log no pasa por el vigilante.
 """
 from __future__ import annotations
 import logging, os
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from enum import Enum
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 from pathlib import Path
 logger = logging.getLogger(__name__)
 class Severity(str, Enum):
@@ -51,12 +51,12 @@ class AlertTemplates:
         html = (
             f"🔴 <b>ALERTA CRITICA</b>\n\n"
             f"⚠️ Fantasma: <b>{risk:.2f}</b> — índice 0–10 de estrés geofísico "
-            f"(Bz² + viento solar + Schumann). No es un pronóstico de sismo ni un número de lotería.\n"
+            f"(Bz² + viento solar + Schumann). No es un pronóstico de sismo ni de epicentro.\n"
             f"🧲 Bz: {bz:.1f} nT — componente norte-sur del campo; negativo profundo = grieta en el escudo.\n"
             f"💨 Viento: {wind:.0f} km/s — flujo solar sobre la magnetosfera.{extra}\n"
             f"<i>{_now_utc_str()}</i>"
         )
-        md = f"**ALERTA CRITICA**\n\nFantasma: **{risk:.2f}** (estrés geofísico, no lotería)\nBz: {bz:.1f} nT | Viento: {wind:.0f} km/s{extra}"
+        md = f"**ALERTA CRITICA**\n\nFantasma: **{risk:.2f}** (estrés geofísico, no pronóstico)\nBz: {bz:.1f} nT | Viento: {wind:.0f} km/s{extra}"
         return FormattedMessage(html=html, markdown=md, plain=_strip_tags(html), subject=subj, severity=severity, alert_type="CRITICO")
     @staticmethod
     def centinela_grieta(bz: float) -> FormattedMessage:
@@ -77,7 +77,7 @@ class AlertTemplates:
             f"🌪️ <b>TORMENTA SOLAR</b>\n\n"
             f"Viento: <b>{wind:.0f} km/s</b> (típico ~400; tormenta ≥600).\n"
             f"Qué significa: presión sobre la magnetosfera. Puede subir Kp y Fantasma; "
-            f"no es un aviso de lotería ni de epicentro.\n"
+            f"no es un aviso de sismo ni de epicentro.\n"
             f"<i>{_now_utc_str()}</i>"
         )
         md = f"**TORMENTA SOLAR**\n\nViento: **{wind:.0f} km/s**"
@@ -96,36 +96,118 @@ class AlertTemplates:
         md = f"**ACTIVIDAD ELEVADA**\n\nFantasma: {risk:.2f}"
         return FormattedMessage(html=html, markdown=md, plain=_strip_tags(html), subject=subj, severity=Severity.AMARILLO, alert_type="ADVERTENCIA")
     @staticmethod
-    def precursor(precursor_type: str, display_name: str, value: float, details: str, lat: Optional[float]=None, lon: Optional[float]=None, lugar: Optional[str]=None, lag_horas: Optional[float]=None) -> FormattedMessage:
-        subj = f"[SENTINEL] PRECURSOR {display_name} — {value:.0%}"
-        loc = ""
-        if lugar: loc += f"\n<b>Zona:</b> {lugar}"
-        if lat is not None and lon is not None: loc += f"\n<b>Coords:</b> {lat:.2f}, {lon:.2f}"
-        if lag_horas and lag_horas>0: ventanas = f"\n<b>Ventana:</b> ~{int(lag_horas)}h → {_window_str(int(lag_horas))}\n"
-        else: ventanas = f"\n<b>Ventanas:</b> 72h→{_window_str(72)} | 48h→{_window_str(48)} | 24h→{_window_str(24)}\n"
-        html = (
-            f"<b>SENTINEL OMEGA — PRECURSOR</b>\n\n"
-            f"<b>Tipo:</b> {display_name}\n"
-            f"<b>Conf:</b> <code>{value:.0%}</code> — qué tan parecido es a firmas ya vistas; "
-            f"no es probabilidad de sismo ni de lotería.{loc}{ventanas}\n"
-            f"{details}\n\n"
-            f"<i>Este aviso entra al reporte horario del Padre; no pagina salvo que sea un patrón sin registro previo.</i>\n"
-            f"<i>{_now_utc_str()}</i>"
+    def precursor(
+        precursor_type: str,
+        display_name: str,
+        value: float,
+        details: str,
+        lat: Optional[float] = None,
+        lon: Optional[float] = None,
+        lugar: Optional[str] = None,
+        lag_horas: Optional[float] = None,
+        lag_max_h: Optional[float] = None,
+        id_nodo=None,
+        nodo_nombre: Optional[str] = None,
+        region: Optional[str] = None,
+        enriched: Optional[Dict] = None,
+    ) -> FormattedMessage:
+        subj = "[SENTINEL] PRECURSOR %s — %.0f%%" % (display_name, value * 100)
+        en: Dict = dict(enriched or {})
+        if lugar and not en.get("lugar"):
+            en["lugar"] = lugar
+        if lat is not None:
+            en.setdefault("lat", lat)
+        if lon is not None:
+            en.setdefault("lon", lon)
+        if id_nodo is not None:
+            en.setdefault("id_nodo", id_nodo)
+        if nodo_nombre:
+            en.setdefault("nodo_nombre", nodo_nombre)
+        if region:
+            en.setdefault("region", region)
+        if lag_horas is not None:
+            en.setdefault("lag_horas", lag_horas)
+        if lag_max_h is not None:
+            en.setdefault("lag_max_h", lag_max_h)
+        try:
+            from sentinel_omega.infrastructure.messaging.alert_enrichment import (
+                location_block, format_lag_line,
+            )
+            loc = location_block(en)
+            lag_line = format_lag_line(
+                en.get("lag_horas"), 
+                en.get("lag_max_h"),
+                en.get("primera_vez"),  # first detection time for countdown
+                en.get("frecuencia")    # frequency for context
+            )
+        except Exception:
+            loc = ""
+            if en.get("lugar"):
+                loc += "📍 <b>Ubicación:</b> " + str(en["lugar"])
+            if en.get("lat") is not None and en.get("lon") is not None:
+                loc += (
+                    chr(10) + "🌐 <b>Coords:</b> <code>%.2f, %.2f</code>"
+                    % (float(en["lat"]), float(en["lon"]))
+                )
+            lag_line = ""
+            if en.get("lag_horas"):
+                lag_line = (
+                    "⏱ <b>Lag / ventana:</b> ~%.0f h → %s"
+                    % (float(en["lag_horas"]), _window_str(int(float(en["lag_horas"]))))
+                )
+        if not lag_line:
+            lag_line = (
+                "⏱ <b>Ventanas de vigilancia:</b> 72h→%s · 48h→%s · 24h→%s"
+                % (_window_str(72), _window_str(48), _window_str(24))
+            )
+        det = (details or "").strip()
+        if en.get("detalle") and str(en["detalle"]) not in det:
+            det = (str(en["detalle"]) + ((chr(10) + det) if det else "")).strip()
+        parts = [
+            "<b>SENTINEL OMEGA — PRECURSOR</b>",
+            "",
+            "<b>Tipo:</b> " + str(display_name),
+            ("<b>Confianza:</b> <code>%.0f%%</code> — parecido a firmas ya vistas; "
+             "no es probabilidad de sismo ni de epicentro.") % (value * 100),
+        ]
+        if loc:
+            parts.append(loc)
+        parts.append(lag_line)
+        parts.append("📋 <b>Detalle:</b> " + (det or "sin métricas extra"))
+        parts.append("")
+        parts.append("<i>Entra al reporte horario del Padre; solo pagina si es un patrón sin registro previo.</i>")
+        parts.append("<i>%s</i>" % _now_utc_str())
+        html = chr(10).join(parts)
+        md = "**SENTINEL OMEGA — PRECURSOR %s**%sConf: **%.0f%%**%s%s" % (
+            display_name, chr(10), value * 100, chr(10), det)
+        sev = Severity.ROJO if value >= 0.75 else Severity.AMARILLO if value >= 0.55 else Severity.VERDE
+        return FormattedMessage(
+            html=html, markdown=md, plain=_strip_tags(html), subject=subj,
+            severity=sev, alert_type="PRECURSOR_%s" % precursor_type.upper(),
         )
-        md = f"**SENTINEL OMEGA — PRECURSOR {display_name}**\nConf: **{value:.0%}**{loc}\n{details}"
-        sev = Severity.ROJO if value>=0.75 else Severity.AMARILLO if value>=0.55 else Severity.VERDE
-        return FormattedMessage(html=html, markdown=md, plain=_strip_tags(html), subject=subj, severity=sev, alert_type=f"PRECURSOR_{precursor_type.upper()}")
+
     @staticmethod
-    def consenso(layer: str, signal_type: str, confidence: float, agents_n: int, dual_ask: Optional[Dict]=None, omega_voto: Optional[Dict]=None) -> FormattedMessage:
+    def consenso(
+        layer: str, signal_type: str, confidence: float, agents_n: int, 
+        dual_ask: Optional[Dict]=None, omega_voto: Optional[Dict]=None,
+        model_info: Optional[Dict]=None
+    ) -> FormattedMessage:
         sev = Severity.ROJO if signal_type.lower()=="alert" else Severity.AMARILLO if signal_type.lower()=="watch" else Severity.VERDE
         subj = f"[SENTINEL] {layer.upper()} CONSENSO — {signal_type} {confidence:.0%}"
         lines = [
             f"<b>SENTINEL OMEGA — {layer.upper()} CONSENSUS</b>\n",
-            f"Final: <code>{signal_type}</code> ({confidence:.0%}) — voto cruzado de los agentes; no es un número de lotería.",
+            f"Final: <code>{signal_type}</code> ({confidence:.0%}) — voto cruzado de los agentes; no es un tip ni un pronóstico.",
             f"Agents: <code>{agents_n}</code>",
         ]
         if omega_voto: lines.append(f"Ω Omega: <code>{omega_voto.get('signal')}</code> ({float(omega_voto.get('confidence') or 0):.0%})")
         if dual_ask: lines.append(f"\n🔁 <b>Dual-ask</b>: {dual_ask.get('texto','')}")
+        
+        # Add model info if available
+        if model_info:
+            lines.append(f"\n🤖 <b>Modelos ONNX:</b> {model_info.get('active_count', 0)}/{model_info.get('total_count', 8)} activos")
+            if model_info.get('lag_reduction'):
+                lines.append(f"📉 <b>Lag reducido:</b> {model_info['lag_reduction']}")
+        
         lines.append(f"\n<i>{_now_utc_str()}</i>")
         html = "\n".join(lines)
         md = html.replace("<b>","**").replace("</b>","**").replace("<code>","`").replace("</code>","`")
@@ -133,7 +215,7 @@ class AlertTemplates:
     @staticmethod
     def cimatica_consistente(patron_id: int, clave: str, frecuencia: int, event_class=None, ambito: str = "general", id_nodo=None) -> FormattedMessage:
         subj = f"[SENTINEL] CIMATICA CONSISTENTE - patron {patron_id} x{frecuencia}"
-        nodo = f" nodo {id_nodo}" if id_nodo else ""
+        nodo = f" · nodo #{id_nodo}" if id_nodo is not None else ""
         ec = f" asoc. {event_class}" if event_class else " (sin clase aun)"
         desc = (
             "Patrón repetido 3+ veces — deja de ser coincidencia y se vuelve firma. "
@@ -153,7 +235,7 @@ class AlertTemplates:
     @staticmethod
     def cimatica_nuevo(patron_id: int, clave: str, ambito: str = "general", id_nodo=None, event_class=None) -> FormattedMessage:
         subj = f"[SENTINEL] CIMATICA NUEVO — patron {patron_id}"
-        nodo = f" nodo {id_nodo}" if id_nodo else ""
+        nodo = f" · nodo #{id_nodo}" if id_nodo is not None else ""
         ec = f" asoc. {event_class}" if event_class else ""
         html = (
             f"🆕 <b>CIMATICA SIN PRECEDENTES</b>\n\n"
@@ -161,7 +243,7 @@ class AlertTemplates:
             f"<b>Clave:</b> <code>{(clave or '')[:64]}</code>\n"
             f"<b>Qué significa:</b> esta combinación de telemetría no estaba en "
             f"<code>tbl_cimatica_patrones</code> (frecuencia=1, NUEVO). "
-            f"No es un sismo ni un número de lotería — es un patrón que el sistema no había visto.\n"
+            f"No es un sismo ni un pronóstico — es un patrón que el sistema no había visto.\n"
             f"<i>{_now_utc_str()}</i>"
         )
         md = f"**CIMATICA NUEVO** Patron {patron_id}{nodo}"
@@ -211,7 +293,7 @@ class AlertTemplates:
         n = len(precursores)
         tabla = ""
         if precursores:
-            tabla = "<b>Precursores</b> (qué se vio; no son pings ni lotería)<br>"
+            tabla = "<b>Precursores</b> (qué se vio; no son pings ni tips)<br>"
             for r in precursores[:5]:
                 tabla += f"- {r.get('tipo', r.get('display_name', ''))} {r.get('conf', '')} {r.get('zona', '')}<br>"
         html = (
@@ -264,7 +346,7 @@ class AlertService:
         if dry_run is None: dry_run = os.environ.get("SENTINEL_DRY_RUN","").lower() in ("1","true","yes")
         self.dry_run = dry_run
     def dispatch(self, msg: FormattedMessage, channels: Optional[List[str]]=None, conn=None, cooldown: Optional[int]=None, extra: Optional[Dict]=None) -> Dict[str, bool]:
-        if channels is None: channels = ["telegram","correo","log"]
+        if channels is None: channels = ["telegram","log"]
         results: Dict[str,bool] = {}
         if "log" in channels:
             logger.info(f"ALERT [{msg.severity.value}/{msg.alert_type}] {msg.subject}")
@@ -279,14 +361,6 @@ class AlertService:
             except Exception as e:
                 logger.error(f"Telegram vigilante dispatch failed: {e}")
                 results["telegram"] = False
-        if "correo" in channels and conn is not None:
-            try:
-                from sentinel_omega.infrastructure.api.correo import encolar_correo
-                encolar_correo(conn, asunto=msg.subject, cuerpo=msg.plain + "\n\n" + msg.html, tipo="ALERTA")
-                results["correo"] = True
-            except Exception as e:
-                logger.error(f"Correo dispatch failed: {e}")
-                results["correo"] = False
         return results
     def flush_digest(self, snapshot: Optional[Dict]=None) -> bool:
         """Hourly concentrado. Always attempts to send (dry_run logs only)."""

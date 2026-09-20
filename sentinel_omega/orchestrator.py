@@ -148,14 +148,48 @@ class SentinelOrchestrator:
                         from sentinel_omega.infrastructure.messaging.alert_service import (
                             AlertService, AlertTemplates,
                         )
+                        from sentinel_omega.infrastructure.messaging.alert_enrichment import (
+                            enrich_precursor_row,
+                        )
+                        _conn = None
+                        try:
+                            if self._runner and getattr(self._runner, "db_path", None):
+                                import sqlite3 as _sq
+                                _conn = _sq.connect(
+                                    f"file:{self._runner.db_path}?mode=ro",
+                                    uri=True, timeout=3.0,
+                                )
+                        except Exception:
+                            _conn = None
+                        _en = enrich_precursor_row(
+                            _conn,
+                            tipo=getattr(detection.tipo, "value", str(detection.tipo)),
+                            display_name=detection.display_name,
+                            station=getattr(detection, "station", None),
+                            lat=getattr(detection, "lat", None),
+                            lon=getattr(detection, "lon", None),
+                            values=getattr(detection, "values", None),
+                            confidence=detection.confidence,
+                        )
+                        if _conn is not None:
+                            try:
+                                _conn.close()
+                            except Exception:
+                                pass
                         _msg = AlertTemplates.precursor(
                             precursor_type=getattr(detection.tipo, "value", str(detection.tipo)),
                             display_name=detection.display_name,
                             value=detection.confidence,
-                            details=details,
-                            lat=getattr(detection, "lat", None),
-                            lon=getattr(detection, "lon", None),
-                            lugar=getattr(detection, "station", None),
+                            details=details or _en.get("detalle") or "",
+                            lat=_en.get("lat"),
+                            lon=_en.get("lon"),
+                            lugar=_en.get("lugar"),
+                            lag_horas=_en.get("lag_horas"),
+                            lag_max_h=_en.get("lag_max_h"),
+                            id_nodo=_en.get("id_nodo"),
+                            nodo_nombre=_en.get("nodo_nombre"),
+                            region=_en.get("region"),
+                            enriched=_en,
                         )
                         AlertService().dispatch(
                             _msg,
@@ -164,7 +198,14 @@ class SentinelOrchestrator:
                                 "tipo": getattr(detection.tipo, "value", str(detection.tipo)),
                                 "display_name": detection.display_name,
                                 "confidence": detection.confidence,
-                                "zona": getattr(detection, "station", None),
+                                "zona": _en.get("zona"),
+                                "lugar": _en.get("lugar"),
+                                "lag_horas": _en.get("lag_horas"),
+                                "detalle": _en.get("detalle"),
+                                "id_nodo": _en.get("id_nodo"),
+                                "nodo_nombre": _en.get("nodo_nombre"),
+                                "lat": _en.get("lat"),
+                                "lon": _en.get("lon"),
                             },
                         )
                         self._status.alerts_dispatched += 1

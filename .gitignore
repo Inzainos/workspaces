@@ -12,3 +12,15 @@ __pycache__/
 *.log
 .DS_Store
 .streamlit/
+
+# secrets ? never commit
+.env
+.env.*
+!.env.example
+
+# --- añadido 2026-09-20: ruido de salida y árbol duplicado ---
+.venv/
+estado/historial/
+estado/graficas/
+# árbol anidado duplicado (snapshot viejo del 4-sep, pendiente de borrar)
+sentinel_omega/sentinel_omega/

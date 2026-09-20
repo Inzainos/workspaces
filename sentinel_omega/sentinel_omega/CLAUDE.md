@@ -116,7 +116,7 @@ python sentinel_omega/launcher.py --barrido
 # Pasada del Juez (real vs predicción, ritmo auto-impuesto 4h)
 python deploy/verificacion_juez.py
 
-# Reportes periódicos con gráficas + despacho de correo
+# Reportes periódicos con gráficas + despacho por Telegram
 python deploy/reporte_periodico.py --comparativo   # (o --semanal / --mensual)
 python deploy/enviar_correos.py
 
@@ -190,12 +190,32 @@ sentinel_omega/
 │   └── geodynamic/              # All 6 agents: alfa1, alfa2, beta1, beta2, delta,Omega, padre
 ├── infrastructure/
 │   ├── api/                     # NOAA, USGS, Schumann, ESA, OWM, Crypto, Bolsa, Telegram
-│   ├── pipeline/                # GeodynamicPipeline + GeodynamicLayerRunner + backcast
+│   ├── pipeline/                # GeodynamicPipeline + runners + backcast + entrenamiento + mantenimiento + reportes
 │   ├── database/                # SQLite schema, repository, 125-node seed
 │   └── dashboard/               # Streamlit + Plotly dashboard (9 tabs)
 ├── data/                        # SQLite databases
 └── tests/                       # 396 tests
 ```
+
+### Pipeline scripts (operational map)
+
+- Core runtime:
+  - `infrastructure/pipeline/data_pipeline.py` — ingesta multi-fuente + LOCF.
+  - `infrastructure/pipeline/layer_runners.py` — ciclo fetch→ingest→analyze→consensus.
+  - `infrastructure/pipeline/juez_cycle_register.py` — registro de predicciones por ciclo.
+- One-time / batch:
+  - `infrastructure/pipeline/backcast.py` — carga histórica one-time.
+  - `infrastructure/pipeline/entrenamiento.py` + `entrenar_paralelo.py` — aprendizaje por fases.
+  - `infrastructure/pipeline/mantenimiento.py` — barrido diario/correlaciones/sesgo/poda.
+- Reporting:
+  - `infrastructure/pipeline/reporte_sentinel.py` — reportes general/padre/omega.
+  - `infrastructure/pipeline/reporte_engine.py` — envoltura DRY + versionado estado/historial.
+  - `infrastructure/pipeline/scheduler_reportes.py` — scheduler 2h/6h (normalmente deshabilitado para evitar duplicidad con `sentinel-omega.service`).
+- Recovery / data fixes (on demand):
+  - `infrastructure/pipeline/sismos_refetch_recent.py` — refetch incremental USGS.
+  - `infrastructure/pipeline/topologia_cascada.py` — ETL/recalculo topológico.
+  - `infrastructure/pipeline/clima_gapfill_2026.py` — fill puntual 2026 de clima espacial.
+  - `infrastructure/pipeline/data_pipeline_locf_patch.py` — parche LOCF persistente.
 
 > El repositorio raíz tiene un `AGENTS.md` (estándar neutral para cualquier
 > agente de IA). Este `CLAUDE.md` es la guía específica de Claude Code y tiene
@@ -210,12 +230,8 @@ sentinel_omega/
 ## Environment variables
 
 ```
-SMTP_USER             — Cuenta emisora de correo (app password de Gmail)
-SMTP_PASS             — Contraseña de aplicación SMTP
-SMTP_HOST / SMTP_PORT — Opcionales (default smtp.gmail.com:587)
-CORREO_DESTINO        — Destinatario (default elan.zainos.corona@gmail.com)
-TELEGRAM_BOT_TOKEN    — Telegram alert dispatch (en pausa: el canal es correo)
-TELEGRAM_CHAT_ID      — Target chat for alerts (en pausa)
+TELEGRAM_BOT_TOKEN    — Telegram Bot token for alerts and reports
+TELEGRAM_CHAT_ID      — Target chat for alerts
 OPENWEATHERMAP_KEY    — Atmospheric data
 BITSO_API_KEY         — Bitso exchange
 BITSO_API_SECRET      — Bitso exchange
@@ -229,24 +245,20 @@ ALPHA_VANTAGE_KEY     — Stock market data
   (con SUS nodos) y snapshot cimático.
 - **Cada 4 h** — el Juez verifica real vs predicción contra USGS (verdad
   por fila; ritmo auto-impuesto en `pipeline/verificacion.py`).
-- **Cada 6 h** — reporte ejecutivo (se encola por correo).
+- **Cada 6 h** — reporte ejecutivo (se envía por Telegram).
 - **12am y 12pm MX** — comparativo contra el día anterior (con gráfica).
 - **Domingo 12:15pm MX** — reporte semanal (gráficas de fantasma/alertas/breaches).
 - **Fin de mes 12:30pm MX** — reporte mensual.
-- **Cada corrida** — despacho del outbox de correo (`deploy/enviar_correos.py`).
+- **Cada corrida** — despacho de reportes/alertas por Telegram (`deploy/enviar_correos.py`).
 
-## Cimática y correo (sin Telegram)
+## Cimática y Telegram
 
 - `tbl_cimatica_patrones` — snapshot del sistema por ciclo: patrón NUEVO →
   telemetría completa guardada; patrón existente → frecuencia+1 (contar,
   no anotar). Ámbito `general` o `nodo`; `event_class` cuando se conoce.
   Todo alta/incremento dispara la revisión del Padre; patrón nuevo con
   Padre activo o frecuencia consistente (≥3) con evento asociado → alerta
-  por correo. Módulo: `core/firmas/cimatica.py`.
-- `tbl_correo_salida` — outbox de ALERTAS y REPORTES a
-  elan.zainos.corona@gmail.com. Envío SMTP fail-soft
-  (`infrastructure/api/correo.py`): sin credenciales queda PENDIENTE,
-  nunca se finge enviado.
+  por Telegram (vía Consenso Vigilante). Módulo: `core/firmas/cimatica.py`.
 
 ## Database (SQLite)
 
@@ -324,4 +336,4 @@ Canal Telegram ya no dispara cada ciclo. El Padre (`consenso_vigilante.py`):
 
 1. **Reporte horario siempre** (`TG_DIGEST_MINUTES=60`) — Fantasma+nivel, muro n/5, telemetría, top precursores, loop, botón Mini App (`TELEGRAM_WEBAPP_URL` HTTPS público a `/mini`). No se omite la hora en calma. No es un pile de "precursores revisar".
 2. **Page inmediato solo si no hay registro** (`is_unprecedented`): patrón cimática NUEVO, firma `TBL_FIRMAS` nueva, tipo de muro no visto, `SYSTEM_DEAD`. Firmas recurrentes y watches de precursores van al digest. Rojo/naranja rutinario NO pagina.
-3. Correo (`tbl_correo_salida`) no cambia. `SENTINEL_DRY_RUN=1` no envía. Mini App exige HTTPS; este repo no crea túnel.
+3. `SENTINEL_DRY_RUN=1` no envía. Mini App exige HTTPS; este repo no crea túnel.
