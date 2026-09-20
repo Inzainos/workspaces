@@ -24,3 +24,7 @@ estado/historial/
 estado/graficas/
 # árbol anidado duplicado (snapshot viejo del 4-sep, pendiente de borrar)
 sentinel_omega/sentinel_omega/
+*.db-wal
+*.db-shm
+*.db-journal
+.claude/worktrees/
