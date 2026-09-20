@@ -107,6 +107,42 @@ class GeodynamicLayerRunner:
         except Exception as exc:  # noqa: BLE001 — fail-soft por diseño
             logger.warning("Persistencia sísmica falló (no bloqueante): %s", exc)
 
+    def _persist_clima(self, alfa1_data: Dict) -> None:
+        """Persiste la telemetría horaria en tbl_clima_espacial_raw.
+
+        Antes solo la llenaban el backcast y un gapfill manual, así que la
+        tabla llevaba parada desde 2026-09-11 aunque el ciclo bajara estos
+        datos de NOAA cada vuelta. De ella comen el entrenamiento (features
+        bz/viento/kp/protones) y el fallback de delta_enriched.
+
+        INSERT OR IGNORE por timestamp_blk. Fail-soft.
+        """
+        filas = alfa1_data.get("clima_horas") if isinstance(alfa1_data, dict) else None
+        if not filas:
+            return
+        try:
+            repo = self._get_repo()
+            antes = repo._execute(
+                "SELECT COUNT(*) FROM tbl_clima_espacial_raw"
+            ).fetchone()[0]
+            repo._executemany(
+                "INSERT OR IGNORE INTO tbl_clima_espacial_raw "
+                "(timestamp_blk, bz_promedio, bz_derivada, bz_min, bz_max, "
+                " viento_solar_avg, viento_solar_max, kp_max, kp_promedio, "
+                " proton_flux_10mev) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                filas,
+            )
+            despues = repo._execute(
+                "SELECT COUNT(*) FROM tbl_clima_espacial_raw"
+            ).fetchone()[0]
+            if despues > antes:
+                logger.info(
+                    "Clima espacial → DB: +%d horas nuevas de %d",
+                    despues - antes, len(filas),
+                )
+        except Exception as exc:  # noqa: BLE001 — fail-soft por diseño
+            logger.warning("Persistencia de clima falló (no bloqueante): %s", exc)
+
     def _compute_precursor_risk(
         self,
         alfa1_data: Dict,
@@ -185,6 +221,8 @@ class GeodynamicLayerRunner:
         # El fetch de Beta-1 ya trajo el catálogo USGS: registrarlo en la
         # operativa que lee el Juez (antes se descartaba → Juez ciego).
         self._persist_sismos(beta1_data)
+        # Ídem con la telemetría de Alfa-1 → tbl_clima_espacial_raw.
+        self._persist_clima(alfa1_data)
 
         risk = self._compute_precursor_risk(alfa1_data, beta1_data, beta2_data)
 

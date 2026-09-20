@@ -136,14 +136,94 @@ class GeodynamicPipeline:
         # proton_flux_10mev). El launcher lo lee como `proton_flux` para
         # TBL_PRECURSORES_COSMICOS.protones, que estaba 100% en cero porque
         # nadie producía esta clave. Fail-soft: si no hay dato, no se inventa.
+        prot_df = None
         try:
             prot_df = fetch_proton_flux()
             if prot_df is not None and len(prot_df):
                 result["proton_flux"] = float(prot_df["flux"].iloc[-1])
         except Exception as exc:  # noqa: BLE001 — no bloquea el ciclo
             logger.warning("Proton flux fetch failed (non-blocking): %s", exc)
+
+        # Filas horarias para tbl_clima_espacial_raw (el runner las inserta).
+        try:
+            filas = self._filas_clima_horarias(
+                result["omni_dataframe"], prot_df, fetch_kp_index(days=2)
+            )
+            if filas:
+                result["clima_horas"] = filas
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Clima horario no disponible: %s", exc)
         self._locf_set("alfa1", result)
         return result
+
+    @staticmethod
+    def _filas_clima_horarias(omni_df, prot_df, kp_df):
+        """Agrega la telemetría del ciclo a filas horarias para persistir.
+
+        tbl_clima_espacial_raw solo la llenaban el backcast (one-time) y un
+        gapfill manual: el ciclo vivo bajaba estos mismos datos de NOAA y los
+        tiraba, así que la tabla llevaba parada desde 2026-09-11. Eso dejaba
+        sin materia prima al entrenamiento y a delta_enriched.
+
+        Cero sintético: cada columna sale de su fuente o queda None; no se
+        rellena nada. Solo se emiten horas ya cerradas (la hora en curso está
+        incompleta y se persistirá en el ciclo siguiente).
+        """
+        import pandas as _pd
+        if omni_df is None or not len(omni_df):
+            return []
+        try:
+            o = omni_df.copy()
+            if "time_tag" not in o.columns:
+                return []
+            o["time_tag"] = _pd.to_datetime(o["time_tag"], errors="coerce", utc=True)
+            o = o.dropna(subset=["time_tag"]).set_index("time_tag")
+
+            agg = {}
+            if "bz_gsm" in o.columns:
+                agg["bz_promedio"] = ("bz_gsm", "mean")
+                agg["bz_min"] = ("bz_gsm", "min")
+                agg["bz_max"] = ("bz_gsm", "max")
+            if "plasma_speed" in o.columns:
+                agg["viento_solar_avg"] = ("plasma_speed", "mean")
+                agg["viento_solar_max"] = ("plasma_speed", "max")
+            if not agg:
+                return []
+            h = o.resample("1h").agg(**agg)
+
+            def _merge(df, col, nombre, como):
+                nonlocal h
+                if df is None or not len(df) or col not in df.columns:
+                    return
+                d = df.copy()
+                d["time_tag"] = _pd.to_datetime(d["time_tag"], errors="coerce", utc=True)
+                d = d.dropna(subset=["time_tag"]).set_index("time_tag")
+                h = h.join(d[[col]].resample("1h").agg(como).rename(columns={col: nombre}))
+
+            _merge(kp_df, "kp_index", "kp_promedio", "mean")
+            _merge(kp_df, "kp_index", "kp_max", "max")
+            _merge(prot_df, "flux", "proton_flux_10mev", "max")
+
+            h = h.dropna(how="all")
+            if "bz_promedio" in h.columns:
+                h["bz_derivada"] = h["bz_promedio"].diff()
+
+            # descartar la hora en curso (incompleta)
+            ahora_h = _pd.Timestamp.now(tz="UTC").floor("1h")
+            h = h[h.index < ahora_h]
+
+            cols = ["bz_promedio", "bz_derivada", "bz_min", "bz_max",
+                    "viento_solar_avg", "viento_solar_max", "kp_max",
+                    "kp_promedio", "proton_flux_10mev"]
+            filas = []
+            for ts, row in h.iterrows():
+                vals = [None if c not in h.columns or _pd.isna(row.get(c))
+                        else float(row[c]) for c in cols]
+                filas.append([ts.strftime("%Y-%m-%d %H:00")] + vals)
+            return filas
+        except Exception as exc:  # noqa: BLE001 — nunca bloquea el ciclo
+            logger.warning("Agregado horario de clima falló: %s", exc)
+            return []
 
     def fetch_beta1_data(self) -> Dict[str, Any]:
         """Fetch Kp series, seismic, Schumann, LOD, lunar for Beta-1."""
