@@ -96,7 +96,9 @@ class PrecursorScanner:
         detections.extend(self._scan_sprites_rojos(atmospheric))
         detections.extend(self._scan_niebla_tule(atmospheric))
         detections.extend(self._scan_silent_trigger(kp_series))
-        detections.extend(self._scan_seismic_cluster(seismic_mags))
+        detections.extend(
+            self._scan_seismic_cluster(seismic_mags, beta1_data.get("m4_count_24h"))
+        )
         detections.extend(self._scan_volcanic(air_quality, seismic_mags, atmospheric))
         detections.extend(self._scan_schumann(schumann_hz, schumann_pct))
         detections.extend(self._scan_tormenta_solar(bz, kp_mean, viento))
@@ -210,12 +212,18 @@ class PrecursorScanner:
         )]
 
     def _scan_seismic_cluster(
-        self, seismic_mags: Optional[Any]
+        self, seismic_mags: Optional[Any], m4_count_24h: Optional[int] = None
     ) -> List[PrecursorDetection]:
         if seismic_mags is None:
             return []
 
-        m4_count = int(np.sum(seismic_mags >= 4.0))
+        # detect_seismic_cluster espera un conteo de 24 h. Antes se le pasaba
+        # el de la ventana completa del fetch (30 días), así que comparaba
+        # ~800 eventos contra un umbral pensado para un día: siempre disparaba.
+        if m4_count_24h is not None:
+            m4_count = int(m4_count_24h)
+        else:
+            m4_count = int(np.sum(seismic_mags >= 4.0))
         if not detect_seismic_cluster(m4_count):
             return []
 
