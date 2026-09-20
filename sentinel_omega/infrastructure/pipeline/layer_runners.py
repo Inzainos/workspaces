@@ -231,6 +231,7 @@ class GeodynamicLayerRunner:
             alfa1_data, beta1_data, beta2_data,
             hurricane_data=hurricane_data,
             financial_data=delta_data,
+            risk=risk,
         )
         self.last_detections = detections
 
