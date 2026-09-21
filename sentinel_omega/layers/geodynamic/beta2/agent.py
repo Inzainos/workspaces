@@ -12,7 +12,12 @@ Method:
 
 from typing import Any, Dict, List, Optional
 import numpy as np
+import logging
+
 from sentinel_omega.core.shared.agent_base import BaseAgent, AgentSignal, SignalType
+
+
+logger = logging.getLogger(__name__)
 
 
 class Beta2Agent(BaseAgent):
@@ -22,7 +27,12 @@ class Beta2Agent(BaseAgent):
     TRAINING_YEARS = 14
 
     MARINE_THERMAL_THRESHOLD_C = 29.0
-    NODE_SO2_EXCESS_ALERT = 50.0
+    # Calibrado sobre 11.441 lecturas reales (mediana 0.21, p99 21.21,
+    # máximo histórico 28.82): el valor anterior (50.0) era INALCANZABLE —
+    # 0.00% de las lecturas lo superaban, así que _global_node_anomalies
+    # nunca devolvía nada y beta2 quedaba clavado en NEUTRAL.
+    # 15.0 ~= p97 → dispara en el 2.7% de las lecturas.
+    NODE_SO2_EXCESS_ALERT = 15.0
     NODE_CO_ALERT = 400.0
 
     def __init__(self):
@@ -110,12 +120,16 @@ class Beta2Agent(BaseAgent):
         for node in self._global_node_scan:
             tipo = node.get("tipo", "")
             name = node.get("node", "?")
-            if tipo in ("VOLCAN", "TECTONICO"):
-                so2_excess = max(0.0, node.get("so2", 0.0) - base_so2)
-                co = node.get("co", 0.0)
-                if so2_excess > self.NODE_SO2_EXCESS_ALERT or co > self.NODE_CO_ALERT:
-                    anomalies.append({"node": name, "tipo": tipo, "anomaly": "DEGASSING", "so2_excess": round(so2_excess, 2), "co": co})
-            elif tipo == "MARINO":
+            # La desgasificación se evalúa en TODOS los tipos de nodo. Antes
+            # solo en VOLCAN/TECTONICO, y resulta que hawaii_hotspot está
+            # clasificado MARINO siendo un hotspot volcánico activo: era el
+            # nodo con MÁS SO2 de todo el barrido (21.25) y su química no se
+            # miraba nunca.
+            so2_excess = max(0.0, node.get("so2", 0.0) - base_so2)
+            co = node.get("co", 0.0)
+            if so2_excess > self.NODE_SO2_EXCESS_ALERT or co > self.NODE_CO_ALERT:
+                anomalies.append({"node": name, "tipo": tipo, "anomaly": "DEGASSING", "so2_excess": round(so2_excess, 2), "co": co})
+            if tipo == "MARINO":
                 temp = node.get("temp_c")
                 if temp is not None and temp > self.MARINE_THERMAL_THRESHOLD_C:
                     anomalies.append({"node": name, "tipo": tipo, "anomaly": "MARINE_THERMAL", "temp_c": temp})
@@ -151,6 +165,16 @@ class Beta2Agent(BaseAgent):
             "node_anomalies": node_anomalies,
             "figure_confidence": figure_analysis["confidence"]
         }
+
+        # Diagnóstico: beta2 emitió NEUTRAL en 1.815 ciclos seguidos pese a
+        # recibir datos. Esto registra qué umbral se queda corto y por cuánto.
+        logger.info(
+            "BETA2 diag: eff=%.3f press=%.3f chem=%.3f stress=%.3f fog=%s "
+            "match=%s nodos=%d | umbrales ALERT(match & eff>0.6) "
+            "WATCH(eff>0.35 | press>0.3 | fog)",
+            effective_confidence, pressure_score, chemical_score, combined_stress,
+            fog_detected, figure_analysis["match_found"], len(node_anomalies),
+        )
 
         if figure_analysis["match_found"] and effective_confidence > 0.6:
             return self.emit_signal(
