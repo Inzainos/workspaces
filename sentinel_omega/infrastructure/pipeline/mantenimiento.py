@@ -620,9 +620,18 @@ def analizar_orden_precursores(db_path: str, muestra: int = ORDEN_MUESTRA) -> Di
 #             identificables (nodos emisores + camino de propagación).
 #   LOCAL   — la ruta es recurrente pero ligada a un solo tipo → causa específica
 #             (eventos distintos con detonantes distintos).
-SEC_NODOS_MUESTRA = 300
+# Calibrado empíricamente sobre 6.017 eventos M4.5+ del backcast
+# (2026-09-21). Con 125 nodos, una ruta ORDENADA de 5 tiene ~28.000 millones
+# de combinaciones: ninguna se repetía jamás (300 rutas, todas con
+# frecuencia 1) y el filtro de recurrencia las descartaba todas, así que
+# tbl_secuencia_veredictos quedaba SIEMPRE vacía. Medición por longitud:
+#   largo 5 → 0.0% recurrente   (imposible por construcción)
+#   largo 4 → 0.0%
+#   largo 3 → 3.9%  (66 rutas con >=3)   ← selectivo y produce veredictos
+#   largo 2 → 64.6%                       (trivial: casi todo "recurre")
+SEC_NODOS_MUESTRA = 20000    # 300 era el 0.16% del catálogo; el cálculo es rápido
 SEC_NODOS_VENTANA_H = 72     # víspera donde se observa la propagación
-SEC_NODOS_MAX_LEN = 5        # ruta acotada (primeros nodos en activarse)
+SEC_NODOS_MAX_LEN = 3        # ruta acotada (primeros nodos en activarse)
 SEC_NODOS_MIN_FREC = 3       # una ruta con menos apariciones no es recurrente
 
 
