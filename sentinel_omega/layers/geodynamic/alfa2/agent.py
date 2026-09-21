@@ -36,11 +36,77 @@ class Alfa2Agent(BaseAgent):
                     self._baseline_stats = json.load(f)
                 self.logger.info(f"Alfa-2: Loaded historical baseline for {len(self._baseline_stats)} zones")
             else:
-                self.logger.warning("Alfa-2: Historical baseline file not found, using defaults")
-                self._baseline_stats = self._default_baseline()
+                # Sin JSON, calcular el baseline de las zonas REALES desde el
+                # histórico antes de recurrir a los valores por defecto, que
+                # describen zonas genéricas ("mexico", "peru"...) y no las que
+                # el pipeline observa (guerrero_gap, oaxaca_costa, chiapas).
+                # Medido 2026-09-21: claridad real 0.21-0.33 frente al 0.65 del
+                # default, así que alfa2 leía nubosidad normal como anomalía.
+                self._baseline_stats = self._baseline_desde_db()
+                if self._baseline_stats:
+                    self.logger.info(
+                        "Alfa-2: baseline calculado desde el histórico (%d zonas)",
+                        len(self._baseline_stats),
+                    )
+                else:
+                    self.logger.warning("Alfa-2: sin histórico, usando defaults")
+                    self._baseline_stats = self._default_baseline()
         except Exception as e:
             self.logger.error(f"Alfa-2: Failed to load baseline: {e}")
             self._baseline_stats = self._default_baseline()
+
+    def _baseline_desde_db(self) -> Optional[Dict[str, Dict[str, float]]]:
+        """Media y desviación reales por zona desde tbl_cobertura_satelital_historico."""
+        import sqlite3
+        import statistics
+        db = self._historical_baseline_path.parent / "SENTINEL_OMEGA_PRO.db"
+        if not db.exists():
+            return None
+        try:
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            filas = con.execute(
+                "SELECT zona, thermal_anomalies, clear_passes, total_passes "
+                "FROM tbl_cobertura_satelital_historico WHERE total_passes > 0"
+            ).fetchall()
+            con.close()
+        except Exception as exc:
+            self.logger.warning("Alfa-2: no se pudo leer el histórico: %s", exc)
+            return None
+
+        acum: Dict[str, Dict[str, list]] = {}
+        for zona, thermal, clear, total in filas:
+            z = str(zona).lower()
+            clarity = (clear or 0) / total
+            obs = total * (0.5 + 0.5 * clarity)
+            d = acum.setdefault(z, {"obs": [], "th": [], "cl": []})
+            d["obs"].append(obs)
+            d["th"].append(float(thermal or 0))
+            d["cl"].append(clarity)
+
+        def _ms(v):
+            return (statistics.fmean(v), statistics.pstdev(v) if len(v) > 1 else 0.0)
+
+        out: Dict[str, Dict[str, float]] = {}
+        for z, d in acum.items():
+            if len(d["obs"]) < 30:      # muestra insuficiente para un baseline
+                continue
+            om, os_ = _ms(d["obs"]); tm, ts = _ms(d["th"]); cm, cs = _ms(d["cl"])
+            out[z] = {"obs_mean": om, "obs_std": os_, "thermal_mean": tm,
+                      "thermal_std": ts, "clarity_mean": cm, "clarity_std": cs}
+        return out or None
+
+    @staticmethod
+    def _z(valor: float, mean: float, std: float, tope: float = 6.0) -> float:
+        """z-score acotado, honesto cuando no hay varianza histórica.
+
+        thermal_std es 0.000 en las tres zonas reales (2.690 registros sin una
+        sola anomalía térmica). Dividir por el epsilon de 0.01 convertía la
+        primera anomalía en 200σ. Sin varianza medida, una desviación es
+        significativa pero su magnitud NO es medible: se reporta como 3σ.
+        """
+        if std <= 1e-9:
+            return 0.0 if abs(valor - mean) <= 1e-9 else 3.0
+        return max(-tope, min(tope, (valor - mean) / std))
 
     def _default_baseline(self) -> Dict[str, Dict[str, float]]:
         """Fallback defaults if baseline file missing."""
@@ -56,7 +122,16 @@ class Alfa2Agent(BaseAgent):
         }
 
     def ingest(self, data: Dict[str, Any]) -> None:
-        self._cobertura_data = data.get("cobertura_satelital", {})
+        # El pipeline entrega "zone_coverages"; este agente leía solo
+        # "cobertura_satelital" y el .get(k, {}) devolvía {} en silencio, así
+        # que analyze() caía siempre en NO_SIGNAL 0.0 pese a haber cobertura
+        # real en la DB. Los tests no lo detectaban porque llaman a ingest()
+        # con la clave del agente, nunca con la del pipeline.
+        self._cobertura_data = (
+            data.get("zone_coverages")
+            or data.get("cobertura_satelital")
+            or {}
+        )
         n = len(self._cobertura_data)
         self.logger.info(f"Alfa-2 (Satellite) ingested: {n} zone records")
 
@@ -76,12 +151,21 @@ class Alfa2Agent(BaseAgent):
         clarity = zone_data.get("clear_passes", 0) / zone_data.get("total_passes", 1) if zone_data.get("total_passes", 0) > 0 else 0.0
         
         # Z-scores
-        z_obs = (obs_idx - stats["obs_mean"]) / max(stats["obs_std"], 0.01)
-        z_thermal = (thermal - stats["thermal_mean"]) / max(stats["thermal_std"], 0.01)
-        z_clarity = (clarity - stats["clarity_mean"]) / max(stats["clarity_std"], 0.01)
+        z_obs = self._z(obs_idx, stats["obs_mean"], stats["obs_std"])
+        z_thermal = self._z(thermal, stats["thermal_mean"], stats["thermal_std"])
+        z_clarity = self._z(clarity, stats["clarity_mean"], stats["clarity_std"])
         
         # Combined anomaly (weighted)
-        combined_sigma = max(abs(z_obs), abs(z_thermal) * 1.2, abs(z_clarity) * 0.8)
+        # Solo cuentan las desviaciones que significan MÁS actividad. Una
+        # caída de obs/clarity es cobertura degradada (nubes, menos pases del
+        # satélite), no un precursor: con abs() el sistema emitía ALERT 0.95
+        # por tener menos imágenes de las habituales.
+        combined_sigma = max(
+            max(0.0, z_obs),
+            abs(z_thermal) * 1.2,
+            max(0.0, z_clarity) * 0.8,
+        )
+        cobertura_degradada = z_obs <= -2.0 or z_clarity <= -2.0
         
         return {
             "zona": zona,
@@ -92,6 +176,7 @@ class Alfa2Agent(BaseAgent):
             "combined_sigma": round(combined_sigma, 2),
             "thermal_anomalies": thermal,
             "clarity": round(clarity, 3),
+            "cobertura_degradada": cobertura_degradada,
             "baseline_used": stats
         }
 
@@ -101,25 +186,39 @@ class Alfa2Agent(BaseAgent):
 
         anomalies = []
         max_sigma = 0.0
-        
+        peor_zona = "—"
+        degradadas = []
+
         for zona, zone_data in self._cobertura_data.items():
             anomaly = self._compute_anomaly_score(zona, zone_data)
             anomalies.append(anomaly)
-            max_sigma = max(max_sigma, anomaly["combined_sigma"])
+            if anomaly["combined_sigma"] > max_sigma:
+                max_sigma = anomaly["combined_sigma"]
+                peor_zona = zona
+            if anomaly.get("cobertura_degradada"):
+                degradadas.append(zona)
+
+        # La cobertura degradada se informa, no altera la señal: menos pases o
+        # más nubes es un problema de observación, no un precursor.
+        if degradadas:
+            self.logger.info(
+                "Alfa-2: cobertura degradada en %s (no eleva la señal)",
+                ", ".join(degradadas),
+            )
 
         # Signal logic based on sigma deviations
         if max_sigma >= 3.0:
             signal_type = SignalType.ALERT
             confidence = min(0.95, 0.6 + max_sigma * 0.1)
-            reasoning = f"CRITICAL thermal anomaly: {max_sigma:.1f}σ deviation from historical baseline"
+            reasoning = f"CRITICAL satellite anomaly: {max_sigma:.1f}σ over baseline (zona={peor_zona})"
         elif max_sigma >= 2.0:
             signal_type = SignalType.WATCH
             confidence = min(0.8, 0.4 + max_sigma * 0.1)
-            reasoning = f"ELEVATED thermal anomaly: {max_sigma:.1f}σ deviation from historical baseline"
+            reasoning = f"ELEVATED satellite anomaly: {max_sigma:.1f}σ over baseline (zona={peor_zona})"
         elif max_sigma >= 1.0:
             signal_type = SignalType.WATCH
             confidence = 0.35
-            reasoning = f"MODERATE thermal anomaly: {max_sigma:.1f}σ deviation from historical baseline"
+            reasoning = f"MODERATE satellite anomaly: {max_sigma:.1f}σ over baseline (zona={peor_zona})"
         else:
             signal_type = SignalType.NEUTRAL
             confidence = 0.2
