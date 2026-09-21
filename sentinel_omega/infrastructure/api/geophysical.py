@@ -20,16 +20,24 @@ logger = logging.getLogger(__name__)
 IERS_FINALS_URL = (
     "https://datacenter.iers.org/data/csv/finals2000A.daily.csv"
 )
+# El archivo .daily solo trae ~90 días. El .all cubre 1973→2027 (20.041
+# filas) con el MISMO formato, y es el que hace falta para rellenar el LOD
+# histórico de tbl_astronomia_cinematica, que estaba en 0.0 en sus 280.352
+# filas.
+IERS_FINALS_ALL_URL = (
+    "https://datacenter.iers.org/data/csv/finals2000A.all.csv"
+)
 TIMEOUT = 20
 
 
-def fetch_lod_series(days: int = 90) -> Optional[pd.DataFrame]:
+def fetch_lod_series(days: int = 90, historico: bool = False) -> Optional[pd.DataFrame]:
     """
     Fetch Length-of-Day excess (LOD) from IERS Bulletin A finals data.
     LOD is the deviation of day length from 86400 SI seconds (in ms).
     """
     try:
-        resp = get_session().get(IERS_FINALS_URL, timeout=TIMEOUT)
+        url = IERS_FINALS_ALL_URL if historico else IERS_FINALS_URL
+        resp = get_session().get(url, timeout=TIMEOUT * (3 if historico else 1))
         resp.raise_for_status()
 
         lines = resp.text.strip().split("\n")
