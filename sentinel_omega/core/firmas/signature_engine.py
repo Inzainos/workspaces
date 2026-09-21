@@ -34,7 +34,7 @@ FEATURE_KEYS = [
     "proton_max",
     "schumann_mean", "schumann_std",
     "sismo_count_win", "sismo_max_mag_win",
-    "fase_lunar", "es_sicigia",
+    "fase_lunar", "es_sicigia", "lod", "vix",
     "btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h",
     "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
     # near sub-window (last 72h before the event)
@@ -81,6 +81,14 @@ def _stats(values: List[float]) -> Optional[Tuple[float, float, float, float]]:
     if len(arr) == 0:
         return None
     return float(arr.mean()), float(arr.min()), float(arr.max()), float(arr.std())
+
+
+def _tiene_columna(conn, tabla: str, columna: str) -> bool:
+    """¿Existe la columna? Los esquemas antiguos pueden no tenerla."""
+    try:
+        return any(r[1] == columna for r in conn.execute(f"PRAGMA table_info({tabla})"))
+    except sqlite3.Error:
+        return False
 
 
 def extraer_features_ventana(
@@ -157,13 +165,21 @@ def extraer_features_ventana(
 
     # Lunar state at event time (tidal trigger context)
     luna = conn.execute(
-        "SELECT fase_lunar_pct, es_sicigia FROM tbl_astronomia_cinematica "
+        "SELECT fase_lunar_pct, es_sicigia, lod_ms FROM tbl_astronomia_cinematica "
+        "WHERE timestamp_blk <= ? ORDER BY timestamp_blk DESC LIMIT 1",
+        (ts_evento,),
+    ).fetchone() if _tiene_columna(conn, "tbl_astronomia_cinematica", "lod_ms") else conn.execute(
+        "SELECT fase_lunar_pct, es_sicigia, NULL FROM tbl_astronomia_cinematica "
         "WHERE timestamp_blk <= ? ORDER BY timestamp_blk DESC LIMIT 1",
         (ts_evento,),
     ).fetchone()
     if luna and luna[0] is not None:
         features["fase_lunar"] = float(luna[0])
         features["es_sicigia"] = float(luna[1] or 0)
+    # LOD (exceso de duración del día, IERS) — feature de Loki. Rellenado
+    # desde finals2000A.all; antes la columna era 0.0 en las 280.352 filas.
+    if luna and luna[2] is not None:
+        features["lod"] = float(luna[2])
 
     # Financial psyche (2014+) — Delta's domain: volatility pattern + net move
     btc = conn.execute(
@@ -188,6 +204,21 @@ def extraer_features_ventana(
         ).fetchone()
         if btc72 and btc72[0] is not None:
             features["btc_vol_72h"] = float(btc72[0])
+
+    # VIX medio de la ventana — feature de Loki. La columna estaba 100% NULL
+    # hasta el backfill desde ^VIX (Yahoo, 1993+). Los días sin cotización
+    # (fin de semana) no cuentan: se promedia solo lo medido.
+    try:
+        vix_win = conn.execute(
+            "SELECT AVG(vix) FROM tbl_psique_financiera "
+            "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?) "
+            "AND vix IS NOT NULL",
+            (ts_evento, ts_evento, f"-{VENTANA_HORAS} hours"),
+        ).fetchone()
+        if vix_win and vix_win[0] is not None:
+            features["vix"] = float(vix_win[0])
+    except sqlite3.OperationalError:
+        pass    # esquema sin la columna: la feature simplemente no se añade
 
     # Volcanic degassing (Beta-2's domain) — global planetary SO2 state.
     # 14-day window + 90-day charge context. Zero eruptions in the window is
@@ -236,16 +267,21 @@ def extraer_features_ventana(
     ).fetchone()
     features["sismo_count_72h"] = float(sis72[0])
 
-    # Cobertura satelital alfa2 (tbl_cobertura_satelital).
-    # Solo disponible desde que el sistema corre en vivo — si la tabla está
-    # vacía (backcast o primer arranque) simplemente no se añaden estas features.
+    # Cobertura satelital alfa2. Se mira la tabla viva Y la histórica: el
+    # volcado de 24h mueve las filas de una a otra, así que consultar solo la
+    # viva dejaba a alfa2 sin features para cualquier evento pasado — por eso
+    # estaba en BOTS_LIVE_ONLY y nunca acumulaba memoria.
     try:
         sat = conn.execute(
             "SELECT coverage_score, thermal_anomalies, clear_passes "
             "FROM tbl_cobertura_satelital "
             "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?) "
-            "ORDER BY timestamp_blk",
-            (ts_evento, ts_evento, f"-{VENTANA_HORAS} hours"),
+            "UNION ALL "
+            "SELECT coverage_score, thermal_anomalies, clear_passes "
+            "FROM tbl_cobertura_satelital_historico "
+            "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?)",
+            (ts_evento, ts_evento, f"-{VENTANA_HORAS} hours",
+             ts_evento, ts_evento, f"-{VENTANA_HORAS} hours"),
         ).fetchall()
         if sat:
             cov_scores = [r[0] for r in sat if r[0] is not None]

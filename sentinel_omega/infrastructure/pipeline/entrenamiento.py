@@ -67,8 +67,12 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     "omega": ["fase_lunar", "es_sicigia", "schumann_mean", "schumann_std",
               "kp_max", "kp_max_72h", "bz_min", "proton_max",
               "delta_schumann_coupling"],
-    # Loki — Fractal-Bayesian: Bz, Solar Wind, Schumann, VIX, LOD
-    "loki": ["bz", "solar_wind", "schumann_activity", "vix", "lod"],
+    # Loki — Fractal-Bayesiano: Bz, viento solar, Schumann, VIX, LOD.
+    # Los nombres eran "bz"/"solar_wind"/"schumann_activity", que NO existen
+    # en FEATURE_KEYS: el filtro `if k in feats` dejaba su vector vacío y Loki
+    # se saltaba el entrenamiento aunque se le quitara de BOTS_LIVE_ONLY. Se
+    # usan los canónicos; vix y lod ya se extraen tras rellenar sus columnas.
+    "loki": ["bz_mean", "viento_avg", "schumann_mean", "vix", "lod"],
     # Jupiter — collective attention: Kp, X-ray, Trends, Schumann
     "jupiter": ["latest_kp", "storm_active", "attention_z", "corr_significant",
                 "kp_mean", "xray_mean", "trends_mean", "schumann_mean"],
@@ -95,7 +99,14 @@ BOT_DESDE: Dict[str, str] = {
 # Bots que solo entrenan desde datos EN VIVO (no tienen backcast en la DB).
 # El loop de Fase 1 los salta si la fuente es tbl_historico_sismico_raw
 # sin filas de tbl_cobertura_satelital en el mismo periodo.
-BOTS_LIVE_ONLY = {"alfa2", "jupiter", "loki"}
+# Antes {"alfa2", "jupiter", "loki"}: los tres quedaban sin memoria ni peso,
+# invisibles para el consenso ponderado. La exclusión era el síntoma, no la
+# causa — sus features no existían en el extractor o sus datos estaban muertos.
+# Resuelto: alfa2 ya lee la cobertura histórica, y Loki tiene vix y lod
+# rellenados desde ^VIX e IERS. Jupiter entrena con las features que sí tienen
+# histórico (Kp, Schumann); las de Google Trends solo cubren 90 días y se
+# acumulan en vivo.
+BOTS_LIVE_ONLY: set = set()
 
 
 def _event_class(mag: float) -> str:
