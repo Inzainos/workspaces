@@ -22,8 +22,13 @@ Honestidad de rol (v2.5.1):
 import numpy as np
 from typing import Any, Dict, Optional
 
+import logging
+
 from sentinel_omega.core.shared.agent_base import BaseAgent, AgentSignal, SignalType
 from sentinel_omega.core.snt_engine import SatellizationEngine, NBodyMatrix
+
+
+logger = logging.getLogger(__name__)
 
 
 class DeltaAgent(BaseAgent):
@@ -115,6 +120,14 @@ class DeltaAgent(BaseAgent):
             "crypto_b": crypto_topo.get("b", 0.0),
             "sector_concentration": sector_topo.get("concentration", 0.0),
         }
+
+        # Diagnóstico: delta emitió NEUTRAL en 1.815 ciclos seguidos. Registra
+        # el compuesto y sus entradas para ver si es calma real o señal rota.
+        logger.info(
+            "DELTA diag: combined=%.3f fear=%.3f vix=%s spread=%s | "
+            "umbrales ALERT(>0.6) WATCH(>0.35)",
+            combined, fear_score, self._vix, self._yield_spread,
+        )
 
         if combined > 0.6:
             reasons = []
