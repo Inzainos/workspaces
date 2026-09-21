@@ -720,11 +720,22 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 "| Bot | In-sample | **Causal (real)** | Sesgo (fantasía) |",
                 "|---|---|---|---|",
             ]
+            def _p(v):
+                # Los bots que no entrenan (BOTS_LIVE_ONLY) no tienen sesgo:
+                # sus valores llegan en None y reventaban el formateo.
+                return "—" if v is None else f"{v:.1%}"
+
+            def _sp(v):
+                return "—" if v is None else f"{v:+.1%}"
+
             for b in sesgo:
-                flag = " ⚠️" if b[3] > 0.20 else (" ✅" if b[3] < 0.05 else "")
+                if b[3] is None:
+                    flag = ""
+                else:
+                    flag = " ⚠️" if b[3] > 0.20 else (" ✅" if b[3] < 0.05 else "")
                 lineas.append(
-                    f"| {b[0]} | {b[1]:.1%} | **{b[2]:.1%}** | "
-                    f"{b[3]:+.1%}{flag} |"
+                    f"| {b[0]} | {_p(b[1])} | **{_p(b[2])}** | "
+                    f"{_sp(b[3])}{flag} |"
                 )
             lineas += [
                 "",

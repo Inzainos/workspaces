@@ -557,8 +557,8 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             "omega": "ritmo cósmico — recién mapeado, memoria creciendo",
             "padre": "árbitro — decisión real sólida",
         }.get(bot, "")
-        A(f"| {bot} | {_pct(hist_b)} | {_pct(s[1]) if s else '—'} | "
-          f"{f'{s[2]:+.1%}' if s else '—'} | "
+        A(f"| {bot} | {_pct(hist_b)} | {_pct(s[1]) if s and s[1] is not None else '—'} | "
+          f"{f'{s[2]:+.1%}' if s and s[2] is not None else '—'} | "
           f"{_num(p[0], 2) if p else '—'} | {firmas_bot.get(bot, 0):,} | "
           f"{comentario} |")
     A("")
