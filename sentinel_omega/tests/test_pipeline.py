@@ -583,6 +583,48 @@ class TestAlfa2Agent:
         agent.ingest({"cobertura_satelital": {"guerrero_gap": {"total_passes": 1, "clear_passes": 0}}})
         assert agent.health_check() is True
 
+
+    def test_clave_del_pipeline_llega_al_agente(self):
+        """El pipeline entrega 'zone_coverages'; alfa2 debe consumir ESA clave.
+
+        Regresión (2026-09-21): el agente leía solo 'cobertura_satelital' y el
+        .get(clave, {}) devolvía {} en silencio, así que analyze() caía siempre
+        en NO_SIGNAL 0.0 pese a haber cobertura real en la DB. Los tests no lo
+        veían porque llamaban a ingest() con la clave del agente, nunca con la
+        que produce el pipeline. Este test cierra justamente ese hueco.
+        """
+        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+
+        # exactamente la forma que devuelve fetch_alfa2_data()
+        datos_pipeline = {
+            "zone_coverages": {
+                "guerrero_gap": {
+                    "total_passes": 75, "clear_passes": 17,
+                    "thermal_anomalies": 0, "coverage_score": 0.82,
+                }
+            },
+            "thermal_anomaly_count": 0,
+        }
+        agente = Alfa2Agent()
+        agente.ingest(datos_pipeline)
+        assert agente._cobertura_data, "alfa2 no consumió la clave del pipeline"
+        señal = agente.analyze()
+        assert señal.signal_type != SignalType.NO_SIGNAL, (
+            "alfa2 quedó ciego pese a recibir cobertura del pipeline"
+        )
+
+    def test_caida_de_cobertura_no_dispara_alerta(self):
+        """Menos pases o más nubes es cobertura degradada, no un precursor."""
+        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+
+        agente = Alfa2Agent()
+        # observación muy por DEBAJO del baseline, sin anomalía térmica
+        agente.ingest({"zone_coverages": {"guerrero_gap": {
+            "total_passes": 20, "clear_passes": 2, "thermal_anomalies": 0}}})
+        señal = agente.analyze()
+        assert señal.signal_type != SignalType.ALERT, (
+            "una caída de observación no debe emitir ALERT"
+        )
     def test_init_has_no_state_path(self):
         from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
         import inspect
