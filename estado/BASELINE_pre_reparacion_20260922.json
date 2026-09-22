@@ -1,0 +1,258 @@
+{
+  "capturado": "2026-09-22T07:43:41",
+  "motivo": "linea base ANTES de limpiar firmas/pesos y reentrenar sobre el clima espacial reparado",
+  "advertencia": "Todo lo de abajo se entreno con bz_promedio = sigma|B| (no Bz), viento contaminado con el centinela 9999, proton_flux = indice DST, y resolucion diaria disfrazada de horaria. Los numeros describen un sistema que medía otras magnitudes: sirven para comparar, no como referencia de calidad.",
+  "totales": {
+    "TBL_FIRMAS": 21198,
+    "tbl_firma_eventos": 121704,
+    "TBL_JUEZ_AUDITORIA": 981565,
+    "TBL_PESOS_BOTS": 7,
+    "tbl_sesgo_aprendizaje": 9,
+    "tbl_firmas_menores": 139
+  },
+  "pesos": [
+    {
+      "bot_name": "alfa1",
+      "peso": 1.3537,
+      "aciertos": 2310,
+      "fallos": 20
+    },
+    {
+      "bot_name": "beta1",
+      "peso": 1.425,
+      "aciertos": 21513,
+      "fallos": 314
+    },
+    {
+      "bot_name": "beta2",
+      "peso": 1.2861,
+      "aciertos": 4846,
+      "fallos": 143
+    },
+    {
+      "bot_name": "delta",
+      "peso": 1.2861,
+      "aciertos": 4380,
+      "fallos": 18
+    },
+    {
+      "bot_name": "loki",
+      "peso": 1.2861,
+      "aciertos": 1295,
+      "fallos": 20
+    },
+    {
+      "bot_name": "omega",
+      "peso": 1.3537,
+      "aciertos": 9240,
+      "fallos": 166
+    },
+    {
+      "bot_name": "padre",
+      "peso": 0.8262,
+      "aciertos": 60875,
+      "fallos": 1350
+    }
+  ],
+  "firmas_por_bot": [
+    {
+      "bot_name": "alfa1",
+      "firmas": 341,
+      "recurrencias": 182915,
+      "clases": 11
+    },
+    {
+      "bot_name": "beta1",
+      "firmas": 2992,
+      "recurrencias": 182915,
+      "clases": 11
+    },
+    {
+      "bot_name": "beta2",
+      "firmas": 787,
+      "recurrencias": 92130,
+      "clases": 10
+    },
+    {
+      "bot_name": "delta",
+      "firmas": 676,
+      "recurrencias": 65394,
+      "clases": 9
+    },
+    {
+      "bot_name": "loki",
+      "firmas": 5467,
+      "recurrencias": 79445,
+      "clases": 9
+    },
+    {
+      "bot_name": "omega",
+      "firmas": 1386,
+      "recurrencias": 182915,
+      "clases": 11
+    },
+    {
+      "bot_name": "padre",
+      "firmas": 9549,
+      "recurrencias": 182915,
+      "clases": 11
+    }
+  ],
+  "sesgo": [
+    {
+      "bot": "alfa1",
+      "n": 392,
+      "recon_insample": 1.0,
+      "recon_causal": 0.9974,
+      "sesgo": 0.0026,
+      "castigos": 0
+    },
+    {
+      "bot": "alfa2",
+      "n": 0,
+      "recon_insample": null,
+      "recon_causal": null,
+      "sesgo": null,
+      "castigos": 0
+    },
+    {
+      "bot": "beta1",
+      "n": 392,
+      "recon_insample": 1.0,
+      "recon_causal": 0.9949,
+      "sesgo": 0.0051,
+      "castigos": 0
+    },
+    {
+      "bot": "beta2",
+      "n": 392,
+      "recon_insample": 0.9821,
+      "recon_causal": 0.5026,
+      "sesgo": 0.4796,
+      "castigos": 0
+    },
+    {
+      "bot": "delta",
+      "n": 159,
+      "recon_insample": 0.9937,
+      "recon_causal": 0.8742,
+      "sesgo": 0.1195,
+      "castigos": 0
+    },
+    {
+      "bot": "jupiter",
+      "n": 0,
+      "recon_insample": null,
+      "recon_causal": null,
+      "sesgo": null,
+      "castigos": 0
+    },
+    {
+      "bot": "loki",
+      "n": 392,
+      "recon_insample": 0.4056,
+      "recon_causal": 0.4056,
+      "sesgo": 0.0,
+      "castigos": 0
+    },
+    {
+      "bot": "omega",
+      "n": 392,
+      "recon_insample": 1.0,
+      "recon_causal": 0.9974,
+      "sesgo": 0.0026,
+      "castigos": 0
+    },
+    {
+      "bot": "padre",
+      "n": 392,
+      "recon_insample": 1.0,
+      "recon_causal": 0.9949,
+      "sesgo": 0.0051,
+      "castigos": 0
+    }
+  ],
+  "juez": [
+    {
+      "resultado": "ACIERTO",
+      "n": 980145
+    },
+    {
+      "resultado": "FALSO_POSITIVO",
+      "n": 942
+    },
+    {
+      "resultado": "PENDIENTE",
+      "n": 306
+    },
+    {
+      "resultado": "FALLO",
+      "n": 172
+    }
+  ],
+  "juez_por_bot": [
+    {
+      "bot_name": "alfa1",
+      "aciertos": 183576,
+      "fallos": 25,
+      "fp": 465,
+      "total": 184100
+    },
+    {
+      "bot_name": "beta1",
+      "aciertos": 183930,
+      "fallos": 15,
+      "fp": 121,
+      "total": 184100
+    },
+    {
+      "bot_name": "omega",
+      "aciertos": 184001,
+      "fallos": 20,
+      "fp": 45,
+      "total": 184100
+    },
+    {
+      "bot_name": "padre",
+      "aciertos": 183915,
+      "fallos": 22,
+      "fp": 129,
+      "total": 184100
+    },
+    {
+      "bot_name": "beta2",
+      "aciertos": 93512,
+      "fallos": 26,
+      "fp": 0,
+      "total": 93572
+    },
+    {
+      "bot_name": "loki",
+      "aciertos": 80842,
+      "fallos": 27,
+      "fp": 0,
+      "total": 80903
+    },
+    {
+      "bot_name": "delta",
+      "aciertos": 67005,
+      "fallos": 21,
+      "fp": 0,
+      "total": 67060
+    },
+    {
+      "bot_name": "alfa2",
+      "aciertos": 1773,
+      "fallos": 8,
+      "fp": 0,
+      "total": 1815
+    },
+    {
+      "bot_name": "jupiter",
+      "aciertos": 1591,
+      "fallos": 8,
+      "fp": 182,
+      "total": 1815
+    }
+  ]
+}
