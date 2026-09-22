@@ -13,6 +13,8 @@ Hierarchical validation:
 import logging
 from typing import Dict, List, Optional
 
+import pandas as pd
+
 from sentinel_omega.core.shared.agent_base import AgentSignal, ConsensusResult, SignalType
 from sentinel_omega.core.precursor.risk_calculator import (
     PrecursorRisk,
@@ -106,6 +108,59 @@ class GeodynamicLayerRunner:
             )
         except Exception as exc:  # noqa: BLE001 — fail-soft por diseño
             logger.warning("Persistencia sísmica falló (no bloqueante): %s", exc)
+
+    def _persist_jupiter(self, jupiter_data: Dict) -> None:
+        """Persiste rayos X GOES e interés de búsqueda para Júpiter.
+
+        Hasta ahora `fetch_jupiter_data()` bajaba `xray_df` y `trends_df` cada
+        ciclo, se los pasaba al agente y los tiraba: no había escritor ni
+        tabla. Por eso Júpiter no tenía histórico que entrenar --- el mismo
+        patrón del catálogo sísmico, no un problema de nombres de features.
+
+        Dos tablas propias, INSERT OR IGNORE por marca temporal. Fail-soft:
+        que falle el guardado no debe tumbar el ciclo.
+        """
+        if not isinstance(jupiter_data, dict):
+            return
+        try:
+            repo = self._get_repo()
+            repo._execute(
+                "CREATE TABLE IF NOT EXISTS tbl_xray_vivo ("
+                " timestamp_blk TEXT PRIMARY KEY,"
+                " flux_max REAL, flux_avg REAL, banda TEXT)"
+            )
+            repo._execute(
+                "CREATE TABLE IF NOT EXISTS tbl_trends_vivo ("
+                " fecha TEXT PRIMARY KEY, solar_interest REAL)"
+            )
+
+            xray = jupiter_data.get("xray_df")
+            if xray is not None and len(xray) and "time_tag" in xray.columns:
+                x = xray.copy()
+                x["blk"] = x["time_tag"].dt.strftime("%Y-%m-%d %H:00")
+                agg = x.groupby("blk")["flux"].agg(["max", "mean"]).reset_index()
+                banda = str(x["energy"].iloc[0]) if "energy" in x.columns else ""
+                repo._executemany(
+                    "INSERT OR IGNORE INTO tbl_xray_vivo "
+                    "(timestamp_blk, flux_max, flux_avg, banda) VALUES (?,?,?,?)",
+                    [(r["blk"], float(r["max"]), float(r["mean"]), banda)
+                     for _, r in agg.iterrows()
+                     if pd.notna(r["max"]) and pd.notna(r["mean"])],
+                )
+
+            trends = jupiter_data.get("trends_df")
+            if (trends is not None and len(trends)
+                    and {"date", "solar_interest"}.issubset(trends.columns)):
+                repo._executemany(
+                    "INSERT OR IGNORE INTO tbl_trends_vivo "
+                    "(fecha, solar_interest) VALUES (?,?)",
+                    [(pd.Timestamp(r["date"]).strftime("%Y-%m-%d"),
+                      float(r["solar_interest"]))
+                     for _, r in trends.iterrows()
+                     if pd.notna(r["solar_interest"])],
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("No se pudo persistir la telemetría de Júpiter: %s", e)
 
     def _persist_clima(self, alfa1_data: Dict) -> None:
         """Persiste la telemetría horaria en tbl_clima_espacial_raw.
@@ -266,6 +321,7 @@ class GeodynamicLayerRunner:
             jupiter_data = self.pipeline.fetch_jupiter_data()
             self.jupiter.ingest(jupiter_data)
             signals.append(self.jupiter.analyze())
+            self._persist_jupiter(jupiter_data)
         except Exception as e:
             logger.warning(f"Júpiter layer failed (non-blocking): {e}")
 
