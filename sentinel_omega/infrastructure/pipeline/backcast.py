@@ -130,6 +130,12 @@ def verificar_ejecucion_previa(conn: sqlite3.Connection) -> bool:
         return False
 
 
+# Horas máximas que se arrastra una lectura real hacia adelante (LOCF).
+# El viento solar y el IMF se decorrelacionan en pocas horas; propagar más
+# allá deja de ser "último valor conocido" y pasa a ser invención.
+LOCF_MAX_HORAS = 3
+
+
 def extraer_nasa_omni_real(year: int) -> pd.DataFrame:
     """Extract real OMNI2 data from NASA SPDF for a given year."""
     url = f"https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_{year}.dat"
@@ -143,17 +149,52 @@ def extraer_nasa_omni_real(year: int) -> pd.DataFrame:
             return pd.DataFrame()
 
         df = pd.DataFrame(data).apply(pd.to_numeric, errors="coerce")
+        # OMNI2 es HORARIO: col 0 = año, col 1 = día del año, col 2 = HORA.
+        # La hora no se incluía, así que las 24 lecturas de un día caían todas
+        # sobre la medianoche y el resample las promediaba en un solo bloque:
+        # el histórico "horario" era en realidad diario, con el resto de las
+        # horas rellenadas por ffill. Eso borra justo la dinámica que importa
+        # --- un Bz que gira al sur unas horas es lo que abre una tormenta, y
+        # en una media diaria no existe.
         df["fecha"] = pd.to_datetime(
-            df[0].astype(int).astype(str) + " " + df[1].astype(int).astype(str),
-            format="%Y %j",
+            df[0].astype(int).astype(str)
+            + " " + df[1].astype(int).astype(str)
+            + " " + df[2].astype(int).astype(str),
+            format="%Y %j %H",
             errors="coerce",
         )
         df = df.dropna(subset=["fecha"])
 
-        df["bz_promed"] = df[17].where(df[17].abs() < 999.9, np.nan)
-        df["sw_speed"] = df[24].where(df[24] < 9999.9, np.nan)
-        df["p_flux"] = df[40].where(df[40] < 99999.9, np.nan)
-        df["kp_val"] = (df[45] / 10.0).where(df[45] < 99, np.nan)
+        # ÍNDICES DE COLUMNA (0-based) DEL FORMATO OMNI2 hourly.
+        # Verificados empíricamente contra omni2_2024.dat, no asumidos del
+        # documento de formato. Cuatro de los cinco estaban corridos y el
+        # sistema llevaba años guardando magnitudes que no eran las que
+        # decía la columna:
+        #
+        #   df[16] Bz GSM      rango ±42 nT, 48.8% negativos  <- correcto
+        #   df[17] sigma|B|    rango 0..14, 0% negativos      <- se usaba
+        #                      como "bz_promedio" (es una desviación típica)
+        #   df[24] velocidad   correcta, pero el centinela es 9999.0 exacto
+        #                      y el filtro "< 9999.9" lo dejaba pasar
+        #   df[38] Kp*10       valores 0..90 (los 28 de la escala)
+        #   df[40] DST         rango -406..71, se guardaba como flujo de
+        #                      protones (que no puede ser negativo)
+        #   df[42..47]         flujos de protones: HOY SON TODO CENTINELA
+        #                      en OMNI2; no hay dato que extraer.
+        CO_BZ_GSM, CO_VELOCIDAD, CO_KP10 = 16, 24, 38
+
+        # Centinelas reales observados en el archivo, no del manual.
+        df["bz_promed"] = df[CO_BZ_GSM].where(
+            df[CO_BZ_GSM].abs() < 999.9, np.nan)
+        df["sw_speed"] = df[CO_VELOCIDAD].where(
+            df[CO_VELOCIDAD] < 9999.0, np.nan)
+        # Kp=90 (9.0) es una tormenta extrema REAL --- 6 horas en 2024, 9 en
+        # 2003 (Halloween). El centinela documentado es 99. No recortar a 90.
+        df["kp_val"] = (df[CO_KP10] / 10.0).where(df[CO_KP10] < 99, np.nan)
+        # Flujo de protones: OMNI2 ya no lo publica (todas sus columnas son
+        # centinela). Antes se tomaba DST en su lugar. Cero sintético: queda
+        # NULL y lo alimenta GOES por la vía viva (fetch_proton_flux).
+        df["p_flux"] = np.nan
 
         return df[["fecha", "bz_promed", "sw_speed", "p_flux", "kp_val"]].dropna(
             subset=["fecha"]
@@ -364,7 +405,7 @@ def ejecutar_bloque_anual(
 
     base_tiempo = pd.date_range(
         start=f"{year}-01-01 00:00",
-        end=f"{year}-12-31 18:00",
+        end=f"{year}-12-31 23:00",   # eran las 18:00: se perdían 5 h de cada año
         freq="1h",
     )
     master_df = pd.DataFrame({"fecha": base_tiempo})
@@ -384,11 +425,18 @@ def ejecutar_bloque_anual(
             proton_flux_10mev=("p_flux", "max"),
         ).reset_index()
         agg_omni.rename(columns={"fecha": "fecha"}, inplace=True)
-        agg_omni["bz_derivada"] = agg_omni["bz_promedio"].diff().fillna(0.0)
+        # Sin fillna(0.0): la derivada de la primera hora, o la que sigue a un
+        # hueco, NO es "cero cambio" --- es desconocida. Un 0.0 ahí es un dato
+        # inventado que el entrenamiento consume como si fuera medición.
+        agg_omni["bz_derivada"] = agg_omni["bz_promedio"].diff()
         master_df = pd.merge(
             master_df, agg_omni, left_on="fecha", right_on="fecha", how="left"
         )
-        master_df = master_df.ffill()
+        # ffill ACOTADO. Sin límite, un hueco de meses se rellenaba arrastrando
+        # la última lectura real hora tras hora, y eso es sintético aunque su
+        # origen fuera real. El clima espacial tiene autocorrelación de pocas
+        # horas; más allá, falta de dato = NULL.
+        master_df = master_df.ffill(limit=LOCF_MAX_HORAS)
     else:
         for col in [
             "bz_promedio", "bz_derivada", "bz_min", "bz_max",
