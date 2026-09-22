@@ -73,11 +73,53 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     # se saltaba el entrenamiento aunque se le quitara de BOTS_LIVE_ONLY. Se
     # usan los canónicos; vix y lod ya se extraen tras rellenar sus columnas.
     "loki": ["bz_mean", "viento_avg", "schumann_mean", "vix", "lod"],
-    # Jupiter — collective attention: Kp, X-ray, Trends, Schumann
-    "jupiter": ["latest_kp", "storm_active", "attention_z", "corr_significant",
-                "kp_mean", "xray_mean", "trends_mean", "schumann_mean"],
+    # Júpiter — atención colectiva: Kp + fulguración solar + interés de
+    # búsqueda + Schumann. Seis de sus ocho nombres NO existían en
+    # FEATURE_KEYS ("latest_kp", "storm_active", "attention_z",
+    # "corr_significant") o no tenían tabla de origen ("xray_mean",
+    # "trends_mean"): el filtro `if k in feats` los tiraba y a Júpiter le
+    # quedaban 2 de 8, por debajo de su mínimo de 3. Se saltaba con un
+    # `continue` mudo y consumió dos rebuilds de ~16 h sin una sola firma.
+    # Ahora: nombres canónicos, y xray/trends ya se persisten en el ciclo
+    # (tbl_xray_vivo / tbl_trends_vivo). Los conceptos sin serie propia
+    # --- "storm_active" y "corr_significant" son derivados booleanos del
+    # agente vivo, no magnitudes medidas --- se representan por el Kp y el
+    # acoplamiento que sí existen.
+    "jupiter": ["kp_mean", "kp_max", "kp_max_72h", "schumann_mean",
+                "schumann_std", "xray_mean", "xray_max", "trends_mean"],
     "padre": None,  # full vector
 }
+
+def _auditar_features_declaradas(bots_activos) -> None:
+    """Avisa, ANTES de gastar horas, si algún bot no puede formar su vector.
+
+    El filtro `{k: v for k, v in features.items() if k in keys}` descarta en
+    silencio toda feature cuyo nombre no exista en FEATURE_KEYS. Si quedan
+    menos que el mínimo del bot, se salta con un `continue` mudo: el
+    entrenamiento termina "bien", el bot no aparece en TBL_PESOS_BOTS y nadie
+    se entera hasta auditar la tabla a mano.
+
+    Le pasó a Loki (nombres no canónicos) y seguía pasándole a Júpiter, que
+    consumió dos rebuilds completos de ~16 h sin registrar una sola firma.
+    """
+    disponibles = set(FEATURE_KEYS)
+    for bot, keys in bots_activos.items():
+        if keys is None:
+            continue
+        existen = [k for k in keys if k in disponibles]
+        faltan = [k for k in keys if k not in disponibles]
+        minimo = MIN_FEATURES_POR_BOT.get(bot, 0)
+        if faltan:
+            logger.warning(
+                "%s declara %d features que NO existen en FEATURE_KEYS y se "
+                "descartarán en silencio: %s", bot, len(faltan), faltan)
+        if len(existen) < minimo:
+            logger.error(
+                "%s NO PUEDE ENTRENAR: le quedan %d features utilizables de "
+                "las %d declaradas y necesita %d. No registrará ninguna firma "
+                "y no aparecerá en TBL_PESOS_BOTS. Utilizables: %s",
+                bot, len(existen), len(keys), minimo, existen)
+
 
 MIN_FEATURES_POR_BOT = {"alfa1": 3, "beta1": 3, "beta2": 4, "delta": 4,
                          "alfa2": 2, "omega": 4, "loki": 3, "jupiter": 3, "padre": 5}
@@ -251,6 +293,7 @@ def entrenar_reconocimiento(
     bots_activos = {
         b: k for b, k in BOT_FEATURES.items() if bots is None or b in bots
     }
+    _auditar_features_declaradas(bots_activos)
 
     # If every active bot has a bounded window, skip events before the
     # earliest one (no bot would register them anyway).
@@ -814,6 +857,7 @@ def entrenar_reconocimiento_no_sismico(
     bots_activos = {
         b: k for b, k in BOT_FEATURES.items() if bots is None or b in bots
     }
+    _auditar_features_declaradas(bots_activos)
 
     logger.info(
         f"=== FASE 1b RECONOCIMIENTO NO SÍSMICO: {len(eventos)} eventos ==="

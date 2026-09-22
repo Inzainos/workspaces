@@ -43,6 +43,11 @@ FEATURE_KEYS = [
     "satellite_coverage_score", "satellite_thermal_anomalies", "satellite_clear_passes",
     # delta_enriched: acoplamiento geofísico-financiero (live-only, desde tbl_delta_cross)
     "delta_cross_coupling", "delta_geo_coupling", "delta_schumann_coupling",
+    # jupiter: fulguraciones solares (GOES) + atención colectiva (Google Trends).
+    # Antes se bajaban cada ciclo y se descartaban sin tabla ni escritor, así
+    # que Júpiter no tenía de dónde formar su vector. Ahora se persisten en
+    # tbl_xray_vivo / tbl_trends_vivo y se acumulan desde el ciclo operativo.
+    "xray_mean", "xray_max", "trends_mean",
 ]
 
 VENTANA_HORAS = 336  # 14 days
@@ -297,6 +302,34 @@ def extraer_features_ventana(
                 features["satellite_clear_passes"] = float(sum(clear_p))
     except Exception:
         pass  # tabla no existe aún → features de alfa2 ausentes (NaN en vector)
+
+    # ── jupiter: rayos X GOES + atención colectiva ───────────────────────────
+    try:
+        xr = conn.execute(
+            "SELECT flux_max, flux_avg FROM tbl_xray_vivo "
+            "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?)",
+            (ts_evento, ts_evento, f"-{VENTANA_HORAS} hours"),
+        ).fetchall()
+        picos = [r[0] for r in xr if r[0] is not None]
+        medias = [r[1] for r in xr if r[1] is not None]
+        if medias:
+            features["xray_mean"] = float(np.mean(medias))
+        if picos:
+            features["xray_max"] = float(max(picos))
+    except Exception:
+        pass  # sin tabla aún → jupiter arranca con el vector incompleto
+
+    try:
+        tr = conn.execute(
+            "SELECT solar_interest FROM tbl_trends_vivo "
+            "WHERE fecha < date(?) AND fecha >= date(?, ?)",
+            (ts_evento, ts_evento, f"-{VENTANA_HORAS // 24} days"),
+        ).fetchall()
+        vals = [r[0] for r in tr if r[0] is not None]
+        if vals:
+            features["trends_mean"] = float(np.mean(vals))
+    except Exception:
+        pass
 
     # Delta cross-correlation coupling (tbl_delta_cross).
     # Populated in live operation by the delta_enriched pipeline.
