@@ -50,6 +50,17 @@ FEATURE_KEYS = [
     "xray_mean", "xray_max", "trends_mean",
 ]
 
+# Dimensiones compartidas mínimas para que dos firmas puedan compararse.
+# Por DEBAJO de esto, similitud() devuelve 0.0 --- un vector no se reconoce
+# ni a sí mismo. Es el suelo REAL de todo el sistema de firmas: un bot que
+# registre con menos features crea firmas singleton que jamás emparejarán,
+# acumulando memoria que el Juez no puede usar.
+#
+# `MIN_FEATURES_POR_BOT` (entrenamiento.py) debe respetarlo. Durante meses no
+# lo hizo: permitía registrar con 2 o 3, y Júpiter llegó a 44.830 firmas
+# TODAS vistas una sola vez, recurrencia máxima 1.
+MIN_DIMENSIONES_COMPARABLES = 4
+
 VENTANA_HORAS = 336  # 14 days
 SUBVENTANA_HORAS = 72
 
@@ -370,7 +381,7 @@ def similitud(a: Dict[str, float], b: Dict[str, float]) -> float:
     """
     va, vb = _vector(a), _vector(b)
     mask = ~(np.isnan(va) | np.isnan(vb))
-    if mask.sum() < 4:  # too few shared dimensions to mean anything
+    if mask.sum() < MIN_DIMENSIONES_COMPARABLES:
         return 0.0
     va, vb = va[mask], vb[mask]
     scale = np.maximum(np.abs(va) + np.abs(vb), 1e-9) / 2.0

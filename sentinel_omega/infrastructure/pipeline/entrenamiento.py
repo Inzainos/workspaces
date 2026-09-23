@@ -26,6 +26,7 @@ from typing import Dict, List, Optional
 
 from sentinel_omega.core.firmas.signature_engine import (
     FEATURE_KEYS,
+    MIN_DIMENSIONES_COMPARABLES,
     SIMILARITY_ALERT,
     FirmaMemoria,
     extraer_features_ventana,
@@ -90,6 +91,19 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     "padre": None,  # full vector
 }
 
+# Bots que NO forman firmas a propósito, por no alcanzar
+# MIN_DIMENSIONES_COMPARABLES con las señales de que disponen hoy.
+#
+# alfa2 (decisión del operador, 2026-09-22): sus tres features satelitales
+# ---coverage_score, thermal_anomalies, clear_passes--- nunca llegan a cuatro.
+# Las alternativas eran bajar el suelo de comparabilidad (debilita el
+# emparejamiento de TODOS los bots) o prestarle features de otras capas (deja
+# de ser un bot satelital). Se prefiere que no tenga memoria a que tenga
+# memoria que no empareja. Sale de este conjunto en cuanto la capa satelital
+# aporte una cuarta señal real.
+BOTS_ESPERANDO_SENALES = {"alfa2"}
+
+
 def _auditar_features_declaradas(bots_activos) -> None:
     """Avisa, ANTES de gastar horas, si algún bot no puede formar su vector.
 
@@ -114,15 +128,48 @@ def _auditar_features_declaradas(bots_activos) -> None:
                 "%s declara %d features que NO existen en FEATURE_KEYS y se "
                 "descartarán en silencio: %s", bot, len(faltan), faltan)
         if len(existen) < minimo:
-            logger.error(
-                "%s NO PUEDE ENTRENAR: le quedan %d features utilizables de "
-                "las %d declaradas y necesita %d. No registrará ninguna firma "
-                "y no aparecerá en TBL_PESOS_BOTS. Utilizables: %s",
-                bot, len(existen), len(keys), minimo, existen)
+            if bot in BOTS_ESPERANDO_SENALES:
+                logger.info(
+                    "%s no formará firmas (esperado): tiene %d features y el "
+                    "suelo de comparabilidad son %d. Decisión deliberada --- "
+                    "entrará cuando su capa aporte más señales.",
+                    bot, len(existen), minimo)
+            else:
+                logger.error(
+                    "%s NO PUEDE ENTRENAR: le quedan %d features utilizables "
+                    "de las %d declaradas y necesita %d. No registrará "
+                    "ninguna firma y no aparecerá en TBL_PESOS_BOTS. "
+                    "Utilizables: %s",
+                    bot, len(existen), len(keys), minimo, existen)
 
 
-MIN_FEATURES_POR_BOT = {"alfa1": 3, "beta1": 3, "beta2": 4, "delta": 4,
-                         "alfa2": 2, "omega": 4, "loki": 3, "jupiter": 3, "padre": 5}
+# Features mínimas para que un bot registre una firma.
+#
+# NINGUNO puede estar por debajo de MIN_DIMENSIONES_COMPARABLES: por debajo de
+# ese suelo, similitud() devuelve 0.0 y la firma no empareja ni consigo misma.
+# Registrar ahí no es "aprender poco" --- es fabricar memoria inservible. Se
+# permitía con 2 y 3 y nadie lo notó: Júpiter acumuló 44.830 firmas, TODAS
+# vistas una sola vez, recurrencia máxima 1. El bot parecía entrenar.
+#
+# alfa2 se queda deliberadamente por encima de lo que puede alcanzar: sus tres
+# features satelitales nunca llegan a cuatro, así que NO formará firmas hasta
+# que la capa satelital aporte más señales. Decisión del operador (2026-09-22):
+# preferible que no tenga memoria a que tenga memoria que no empareja.
+MIN_FEATURES_POR_BOT = {"alfa1": 4, "beta1": 4, "beta2": 4, "delta": 4,
+                        "alfa2": 4, "omega": 4, "loki": 4, "jupiter": 4,
+                        "padre": 5}
+
+# El contrato se verifica al importar: si alguien baja un mínimo por debajo del
+# suelo, el módulo no carga. Un fallo al arranque es barato; 16 h de cómputo
+# produciendo firmas singleton, no.
+_bajo_el_suelo = {b: n for b, n in MIN_FEATURES_POR_BOT.items()
+                  if n < MIN_DIMENSIONES_COMPARABLES}
+if _bajo_el_suelo:
+    raise ValueError(
+        f"MIN_FEATURES_POR_BOT por debajo de MIN_DIMENSIONES_COMPARABLES="
+        f"{MIN_DIMENSIONES_COMPARABLES}: {_bajo_el_suelo}. Esos bots "
+        f"registrarían firmas que similitud() nunca podrá emparejar."
+    )
 
 # Each bot only trains inside its own historical window (data availability):
 # beta2 = desde 2012 (catálogo volcánico NASA MSVOLSO2L4)
