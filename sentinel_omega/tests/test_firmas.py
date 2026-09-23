@@ -1004,3 +1004,29 @@ class TestOmegaMapeado:
             "SELECT COUNT(*) FROM TBL_FIRMAS WHERE bot_name!='omega'"
         ).fetchone()[0]
         assert otros == 0
+
+
+# ─── suelo de comparabilidad ──────────────────────────────────────────────────
+# Regresión: MIN_FEATURES_POR_BOT permitía registrar con 2-3 features mientras
+# similitud() exige 4 para emparejar. Júpiter acumuló 44.830 firmas, TODAS
+# vistas una sola vez, y el bot aparentaba entrenar.
+
+def test_vector_bajo_el_suelo_no_se_reconoce_ni_a_si_mismo():
+    from sentinel_omega.core.firmas.signature_engine import (
+        MIN_DIMENSIONES_COMPARABLES, similitud)
+    v = {"kp_mean": 2.3, "kp_max": 4.0, "kp_max_72h": 5.0}
+    assert len(v) < MIN_DIMENSIONES_COMPARABLES
+    assert similitud(v, v) == 0.0, "un vector por debajo del suelo no empareja"
+
+    v_ok = dict(v, schumann_mean=7.83)
+    assert len(v_ok) == MIN_DIMENSIONES_COMPARABLES
+    assert similitud(v_ok, v_ok) == 1.0, "alcanzado el suelo, sí empareja"
+
+
+def test_ningun_bot_registra_por_debajo_del_suelo():
+    from sentinel_omega.core.firmas.signature_engine import MIN_DIMENSIONES_COMPARABLES
+    from sentinel_omega.infrastructure.pipeline.entrenamiento import MIN_FEATURES_POR_BOT
+    bajos = {b: n for b, n in MIN_FEATURES_POR_BOT.items()
+             if n < MIN_DIMENSIONES_COMPARABLES}
+    assert not bajos, (
+        f"{bajos} registrarían firmas que similitud() nunca podrá emparejar")
