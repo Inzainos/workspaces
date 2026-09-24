@@ -94,13 +94,21 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
 # Bots que NO forman firmas a propósito, por no alcanzar
 # MIN_DIMENSIONES_COMPARABLES con las señales de que disponen hoy.
 #
-# alfa2 (decisión del operador, 2026-09-22): sus tres features satelitales
-# ---coverage_score, thermal_anomalies, clear_passes--- nunca llegan a cuatro.
-# Las alternativas eran bajar el suelo de comparabilidad (debilita el
-# emparejamiento de TODOS los bots) o prestarle features de otras capas (deja
-# de ser un bot satelital). Se prefiere que no tenga memoria a que tenga
-# memoria que no empareja. Sale de este conjunto en cuanto la capa satelital
-# aporte una cuarta señal real.
+# NO es una carencia: es un ROL. Estos bots operan en el ciclo vivo y emiten
+# detecciones; lo que no hacen es votar con el peso de una firma consolidada.
+# Funcionan como AVISO TEMPRANO --- una anomalía suya es motivo para ir a
+# mirar, no una predicción del consenso.
+#
+# alfa2 (decisión del operador, 2026-09-24): sus sensores satelitales van casi
+# en tiempo real, así que ve los movimientos antes que nadie. Sus tres features
+# ---coverage_score, thermal_anomalies, clear_passes--- nunca llegan a las
+# cuatro que exige el emparejamiento. Las alternativas eran bajar ese suelo
+# (debilita a TODOS los bots) o prestarle features de otras capas (deja de ser
+# satelital). Se prefiere que avise sin votar. Sale de este conjunto cuando la
+# capa satelital aporte una cuarta señal real y pueda formar firmas propias.
+#
+# El dashboard los expone con rol="notificador" y peso=None (ver /api/bots):
+# antes simplemente no aparecían, y eso se leía como que estaban rotos.
 BOTS_ESPERANDO_SENALES = {"alfa2"}
 
 
@@ -130,9 +138,10 @@ def _auditar_features_declaradas(bots_activos) -> None:
         if len(existen) < minimo:
             if bot in BOTS_ESPERANDO_SENALES:
                 logger.info(
-                    "%s no formará firmas (esperado): tiene %d features y el "
-                    "suelo de comparabilidad son %d. Decisión deliberada --- "
-                    "entrará cuando su capa aporte más señales.",
+                    "%s opera como NOTIFICADOR (aviso temprano), no como "
+                    "votante: tiene %d features y el suelo de emparejamiento "
+                    "son %d. Decisión deliberada --- formará firmas cuando su "
+                    "capa aporte más señales.",
                     bot, len(existen), minimo)
             else:
                 logger.error(

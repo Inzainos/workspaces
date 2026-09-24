@@ -17,14 +17,26 @@ export function HealthStrip() {
     return <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">Health error: {error}</div>;
   }
 
-  const ok = data?.status === "ok" && data?.db_exists;
+  // El estado viene de /api/health, que ya distingue "sin ciclos recientes"
+  // de "base rota". Antes bastaba con que el archivo de la DB existiera para
+  // pintar OK en verde, y el sistema llevaba 90 h parado.
+  const estado = String(data?.status ?? "");
+  const ok = estado === "ok" && data?.db_exists;
+  const parado = estado === "stale";
+  const etiqueta = ok ? "● OK" : parado ? "● SIN CICLOS" : "● DEGRADED";
+  const color = ok ? "text-success" : parado ? "text-warning" : "text-danger";
+  const antig = data?.antiguedad_h;
   return (
     <div className="rounded-lg border border-border bg-card/40 px-3 py-2 text-xs">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={ok ? "text-success" : "text-warning"}>{ok ? "● OK" : "● DEGRADED"}</span>
+        <span className={color}>{etiqueta}</span>
         <span className="mono text-muted">ciclos: {String(data?.ciclos ?? "—")}</span>
         <span className="mono text-muted">último ciclo: {fmtTs(data?.last_cycle_ts ?? null)}</span>
-        <span className="mono text-muted">stale: {String(data?.stale ?? "—")}</span>
+        {antig != null && (
+          <span className={parado ? "mono text-warning" : "mono text-muted"}>
+            hace {antig} h
+          </span>
+        )}
         <span className="mono text-muted">db: {data?.db_exists ? "presente" : "faltante"}</span>
       </div>
       {fuentes && Object.keys(fuentes).length > 0 && (

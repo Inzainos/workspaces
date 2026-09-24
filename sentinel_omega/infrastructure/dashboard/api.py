@@ -294,15 +294,31 @@ def health() -> Dict[str, Any]:
     now = time.time()
     stale = True if last_cycle_ts is None else (now - float(last_cycle_ts)) > STALE_SECONDS
     fuente = int(_scalar("SELECT COUNT(*) FROM tbl_eventos_sismicos_fuente", default=0) or 0)
+    antiguedad = None if last_cycle_ts is None else max(0.0, now - float(last_cycle_ts))
+    # El estado tiene que mirar si el sistema ESTÁ CORRIENDO, no solo si el
+    # archivo de la base existe. Decía "ok" con el launcher parado desde hacía
+    # casi cuatro días, y el front pinta verde con ese campo: un sistema muerto
+    # se veía sano. El `stale: true` estaba al lado, en gris, fácil de pasar.
+    if not ok:
+        estado = "degraded"
+    elif stale:
+        estado = "stale"
+    else:
+        estado = "ok"
     detail: Dict[str, Any] = {
-        "status": "ok" if ok else "degraded",
+        "status": estado,
         "db_path": str(DB_PATH),
         "db_exists": ok,
         "mode": "ro",
         "ts": now,
         "last_cycle_ts": last_cycle_ts,
         "stale": stale,
+        # OJO: stale_seconds es el UMBRAL, no lo transcurrido. Se conserva el
+        # nombre por compatibilidad y se añade la antigüedad real, que era el
+        # dato que cualquiera esperaba leer ahí.
         "stale_seconds": STALE_SECONDS,
+        "antiguedad_s": antiguedad,
+        "antiguedad_h": None if antiguedad is None else round(antiguedad / 3600.0, 1),
         "fuente_sismos": fuente,
         "remap_aplicado": fuente > 0,
         "tree": str(_REPO_ROOT),
@@ -317,7 +333,11 @@ def health() -> Dict[str, Any]:
             detail["db_readable"] = False
             detail["error"] = str(exc)
     if stale:
-        detail["lectura"] = "no hay lectura reciente"
+        h = detail.get("antiguedad_h")
+        detail["lectura"] = (
+            "no hay lectura reciente" if h is None
+            else f"sin ciclos desde hace {h} h"
+        )
     else:
         detail["lectura"] = "el sistema está leyendo ahora"
     return detail
@@ -500,11 +520,41 @@ def bots() -> Dict[str, Any]:
         if str(r.get("bot_name") or "").lower() == "padre":
             padre = item
     den = sum_a + sum_f
+
+    # Bots que operan en el ciclo vivo pero NO tienen peso porque no forman
+    # firmas. Sin esto simplemente no aparecían, y quien mira el tablero
+    # concluye que faltan o que se rompieron. alfa2 es el caso: lleva sensores
+    # casi en tiempo real y sirve como AVISO TEMPRANO para revisar, no como
+    # voto con firma; se integrará cuando acumule señales suficientes.
+    con_peso = {str(r.get("bot_name") or "").lower() for r in rows}
+    for r in _rows(
+        "SELECT bot_name, "
+        "SUM(resultado='ACIERTO') aciertos, SUM(resultado='FALLO') fallos, "
+        "SUM(resultado='FALSO_POSITIVO') falsos_positivos, COUNT(*) n, "
+        "MAX(timestamp) updated_at "
+        "FROM TBL_JUEZ_AUDITORIA WHERE ventana_h > 0 GROUP BY bot_name"
+    ):
+        nombre = str(r.get("bot_name") or "").lower()
+        if nombre in con_peso:
+            continue
+        a = int(r.get("aciertos") or 0)
+        f = int(r.get("fallos") or 0)
+        d = a + f
+        enriched.append({
+            **r,
+            "peso": None,              # no vota: no tiene peso que aplicar
+            "rol": "notificador",
+            "nota": ("Aviso temprano — opera en el ciclo vivo pero aún no forma "
+                     "firmas. Sus detecciones son para revisar, no un voto."),
+            "asertividad_viva_individual": (a / d) if d else None,
+        })
+    enriched.sort(key=lambda x: str(x.get("bot_name") or ""))
+
     return _jsonable(
         {
-            "source": "TBL_PESOS_BOTS",
+            "source": "TBL_PESOS_BOTS + TBL_JUEZ_AUDITORIA (notificadores)",
             "snapshot": True,
-            "caption": "TBL_PESOS_BOTS es un SNAPSHOT (no serie temporal). Curva de aprendizaje: /api/aprendizaje desde TBL_JUEZ_AUDITORIA fase=viva.",
+            "caption": "TBL_PESOS_BOTS es un SNAPSHOT (no serie temporal). Curva de aprendizaje: /api/aprendizaje desde TBL_JUEZ_AUDITORIA fase=viva. Los bots con rol=notificador operan sin peso: avisan, no votan.",
             "items": enriched,
             "asertividad_viva_global": (sum_a / den) if den else None,
             "aciertos_total": sum_a,
