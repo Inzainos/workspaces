@@ -67,6 +67,10 @@ export type Health = {
   db_exists: boolean;
   db_readable?: boolean;
   stale: boolean;
+  /** Antigüedad REAL del último ciclo. No confundir con stale_seconds,
+   *  que es el umbral a partir del cual se considera parado. */
+  antiguedad_s?: number | null;
+  antiguedad_h?: number | null;
   last_cycle_ts: number | null;
   fuente_sismos: number;
   remap_aplicado: boolean;
