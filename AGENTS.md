@@ -7,6 +7,98 @@ herramientas; `sentinel_omega/CLAUDE.md` tiene detalle adicional y
 
 > Si editas archivos dentro de `sentinel_omega/`, ese `CLAUDE.md` aplica también.
 
+> **Orden deliberado:** arquitectura y reglas duras van PRIMERO porque el
+> memory pack del Concilio trunca cada documento a 3.500 caracteres. Lo que
+> quede más abajo no llega a la auditoría. Si añades secciones, no las metas
+> entre el encabezado y estas dos.
+
+## Reglas duras (no romper)
+
+0. **REGLA CERO — nunca asumas, siempre revisa.** No des nada por hecho ni por
+   conectado sin verificarlo contra el código y, cuando toque, **corriendo el
+   flujo de punta a punta** (no basta con que pasen los tests unitarios).
+   Antes de decir "ya está", compruébalo: ¿la tabla se pobló?, ¿el reporte lee
+   la sección?, ¿el script corre sin error de verdad? Si no lo verificaste, no
+   lo afirmes — di qué falta por comprobar. Esta regla manda sobre todas.
+1. **Secretos solo por entorno.** Nunca hardcodear API keys/tokens. Usa
+   `os.environ.get("NOMBRE", "")`. Los `.env` están en `.gitignore`; en CI van
+   como GitHub Secrets. Las claves se rotan según se usan.
+2. **Cero datos sintéticos.** Faltante = `NULL`. LOCF solo desde registros
+   reales. El TEC derivado se etiqueta como *derived*, nunca como dato de sensor.
+3. **`sentinel_omega/data/` está en `.gitignore`** — no existe en un checkout
+   limpio (GitHub Actions). Crea la carpeta antes de abrir archivos ahí
+   (`Path(...).parent.mkdir(parents=True, exist_ok=True)`).
+4. **Reportes versionados, no sobrescritos.** `estado/REPORTE.md` es el último;
+   cada corte se guarda en `estado/historial/AAAA/MM/` con hora local (UTC-6).
+5. **Migración de esquema forward-only.** Columnas nuevas vía
+   `EXPECTED_COLUMNS` / `_migrate_add_missing_columns`; no borrar columnas.
+6. **Los tests deben pasar** antes de commitear cambios de código.
+7. **Desconfía del default benigno.** `x or 0`, `.get(k, 0)`, `if vals else 0.0`,
+   `float(x or 0)` — cada uno convierte "no tengo el dato" en un número
+   plausible y el sistema aparenta funcionar. Falta de dato = `NULL`.
+8. **Un umbral sin calibrar contra datos reales es numerología.** Mide qué % de
+   los casos dispara: si es ~100% o ~0%, no discrimina nada.
+9. **Verifica el índice de columna contra el dato, no contra el manual.** El
+   backcast leyó `df[17]` de OMNI2 durante 280.377 filas creyendo que era el Bz
+   GSM; era `sigma|B|`, una desviación típica que nunca es negativa. La huella
+   estaba a la vista: 17 negativos en 280 mil filas cuando el Bz real es
+   negativo la mitad del tiempo. Lo mismo con los protones, que eran el índice
+   DST (47% de valores negativos en un flujo de partículas).
+10. **Un descarte silencioso esconde el fallo indefinidamente.** Júpiter se
+    saltaba el entrenamiento con un `continue` sin log y consumió dos rebuilds
+    completos de ~16 h sin registrar una sola firma. Todo `continue` que
+    descarte trabajo lleva un log que lo diga.
+
+
+## Arquitectura (para ubicarte rápido)
+
+8 bots votantes + 1 notificador + Juez auditor (separado, nunca predice):
+
+| Bot | Dominio | Memoria | Rol |
+|-----|---------|---------|-----|
+| `alfa1` | Clima espacial: Bz GSM, viento solar, Kp, protones | 1994→ | votante |
+| `beta1` | Resonancia Schumann — **el latido**; todo se correlaciona contra él | 1994→ | votante |
+| `beta2` | Desgasificación volcánica / atmósfera (SO₂ sobre baseline natural) | 2012→ | votante |
+| `delta` | Bolsa + cripto + tendencias | 2016→ | votante |
+| `omega` | Ritmo cósmico: fase lunar/sicigias + Schumann + envolvente solar + acoplamiento Schumann↔mercado | 1994→ | votante |
+| `loki` | Fractal-bayesiano: Bz, viento, Schumann, VIX, LOD | 2014→ | votante |
+| `jupiter` | Atención colectiva: Kp + fulguración GOES + interés de búsqueda + Schumann | 2026-07→ | votante |
+| `padre` | Consenso jerárquico cruzado entre familias (aplica pesos) | — | árbitro |
+| `alfa2` | Satélites ESA Sentinel (cobertura, anomalías térmicas, pasadas claras) | — | **notificador** |
+
+**`alfa2` avisa, no vota.** Sus sensores van casi en tiempo real, así que ve los
+movimientos antes que nadie: una anomalía suya es motivo para ir a mirar, no un
+voto del consenso. No forma firmas porque sus tres features nunca alcanzan
+`MIN_DIMENSIONES_COMPARABLES` (4) — por debajo de ese suelo `similitud()`
+devuelve 0.0 y una firma no empareja ni consigo misma. Pasa a votante cuando la
+capa satelital aporte una cuarta señal. Ver `BOTS_ESPERANDO_SENALES` en
+`infrastructure/pipeline/entrenamiento.py`.
+
+**`jupiter` solo tiene memoria reciente**: su histórico de rayos X y tendencias
+nunca se persistió (se bajaba cada ciclo y se descartaba). Desde 2026-09-24 se
+acumula en `tbl_xray_vivo` / `tbl_trends_vivo`, así que su ventana crece con el
+tiempo operativo.
+
+- **Familias:** `space_weather` (alfa1/alfa2), `schumann_cymatics` (beta1/beta2),
+  `financial_sentiment` (delta). Consenso: ≥2 familias + ≥2 alertas +
+  correlación Schumann > 0.3.
+- **Firmas:** memoria de patrones por bot de la ventana de 14 días previa a cada
+  evento. Estados `nueva → observada → recurrente → consolidada`; solo las
+  consolidadas son exigibles.
+- **Entrenamiento en 3 fases:** Fase 1 reconocimiento sísmico (sin castigo) → Fase 1b reconocimiento no sísmico (erupciones VEI≥3 + tormentas solares Kp≥6) → Fase 2
+  disciplina (el Padre castiga; el Juez audita con severidad asimétrica —
+  omitir un evento pesa 10× más que una falsa alarma). Tras las fases calcula la
+  **matriz de correlaciones** feature × event_class, y el **sesgo de
+  aprendizaje** se mide antes (línea base, sin castigo) y después
+  (disciplinario) para reportar la mejora causal por bot.
+- **Omega** no es un agente en vivo (no está en `layers/`): es un bot de
+  memoria/correlación como contrapeso del Padre. Sus campos están mapeados de
+  la telemetría existente en `BOT_FEATURES["omega"]` (sin fetchers propios);
+  entrena en las mismas fases que los demás, y sus correlaciones viven en
+  `tbl_correlaciones_omega` (umbral n≥30, patrón con Schumann y fase lunar),
+  independientes de las del Padre. Reporte propio: `reporte_omega()`.
+- **Pérdida asimétrica:** el sistema prefiere sobre-alertar a sub-alertar.
+
 ## Qué es este repo
 
 **Sentinel Omega** — plataforma de detección de **precursores de eventos
@@ -26,7 +118,7 @@ SNT (Shadow Node Theory) se usa **solo como framework matemático**
 ## Estructura de alto nivel
 
 ```
-sentinel_omega/     El sistema (6 agentes + Padre + Juez, pipeline, DB, dashboard)
+sentinel_omega/     El sistema (8 bots + notificador + Padre + Juez, pipeline, DB, dashboard)
 deploy/             Operación: generar_reporte.py, systemd/Windows, atajo iOS, .env.example
 estado/             Reportes publicados: REPORTE.md (último) + historial/AAAA/MM/ (versionado)
 .github/workflows/  roy-vigilante.yml — corre un ciclo cada 2h en GitHub Actions (serverless)
@@ -64,62 +156,6 @@ python deploy/enviar_correos.py                    # despacho del outbox de corr
 # Dashboard
 streamlit run sentinel_omega/infrastructure/dashboard/app.py
 ```
-
-## Reglas duras (no romper)
-
-0. **REGLA CERO — nunca asumas, siempre revisa.** No des nada por hecho ni por
-   conectado sin verificarlo contra el código y, cuando toque, **corriendo el
-   flujo de punta a punta** (no basta con que pasen los tests unitarios).
-   Antes de decir "ya está", compruébalo: ¿la tabla se pobló?, ¿el reporte lee
-   la sección?, ¿el script corre sin error de verdad? Si no lo verificaste, no
-   lo afirmes — di qué falta por comprobar. Esta regla manda sobre todas.
-1. **Secretos solo por entorno.** Nunca hardcodear API keys/tokens. Usa
-   `os.environ.get("NOMBRE", "")`. Los `.env` están en `.gitignore`; en CI van
-   como GitHub Secrets. Las claves se rotan según se usan.
-2. **Cero datos sintéticos.** Faltante = `NULL`. LOCF solo desde registros
-   reales. El TEC derivado se etiqueta como *derived*, nunca como dato de sensor.
-3. **`sentinel_omega/data/` está en `.gitignore`** — no existe en un checkout
-   limpio (GitHub Actions). Crea la carpeta antes de abrir archivos ahí
-   (`Path(...).parent.mkdir(parents=True, exist_ok=True)`).
-4. **Reportes versionados, no sobrescritos.** `estado/REPORTE.md` es el último;
-   cada corte se guarda en `estado/historial/AAAA/MM/` con hora local (UTC-6).
-5. **Migración de esquema forward-only.** Columnas nuevas vía
-   `EXPECTED_COLUMNS` / `_migrate_add_missing_columns`; no borrar columnas.
-6. **Los tests deben pasar** antes de commitear cambios de código.
-
-## Arquitectura (para ubicarte rápido)
-
-6 agentes + Padre árbitro + Juez auditor (separado, nunca predice):
-
-| Bot | Dominio | Entrenamiento |
-|-----|---------|---------------|
-| `alfa1` | Clima espacial: Bz, viento solar, Kp, protones/electrones | 30 años |
-| `beta1` | Resonancia Schumann — **el latido**; todo se correlaciona contra él | 30 años |
-| `alfa2` | Satélites ESA Sentinel | 14 años |
-| `beta2` | Desgasificación volcánica / atmósfera (SO₂ sobre baseline natural) | 14 años |
-| `delta` | Bolsa + cripto + tendencias | 10 años |
-| `omega` | El ritmo cósmico: fase lunar/sicigias + Schumann + envolvente solar + acoplamiento Schumann↔mercado | 30 años |
-| `padre` | Consenso jerárquico cruzado entre familias (aplica pesos) | — |
-
-- **Familias:** `space_weather` (alfa1/alfa2), `schumann_cymatics` (beta1/beta2),
-  `financial_sentiment` (delta). Consenso: ≥2 familias + ≥2 alertas +
-  correlación Schumann > 0.3.
-- **Firmas:** memoria de patrones por bot de la ventana de 14 días previa a cada
-  evento. Estados `nueva → observada → recurrente → consolidada`; solo las
-  consolidadas son exigibles.
-- **Entrenamiento en 3 fases:** Fase 1 reconocimiento sísmico (sin castigo) → Fase 1b reconocimiento no sísmico (erupciones VEI≥3 + tormentas solares Kp≥6) → Fase 2
-  disciplina (el Padre castiga; el Juez audita con severidad asimétrica —
-  omitir un evento pesa 10× más que una falsa alarma). Tras las fases calcula la
-  **matriz de correlaciones** feature × event_class, y el **sesgo de
-  aprendizaje** se mide antes (línea base, sin castigo) y después
-  (disciplinario) para reportar la mejora causal por bot.
-- **Omega** no es un agente en vivo (no está en `layers/`): es un bot de
-  memoria/correlación como contrapeso del Padre. Sus campos están mapeados de
-  la telemetría existente en `BOT_FEATURES["omega"]` (sin fetchers propios);
-  entrena en las mismas fases que los demás, y sus correlaciones viven en
-  `tbl_correlaciones_omega` (umbral n≥30, patrón con Schumann y fase lunar),
-  independientes de las del Padre. Reporte propio: `reporte_omega()`.
-- **Pérdida asimétrica:** el sistema prefiere sobre-alertar a sub-alertar.
 
 ## Git y PRs
 
