@@ -31,3 +31,8 @@ sentinel_omega/sentinel_omega/
 
 # PID del launcher (estado vivo, lo borra ExecStartPre del .service)
 sentinel_omega/data/*.pid
+
+# Respaldos y material de trabajo: nunca al repositorio.
+# Contienen volcados completos de la DB de producción --- pesan
+# decenas de MB y pueden llevar datos operativos.
+scratchpad/
