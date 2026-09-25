@@ -56,7 +56,27 @@ class OmegaAgent(BaseAgent):
             SignalType.ALERT, SignalType.WATCH
         ):
             beta_alert = 1.0
-        return [fase, sicigia, sch_mean, sch_std, bz, kp, wind, beta_conf, beta_alert]
+        # Las posiciones las manda el orden canónico del modelo
+        # (core/features_onnx.py), no este return. Medido el 2026-09-25: esta
+        # lista ponía beta_conf y beta_alert en las posiciones 7 y 8, donde el
+        # modelo espera `bz_min` y `kp_max`, y dejaba las tres últimas en cero.
+        # La señal de beta no está en el vector del modelo: se usa en la rama de
+        # reglas de `analyze`, que es donde tiene sentido.
+        from sentinel_omega.core.features_onnx import vector_para
+        rasgos = {
+            "fase_lunar": fase,
+            "es_sicigia": sicigia,
+            "schumann_mean": sch_mean,
+            "schumann_std": sch_std,
+            "bz_mean": bz,
+            "kp_mean": kp,
+            "viento_avg": wind,
+            "bz_min": float(d.get("bz_min") or bz),
+            "kp_max": float(d.get("kp_max") or kp),
+            "kp_max_72h": float(d.get("kp_max_72h") or d.get("kp_max") or kp),
+        }
+        self._ultimo_beta = (beta_conf, beta_alert)   # para la rama de reglas
+        return list(vector_para("omega", rasgos))
 
     def analyze(self) -> AgentSignal:
         d = self._data
