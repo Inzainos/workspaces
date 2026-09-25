@@ -24,6 +24,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Techo de la racha: con el factor 1 + 0,25·r, 4 eventos seguidos sin ver ya
+# duplican el castigo. Más allá no aporta --- solo infla el número --- y deja la
+# severidad dentro del rango del diseño, que es lo que permite que la gravedad
+# vuelva a distinguir un M5 de un M7.
+REINCIDENCIA_MAXIMA = 4
 SEVERIDAD_FALLO_BASE = 10.0
 SEVERIDAD_FALSO_POSITIVO = 1.0
 SEVERIDAD_FALLO_FIRMA_CONOCIDA = 20.0  # missed a consolidated signature
@@ -64,13 +69,35 @@ class Juez:
         return cur.lastrowid
 
     def reincidencia(self, bot_name: str) -> int:
-        """Historical count of FALLOs for a bot (drives severity scaling)."""
-        row = self._conn.execute(
-            "SELECT COUNT(*) FROM TBL_JUEZ_AUDITORIA "
-            "WHERE bot_name = ? AND resultado = 'FALLO'",
-            (bot_name,),
-        ).fetchone()
-        return row[0]
+        """Eventos seguidos que el bot NO ha visto, sin acierto de por medio.
+
+        Era el recuento de FALLOs DESDE SIEMPRE, y no tenía techo: medido el
+        2026-09-25, loki acumulaba 653 --- multiplicador x164 --- y la severidad
+        dejaba de medir el error para medir la antigüedad del bot (mediana
+        1.384, máximo 22.080, cuando el diseño tope es 180). El daño real no era
+        el número feo: `verificacion.py` reconstruía la gravedad como
+        sqrt(sev/10) y salía topada en 3.0 el 78,6 % de las veces, así que
+        perder un M5 castigaba igual que perder un M7 y la escala de gravedad
+        no distinguía nada.
+
+        Reincidente es el que vuelve a fallar SIN haber acertado en medio. Las
+        ventanas en calma no cuentan: son el 98 % y borrarían cualquier racha.
+        Solo cuentan los eventos, que es donde el bot tiene algo que ver.
+        """
+        filas = self._conn.execute(
+            "SELECT resultado FROM TBL_JUEZ_AUDITORIA "
+            "WHERE bot_name = ? AND resultado IN ('FALLO', 'ACIERTO') "
+            "AND verdad != '' AND verdad NOT LIKE 'sin eventos%' "
+            "ORDER BY COALESCE(resuelto_at, created_at) DESC, id DESC "
+            "LIMIT ?",
+            (bot_name, REINCIDENCIA_MAXIMA + 1),
+        ).fetchall()
+        racha = 0
+        for (res,) in filas:
+            if res != "FALLO":
+                break
+            racha += 1
+        return min(racha, REINCIDENCIA_MAXIMA)
 
     # ── Evaluación ───────────────────────────────────────────────
 
@@ -205,6 +232,11 @@ class Juez:
             resueltos.append({
                 "id": pid, "bot_name": bot, "prediccion": pred,
                 "resultado": resultado, "severidad": severidad,
+                # La gravedad VIAJA. Antes se tiraba aquí y `verificacion.py`
+                # intentaba reconstruirla como sqrt(severidad/10), que solo
+                # acierta si la reincidencia vale 1: con la racha o la firma
+                # conocida de por medio salía topada en 3.0 casi siempre.
+                "gravedad": float(max(1.0, gravedad)),
             })
             if resultado == "FALLO":
                 logger.warning(

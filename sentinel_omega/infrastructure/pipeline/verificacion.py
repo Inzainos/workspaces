@@ -132,7 +132,17 @@ def verificar_juez(
             sev = float(r.get("severidad") or 0)
             es_padre = bot in ("padre", "padre_geo")
             if res == "FALLO":
-                gravedad = max(1.0, min(3.0, (sev / 10.0) ** 0.5 if sev else 1.0))
+                # La gravedad la calcula el Juez a partir de la magnitud del
+                # evento (1 + M - 4.5) y ahora VIAJA en el veredicto. Antes se
+                # reconstruía como sqrt(severidad/10), que solo acierta si la
+                # reincidencia vale 1: medido el 2026-09-25 salía topada en 3.0
+                # el 78,6 % de las veces, o sea que perder un M5 castigaba igual
+                # que perder un M7. El respaldo se mantiene para veredictos
+                # viejos que no traen el campo.
+                gravedad = r.get("gravedad")
+                if gravedad is None:
+                    gravedad = (sev / 10.0) ** 0.5 if sev else 1.0
+                gravedad = max(1.0, min(3.0, float(gravedad)))
                 nuevo = castigar(conn, bot, es_padre=es_padre, gravedad=gravedad)
                 castigos.append({"bot": bot, "peso": nuevo, "motivo": "FALLO"})
             elif res == "FALSO_POSITIVO":
