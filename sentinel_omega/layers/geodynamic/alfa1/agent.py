@@ -104,14 +104,23 @@ class Alfa1Agent(BaseAgent):
         if self._inference is None or self._latest_features is None:
             return None
         try:
-            # Vector alineado por NOMBRE al orden canónico de FEATURES:
-            # un pad ciego desalinearía las columnas si falta alguna.
-            ultima = self._latest_features[-1]
-            fila = np.zeros(len(self.FEATURES), dtype=np.float32)
-            for i, feat in enumerate(self.FEATURES):
-                if feat in self._available:
-                    fila[i] = ultima[self._available.index(feat)]
-            fila = np.nan_to_num(fila, nan=0.0)
+            # El vector se arma con el orden CANÓNICO del modelo
+            # (core/features_onnx.py), no con self.FEATURES.
+            #
+            # Medido el 2026-09-25: esto mandaba los valores CRUDOS del último
+            # instante en las posiciones de OTROS rasgos. El modelo se entrena
+            # con agregados de la ventana de 72 h --- posición 0 `bz_mean`,
+            # posición 4 `bz_min` --- y aquí se le pasaba `bz_gsm` en la 0 y
+            # `dst_index` en la 4: ni siquiera la misma magnitud. No reventaba
+            # porque onnx_config solo comprueba que haya 10 números.
+            from sentinel_omega.core.features_onnx import (
+                agregados_omni,
+                vector_para,
+            )
+            fila = vector_para(
+                "alfa1",
+                agregados_omni(self._available, self._latest_features),
+            )
             conf, signal_name = self._inference.predict(fila)
             tipo = {
                 "ALERT": SignalType.ALERT,

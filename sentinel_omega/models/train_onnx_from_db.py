@@ -65,63 +65,16 @@ except Exception:  # noqa: BLE001 — el reentrenamiento corre igual
 
 PESO_BOOTSTRAP = 1.0   # el prior sintético no manda sobre lo medido
 
-BOT_DIMS = {
-    "alfa1": 10,
-    "alfa2": 8,
-    "beta1": 16,
-    "beta2": 16,
-    "delta": 16,
-    "omega": 12,
-    "loki": 8,
-    "jupiter": 8,
-}
-
-FEATURE_ORDER: Dict[str, List[str]] = {
-    "alfa1": [
-        "bz_mean", "viento_avg", "proton_max", "proton_max",
-        "bz_min", "kp_mean", "kp_max", "bz_deriv_std",
-        "viento_max", "bz_mean_72h",
-    ],
-    "alfa2": [
-        "satellite_coverage_score", "satellite_thermal_anomalies",
-        "satellite_clear_passes", "satellite_coverage_score",
-        "satellite_clear_passes", "satellite_thermal_anomalies",
-        "satellite_coverage_score", "satellite_thermal_anomalies",
-    ],
-    "beta1": [
-        "kp_mean", "kp_max", "schumann_mean", "schumann_std",
-        "sismo_count_win", "sismo_max_mag_win", "fase_lunar",
-        "es_sicigia", "kp_max_72h", "sismo_count_72h",
-        "schumann_mean", "schumann_std", "kp_mean", "kp_max",
-        "fase_lunar", "sismo_max_mag_win",
-    ],
-    "beta2": [
-        "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
-        "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
-        "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
-        "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
-    ],
-    "delta": [
-        "btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h",
-        "btc_volatilidad", "btc_ret_win", "btc_vol_max",
-        "btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h",
-        "btc_volatilidad", "btc_ret_win", "btc_vol_max",
-        "btc_vol_72h", "btc_ret_win",
-    ],
-    "omega": [
-        "fase_lunar", "es_sicigia", "schumann_mean", "schumann_std",
-        "bz_mean", "kp_mean", "viento_avg", "bz_min",
-        "kp_max", "schumann_mean", "fase_lunar", "kp_max_72h",
-    ],
-    "loki": [
-        "bz", "solar_wind", "schumann_activity", "vix", "lod",
-        "kp_mean", "fase_lunar", "btc_volatilidad",
-    ],
-    "jupiter": [
-        "latest_kp", "storm_active", "attention_z", "corr_significant",
-        "kp_mean", "xray_mean", "trends_mean", "schumann_mean",
-    ],
-}
+# El orden de los rasgos y las dimensiones viven en core/features_onnx.py, que
+# es la fuente UNICA: el 2026-09-25 se descubrió que la inferencia construía el
+# vector por su cuenta y no coincidía (alfa1 entrenaba con `bz_mean` en la
+# posición 0 y se le preguntaba con `bz_gsm`; en la 4, `bz_min` contra
+# `dst_index`). Nada reventaba porque onnx_config solo declara CUÁNTOS rasgos.
+from sentinel_omega.core.features_onnx import (  # noqa: E402
+    BOT_DIMS,
+    FEATURE_ORDER,
+    vector_para,
+)
 
 NO_SIGNAL, NEUTRAL, WATCH, ALERT, BULLISH, BEARISH = 0, 1, 2, 3, 4, 5
 
@@ -157,20 +110,8 @@ def _label_from_row(event_class: str, estado: str) -> Tuple[float, float]:
 
 
 def _features_to_vector(features: dict, bot: str) -> np.ndarray:
-    order = FEATURE_ORDER[bot]
-    dim = BOT_DIMS[bot]
-    vec = np.zeros(dim, dtype=np.float32)
-    for i, key in enumerate(order[:dim]):
-        val = features.get(key)
-        if val is None:
-            continue
-        try:
-            fv = float(val)
-            if np.isfinite(fv):
-                vec[i] = fv
-        except (TypeError, ValueError):
-            pass
-    return vec
+    """Delega en la fuente única para que entrenar y preguntar no se separen."""
+    return vector_para(bot, features)
 
 
 def load_firmas_from_db(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
