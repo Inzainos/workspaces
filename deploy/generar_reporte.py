@@ -21,6 +21,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from aciertos_reporte import seccion_aciertos_markdown
 
+# Las severidades del Juez, importadas y NO copiadas: si allí se retoca el
+# castigo del silencio, el coste de este reporte tiene que moverse con él.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from sentinel_omega.core.precursor.baseline import evaluar_veredictos
+
+try:
+    from sentinel_omega.core.juez.juez import (
+        SEVERIDAD_FALLO_BASE as SEV_FALLO,
+        SEVERIDAD_FALSO_POSITIVO as SEV_FALSO_POS,
+    )
+except Exception:  # noqa: BLE001 — el reporte corre aunque el paquete no cargue
+    SEV_FALLO, SEV_FALSO_POS = 10.0, 1.0
+
 DB_DEFAULT = str(
     Path(__file__).parent.parent / "sentinel_omega" / "data" / "SENTINEL_OMEGA_PRO.db"
 )
@@ -269,31 +282,34 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     except sqlite3.OperationalError:
         pass
 
+    molchan = None   # lo rellena el bloque de Molchan; se lee mas abajo
     # ── Ganancia sobre el modelo nulo (línea base de Molchan) ──
+    #
+    # El cálculo vive en sentinel_omega/core/precursor/baseline.py, que es el
+    # dueño del concepto y tiene pruebas. Aquí solo se lee y se redacta.
+    #
+    # Corregido el 2026-09-25: antes se calculaba (aciertos / TODAS las
+    # ventanas) ÷ tasa base. El numerador contaba cada «dije calma y hubo
+    # calma», que es el 98% de las ventanas, así que un bot MUDO sacaba 56.70×
+    # y el sistema 53.50×: la métrica premiaba callarse, justo lo contrario del
+    # diseño del Juez, donde un FALLO cuesta 10 o 20 y un falso positivo 1.
     try:
         filas_nulo = conn.execute(
             "SELECT verdad, resultado FROM viva_real "
             "WHERE resultado != 'PENDIENTE' AND verdad != ''"
         ).fetchall()
-        if filas_nulo:
-            total_n = len(filas_nulo)
-            con_evento = sum(
-                1 for v, _ in filas_nulo if not v.startswith("sin eventos")
-            )
-            aciertos_n = sum(1 for _, r in filas_nulo if r == "ACIERTO")
-            base = con_evento / total_n
-            viva_n = aciertos_n / total_n
-            ganancia = (viva_n / base) if base > 0 else None
-            if ganancia is None:
-                veredicto = "sin eventos en las ventanas — ganancia indefinida"
-            elif ganancia > 1.5:
-                veredicto = "✅ GANANCIA REAL: el sistema aporta información"
-            elif ganancia > 1.0:
-                veredicto = "🟡 ganancia marginal sobre alertar a ciegas"
-            else:
-                veredicto = ("🔴 SIN ganancia: alertar SIEMPRE habría rendido "
-                             "igual o mejor — la asertividad de arriba aún no "
-                             "es habilidad")
+        molchan = evaluar_veredictos(filas_nulo, SEV_FALLO, SEV_FALSO_POS)
+        if molchan is not None:
+            ganancia = molchan.ganancia
+            veredicto = {
+                "GANANCIA REAL: el sistema aporta información":
+                    "✅ GANANCIA REAL: el sistema aporta información",
+                "ganancia marginal sobre alertar a ciegas":
+                    "🟡 ganancia marginal sobre alertar a ciegas",
+                "SIN ganancia — alertar siempre habría rendido igual o mejor":
+                    "🔴 SIN ganancia: alertar SIEMPRE habría rendido igual o "
+                    "mejor — la asertividad de abajo aún no es habilidad",
+            }.get(molchan.veredicto, molchan.veredicto)
             lineas += [
                 "## 🎯 ¿Le ganamos a alertar siempre? — línea base de Molchan",
                 "",
@@ -303,15 +319,55 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 "base**. Solo si el sistema supera esa tasa hay habilidad "
                 "real; si no, el número bonito es geografía, no predicción.",
                 "",
-                "| Métrica | Valor |",
-                "|---|---:|",
-                f"| Ventanas evaluadas (viva) | {total_n} |",
-                f"| Ventanas con evento real (tasa base) | {base:.0%} |",
-                f"| Asertividad del sistema | {viva_n:.0%} |",
-                f"| **Ganancia** (sistema ÷ tasa base) | "
-                f"{f'{ganancia:.2f}×' if ganancia is not None else '—'} |",
+                "| Métrica | Valor | Qué dice |",
+                "|---|---:|---|",
+                f"| Ventanas evaluadas (viva) | {molchan.ventanas} | |",
+                f"| Ventanas con evento real (**tasa base**) | {molchan.tasa_base:.1%} | "
+                "el piso a superar |",
+                f"| Ventanas en alarma | {molchan.alarmas} ({molchan.tau:.1%}) | cuánto tiempo "
+                "el sistema se moja |",
+                f"| Eventos detectados | {molchan.detectados} de {molchan.con_evento}"
+                f"{f' ({molchan.deteccion:.1%})' if molchan.deteccion is not None else ''} | "
+                "de los eventos reales, cuántos vio |",
+                f"| **Precisión de la alarma** | "
+                f"{f'{molchan.precision:.1%}' if molchan.precision is not None else '—'} | "
+                "de sus alarmas, cuántas tenían evento |",
+                f"| **Ganancia** (precisión ÷ tasa base) | "
+                f"{f'{ganancia:.2f}×' if ganancia is not None else '—'} | "
+                "1× = no aporta nada |",
+                f"| Diagonal de Molchan (perdidos + alarma) | "
+                f"{f'{molchan.diagonal:.3f}' if molchan.diagonal is not None else '—'} | "
+                "1.000 = sin habilidad; menos = habilidad |",
                 "",
                 f"**Veredicto:** {veredicto}",
+                "",
+                "### La asertividad, en su sitio",
+                "",
+                "> Este es el número que conviene no leer solo: cuenta como "
+                "acierto cada «dije calma y hubo calma», y la calma es casi "
+                "todo. Al lado va lo que sacaría un bot MUDO, que nunca abre "
+                "la boca. Si el mudo empata o gana, la asertividad no es "
+                "habilidad.",
+                "",
+                "| | Asertividad | Coste con las severidades del Juez |",
+                "|---|---:|---:|",
+                f"| Sistema | {molchan.asertividad:.1%} | {molchan.coste_sistema:.0f} |",
+                f"| Bot MUDO (nunca alarma) | {molchan.asertividad_muda:.1%} | {molchan.coste_mudo:.0f} |",
+                f"| Bot ALARMISTA (siempre alarma) | {1 - molchan.asertividad_muda:.1%} | "
+                f"{molchan.coste_alarmista:.0f} |",
+                "",
+                f"*El coste pesa cada FALLO (callarse y que pase algo) "
+                f"×{SEV_FALLO:.0f} y cada falsa alarma ×{SEV_FALSO_POS:.0f}, "
+                "las severidades del propio Juez: castigar el silencio al "
+                "décuplo es deliberado, para que los bots no se acostumbren a "
+                "callar. Menos coste es mejor.*",
+                "",
+                f"*Esa asimetría fija el **umbral de rentabilidad de una "
+                f"alarma**: alarmar sale a cuenta cuando la probabilidad de "
+                f"evento en la ventana supera "
+                f"{molchan.umbral_rentable:.1%}"
+                f"{f'. Hoy las alarmas se disparan con un {molchan.precision:.1%}' if molchan.precision is not None else ''}"
+                f"{', que es ' + f'{molchan.umbral_rentable / molchan.precision:.0f}' + ' veces menos' if (molchan.precision or 0) > 0 and molchan.precision < molchan.umbral_rentable else ''}.*",
                 "",
                 "*Con 50 nodos reales y radio de 5°, casi toda ventana de 72 h "
                 "tiene un M4.5+ cerca de algún nodo: para ganar de verdad, las "
@@ -1104,10 +1160,20 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             f"| Versión del modelo | {version_modelo} | {prev_ver or '—'} | "
             f"{'sin cambio' if prev_ver == version_modelo else ('**CAMBIÓ**' if prev_ver else '—')} |")
         lineas.append(
-            f"| Asertividad viva | "
+            # HERMANO del error de la ganancia: esta asertividad cuenta los
+            # silencios acertados, o sea casi todo. La columna `viva` de
+            # tbl_salud_sistema se sigue guardando con esta definición para no
+            # romper la serie histórica (migración hacia delante), pero NO se
+            # muestra sola: al lado va la ganancia honesta.
+            f"| Asertividad viva *(cuenta los silencios)* | "
             f"{f'{viva_now:.1%}' if viva_now is not None else '—'} | "
             f"{f'{previo_salud[3]:.1%}' if previo_salud and previo_salud[3] is not None else '—'} | "
             f"{_delta(viva_now, previo_salud[3] if previo_salud else None, '{:+.1%}')} |")
+        if molchan is not None:
+            lineas.append(
+                f"| **Ganancia real** (precisión ÷ tasa base) | "
+                f"{f'{molchan.ganancia:.2f}×' if molchan.ganancia is not None else '—'} | "
+                f"— | 1× = no aporta |")
         prev_aciertos = f"{previo_salud[4]:,} / {previo_salud[5]:,}" if (previo_salud and previo_salud[4] is not None and previo_salud[5] is not None) else "—"
         lineas.append(
             f"| Aciertos / Fallos (vivos) | {aciertos_now:,} / {fallos_now:,} | "
