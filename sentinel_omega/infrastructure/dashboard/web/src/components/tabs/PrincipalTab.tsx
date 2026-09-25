@@ -45,9 +45,16 @@ export function PrincipalTab() {
   const ac = usePoll(acF, 60000);
   const hm = usePoll(hmF, 60000);
 
-  const asertVivaGlobal = (ac.data as Record<string, unknown> | undefined)?.asertividad_viva_global;
+  // La asertividad global cuenta como acierto cada silencio en el que no pasó
+  // nada (la calma es el 98 % de las ventanas) y deja los falsos positivos
+  // FUERA del denominador. Nunca se enseña sola: al lado va la ganancia, que es
+  // la que dice si el sistema aporta información.
+  const acData = ac.data as Record<string, unknown> | undefined;
+  const asertVivaGlobal = acData?.asertividad_viva_global;
   const asertGlobal =
     asertVivaGlobal != null ? `${(Number(asertVivaGlobal) * 100).toFixed(1)}%` : "—";
+  const gananciaReal =
+    acData?.ganancia_real != null ? `${Number(acData.ganancia_real).toFixed(2)}×` : "—";
   const tmx = (hm.data?.telemetry_x_events || {}) as {
     present?: boolean;
     features?: string[];
@@ -152,7 +159,18 @@ export function PrincipalTab() {
           hint={data?.muro?.muro_breach ? "BREACH: 3+ paredes activas" : "sin rotura"}
           accent={data?.muro?.muro_breach ? "#ff1744" : "#10b981"}
         />
-        <Kpi label="ASERTIVIDAD GLOBAL" value={asertGlobal} accent="#10b981" hint="aciertos / (aciertos+fallos)" />
+        <Kpi
+          label="ASERTIVIDAD GLOBAL"
+          value={asertGlobal}
+          accent="#10b981"
+          hint="aciertos/(aciertos+fallos) — cuenta los silencios, sin falsos positivos"
+        />
+        <Kpi
+          label="GANANCIA REAL"
+          value={gananciaReal}
+          accent="#ff9100"
+          hint="precisión de la alarma ÷ tasa base · 1× = no aporta"
+        />
         <Kpi label="NODOS" value={data?.counts?.nodos ?? "—"} hint="125 puntos de topología" />
         <Kpi label="SISMOS ≥4.5" value={data?.counts?.sismos_m45 ?? "—"} hint="umbral de alerta del Padre" />
         <Kpi

@@ -99,6 +99,29 @@ export function ModelosTab() {
           { key: "fallos", color: "#ff1744", name: "fallos" },
         ]}
       />
+
+      {/* El peso de disciplina es un paseo topado en 1.0 que la calma refuerza,
+          así que los bots se pegan al techo y dejan de informar. El MÉRITO mide
+          cuánto ahorra cada uno frente a callarse siempre, con las severidades
+          del Juez (omitir ×10, falsa alarma ×1). 1.00 = igual que el silencio. */}
+      {items.some((r) => r.merito != null) ? (
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium">Mérito contra el silencio (1.00 = no aporta nada)</h4>
+          <SimpleBars
+            data={items
+              .filter((r) => r.merito != null)
+              .map((r) => ({ bot: r.bot_name, merito: Number(r.merito) }))}
+            xKey="bot"
+            bars={[{ key: "merito", color: "#ff9100", name: "mérito" }]}
+            height={160}
+          />
+          <div className="text-xs text-muted">
+            Cada bot paga sus errores en la moneda del Juez y se compara con lo que
+            habría pagado sin abrir la boca. Por encima de 1.00 aporta; por debajo,
+            sale más caro que el silencio.
+          </div>
+        </div>
+      ) : null}
       <DataTable
         rows={items}
         columns={[

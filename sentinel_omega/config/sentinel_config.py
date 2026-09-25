@@ -87,6 +87,24 @@ class LayerConfig:
 
 
 @dataclass
+class JuezConfig:
+    """Cómo se calcula el peso con el que vota cada bot.
+
+    `peso_por_merito` cambia el peso del paseo multiplicativo (castigo x0,95 /
+    refuerzo x1,02, topado en 1.0) al mérito medido contra quedarse callado.
+    Medido el 2026-09-25 sobre 19.422 veredictos reales: con el paseo, 8 de 9
+    bots estaban clavados en 1.000 y un castigo se borraba en 5,9 h de mediana,
+    porque la calma refuerza; con el mérito, los pesos separan (dispersión 0.298
+    frente a 0.072) y se ve que beta2 es el único que le gana al silencio.
+
+    Arranca APAGADO: enciende el interruptor cambia cómo VOTA el consenso, no
+    solo lo que se informa, y esa decisión es del operador.
+    """
+    peso_por_merito: bool = False
+    minimo_ventanas: int = 50
+
+
+@dataclass
 class ONNXConfig:
     """ONNX Models Configuration"""
     enabled: bool = True
@@ -117,6 +135,7 @@ class SentinelOmegaConfig:
     snt: SNTConfig = field(default_factory=SNTConfig)
     onnx: ONNXConfig = field(default_factory=ONNXConfig)
     jupyter: JupyterConfig = field(default_factory=JupyterConfig)
+    juez: JuezConfig = field(default_factory=JuezConfig)
 
     layers: Dict[str, LayerConfig] = field(default_factory=lambda: {
         "geodynamic": LayerConfig(refresh_interval_s=300),
@@ -148,6 +167,10 @@ def load_config(yaml_path: Optional[str] = None) -> SentinelOmegaConfig:
                 for k, v in data["database"].items():
                     if hasattr(cfg.databases, k):
                         setattr(cfg.databases, k, v)
+            if "juez" in data:
+                for k, v in (data["juez"] or {}).items():
+                    if hasattr(cfg.juez, k):
+                        setattr(cfg.juez, k, v)
             if "telegram" in data:
                 # env vars take precedence, so only set if env not set
                 for k, v in data["telegram"].items():

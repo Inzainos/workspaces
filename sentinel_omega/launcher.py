@@ -284,10 +284,16 @@ def run(args):
 
     try:
         from sentinel_omega.core.juez.pesos import cargar_pesos
-        pesos = cargar_pesos(repo._conn)
+        por_merito = bool(getattr(getattr(config, "juez", None), "peso_por_merito", False))
+        minimo = int(getattr(getattr(config, "juez", None), "minimo_ventanas", 50))
+        pesos = cargar_pesos(repo._conn, por_merito=por_merito, minimo_ventanas=minimo)
         if pesos and orch._runner is not None:
             orch._runner.padre.set_pesos(pesos)
-            logger.info(f"Pesos disciplinarios cargados: {pesos}")
+            logger.info(
+                "Pesos disciplinarios cargados (%s): %s",
+                "MERITO contra el silencio" if por_merito else "paseo multiplicativo",
+                pesos,
+            )
     except Exception as e:
         logger.warning(f"Could not load bot weights: {e}")
 

@@ -1210,6 +1210,48 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             lineas.append(f"*Asertividad viva, últimos cortes: {trend}*")
         lineas.append("")
 
+        # ── Mérito: quién le gana al silencio ──
+        # El peso de arriba es un paseo multiplicativo topado en 1.0, y con la
+        # calma reforzando cada ventana los bots se pegan al techo: medido el
+        # 2026-09-25, 8 de 9 en 1.000 y un castigo borrado en 5,9 h de mediana.
+        # Esto mide lo otro: cuánto AHORRA cada bot frente a callarse siempre,
+        # en la moneda del Juez. Es informativo mientras `juez.peso_por_merito`
+        # esté en false; encenderlo cambia cómo vota el consenso.
+        try:
+            from sentinel_omega.core.juez.pesos import pesos_por_merito
+            merito = pesos_por_merito(conn, sev_fallo=SEV_FALLO,
+                                      sev_falso_positivo=SEV_FALSO_POS)
+        except Exception:  # noqa: BLE001 — el reporte sale igual
+            merito = {}
+        if merito:
+            lineas += [
+                "### ¿Qué bot aporta algo? — mérito contra quedarse callado",
+                "",
+                "> El peso de disciplina premia sobrevivir a la calma, y la calma "
+                "es casi todo. Esto pesa distinto: cada bot paga sus errores en "
+                "la moneda del Juez (omitir ×10, falsa alarma ×1) y se compara "
+                "con lo que habría pagado **sin abrir la boca**. Ahorro positivo "
+                "= aporta. Cero = es indistinguible del silencio.",
+                "",
+                "| bot | peso actual | mérito | ahorro | detecta | falsas alarmas |",
+                "|---|---:|---:|---:|---:|---:|",
+            ]
+            for bot, m in sorted(merito.items(), key=lambda x: -x[1]["peso"]):
+                actual = pesos_now.get(bot)
+                lineas.append(
+                    f"| {bot} | {f'{actual:.3f}' if actual is not None else '—'} "
+                    f"| {m['peso']:.3f} | {m['ahorro']:+.1%} "
+                    f"| {m['detectados']}/{m['eventos']} | {m['falsos_positivos']} |")
+            gana = [b for b, m in merito.items() if m["ahorro"] > 0]
+            mudos = [b for b, m in merito.items()
+                     if m["falsos_positivos"] == 0 and m["detectados"] == 0]
+            lineas += [
+                "",
+                f"**Le ganan al silencio:** {', '.join(sorted(gana)) if gana else 'ninguno'}."
+                + (f" **Nunca alarman:** {', '.join(sorted(mudos))}." if mudos else ""),
+                "",
+            ]
+
         # Guardar la instantánea de ESTE corte (al final, para comparar el próximo)
         conn.execute(
             "INSERT OR REPLACE INTO tbl_salud_sistema "

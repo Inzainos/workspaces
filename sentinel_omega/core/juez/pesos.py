@@ -11,7 +11,7 @@ Bounds keep any bot from being silenced or deified: [0.3, 1.5].
 
 import logging
 import sqlite3
-from typing import Dict
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +25,28 @@ CASTIGO_PADRE = 0.90       # x2 — the Padre pays double
 REFUERZO = 1.02            # mild reinforcement per recognition
 
 
-def cargar_pesos(conn: sqlite3.Connection) -> Dict[str, float]:
-    """Load all bot weights (missing bots default to 1.0 at read site)."""
+def cargar_pesos(
+    conn: sqlite3.Connection,
+    por_merito: bool = False,
+    minimo_ventanas: int = 50,
+) -> Dict[str, float]:
+    """Los pesos con los que vota cada bot (los que faltan valen 1.0 al leerse).
+
+    `por_merito=True` devuelve el mérito medido contra quedarse callado en vez
+    del paseo multiplicativo (ver `merito_relativo` al final del módulo). Un bot
+    sin ventanas suficientes para juzgarlo CONSERVA su peso almacenado: no se le
+    inventa un mérito que no se ha podido medir.
+    """
     try:
         rows = conn.execute("SELECT bot_name, peso FROM TBL_PESOS_BOTS").fetchall()
-        return {bot: peso for bot, peso in rows}
+        pesos = {bot: peso for bot, peso in rows}
     except sqlite3.OperationalError:
-        return {}
+        pesos = {}
+    if not por_merito:
+        return pesos
+    for bot, m in pesos_por_merito(conn, minimo_ventanas=minimo_ventanas).items():
+        pesos[bot] = m["peso"]
+    return pesos
 
 
 def _ajustar(
@@ -101,3 +116,94 @@ def reforzar(
     hasta=PESO_MAX to reward above baseline.
     """
     return _ajustar(conn, bot, REFUERZO, es_fallo=False, techo=hasta)
+
+
+# ─── Peso por MÉRITO: relativo a quedarse callado ────────────────────────────
+#
+# Medido el 2026-09-25 sobre los 19.422 veredictos reales de la fase viva, y es
+# la razón de que esto exista: el paseo multiplicativo de arriba NO PUEDE
+# expresar mérito relativo. Se replicó la secuencia real con tres reglas:
+#
+#   regla                         pesos finales            dispersión
+#   actual (todo ACIERTO refuerza) 8 de 9 en 1.000          0.072
+#   solo refuerzan las alarmas     los 9 en el suelo 0.300  0.017
+#   silencio refuerza lento x1.002 0.306 a 0.515            0.056
+#
+# O todos al techo, porque la calma refuerza y borra el castigo (mediana: 5,9 h
+# para volver a 1.0), o todos al suelo, porque hay 1.105 falsas alarmas y 313
+# omisiones contra 20 detecciones. En ningún caso el peso informa, y un consenso
+# ponderado donde todos pesan igual es un consenso sin ponderar.
+#
+# El mérito se mide como todo lo demás en este sistema: contra la estrategia
+# tonta. Cada bot paga el coste de sus errores en la moneda del Juez (omitir 10,
+# falsa alarma 1) y se compara con lo que habría pagado callándose siempre. Si
+# ahorra, pesa más que 1; si sale más caro que el silencio, pesa menos. Con los
+# datos reales da dispersión 0.298 y deja ver lo que el paseo escondía: beta2 es
+# el único bot que le gana al silencio (11 de 37 eventos con 1 falsa alarma),
+# mientras delta, alfa2 y loki no abren la boca jamás.
+
+def merito_relativo(
+    conn: sqlite3.Connection,
+    bot: str,
+    minimo_ventanas: int = 50,
+    sev_fallo: float = 10.0,
+    sev_falso_positivo: float = 1.0,
+) -> Optional[Dict[str, Any]]:
+    """Mérito de un bot frente a callarse siempre, en la fase viva.
+
+    Devuelve None si no hay suficientes ventanas resueltas para juzgarlo: con
+    pocas, el peso sería ruido. `peso` va recortado a [PESO_MIN, PESO_MAX].
+    """
+    from sentinel_omega.core.precursor.baseline import evaluar_veredictos
+
+    try:
+        filas = conn.execute(
+            "SELECT verdad, resultado FROM TBL_JUEZ_AUDITORIA "
+            "WHERE fase = 'viva' AND LOWER(bot_name) = ? "
+            "AND resultado != 'PENDIENTE' AND verdad != ''",
+            (bot.lower(),),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return None
+    if len(filas) < minimo_ventanas:
+        return None
+    m = evaluar_veredictos(filas, sev_fallo, sev_falso_positivo)
+    if m is None or m.coste_mudo <= 0:
+        return None
+    ahorro = (m.coste_mudo - m.coste_sistema) / m.coste_mudo
+    return {
+        "bot": bot.lower(),
+        "ventanas": m.ventanas,
+        "eventos": m.con_evento,
+        "detectados": m.detectados,
+        "fallos": m.fallos,
+        "falsos_positivos": m.falsos_positivos,
+        "coste": m.coste_sistema,
+        "coste_mudo": m.coste_mudo,
+        "ahorro": ahorro,
+        "peso": max(PESO_MIN, min(PESO_MAX, 1.0 + ahorro)),
+    }
+
+
+def pesos_por_merito(
+    conn: sqlite3.Connection,
+    minimo_ventanas: int = 50,
+    sev_fallo: float = 10.0,
+    sev_falso_positivo: float = 1.0,
+) -> Dict[str, Dict[str, Any]]:
+    """El mérito de todos los bots que tienen veredictos vivos suficientes."""
+    try:
+        bots = [
+            r[0] for r in conn.execute(
+                "SELECT DISTINCT LOWER(bot_name) FROM TBL_JUEZ_AUDITORIA "
+                "WHERE fase = 'viva'"
+            ).fetchall()
+        ]
+    except sqlite3.OperationalError:
+        return {}
+    fuera = {}
+    for bot in bots:
+        m = merito_relativo(conn, bot, minimo_ventanas, sev_fallo, sev_falso_positivo)
+        if m is not None:
+            fuera[bot] = m
+    return fuera

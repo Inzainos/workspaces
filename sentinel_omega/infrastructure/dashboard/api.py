@@ -580,6 +580,24 @@ def bots() -> Dict[str, Any]:
         })
     enriched.sort(key=lambda x: str(x.get("bot_name") or ""))
 
+    # Y el peso tampoco: es un paseo multiplicativo topado en 1.0 que la calma
+    # refuerza cada ventana, así que los bots se pegan al techo (8 de 9 el
+    # 2026-09-25) y dejan de informar. `merito` mide lo otro: cuánto ahorra cada
+    # bot frente a callarse siempre, en la moneda del Juez.
+    try:
+        from sentinel_omega.core.juez.pesos import pesos_por_merito
+        merito = pesos_por_merito(_repo._conn_safe)
+    except Exception:  # noqa: BLE001 — el endpoint responde igual
+        merito = {}
+    for item in enriched:
+        m = merito.get(str(item.get("bot_name") or "").lower())
+        if m:
+            item["merito"] = m["peso"]
+            item["merito_ahorro"] = m["ahorro"]
+            item["merito_detectados"] = m["detectados"]
+            item["merito_eventos"] = m["eventos"]
+            item["merito_falsos_positivos"] = m["falsos_positivos"]
+
     # La asertividad de arriba NO SE LEE SOLA. Es aciertos/(aciertos+fallos) de
     # TBL_PESOS_BOTS, así que (a) cuenta como acierto cada «dije calma y hubo
     # calma», que es el 98 % de las ventanas, y (b) deja los FALSOS POSITIVOS

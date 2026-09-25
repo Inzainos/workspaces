@@ -46,6 +46,14 @@ precursor:
     moderate: 10.0
     high: 20.0
     critical: 30.0
+juez:
+  # Peso con el que vota cada bot. false = paseo multiplicativo (el de siempre);
+  # true = merito medido contra quedarse callado. Medido el 2026-09-25: con el
+  # paseo, 8 de 9 bots clavados en 1.000 y un castigo borrado en 5,9 h; con el
+  # merito, dispersion 0.298 y se ve que solo beta2 le gana al silencio.
+  # Encenderlo cambia como VOTA el consenso: decision del operador.
+  peso_por_merito: false
+  minimo_ventanas: 50
 consensus:
   min_families_for_alert: 2
   confidence_threshold: 0.6

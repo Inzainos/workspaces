@@ -276,6 +276,31 @@ export function FamiliasTab() {
           bars={[{ key: "pct", color: "#5e6ad2", name: "% viva" }]}
           height={160}
         />
+        {/* La asertividad de arriba premia sobrevivir a la calma, y la calma es
+            casi todo: por eso al lado va el MÉRITO, que mide cuánto ahorra cada
+            bot frente a callarse siempre, en la moneda del Juez. 1.00 = igual
+            que el silencio. */}
+        {familiaPesos.some((r) => r.merito != null) ? (
+          <>
+            <h4 className="text-sm font-medium">
+              Mérito contra el silencio (1.00 = no aporta nada)
+            </h4>
+            <SimpleBars
+              data={familiaPesos
+                .filter((r) => r.merito != null)
+                .map((r) => ({ bot: r.bot_name, merito: Number(r.merito) }))}
+              xKey="bot"
+              bars={[{ key: "merito", color: "#ff9100", name: "mérito" }]}
+              height={160}
+            />
+            <Caption>
+              Cada bot paga sus errores con las severidades del Juez (omitir ×10,
+              falsa alarma ×1) y se compara con lo que habría pagado sin abrir la
+              boca. Por encima de 1.00 aporta; por debajo, sale más caro que el
+              silencio.
+            </Caption>
+          </>
+        ) : null}
         {firmasAlfa.length ? (
           <>
             <h4 className="text-sm font-medium">Firmas por clase (global)</h4>
