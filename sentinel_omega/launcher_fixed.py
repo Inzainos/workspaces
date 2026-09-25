@@ -752,9 +752,13 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         from sentinel_omega.infrastructure.pipeline.juez_cycle_register import (
             register_cycle_predictions,
         )
+        # Mismo arreglo que en launcher.py (el que corre el servicio): sin
+        # `features=`, la auditoría guarda "features_generales": {} y el
+        # reentrenamiento se queda sin rasgos con los que aprender.
         register_cycle_predictions(
             juez, geo, matches=matches, conn=conn,
             muro_lags=muro_lags, nodos_pred=nodos_pred,
+            features=features,
         )
 
         # ── Cimática: snapshot del sistema → patrón nuevo o frecuencia+1 ──

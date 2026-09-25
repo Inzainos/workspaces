@@ -802,9 +802,16 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         from sentinel_omega.infrastructure.pipeline.juez_cycle_register import (
             register_cycle_predictions,
         )
+        # `features=` NO es opcional: sin él, cada fila de la auditoría guarda
+        # "features_generales": {} y el reentrenamiento no tiene con qué
+        # aprender. La clave se añadió el 2026-08-20 justo para esto, pero esta
+        # llamada nunca la pasó, así que las 19.422 filas vivas quedaron sin
+        # rasgos (medido el 2026-09-25). `features` ya está calculado arriba,
+        # en el mismo ciclo: pasarlo no cuesta nada.
         register_cycle_predictions(
             juez, geo, matches=matches, conn=conn,
             muro_lags=muro_lags, nodos_pred=nodos_pred,
+            features=features,
         )
 
         # ── Cimática: snapshot del sistema → patrón nuevo o frecuencia+1 ──

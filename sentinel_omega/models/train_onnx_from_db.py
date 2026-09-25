@@ -258,6 +258,18 @@ def load_juez_feedback(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray, 
             det = json.loads(det_json) if det_json else {}
             if isinstance(det, dict):
                 features = {k: v for k, v in det.items() if isinstance(v, (int, float))}
+                # `features_generales` es DONDE están los rasgos físicos del
+                # ciclo (bz_mean, kp_mean, schumann_mean, so2_kt_win…). La
+                # clave se añadió el 2026-08-20 para que el Juez pudiera
+                # enseñar, y este lector nunca la abrió: leía las de primer
+                # nivel y las de firma_matches, que son metadatos de la firma
+                # (firma_id, similitud, recurrencia), no señales. Otra señal
+                # medida y no conectada.
+                generales = det.get("features_generales")
+                if isinstance(generales, dict):
+                    features.update(
+                        {k: v for k, v in generales.items() if isinstance(v, (int, float))}
+                    )
                 for m in (det.get("firma_matches") or [])[:1]:
                     if isinstance(m, dict):
                         features.update({k: v for k, v in m.items() if isinstance(v, (int, float))})
