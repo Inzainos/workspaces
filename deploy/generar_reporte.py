@@ -1233,15 +1233,29 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 "con lo que habría pagado **sin abrir la boca**. Ahorro positivo "
                 "= aporta. Cero = es indistinguible del silencio.",
                 "",
-                "| bot | peso actual | mérito | ahorro | detecta | falsas alarmas |",
-                "|---|---:|---:|---:|---:|---:|",
+                "| bot | peso actual | mérito | ahorro | detecta | falsas alarmas "
+                "| precisión al alarmar |",
+                "|---|---:|---:|---:|---:|---:|---:|",
             ]
+            umbral = None
             for bot, m in sorted(merito.items(), key=lambda x: -x[1]["peso"]):
                 actual = pesos_now.get(bot)
+                umbral = m.get("umbral_rentable")
+                prec = m.get("precision")
+                marca = " ✅" if m.get("alarma_rentable") else ""
                 lineas.append(
                     f"| {bot} | {f'{actual:.3f}' if actual is not None else '—'} "
                     f"| {m['peso']:.3f} | {m['ahorro']:+.1%} "
-                    f"| {m['detectados']}/{m['eventos']} | {m['falsos_positivos']} |")
+                    f"| {m['detectados']}/{m['eventos']} | {m['falsos_positivos']} "
+                    f"| {f'{prec:.1%}' if prec is not None else '—'}{marca} |")
+            if umbral is not None:
+                lineas += [
+                    "",
+                    f"*Una alarma sale a cuenta cuando la probabilidad de evento "
+                    f"en su ventana supera **{umbral:.1%}** --- eso es lo que fija "
+                    f"castigar el silencio diez veces más que la falsa alarma. "
+                    f"La columna de precisión dice quién llega al listón.*",
+                ]
             gana = [b for b, m in merito.items() if m["ahorro"] > 0]
             mudos = [b for b, m in merito.items()
                      if m["falsos_positivos"] == 0 and m["detectados"] == 0]

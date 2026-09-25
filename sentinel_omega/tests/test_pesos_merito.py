@@ -134,3 +134,44 @@ def test_el_peso_discrimina_mas_que_el_paseo(conn):
     _poblar(conn, "griton", calma_ok=40, fallos=10, falsos_pos=50)
     pesos = [d["peso"] for d in pesos_por_merito(conn).values()]
     assert statistics.pstdev(pesos) > 0.1
+
+
+# ─── El umbral de rentabilidad de una alarma ─────────────────────────────────
+# Sale de la asimetría del Juez: si omitir cuesta 10 y una falsa alarma 1,
+# alarmar conviene cuando P(evento) > 1/(10+1) = 9,1 %.
+
+def test_el_umbral_sale_de_las_severidades(conn):
+    _poblar(conn, "b", calma_ok=89, fallos=5, falsos_pos=1, detectados=5)
+    m = merito_relativo(conn, "b", sev_fallo=10.0, sev_falso_positivo=1.0)
+    assert m["umbral_rentable"] == pytest.approx(1 / 11)
+
+
+def test_el_que_alarma_poco_y_bien_pasa_el_liston(conn):
+    # El perfil de beta2 medido el 2026-09-25: 12 alarmas, 11 con evento.
+    _poblar(conn, "fino", calma_ok=80, fallos=9, falsos_pos=1, detectados=11)
+    m = merito_relativo(conn, "fino")
+    assert m["precision"] == pytest.approx(11 / 12)
+    assert m["alarma_rentable"] is True
+
+
+def test_el_que_grita_no_lo_pasa(conn):
+    # El perfil de alfa1: 549 alarmas, 5 con evento.
+    _poblar(conn, "griton", calma_ok=0, fallos=32, falsos_pos=544, detectados=5)
+    m = merito_relativo(conn, "griton")
+    assert m["precision"] < m["umbral_rentable"]
+    assert m["alarma_rentable"] is False
+
+
+def test_el_que_no_alarma_no_tiene_precision(conn):
+    # Sin alarmas no hay precisión que medir: None, no cero.
+    _poblar(conn, "mudo", calma_ok=90, fallos=10)
+    m = merito_relativo(conn, "mudo")
+    assert m["alarmas"] == 0 and m["precision"] is None
+    assert m["alarma_rentable"] is False
+
+
+def test_castigar_mas_el_silencio_baja_el_liston(conn):
+    _poblar(conn, "b", calma_ok=85, fallos=5, falsos_pos=5, detectados=5)
+    normal = merito_relativo(conn, "b", sev_fallo=10.0, sev_falso_positivo=1.0)
+    duro = merito_relativo(conn, "b", sev_fallo=20.0, sev_falso_positivo=1.0)
+    assert duro["umbral_rentable"] < normal["umbral_rentable"]

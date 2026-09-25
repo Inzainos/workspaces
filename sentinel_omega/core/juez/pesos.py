@@ -171,6 +171,13 @@ def merito_relativo(
     if m is None or m.coste_mudo <= 0:
         return None
     ahorro = (m.coste_mudo - m.coste_sistema) / m.coste_mudo
+    # `umbral_rentable` sale de la asimetría del Juez: con omitir=10 y falsa
+    # alarma=1, alarmar sale a cuenta cuando la probabilidad de evento en la
+    # ventana supera 1/(10+1) = 9,1 %. `precision` es esa probabilidad medida:
+    # de las veces que el bot se mojó, cuántas tenían evento. Medido el
+    # 2026-09-25, solo beta2 pasa el listón --- y por mucho: alarma 12 veces y
+    # acierta 11 (91,7 %), mientras el resto no llega al 2 %.
+    precision = (m.detectados / m.alarmas) if m.alarmas else None
     return {
         "bot": bot.lower(),
         "ventanas": m.ventanas,
@@ -181,6 +188,11 @@ def merito_relativo(
         "coste": m.coste_sistema,
         "coste_mudo": m.coste_mudo,
         "ahorro": ahorro,
+        "alarmas": m.alarmas,
+        "precision": precision,
+        "umbral_rentable": m.umbral_rentable,
+        "alarma_rentable": (precision is not None
+                            and precision >= m.umbral_rentable),
         "peso": max(PESO_MIN, min(PESO_MAX, 1.0 + ahorro)),
     }
 
