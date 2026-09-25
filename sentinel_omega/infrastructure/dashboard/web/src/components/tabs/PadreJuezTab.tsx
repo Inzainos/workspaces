@@ -86,16 +86,30 @@ export function PadreJuezTab() {
         </p>
       </TabIntro>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-5">
         <Kpi label="ACIERTOS" value={String(summary.aciertos ?? "—")} accent="#10b981" />
         <Kpi label="FALLOS" value={String(summary.fallos ?? "—")} accent="#ff1744" />
         <Kpi label="FP" value={String(summary.falsos_positivos ?? "—")} accent="#ff9100" />
         <Kpi
-          label="ASERTIVIDAD"
+          label="ASERTIVIDAD (con silencios)"
           value={
             summary.asertividad != null ? `${(Number(summary.asertividad) * 100).toFixed(1)}%` : "—"
           }
-          hint={`${summary.total_resueltos ?? 0} resueltos`}
+          hint={
+            summary.asertividad_bot_mudo != null
+              ? `un bot mudo: ${(Number(summary.asertividad_bot_mudo) * 100).toFixed(1)}%`
+              : `${summary.total_resueltos ?? 0} resueltos`
+          }
+        />
+        <Kpi
+          label="GANANCIA REAL"
+          value={summary.ganancia_real != null ? `${Number(summary.ganancia_real).toFixed(2)}×` : "—"}
+          accent="#ff9100"
+          hint={
+            summary.eventos_detectados != null
+              ? `${summary.eventos_detectados}/${summary.eventos_totales} eventos · 1× = no aporta`
+              : "1× = no aporta"
+          }
         />
       </div>
 

@@ -30,6 +30,7 @@ for _p in (_REPO_ROOT,):
 from sentinel_omega.infrastructure.database.repository import SentinelRepository
 
 from sentinel_omega.infrastructure.dashboard.ask_faq import answer_question
+from sentinel_omega.core.precursor.baseline import evaluar_veredictos
 
 PHI = 1.6180339887
 TLAXCALA_LAT = 19.31
@@ -136,17 +137,24 @@ class ReadOnlyRepository(SentinelRepository):
                           verdad, resultado, fase, severidad, resuelto_at
                    FROM TBL_JUEZ_AUDITORIA
                    WHERE resultado IN ('ACIERTO','FALLO','FALSO_POSITIVO')
+                     AND fase = 'viva'
                    ORDER BY COALESCE(resuelto_at, created_at) DESC
                    LIMIT ?""",
                 (limit,),
             ).fetchall()
         ]
+        # `fase = 'viva'` NO es un detalle. Sin el filtro esto sumaba las
+        # 982.775 filas de la fase de RECONOCIMIENTO (entrenamiento) a las de
+        # operación real: medido el 2026-09-25 daba 1.002.747 aciertos y una
+        # asertividad del 99,6 %, mientras el tablero lo rotulaba «fase viva».
+        # La vara canónica del sistema es la vista viva_real.
         counts = {
             r["resultado"]: r["n"]
             for r in self._ro_execute(
                 """SELECT resultado, COUNT(*) AS n
                    FROM TBL_JUEZ_AUDITORIA
                    WHERE resultado IN ('ACIERTO','FALLO','FALSO_POSITIVO')
+                     AND fase = 'viva'
                    GROUP BY resultado"""
             ).fetchall()
         }
@@ -154,6 +162,16 @@ class ReadOnlyRepository(SentinelRepository):
         fallos = int(counts.get("FALLO", 0))
         fps = int(counts.get("FALSO_POSITIVO", 0))
         total = max(aciertos + fallos + fps, 1)
+        # Y la asertividad no se sirve sola: cuenta como acierto cada silencio
+        # en el que no pasó nada, y eso es casi todo. Al lado va la ganancia.
+        filas = [
+            (r["verdad"] or "", r["resultado"] or "")
+            for r in self._ro_execute(
+                "SELECT verdad, resultado FROM TBL_JUEZ_AUDITORIA "
+                "WHERE fase = 'viva' AND resultado != 'PENDIENTE' AND verdad != ''"
+            ).fetchall()
+        ]
+        m = evaluar_veredictos(filas)
         return {
             "pesos": pesos,
             "recent": recent,
@@ -163,6 +181,18 @@ class ReadOnlyRepository(SentinelRepository):
                 "falsos_positivos": fps,
                 "asertividad": aciertos / total,
                 "total_resueltos": aciertos + fallos + fps,
+                "asertividad_nota": (
+                    "Cuenta como acierto cada silencio en el que no pasó nada; "
+                    "la calma es el 98 % de las ventanas. Para saber si el "
+                    "sistema aporta información, mirar ganancia_real."
+                ),
+                "ganancia_real": m.ganancia if m else None,
+                "precision_alarma": m.precision if m else None,
+                "tasa_base": m.tasa_base if m else None,
+                "asertividad_bot_mudo": m.asertividad_muda if m else None,
+                "veredicto_ganancia": m.veredicto if m else None,
+                "eventos_detectados": m.detectados if m else None,
+                "eventos_totales": m.con_evento if m else None,
             },
         }
 
@@ -550,6 +580,24 @@ def bots() -> Dict[str, Any]:
         })
     enriched.sort(key=lambda x: str(x.get("bot_name") or ""))
 
+    # La asertividad de arriba NO SE LEE SOLA. Es aciertos/(aciertos+fallos) de
+    # TBL_PESOS_BOTS, así que (a) cuenta como acierto cada «dije calma y hubo
+    # calma», que es el 98 % de las ventanas, y (b) deja los FALSOS POSITIVOS
+    # fuera del denominador. Medido el 2026-09-25: daba 97,7 %, con los 1.086
+    # falsos positivos habría sido 96,9 %, y la ganancia real era 1,04×. El campo
+    # se mantiene para no romper lo que ya lo dibuja, pero al lado va la
+    # ganancia honesta, que es la que dice si el sistema aporta algo.
+    molchan = None
+    if _table_exists("TBL_JUEZ_AUDITORIA"):
+        filas = [
+            (r.get("verdad") or "", r.get("resultado") or "")
+            for r in _rows(
+                "SELECT verdad, resultado FROM viva_real "
+                "WHERE resultado != 'PENDIENTE' AND verdad != ''"
+            )
+        ]
+        molchan = evaluar_veredictos(filas)
+
     return _jsonable(
         {
             "source": "TBL_PESOS_BOTS + TBL_JUEZ_AUDITORIA (notificadores)",
@@ -557,8 +605,23 @@ def bots() -> Dict[str, Any]:
             "caption": "TBL_PESOS_BOTS es un SNAPSHOT (no serie temporal). Curva de aprendizaje: /api/aprendizaje desde TBL_JUEZ_AUDITORIA fase=viva. Los bots con rol=notificador operan sin peso: avisan, no votan.",
             "items": enriched,
             "asertividad_viva_global": (sum_a / den) if den else None,
+            "asertividad_excluye_falsos_positivos": True,
+            "asertividad_nota": (
+                "Cuenta como acierto cada silencio en el que no pasó nada (la "
+                "calma es el 98 % de las ventanas) y NO incluye los falsos "
+                "positivos en el denominador. Para saber si el sistema aporta "
+                "información, mirar ganancia_real."
+            ),
             "aciertos_total": sum_a,
             "fallos_total": sum_f,
+            # Molchan honesto: de las ventanas en que el sistema SE MOJA, qué
+            # fracción tenía evento, contra la tasa base. 1× = no aporta nada.
+            "ganancia_real": molchan.ganancia if molchan else None,
+            "precision_alarma": molchan.precision if molchan else None,
+            "tasa_base": molchan.tasa_base if molchan else None,
+            "asertividad_bot_mudo": molchan.asertividad_muda if molchan else None,
+            "veredicto_ganancia": molchan.veredicto if molchan else None,
+            "umbral_alarma_rentable": molchan.umbral_rentable if molchan else None,
             "padre": padre,
             "updated_at": rows[0]["updated_at"] if rows else None,
         }

@@ -13,11 +13,32 @@ export function PresentacionTab() {
   const ci = usePoll(useCallback(() => api.cimatica(1), []), 60000);
   const ac = usePoll(useCallback(() => api.aciertos(1), []), 60000);
 
+  // Antes esto leía `tasa_acierto_global`, una clave que la API NO devuelve
+  // (se llama `asertividad`), así que la condición nunca se cumplía y el
+  // recuadro mostraba el literal "96%" como si fuera un dato vivo. Medido el
+  // 2026-09-25. Sin dato se muestra un guion: nunca un número inventado.
   const asert = ac.data?.summary as Record<string, unknown> | undefined;
   const asertPct =
-    asert && asert.tasa_acierto_global != null
-      ? `${(Number(asert.tasa_acierto_global) * 100).toFixed(1)}%`
-      : "96%";
+    asert && asert.asertividad != null
+      ? `${(Number(asert.asertividad) * 100).toFixed(1)}%`
+      : "—";
+  // La asertividad NO se enseña sola: cuenta como acierto cada silencio en el
+  // que no pasó nada, y la calma es el 98 % de las ventanas. Lo que dice si el
+  // sistema aporta algo es la ganancia sobre alertar a ciegas.
+  const ganancia =
+    asert && asert.ganancia_real != null
+      ? `${Number(asert.ganancia_real).toFixed(2)}×`
+      : "—";
+  // El del bot mudo también viene de la API: un literal aquí se quedaría viejo,
+  // que es exactamente el error que se está corrigiendo en este recuadro.
+  const mudo =
+    asert && asert.asertividad_bot_mudo != null
+      ? `un bot mudo saca ${(Number(asert.asertividad_bot_mudo) * 100).toFixed(1)}%`
+      : undefined;
+  const detectados =
+    asert && asert.eventos_detectados != null && asert.eventos_totales != null
+      ? `${asert.eventos_detectados} de ${asert.eventos_totales} eventos`
+      : undefined;
   const cicloId =
     (cyc.data?.[0]?.id as number | undefined) ??
     (ov.data?.ciclo?.id as number | undefined);
@@ -112,22 +133,42 @@ export function PresentacionTab() {
 
       {/* Números */}
       <div className="grid gap-4 md:grid-cols-4">
-        <StatBig value={asertPct} label="asertividad viva del sistema" accent="#10b981" />
+        <StatBig
+          value={ganancia}
+          label="ganancia sobre alertar a ciegas · 1× = no aporta"
+          sub={detectados}
+          accent="#ff9100"
+        />
+        <StatBig
+          value={asertPct}
+          label="asertividad viva (cuenta los silencios)"
+          sub={mudo}
+        />
         <StatBig value={cicloId != null ? Number(cicloId).toLocaleString("es-MX") : "—"} label="ciclos corridos" />
         <StatBig value={patrones} label="patrones cimáticos aprendidos" />
-        <StatBig value="24/7" label="vigilancia sin servidor (Roy)" accent="#7c86dc" />
       </div>
     </div>
   );
 }
 
-function StatBig({ value, label, accent }: { value: string; label: string; accent?: string }) {
+function StatBig({
+  value,
+  label,
+  sub,
+  accent,
+}: {
+  value: string;
+  label: string;
+  sub?: string;
+  accent?: string;
+}) {
   return (
     <div className="rounded-lg border border-border bg-card p-5 text-center">
       <div className="text-3xl font-bold tracking-tight" style={accent ? { color: accent } : undefined}>
         {value}
       </div>
       <div className="mt-1 text-xs text-muted">{label}</div>
+      {sub ? <div className="mt-0.5 text-[11px] text-muted/70">{sub}</div> : null}
     </div>
   );
 }
