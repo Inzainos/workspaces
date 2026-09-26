@@ -39,7 +39,8 @@ from sentinel_omega.infrastructure.api.geophysical import (
     compute_lunar_phase_series,
 )
 from sentinel_omega.infrastructure.api.esa_frp import (
-    contar_anomalias_termicas,
+    contar_anomalias_termicas,  # noqa: F401  (API pública; el ciclo usa medir_frp)
+    medir_frp,
 )
 from sentinel_omega.infrastructure.api.esa_sentinel import (
     search_sentinel2,
@@ -363,9 +364,13 @@ class GeodynamicPipeline:
         # (`api/esa_frp.py`), que hay que descargar y leer; hasta que eso corra,
         # la clave se queda AUSENTE y quien la lea sabrá que no se midió.
         result: Dict[str, Any] = {"zone_coverages": zone_coverages}
-        anomalias = contar_anomalias_termicas(target_zones, days=days)
-        if anomalias is not None:
-            result["thermal_anomaly_count"] = anomalias
+        # `medir_frp` trae el conteo Y todas las variables por detección
+        # (FRP MWIR/SWIR, incertidumbres, confianza, canal, 500 m). Las
+        # detecciones las persiste el launcher en `tbl_frp_detecciones`.
+        frp = medir_frp(target_zones, days=days)
+        if frp is not None:
+            result["thermal_anomaly_count"] = frp["conteo"]
+            result["frp_detections"] = frp["detecciones"]
         self._locf_set("alfa2", result)
         return result
 

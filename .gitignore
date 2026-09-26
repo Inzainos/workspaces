@@ -36,3 +36,6 @@ sentinel_omega/data/*.pid
 # Contienen volcados completos de la DB de producción --- pesan
 # decenas de MB y pueden llevar datos operativos.
 scratchpad/
+
+# caché de productos Sentinel-3 FRP (esa_frp.CACHE_DIR)
+sentinel_omega/data/cache/
