@@ -1,25 +1,25 @@
 # 🔧 Rebuild completo — reporte final
-*Generado 2026-09-23 21:40 UTC*
+*Generado 2026-09-26 16:39 UTC*
 
 ## Pasos ejecutados
 
 | Paso | Estado | Tiempo |
 |---|---|---:|
 | Parar launcher | ✅ | 0s |
-| Vaciar memoria aprendida | ✅ | 0s |
+| Vaciar memoria aprendida | ✅ | 25s |
 | init_database (migración + índices + vistas) | ✅ | 0s |
-| Tuning previo (ANALYZE + optimize) | ✅ | 1s |
-| Entrenamiento completo | ✅ | 70884s |
-| Disciplina + barrido (cruces) | ✅ | 337s |
-| Tuning final (VACUUM + ANALYZE) | ✅ | 58s |
-| Generar reportes | ✅ | 3s |
+| Tuning previo (ANALYZE + optimize) | ✅ | 0s |
+| Entrenamiento completo | ✅ | 7404s |
+| Disciplina + barrido (cruces) | ✅ | 117s |
+| Tuning final (VACUUM + ANALYZE) | ✅ | 12s |
+| Generar reportes | ✅ | 4s |
 
-**Duración total:** 1188 min · **Tamaño DB:** 1039.5 MB
+**Duración total:** 126 min · **Tamaño DB:** 949.6 MB
 
 ## Memoria reconstruida
-- Firmas: **19,541** (12,848 consolidadas)
-- Patrones cimáticos: **279,027**
-- Rutas de propagación: **499** globales · **268** locales
+- Firmas: **19,620** (12,889 consolidadas)
+- Patrones cimáticos: **279,408**
+- Rutas de propagación: **500** globales · **268** locales
 
 ## Pesos por bot
 
@@ -43,12 +43,12 @@
 | beta1 | 1.0 | 0.998 | 0.003 |
 | beta2 | 0.983 | 0.514 | 0.469 |
 | delta | 0.994 | 0.874 | 0.119 |
-| jupiter | 0.005 | 0.005 | 0.0 |
+| jupiter | 0.007 | 0.007 | 0.0 |
 | loki | 0.399 | 0.397 | 0.003 |
 | omega | 1.0 | 0.998 | 0.003 |
 | padre | 0.998 | 0.99 | 0.007 |
 
 ## Asertividad viva (append-only, no se tocó)
-- {'ACIERTO': 15015, 'FALLO': 72, 'FALSO_POSITIVO': 942, 'PENDIENTE': 306}
+- {'ACIERTO': 19439, 'FALLO': 313, 'FALSO_POSITIVO': 1227, 'PENDIENTE': 225}
 
 *Reporte autogenerado por deploy/rebuild_completo.py*
