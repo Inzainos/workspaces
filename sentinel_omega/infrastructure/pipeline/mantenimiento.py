@@ -157,6 +157,17 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
         except Exception as e:  # noqa: BLE001 — el barrido sigue sin esto
             logger.warning("Vaciado del WAL falló (non-blocking): %s", e)
 
+        # La foto del perfil de competencia, una por barrido. Sin historia, el
+        # Padre solo puede reaccionar al ultimo numero y un bot que empeora
+        # despacio no se nota.
+        try:
+            from sentinel_omega.core.juez.pesos import guardar_competencia
+            _c = sqlite3.connect(db_path)
+            stats["competencia_guardada"] = guardar_competencia(_c)
+            _c.close()
+        except Exception as e:  # noqa: BLE001 — el barrido sigue sin esto
+            logger.warning("No se pudo guardar la competencia: %s", e)
+
         stats["eventos_promovidos"] = promover_eventos_vivos(db_path)
         # Y acto seguido, aprenderlos. Promover sin aprender deja los datos en
         # la memoria sin convertirlos en firmas, que es lo que el sistema usa
