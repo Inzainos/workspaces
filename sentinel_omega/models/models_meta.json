@@ -1,53 +1,53 @@
 {
-  "retrained_at": "2026-09-26T17:34:23.315780Z",
+  "retrained_at": "2026-09-26T18:21:30.539495Z",
   "db_path": "sentinel_omega/data/SENTINEL_OMEGA_PRO.db",
   "bots": {
     "alfa1": {
       "path": "/home/deamon/workspaces/sentinel_omega/models/alfa1_spaceweather_rf.onnx",
-      "n": 1764,
-      "source": "db-only (1764)",
+      "n": 3949,
+      "source": "db-only (3949)",
       "reentrenado": true
     },
     "alfa2": {
       "path": "/home/deamon/workspaces/sentinel_omega/models/alfa2_satellite_cnn.onnx",
-      "n": 132,
-      "source": "db-only (132)",
+      "n": 2178,
+      "source": "db-only (2178)",
       "reentrenado": true
     },
     "beta1": {
       "path": "/home/deamon/workspaces/sentinel_omega/models/beta1_schumann_fft.onnx",
-      "n": 1126,
-      "source": "db-only (1126)",
+      "n": 3350,
+      "source": "db-only (3350)",
       "reentrenado": true
     },
     "beta2": {
       "path": "/home/deamon/workspaces/sentinel_omega/models/beta2_atmospheric_cnn.onnx",
-      "n": 806,
-      "source": "db-only (806)",
+      "n": 3005,
+      "source": "db-only (3005)",
       "reentrenado": true
     },
     "delta": {
       "path": "/home/deamon/workspaces/sentinel_omega/models/delta_financial_lstm.onnx",
-      "n": 808,
-      "source": "db-only (808)",
+      "n": 833,
+      "source": "db-only (833)",
       "reentrenado": true
     },
     "omega": {
       "path": "/home/deamon/workspaces/sentinel_omega/models/omega_espacial_rf.onnx",
-      "n": 568,
-      "source": "db-only (568)",
+      "n": 2778,
+      "source": "db-only (2778)",
       "reentrenado": true
     },
     "loki": {
       "path": "/home/deamon/workspaces/sentinel_omega/models/loki_unificado_rf.onnx",
-      "n": 1030,
-      "source": "db-only (1030)",
+      "n": 3215,
+      "source": "db-only (3215)",
       "reentrenado": true
     },
     "jupiter": {
       "path": "/home/deamon/workspaces/sentinel_omega/models/jupiter_attention_rf.onnx",
-      "n": 153,
-      "source": "db-only (153)",
+      "n": 2377,
+      "source": "db-only (2377)",
       "reentrenado": true
     }
   }

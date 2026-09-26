@@ -32,6 +32,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("onnx_retrain")
 
+from sentinel_omega.models.rasgos_juez import cargar_reconstruidos
+
 MODELS_DIR = Path(__file__).resolve().parent
 MIN_SAMPLES = 80
 RANDOM_SEED = 42
@@ -177,7 +179,7 @@ def load_juez_feedback(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray, 
     conn = sqlite3.connect(str(path))
     try:
         rows = conn.execute(
-            "SELECT bot_name, prediccion, confianza, resultado, detalles_json "
+            "SELECT id, bot_name, prediccion, confianza, resultado, detalles_json "
             "FROM TBL_JUEZ_AUDITORIA "
             "WHERE resultado IN ('ACIERTO','FALLO','FALSO_POSITIVO') "
             "AND fase = 'viva'"
@@ -188,7 +190,19 @@ def load_juez_feedback(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray, 
         return {}
     conn.close()
     logger.info(f"Juez feedback vivo: {len(rows)} filas")
-    for bot_name, prediccion, confianza, resultado, det_json in rows:
+    # Respaldo para las filas anteriores al 2026-09-25 17:38, que llevan
+    # `features_generales` vacío porque el lanzador no se lo pasaba: la
+    # telemetría de su ventana, recompuesta y VALIDADA contra las filas que sí
+    # los traen (ver models/rasgos_juez.py). Lo que el bot vio manda siempre;
+    # esto sólo entra donde no hay nada.
+    reconstruidos = cargar_reconstruidos(str(path))
+    if reconstruidos:
+        logger.info(
+            "Rasgos reconstruidos disponibles para %d filas del Juez",
+            len(reconstruidos),
+        )
+    n_reconstruidas = 0
+    for juez_id, bot_name, prediccion, confianza, resultado, det_json in rows:
         bot = (bot_name or "").lower()
         if bot in ("padre", "padre_geo"):
             bot = "omega"
@@ -216,6 +230,11 @@ def load_juez_feedback(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray, 
                         features.update({k: v for k, v in m.items() if isinstance(v, (int, float))})
         except json.JSONDecodeError:
             pass
+        if not features:
+            respaldo = reconstruidos.get(int(juez_id))
+            if respaldo:
+                features = dict(respaldo)
+                n_reconstruidas += 1
         vec = _features_to_vector(features, bot)
         pred = (prediccion or "").lower()
         conf0 = float(confianza or 0.3)
@@ -250,11 +269,18 @@ def load_juez_feedback(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray, 
             sin_rasgos[bot] = sin_rasgos.get(bot, 0) + 1
             continue
         out[bot].append((vec, conf, float(sig), float(peso)))
+    if n_reconstruidas:
+        logger.info(
+            "Juez: %d muestras entraron con rasgos RECONSTRUIDOS de la "
+            "telemetría de su ventana (las anteriores al 2026-09-25 llevan "
+            "features_generales vacío)", n_reconstruidas,
+        )
     if sin_rasgos:
         logger.warning(
-            "Juez: %d muestras DESCARTADAS por no traer rasgos (%s). La "
-            "auditoría guarda firma_matches, no el vector con el que el bot "
-            "predijo: hasta que se registre eso, del Juez no se puede aprender.",
+            "Juez: %d muestras DESCARTADAS por no traer rasgos (%s). Son las "
+            "que ni el ciclo registró ni la telemetría guardada cubre --- "
+            "beta2 (desgasificación, última el 2026-07-31) y delta (finanzas, "
+            "2026-01-01) no tienen fuente en la ventana viva.",
             sum(sin_rasgos.values()),
             ", ".join(f"{b}:{n}" for b, n in sorted(sin_rasgos.items())),
         )

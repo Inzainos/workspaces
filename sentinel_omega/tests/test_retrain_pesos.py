@@ -23,11 +23,16 @@ def _db(tmp_path, filas):
     ruta = tmp_path / "juez.db"
     conn = sqlite3.connect(ruta)
     conn.execute(
-        "CREATE TABLE TBL_JUEZ_AUDITORIA (bot_name TEXT, prediccion TEXT, "
+        # `id` va porque producción lo tiene (PRIMARY KEY AUTOINCREMENT) y el
+        # lector lo necesita para cruzar los rasgos reconstruidos. Un fixture
+        # que se aparta del esquema real es como se cuela un fallo en verde.
+        "CREATE TABLE TBL_JUEZ_AUDITORIA ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, bot_name TEXT, prediccion TEXT, "
         "confianza REAL, resultado TEXT, detalles_json TEXT, fase TEXT)"
     )
     conn.executemany(
-        "INSERT INTO TBL_JUEZ_AUDITORIA VALUES (?,?,?,?,?,'viva')",
+        "INSERT INTO TBL_JUEZ_AUDITORIA (bot_name, prediccion, confianza, "
+        "resultado, detalles_json, fase) VALUES (?,?,?,?,?,'viva')",
         # kp_mean SÍ está en FEATURE_ORDER["alfa1"]; kp_index no, y una muestra
         # que no mapea ningún rasgo se descarta (ver el test de más abajo).
         [("alfa1", p, 0.3, r, '{"kp_mean": 4.0}') for p, r in filas],
@@ -161,11 +166,16 @@ def test_una_muestra_sin_rasgos_no_entra(tmp_path):
     ruta = tmp_path / "vacio.db"
     conn = sqlite3.connect(ruta)
     conn.execute(
-        "CREATE TABLE TBL_JUEZ_AUDITORIA (bot_name TEXT, prediccion TEXT, "
+        # `id` va porque producción lo tiene (PRIMARY KEY AUTOINCREMENT) y el
+        # lector lo necesita para cruzar los rasgos reconstruidos. Un fixture
+        # que se aparta del esquema real es como se cuela un fallo en verde.
+        "CREATE TABLE TBL_JUEZ_AUDITORIA ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, bot_name TEXT, prediccion TEXT, "
         "confianza REAL, resultado TEXT, detalles_json TEXT, fase TEXT)"
     )
     conn.executemany(
-        "INSERT INTO TBL_JUEZ_AUDITORIA VALUES ('alfa1',?,0.3,?,?,'viva')",
+        "INSERT INTO TBL_JUEZ_AUDITORIA (bot_name, prediccion, confianza, "
+        "resultado, detalles_json, fase) VALUES ('alfa1',?,0.3,?,?,'viva')",
         [("neutral", "FALLO", '{"firma_matches": [{"firma_id": 1, "similitud": 1.0}]}'),
          ("neutral", "ACIERTO", '{"nodos": [{"id": 83}]}'),
          ("alert", "FALSO_POSITIVO", "")],
@@ -181,11 +191,17 @@ def test_solo_entra_lo_que_mapea_algun_rasgo(tmp_path):
     ruta = tmp_path / "mixto.db"
     conn = sqlite3.connect(ruta)
     conn.execute(
-        "CREATE TABLE TBL_JUEZ_AUDITORIA (bot_name TEXT, prediccion TEXT, "
+        # `id` va porque producción lo tiene (PRIMARY KEY AUTOINCREMENT) y el
+        # lector lo necesita para cruzar los rasgos reconstruidos. Un fixture
+        # que se aparta del esquema real es como se cuela un fallo en verde.
+        "CREATE TABLE TBL_JUEZ_AUDITORIA ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, bot_name TEXT, prediccion TEXT, "
         "confianza REAL, resultado TEXT, detalles_json TEXT, fase TEXT)"
     )
     conn.executemany(
-        "INSERT INTO TBL_JUEZ_AUDITORIA VALUES ('alfa1','neutral',0.3,'FALLO',?,'viva')",
+        "INSERT INTO TBL_JUEZ_AUDITORIA (bot_name, prediccion, confianza, "
+        "resultado, detalles_json, fase) "
+        "VALUES ('alfa1','neutral',0.3,'FALLO',?,'viva')",
         [('{"kp_mean": 5.0, "bz_mean": -3.0}',), ('{"kp_index": 5.0}',)],
     )
     conn.commit()

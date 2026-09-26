@@ -737,6 +737,17 @@ def _build_live_features(runner, conn=None) -> dict:
             )
             features["satellite_clear_passes"] = float(clear_total)
 
+    # ── beta2: marea terrestre ────────────────────────────────────
+    # El tirón de la Luna y el Sol, por efemérides. Es la única fuente del
+    # sistema que no puede fallar ni tener huecos: no llama a ninguna API. Se
+    # añadió el 2026-09-26 porque beta2 llevaba desde el 2026-07-31 sin una
+    # sola fuente viva --- sus cuatro rasgos volcánicos llegaban ausentes.
+    try:
+        from sentinel_omega.core.mareas import marea_para_ciclo
+        features.update(marea_para_ciclo())
+    except Exception as e:  # noqa: BLE001 — el ciclo sigue sin marea
+        logger.warning("marea no disponible (non-blocking): %s", e)
+
     # ── delta_enriched: acoplamiento cruzado geofísico-financiero ──
     # Solo si la pasada delta_enriched corrió: un fetch fallido deja las
     # claves ausentes y la feature debe quedar NaN (excluida por similitud),
