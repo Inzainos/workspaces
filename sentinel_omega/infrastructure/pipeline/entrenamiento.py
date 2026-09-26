@@ -668,7 +668,11 @@ def entrenar_incremental(db_path: str, max_eventos: Optional[int] = None) -> Dic
     return stats
 
 
-def entrenar(db_path: str, max_eventos: Optional[int] = None) -> Dict:
+def entrenar(
+    db_path: str,
+    max_eventos: Optional[int] = None,
+    paralelo: bool = False,
+) -> Dict:
     """Full training run: Fase 1 (seismic) + Fase 1b (non-seismic) + Fase 2 + lags + correlaciones.
 
     Envuelto en la medición del sesgo de aprendizaje (realidad vs fantasía):
@@ -676,6 +680,14 @@ def entrenar(db_path: str, max_eventos: Optional[int] = None) -> Dict:
     de la disciplina (con castigo si la decisión real sigue floja), y se
     reporta cuánto mejoró el reconocimiento CAUSAL de cada bot con esta
     corrida — la diferencia entre las decisiones antes y después de aprender.
+
+    `paralelo` reparte la Fase 1 por bot, un proceso cada uno sobre su copia
+    (`entrenar_paralelo`). El eje que no fragmenta la memoria es el bot, no el
+    mes: las firmas de un bot jamás se cruzan con las de otro. Va apagado por
+    defecto --- lo enciende el rebuild, que es quien tiene la corrida larga ---
+    y se ignora con `max_eventos`, donde los dos caminos NO son equivalentes
+    (el recorte se aplica antes del filtro por fecha de arranque; el módulo
+    paralelo lo explica).
     """
     from sentinel_omega.infrastructure.pipeline.mantenimiento import (
         evaluar_sesgo_aprendizaje,
@@ -689,7 +701,19 @@ def entrenar(db_path: str, max_eventos: Optional[int] = None) -> Dict:
     except Exception as e:
         logger.warning(f"Sesgo pre-entrenamiento no disponible: {e}")
 
-    fase1 = entrenar_reconocimiento(db_path, max_eventos=max_eventos)
+    if paralelo and max_eventos:
+        logger.warning(
+            "paralelo + max_eventos no son compatibles (no dan el mismo "
+            "resultado): se usa la Fase 1 secuencial."
+        )
+        paralelo = False
+    if paralelo:
+        from sentinel_omega.infrastructure.pipeline.entrenar_paralelo import (
+            entrenar_reconocimiento_paralelo,
+        )
+        fase1 = entrenar_reconocimiento_paralelo(db_path)
+    else:
+        fase1 = entrenar_reconocimiento(db_path, max_eventos=max_eventos)
     fase1b = entrenar_reconocimiento_no_sismico(db_path, max_eventos=max_eventos)
     fase2 = backtest_disciplinario(db_path)
     lags = calcular_lags_anticipacion(db_path)

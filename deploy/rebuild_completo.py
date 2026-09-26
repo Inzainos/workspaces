@@ -137,7 +137,12 @@ def tuning(vacuum: bool):
 
 def entrenar():
     from sentinel_omega.infrastructure.pipeline.entrenamiento import entrenar
-    return entrenar(DB)
+    # `paralelo=True`: la Fase 1 por bot, un proceso cada uno. El módulo existía
+    # con sus pruebas desde antes y NADIE lo llamaba --- el rebuild usaba el
+    # secuencial. Techo medido el 2026-09-26, ya con la matriz viva del motor
+    # de firmas: 2,53x, y lo fija el padre, que ve todos los eventos y no se
+    # puede partir.
+    return entrenar(DB, paralelo=True)
 
 
 def disciplina_y_barrido():
