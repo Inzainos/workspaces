@@ -126,3 +126,43 @@ def test_el_vector_de_omega_tiene_su_dimension():
     assert len(vec) == BOT_DIMS["omega"] == 12
     assert vec[orden.index("bz_min")] == pytest.approx(-7.0)
     assert vec[orden.index("kp_max")] == pytest.approx(6.0)
+
+
+# ─── Lo que el ciclo GUARDA tiene que cubrir lo que el modelo PIDE ───────────
+
+def test_el_ciclo_guarda_todos_los_rasgos_de_alfa1():
+    """Revisando la tubería entera (2026-09-25) salió un desajuste más fino:
+    `_build_live_features` calculaba a mano solo bz_mean, bz_min, viento_avg y
+    viento_max, así que el Juez guardaba proton_max, bz_deriv_std y bz_mean_72h
+    vacíos --- y el reentrenamiento habría aprendido «aquí siempre hay un 0»
+    mientras la inferencia manda valores reales."""
+    pd = pytest.importorskip("pandas")
+    from sentinel_omega.launcher import _build_live_features
+
+    df = pd.DataFrame({
+        "bz_gsm": [-5.0, -9.0, -3.0],
+        "plasma_speed": [400.0, 600.0, 500.0],
+        "proton_flux_10mev": [1.0, 4.0, 2.0],
+        "kp_index": [3.0, 5.0, 4.0],
+    })
+
+    class _Pipeline:
+        _cache = {"alfa1": {"omni_dataframe": df}}
+
+    class _Runner:
+        pipeline = _Pipeline()
+
+    rasgos = _build_live_features(_Runner())
+    faltan = [k for k in FEATURE_ORDER["alfa1"] if k not in rasgos]
+    assert not faltan, f"el ciclo no guarda: {sorted(set(faltan))}"
+    assert rasgos["proton_max"] == pytest.approx(4.0)
+    assert rasgos["bz_mean_72h"] == pytest.approx(rasgos["bz_mean"])
+
+
+def test_el_ciclo_usa_el_mismo_agregador_que_la_inferencia():
+    import inspect
+    from sentinel_omega import launcher
+    fuente = inspect.getsource(launcher._build_live_features)
+    assert "agregados_omni(" in fuente
+    # La regresión: calcularlos a mano aquí y olvidar la mitad.
+    assert 'features["bz_mean"] = float(bz.mean())' not in fuente
