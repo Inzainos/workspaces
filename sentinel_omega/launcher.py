@@ -565,12 +565,8 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
             logger.warning(f"Failed to persist delta cross (non-blocking): {exc}")
 
 
-# Cuánto puede arrastrarse una lectura de Schumann cuando la fuente falla.
-# Medido el 2026-09-26: Tomsk devolvía 404 desde el 24 y el arrastre, que no
-# tenía límite de edad, había congelado la señal en 8,26 Hz / 21,46 % durante
-# 38 bloques seguidos --- un único valor en toda la tabla. Seis horas es un
-# arrastre razonable para una señal horaria; más allá, es inventar.
-SCHUMANN_LOCF_HORAS = 6
+# Schumann: arrastre sin límite de edad, con bandera en_vivo (ver
+# sentinel_omega/core/schumann_vivo.py). Decisión del Capitán, 2026-09-26.
 
 
 def _build_live_features(runner, conn=None) -> dict:
@@ -800,89 +796,25 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         # (WPC de Tomsk) se acumula con su bloque horario. Con el tiempo esta
         # serie alimenta el dominio SCHUMANN de los cruces (no hay backcast).
         try:
-            import time as _t
+            from sentinel_omega.core import schumann_vivo
             beta1_cache = getattr(runner.pipeline, "_cache", {}).get("beta1") or {}
-            sch_hz = beta1_cache.get("schumann_frequency")
-            sch_act = beta1_cache.get("schumann_activity")
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS tbl_schumann_vivo ("
-                "timestamp_blk TEXT PRIMARY KEY, schumann_hz REAL, "
-                "schumann_activity REAL, creada_at TEXT DEFAULT (datetime('now')))")
-
-            def _as_float(v):
-                try:
-                    if v is None:
-                        return None
-                    return float(v)
-                except (TypeError, ValueError):
-                    return None
-
-            def _is_dead(hz, act) -> bool:
-                """No-signal or historical fake: missing, or activity exactly 0."""
-                hz_f, act_f = _as_float(hz), _as_float(act)
-                if hz_f is None or act_f is None:
-                    return True
-                if act_f == 0.0:
-                    return True
-                return False
-
-            # El respaldo (LOCF) arrastra el último valor bueno cuando la
-            # fuente falla. Hasta el 2026-09-26 lo hacía SIN LÍMITE DE EDAD y
-            # además lo RE-GUARDABA como si fuera la medición de esta hora, así
-            # que se perpetuaba solo: Tomsk lleva devolviendo 404 desde el 24 y
-            # la tabla tenía 38 filas con UN ÚNICO valor (8,26 Hz / 21,46 %).
-            # Schumann había dejado de ser una señal para ser una constante ---
-            # y entra en el Fantasma, donde aportaba un desplazamiento fijo.
-            #
-            # Ahora el arrastre caduca: pasadas SCHUMANN_LOCF_HORAS, el valor es
-            # DESCONOCIDO (None), no el de anteayer. Faltante es faltante.
-            venia_de_locf = False
-            if _is_dead(sch_hz, sch_act):
-                limite = _t.strftime(
-                    "%Y-%m-%d %H:00",
-                    _t.gmtime(_t.time() - SCHUMANN_LOCF_HORAS * 3600),
+            sch = schumann_vivo.registrar(
+                conn,
+                beta1_cache.get("schumann_frequency"),
+                beta1_cache.get("schumann_activity"),
+            )
+            if sch["estado"] == "arrastrado":
+                logger.info(
+                    "Schumann API caída: arrastro el último valor real (%s, "
+                    "%.1f h) -> %s / %s, en_vivo=0",
+                    sch["ultimo_vivo_ts"], sch["atraso_horas"],
+                    sch["schumann_hz"], sch["schumann_activity"],
                 )
-                ult = conn.execute(
-                    "SELECT schumann_hz, schumann_activity, timestamp_blk "
-                    "FROM tbl_schumann_vivo "
-                    "WHERE schumann_activity IS NOT NULL AND schumann_activity != 0 "
-                    "AND timestamp_blk >= ? "
-                    "ORDER BY timestamp_blk DESC LIMIT 1",
-                    (limite,),
-                ).fetchone()
-                if ult:
-                    sch_hz, sch_act = float(ult[0]), float(ult[1])
-                    venia_de_locf = True
-                    logger.info(
-                        "Schumann LOCF (%s, dentro de %dh) -> %s / %s",
-                        ult[2], SCHUMANN_LOCF_HORAS, sch_hz, sch_act,
-                    )
-                else:
-                    sch_hz, sch_act = None, None
-                    logger.warning(
-                        "Schumann DESCONOCIDO: la fuente falla y no hay lectura "
-                        "real en %d h. No se arrastra el valor viejo.",
-                        SCHUMANN_LOCF_HORAS,
-                    )
-
-            # Solo se guarda lo MEDIDO. Re-guardar un arrastre lo convertía en
-            # una medición nueva cada hora y hacía eterno el valor congelado.
-            if venia_de_locf:
-                pass
-            elif not _is_dead(sch_hz, sch_act):
-                ts_blk = _t.strftime("%Y-%m-%d %H:00", _t.gmtime())
-                conn.execute(
-                    "INSERT OR REPLACE INTO tbl_schumann_vivo "
-                    "(timestamp_blk, schumann_hz, schumann_activity, creada_at) "
-                    "VALUES (?,?,?,datetime('now'))",
-                    (ts_blk, float(sch_hz), float(sch_act)),
-                )
-                conn.commit()
-            else:
+            elif sch["estado"] == "desconocido":
                 logger.warning(
-                    "Skip tbl_schumann_vivo INSERT (no live signal and no LOCF)"
+                    "Schumann DESCONOCIDO: la API falla y no hay ninguna "
+                    "lectura real guardada. No se inventa un valor."
                 )
-
         except Exception as e:
             logger.warning(f"Persistencia Schumann viva falló (non-blocking): {e}")
 

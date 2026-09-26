@@ -255,10 +255,24 @@ def _satelital(conn: sqlite3.Connection, ini: str, fin: str) -> Dict[str, float]
     }
 
 
+def _filtro_en_vivo(conn) -> str:
+    """Solo lecturas medidas; los arrastres (en_vivo=0) no entran al Juez.
+
+    Así el vector que reciben los ONNX es el mismo que antes de la bandera:
+    hasta el 2026-09-26 los arrastres no se guardaban.
+    """
+    try:
+        from sentinel_omega.core.schumann_vivo import filtro_en_vivo
+        return filtro_en_vivo(conn)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _schumann(conn: sqlite3.Connection, ini: str, fin: str) -> Dict[str, float]:
     filas = conn.execute(
         "SELECT schumann_hz FROM tbl_schumann_vivo "
-        "WHERE timestamp_blk >= ? AND timestamp_blk <= ?",
+        "WHERE timestamp_blk >= ? AND timestamp_blk <= ?"
+        + _filtro_en_vivo(conn),
         (ini, fin),
     ).fetchall()
     v = np.array([f[0] for f in filas if f[0] is not None], dtype=float)

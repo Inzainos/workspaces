@@ -550,7 +550,8 @@ def _orden_evento(conn, ts_evento: str, id_nodo: int) -> str:
             sch = conn.execute(
                 "SELECT MAX(schumann_activity) FROM tbl_schumann_vivo "
                 "WHERE timestamp_blk >= datetime(?, ?) "
-                "AND timestamp_blk < datetime(?, ?)",
+                "AND timestamp_blk < datetime(?, ?)"
+                + _filtro_sch_vivo(conn),
                 (ts_evento, ini, ts_evento, fin)).fetchone()[0]
             if sch is not None and sch >= 30 and "SCHUMANN" not in activacion:
                 activacion["SCHUMANN"] = seg
@@ -1052,9 +1053,13 @@ def volcar_telemetria_viva(
 
     # ── 1) Schumann vivo → enjambre (histórico de entrenamiento) ──
     try:
+        # Solo lo MEDIDO pasa al enjambre: un arrastre (en_vivo=0) no es
+        # una lectura nueva. Igual se borra todo lo anterior al corte.
+        from sentinel_omega.core.schumann_vivo import filtro_en_vivo
         rows = conn.execute(
             "SELECT timestamp_blk, schumann_hz, schumann_activity "
-            "FROM tbl_schumann_vivo WHERE timestamp_blk < ?",
+            "FROM tbl_schumann_vivo WHERE timestamp_blk < ?"
+            + filtro_en_vivo(conn),
             (corte_blk,),
         ).fetchall()
         if rows and not dry_run:
@@ -1066,8 +1071,18 @@ def volcar_telemetria_viva(
                        VALUES (?, 0, ?)""",
                     (ts, hz),
                 )
+            # Se conserva la última lectura real (en_vivo=1) aunque sea más
+            # vieja que el corte: es la fuente del arrastre sin límite. Sin
+            # esto, una caída de más de 24 h volvía a dejar Schumann
+            # "desconocido" (el mismo tope de antes, pero de 24 h).
+            _cols = {r[1] for r in conn.execute("PRAGMA table_info(tbl_schumann_vivo)")}
+            _keep = (
+                " AND timestamp_blk <> COALESCE((SELECT MAX(timestamp_blk) "
+                "FROM tbl_schumann_vivo WHERE COALESCE(en_vivo,1)=1), '')"
+                if "en_vivo" in _cols else ""
+            )
             conn.execute(
-                "DELETE FROM tbl_schumann_vivo WHERE timestamp_blk < ?",
+                "DELETE FROM tbl_schumann_vivo WHERE timestamp_blk < ?" + _keep,
                 (corte_blk,),
             )
             conn.commit()
@@ -1221,3 +1236,12 @@ def volcar_telemetria_viva(
 
     logger.info(f"Volcado telemetría 24h completo: {stats}")
     return stats
+
+
+def _filtro_sch_vivo(conn) -> str:
+    """Excluye arrastres de Schumann (en_vivo=0) de los cruces."""
+    try:
+        from sentinel_omega.core.schumann_vivo import filtro_en_vivo
+        return filtro_en_vivo(conn)
+    except Exception:  # noqa: BLE001
+        return ""
