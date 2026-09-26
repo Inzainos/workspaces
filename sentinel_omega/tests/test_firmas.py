@@ -1030,3 +1030,45 @@ def test_ningun_bot_registra_por_debajo_del_suelo():
              if n < MIN_DIMENSIONES_COMPARABLES}
     assert not bajos, (
         f"{bajos} registrarían firmas que similitud() nunca podrá emparejar")
+
+
+class TestCascadaNoSeLanzaEnVano:
+    """Revisando la tubería entera (2026-09-25): 236 archivos en
+    `pipeline/logs/`, casi todos de corridas de TESTS. El barrido diario se
+    prueba aquí mismo, arrastraba la cascada de topología contra una base
+    temporal vacía, y cada invocación dejaba un proceso y un archivo de
+    registro para avisar de que no tenía nada que recalcular."""
+
+    def test_sin_eventos_fuente_no_se_lanza_el_subproceso(self, tmp_path, monkeypatch):
+        import sqlite3 as sq
+        import subprocess
+
+        from sentinel_omega.infrastructure.pipeline import mantenimiento
+
+        llamadas = []
+        monkeypatch.setattr(subprocess, "call",
+                            lambda *a, **k: llamadas.append(a) or 0)
+        ruta = tmp_path / "vacia.db"
+        sq.connect(ruta).close()
+        res = mantenimiento.volcar_telemetria_viva(str(ruta))
+        assert res.get("cascada_ok") is None
+        assert not llamadas, "se lanzó la cascada sin eventos que recalcular"
+
+    def test_con_eventos_fuente_si_se_lanza(self, tmp_path, monkeypatch):
+        import sqlite3 as sq
+        import subprocess
+
+        from sentinel_omega.infrastructure.pipeline import mantenimiento
+
+        llamadas = []
+        monkeypatch.setattr(subprocess, "call",
+                            lambda *a, **k: llamadas.append(a) or 0)
+        ruta = tmp_path / "con_datos.db"
+        conn = sq.connect(ruta)
+        conn.execute("CREATE TABLE tbl_eventos_sismicos_fuente "
+                     "(usgs_id TEXT, lat REAL, lon REAL, id_nodo INTEGER)")
+        conn.execute("INSERT INTO tbl_eventos_sismicos_fuente VALUES ('x',0,0,1)")
+        conn.commit()
+        conn.close()
+        mantenimiento.volcar_telemetria_viva(str(ruta))
+        assert llamadas, "con eventos, la cascada tiene que correr"

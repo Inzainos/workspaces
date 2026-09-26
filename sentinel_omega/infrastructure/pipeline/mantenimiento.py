@@ -991,6 +991,33 @@ def volcar_telemetria_viva(
                     / "topologia_cascada.py"
                 )
             if script.exists():
+                # La cascada se salta cuando la base no trae eventos fuente:
+                # lanzar el subproceso para que avise de que no hay nada cuesta
+                # un proceso y un archivo de registro por llamada. Medido el
+                # 2026-09-25 revisando la tubería: 236 archivos en
+                # pipeline/logs/, casi todos de corridas de TESTS contra bases
+                # temporales vacías --- el barrido diario se prueba en
+                # test_firmas.py y arrastraba la cascada consigo.
+                try:
+                    _c = sqlite3.connect(db_path)
+                    _hay = _c.execute(
+                        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE "
+                        "type='table' AND name='tbl_eventos_sismicos_fuente')"
+                    ).fetchone()[0]
+                    if _hay:
+                        _hay = _c.execute(
+                            "SELECT EXISTS(SELECT 1 FROM tbl_eventos_sismicos_fuente)"
+                        ).fetchone()[0]
+                    _c.close()
+                except sqlite3.Error:
+                    _hay = 1      # ante la duda, que corra
+                if not _hay:
+                    logger.info(
+                        "Cascada topología omitida: no hay eventos fuente en %s",
+                        db_path,
+                    )
+                    stats["cascada_ok"] = None
+                    return stats
                 rc = subprocess.call(
                     [
                         sys.executable,

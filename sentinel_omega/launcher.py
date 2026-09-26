@@ -549,19 +549,24 @@ def _build_live_features(runner) -> dict:
     cache = getattr(runner.pipeline, "_cache", {})
 
     # ── alfa1: clima espacial ──────────────────────────────────────
+    # Los agregados los calcula la MISMA función que arma el vector de
+    # inferencia (core/features_onnx.agregados_omni). Antes aquí se calculaban
+    # a mano solo cuatro --- bz_mean, bz_min, viento_avg, viento_max --- y
+    # faltaban proton_max, bz_deriv_std y bz_mean_72h, que sí están en el orden
+    # del modelo. Consecuencia (medida el 2026-09-25, revisando la tubería
+    # entera): el Juez guardaba esas tres posiciones vacías, así que el
+    # reentrenamiento aprendería «aquí siempre hay un 0» mientras la inferencia
+    # manda valores de verdad. Un desajuste nuevo, más fino que el que se acaba
+    # de arreglar, pero de la misma familia.
     alfa1 = cache.get("alfa1") or {}
     omni = alfa1.get("omni_dataframe")
     if omni is not None:
-        if "bz_gsm" in omni.columns:
-            bz = omni["bz_gsm"].dropna()
-            if len(bz) > 0:
-                features["bz_mean"] = float(bz.mean())
-                features["bz_min"] = float(bz.min())
-        if "plasma_speed" in omni.columns:
-            wind = omni["plasma_speed"].dropna()
-            if len(wind) > 0:
-                features["viento_avg"] = float(wind.mean())
-                features["viento_max"] = float(wind.max())
+        from sentinel_omega.core.features_onnx import agregados_omni
+        columnas = [c for c in omni.columns]
+        try:
+            features.update(agregados_omni(columnas, omni[columnas].values))
+        except Exception as e:  # noqa: BLE001 — el ciclo sigue sin estos rasgos
+            logger.warning("agregados de OMNI fallaron (non-blocking): %s", e)
 
     # ── beta1: Kp / Schumann / sismicidad / lunar ─────────────────
     beta1 = cache.get("beta1") or {}
