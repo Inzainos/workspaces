@@ -66,18 +66,26 @@ def test_el_peso_por_merito_llega_hasta_cargar_pesos():
     conn.execute("CREATE TABLE TBL_PESOS_BOTS (bot_name TEXT PRIMARY KEY, "
                  "peso REAL, aciertos INTEGER, fallos INTEGER, updated_at TEXT)")
     conn.execute("INSERT INTO TBL_PESOS_BOTS VALUES ('b', 1.0, 0, 0, '')")
-    conn.execute("CREATE TABLE TBL_JUEZ_AUDITORIA (bot_name TEXT, verdad TEXT, "
-                 "resultado TEXT, fase TEXT)")
-    # 90 calmas acertadas y 10 eventos perdidos: un bot mudo, mérito 1.0…
-    conn.executemany("INSERT INTO TBL_JUEZ_AUDITORIA VALUES ('b',?,?,'viva')",
-                     [("sin eventos en ventana", "ACIERTO")] * 90
-                     + [("M5.0", "FALLO")] * 10)
-    # …y otro que grita: su mérito tiene que BAJAR del 1.0 almacenado.
+    conn.execute("CREATE TABLE TBL_JUEZ_AUDITORIA (timestamp REAL, bot_name TEXT, "
+                 "verdad TEXT, resultado TEXT, fase TEXT)")
     conn.execute("INSERT INTO TBL_PESOS_BOTS VALUES ('g', 1.0, 0, 0, '')")
-    conn.executemany("INSERT INTO TBL_JUEZ_AUDITORIA VALUES ('g',?,?,'viva')",
-                     [("sin eventos en ventana", "FALSO_POSITIVO")] * 60
-                     + [("M5.0", "FALLO")] * 10
-                     + [("sin eventos en ventana", "ACIERTO")] * 30)
+
+    # Un día por fila, para que cada evento sea un episodio distinto: contarlos
+    # por ciclo multiplicaría la misma evidencia (ver test_episodios.py).
+    dia = 86400.0
+
+    def sembrar(bot, filas):
+        conn.executemany(
+            "INSERT INTO TBL_JUEZ_AUDITORIA VALUES (?,?,?,?,'viva')",
+            [(i * dia, bot, v, r) for i, (v, r) in enumerate(filas)])
+
+    # Un bot mudo: acierta la calma y pierde los eventos. Mérito 1.0.
+    sembrar("b", [("sin eventos en ventana", "ACIERTO")] * 90
+            + [("M5.0", "FALLO")] * 25)
+    # Y otro que grita: su mérito tiene que BAJAR del 1.0 almacenado.
+    sembrar("g", [("sin eventos en ventana", "FALSO_POSITIVO")] * 60
+            + [("M5.0", "FALLO")] * 25
+            + [("sin eventos en ventana", "ACIERTO")] * 30)
     conn.commit()
     assert cargar_pesos(conn)["g"] == 1.0                       # el almacenado
     assert cargar_pesos(conn, por_merito=True)["g"] < 1.0       # el medido

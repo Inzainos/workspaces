@@ -248,3 +248,118 @@ def evaluar_veredictos(
         coste_alarmista=(ventanas - con_evento) * sev_falso_positivo,
         umbral_rentable=(sev_falso_positivo / total_sev) if total_sev > 0 else 0.0,
     )
+
+
+# ─── La unidad es el EPISODIO, no el ciclo ───────────────────────────────────
+#
+# Encontrado el 2026-09-25 replicando reglas de consenso sobre los veredictos
+# reales: los «11 aciertos» de beta2 eran UN SOLO sismo M5.0 contado once veces
+# --- alarmó en once ciclos seguidos (03:35 a 04:25) y el evento caía dentro de
+# la ventana de 2 h de los once.
+#
+# No era cosa de beta2: el ciclo corre cada 5 minutos y la ventana dura 2 horas,
+# así que cada evento puede «confirmar» hasta 24 predicciones consecutivas y
+# cada alarma sostenida se cuenta como decenas de falsas alarmas. Medido sobre
+# los 17 días de fase viva:
+#
+#     ventanas-ciclo con evento: 37      episodios de evento REALES:  3
+#     alfa1 «544 falsas alarmas»          episodios de alarma:         8
+#     beta2 «11 detecciones»              episodios:                   1
+#
+# Contado así, la precisión de alfa1 (12,5 %) es la MEJOR de los nueve, no la
+# peor. Toda conclusión sobre habilidad relativa sacada de los ciclos está
+# multiplicando la misma evidencia.
+
+HUECO_EPISODIO_S = 3 * 3600   # dos alarmas a más de 3 h son episodios distintos
+
+
+def _contar_eventos(
+    filas: Sequence[Tuple[float, str, str]],
+    hueco_s: float = HUECO_EPISODIO_S,
+) -> int:
+    """Episodios de evento DISTINTOS: dos ventanas que alcanzan el mismo sismo
+    no son dos eventos."""
+    marcas = sorted(ts for ts, verdad, _ in filas
+                    if not str(verdad or "").startswith("sin eventos"))
+    n = 0
+    ultimo = None
+    for ts in marcas:
+        if ultimo is None or ts - ultimo > hueco_s:
+            n += 1
+        ultimo = ts
+    return n
+
+
+def agrupar_episodios(
+    filas: Sequence[Tuple[float, str, str]],
+    hueco_s: float = HUECO_EPISODIO_S,
+) -> List[Dict[str, Any]]:
+    """Agrupa `(timestamp, verdad, resultado)` en episodios.
+
+    Un episodio de ALARMA es una racha de predicciones de evento sin un hueco
+    mayor que `hueco_s`. Acierta si algún veredicto de la racha vio el evento.
+    Los episodios de EVENTO se agrupan igual, para no contar tres veces el
+    mismo sismo porque tres ventanas lo alcanzaron.
+    """
+    orden = sorted(filas, key=lambda r: r[0])
+    alarmas: List[Dict[str, Any]] = []
+    actual: Optional[Dict[str, Any]] = None
+    ultimo_evento: Optional[float] = None
+    eventos = 0
+    for ts, verdad, resultado in orden:
+        hubo = not str(verdad or "").startswith("sin eventos")
+        # Alarma = el Juez la juzgó como tal: FALSO_POSITIVO, o ACIERTO con evento.
+        alarmo = resultado == "FALSO_POSITIVO" or (resultado == "ACIERTO" and hubo)
+        if hubo and (ultimo_evento is None or ts - ultimo_evento > hueco_s):
+            eventos += 1
+        if hubo:
+            ultimo_evento = ts
+        if not alarmo:
+            continue
+        if actual is not None and ts - actual["fin"] <= hueco_s:
+            actual["fin"] = ts
+            actual["ciclos"] += 1
+            actual["con_evento"] = actual["con_evento"] or hubo
+        else:
+            if actual is not None:
+                alarmas.append(actual)
+            actual = {"inicio": ts, "fin": ts, "ciclos": 1, "con_evento": hubo}
+    if actual is not None:
+        alarmas.append(actual)
+    for ep in alarmas:
+        ep["eventos_distintos"] = eventos
+    return alarmas
+
+
+def evaluar_episodios(
+    filas: Sequence[Tuple[float, str, str]],
+    minimo_eventos: int = 20,
+    hueco_s: float = HUECO_EPISODIO_S,
+) -> Optional[Dict[str, Any]]:
+    """Precisión de la alarma contada por episodios, o None si no hay evidencia.
+
+    `minimo_eventos` es un freno, no un adorno: con 3 episodios de evento en 17
+    días --- lo que había el 2026-09-25 --- cualquier precisión que se calcule
+    es ruido, y ponderar el consenso con ella es peor que no ponderarlo. Si no
+    se llega al mínimo se devuelve None y quien llame debe dejar el peso quieto.
+    """
+    if not filas:
+        return None
+    episodios = agrupar_episodios(filas, hueco_s)
+    # Los eventos distintos se cuentan SIEMPRE agrupando, haya alarmas o no.
+    # Tomarlos de `episodios[0]` dejaba fuera a los bots que nunca alarman, que
+    # caían al recuento crudo de ventanas --- 37 en vez de 3 --- y pasaban el
+    # freno de evidencia justo los que menos evidencia tienen. El mismo error
+    # que este módulo corrige, cometido aquí dentro.
+    eventos = _contar_eventos(filas, hueco_s)
+    con_evento = sum(1 for e in episodios if e["con_evento"])
+    fuera = {
+        "episodios": len(episodios),
+        "episodios_con_evento": con_evento,
+        "eventos_distintos": eventos,
+        "ciclos_alarma": sum(e["ciclos"] for e in episodios),
+        "precision": (con_evento / len(episodios)) if episodios else None,
+        "evidencia_suficiente": eventos >= minimo_eventos,
+        "minimo_eventos": minimo_eventos,
+    }
+    return fuera
