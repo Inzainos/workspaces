@@ -173,18 +173,24 @@ def run(args):
     signal.signal(signal.SIGINT, _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
 
-    from sentinel_omega.config.sentinel_config import SentinelOmegaConfig
+    # load_config() LEE sentinel.yaml; SentinelOmegaConfig() se queda con los
+    # valores por defecto del código. Medido el 2026-09-25: el lanzador usaba el
+    # segundo, así que el fichero de configuración era decorativo --- se encendió
+    # juez.peso_por_merito en el yaml, se reinició, y el arranque siguió diciendo
+    # «paseo multiplicativo». El yaml solo mezcla database, telegram y juez; los
+    # demás bloques siguen sin leerse y habrá que ir conectándolos.
+    from sentinel_omega.config.sentinel_config import SentinelOmegaConfig, load_config
     from sentinel_omega.orchestrator import SentinelOrchestrator
     from sentinel_omega.infrastructure.database.schema import init_database, get_connection
     from sentinel_omega.infrastructure.database.repository import SentinelRepository
     from sentinel_omega.infrastructure.database.seed_nodos import seed_topology
 
-    config = SentinelOmegaConfig()
+    config = load_config()
 
     if args.dry_run:
         os.environ.pop("TELEGRAM_BOT_TOKEN", None)
         os.environ.pop("TELEGRAM_CHAT_ID", None)
-        config = SentinelOmegaConfig()
+        config = load_config()
 
     _print_banner(config)
     _write_pid()
