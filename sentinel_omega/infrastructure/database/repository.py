@@ -572,6 +572,61 @@ class SentinelRepository:
         )
         self._conn.commit()
 
+    # ── alfa2: detecciones FRP completas (Sentinel-3 SLSTR L2) ──────
+
+    FRP_COLUMNAS = (
+        "producto_id", "zona", "fuente", "archivo", "idx", "ts_utc",
+        "lat", "lon", "frp_mwir", "frp_mwir_unc", "frp_swir", "frp_swir_unc",
+        "confidence_mwir", "used_channel", "n_swir_fire",
+        "transmittance_mwir", "transmittance_swir",
+        "frp_swir_500m", "frp_swir_500m_unc", "confidence_swir_saa",
+    )
+
+    def _asegurar_tbl_frp(self) -> None:
+        """Tabla aditiva: CREATE ... IF NOT EXISTS, no toca ninguna otra."""
+        if getattr(self._local, "frp_ok", False):
+            return
+        self._execute(
+            "CREATE TABLE IF NOT EXISTS tbl_frp_detecciones ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " producto_id TEXT NOT NULL, zona TEXT, fuente TEXT NOT NULL,"
+            " archivo TEXT, idx INTEGER NOT NULL, ts_utc TEXT,"
+            " lat REAL, lon REAL,"
+            " frp_mwir REAL, frp_mwir_unc REAL, frp_swir REAL, frp_swir_unc REAL,"
+            " confidence_mwir REAL, used_channel INTEGER, n_swir_fire INTEGER,"
+            " transmittance_mwir REAL, transmittance_swir REAL,"
+            " frp_swir_500m REAL, frp_swir_500m_unc REAL,"
+            " confidence_swir_saa REAL,"
+            " insertado_en TEXT NOT NULL DEFAULT (datetime('now')),"
+            " UNIQUE(producto_id, fuente, idx, zona))"
+        )
+        self._execute(
+            "CREATE INDEX IF NOT EXISTS idx_frp_det_zona_ts "
+            "ON tbl_frp_detecciones(zona, ts_utc)"
+        )
+        self._conn.commit()
+        self._local.frp_ok = True
+
+    def insert_frp_detecciones(self, detecciones: List[Dict[str, Any]]) -> int:
+        """Guarda cada detección de FRP (todas las variables). Devuelve cuántas
+        eran nuevas; las repetidas (mismo producto/fuente/idx/zona) se ignoran.
+        Una variable que el producto no trajo va NULL, nunca 0 ni -1."""
+        if not detecciones:
+            return 0
+        self._asegurar_tbl_frp()
+        cols = self.FRP_COLUMNAS
+        # zona NULL rompería la UNIQUE (en SQLite NULL != NULL): va "".
+        filas = [tuple((d.get(c) or "") if c == "zona" else d.get(c)
+                       for c in cols) for d in detecciones]
+        antes = self._conn.total_changes
+        self._conn.executemany(
+            f"INSERT OR IGNORE INTO tbl_frp_detecciones ({', '.join(cols)}) "
+            f"VALUES ({', '.join('?' * len(cols))})",
+            filas,
+        )
+        self._conn.commit()
+        return self._conn.total_changes - antes
+
     def insert_delta_cross(
         self,
         timestamp_blk: str,

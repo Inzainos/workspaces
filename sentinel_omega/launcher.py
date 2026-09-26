@@ -531,6 +531,16 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
                     )
         except Exception as exc:
             logger.warning(f"Failed to persist alfa2 coverage (non-blocking): {exc}")
+        # Detecciones FRP completas (Sentinel-3 SLSTR). Tabla nueva, sólo
+        # INSERT OR IGNORE: el LOCF puede repetir el mismo lote sin duplicar.
+        try:
+            alfa2_data = getattr(runner, "_last_alfa2_data", None) or {}
+            frp = alfa2_data.get("frp_detections")
+            if frp:
+                nuevas = repo.insert_frp_detecciones(frp)
+                logger.info(f"FRP: {nuevas} detecciones nuevas de {len(frp)}")
+        except Exception as exc:
+            logger.warning(f"Failed to persist FRP detections (non-blocking): {exc}")
 
     # ── Persistir correlación cruzada delta_enriched ──────────────
     if runner is not None:
