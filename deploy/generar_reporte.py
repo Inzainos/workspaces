@@ -138,6 +138,60 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             "",
         ]
 
+        # ── De qué está hecho el Fantasma ──
+        # Auditado el 2026-09-25. El índice es |Bz|² + viento×0,02 +
+        # Schumann×1,5, y eso tiene tres consecuencias que el número solo no
+        # deja ver:
+        #   · El viento solar pone un piso de 4,6 a 8,1 él solo, y el umbral
+        #     VERDE es <5: medido, VERDE salió 3 veces en 3.261 ciclos (0,1 %).
+        #   · |Bz|² es SIMÉTRICO: un Bz norte (que SUPRIME el acoplamiento con
+        #     la magnetosfera) puntúa igual que uno sur. El 49 % del 5 % de
+        #     lecturas más altas viene de Bz norte.
+        #   · Schumann aporta 1,5 como máximo sobre ~12-35, o sea un 4-10 %.
+        # No se cambia la fórmula --- movería 3.261 ciclos de historia --- pero
+        # el desglose se muestra para que nadie lea el número a ciegas.
+        try:
+            fila_bz = conn.execute(
+                "SELECT bz_promedio, viento_solar_avg FROM tbl_clima_espacial_raw "
+                "ORDER BY timestamp_blk DESC LIMIT 1"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            fila_bz = None
+        if fila_bz and fila_bz[0] is not None:
+            bz, viento = float(fila_bz[0]), float(fila_bz[1] or 0.0)
+            ap_bz, ap_viento = bz ** 2, viento * 0.02
+            total = ap_bz + ap_viento
+            norte = bz > 0
+            lineas += [
+                "### De qué está hecho ese número",
+                "",
+                "| Término | Aporte | |",
+                "|---|---:|---|",
+                f"| Bz² (Bz = {bz:.1f} nT) | {ap_bz:.1f} | "
+                + ("⚠️ **Bz NORTE**: esta orientación *suprime* el acoplamiento "
+                   "con la magnetosfera, pero el índice la puntúa igual que la "
+                   "sur porque eleva al cuadrado el valor absoluto |"
+                   if norte else "Bz sur: la orientación que sí acopla |"),
+                f"| Viento solar ({viento:.0f} km/s) × 0,02 | {ap_viento:.1f} | "
+                "piso permanente: el viento nunca baja de ~300 km/s |",
+                "| Schumann × 1,5 | ≤ 1,5 | como mucho un 4-10 % del total |",
+                "",
+                f"*El viento solar solo ya aporta {ap_viento:.1f}, y el umbral "
+                f"VERDE es <5: medido sobre 3.261 ciclos, VERDE salió **3 veces "
+                f"(0,1 %)**. El estado «normal» de este sistema es AMARILLO "
+                f"(74,9 %), que por tanto no informa de nada.*",
+                "",
+            ]
+            if norte:
+                solo_sur = (min(bz, 0.0) ** 2) + ap_viento
+                lineas += [
+                    f"🔎 **Con este Bz norte, el índice marca {total:.1f}; "
+                    f"contando solo el Bz sur marcaría {solo_sur:.1f}.** "
+                    "Medido: el 49 % del 5 % de lecturas más altas del histórico "
+                    "viene de Bz norte, o sea de la orientación tranquila.",
+                    "",
+                ]
+
     # ── 🚦 Semáforo: reglas duras de nivel de riesgo ──
     # Con los números del bloque principal cualquier lector infiere el nivel
     # sin interpretación subjetiva. Mismos umbrales que el reporte ejecutivo.

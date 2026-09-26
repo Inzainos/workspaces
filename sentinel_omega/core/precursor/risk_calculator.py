@@ -42,6 +42,11 @@ class PrecursorRisk:
     kp_modifier: float
     lod_modifier: float
     components: Dict[str, float] = field(default_factory=dict)
+    # Diagnósticos añadidos el 2026-09-25 al auditar el índice. No cambian el
+    # `fantasma` heredado --- eso rompería la comparación con 3.261 ciclos de
+    # historia --- pero dejan ver de qué está hecho el número.
+    bz_es_norte: bool = False        # Bz positivo = orientación TRANQUILA
+    fantasma_solo_sur: float = 0.0   # el mismo índice contando solo Bz sur
 
     @property
     def is_elevated(self) -> bool:
@@ -84,11 +89,30 @@ def compute_fantasma(
     - Kp >= 5 (storm level) multiplies by up to 1.5×
     - LOD anomaly (>0.5 ms) adds coupling factor
     """
+    # OJO con `abs(bz) ** 2`. Viene de la fórmula heredada de TITAN V32 y es
+    # SIMÉTRICA: un Bz de +10 nT (norte) puntúa igual que uno de -10 (sur),
+    # cuando el propio encabezado de este módulo dice «southward = negative =
+    # geomagnetically active». El Bz norte no activa el acoplamiento con la
+    # magnetosfera: lo SUPRIME.
+    #
+    # Medido el 2026-09-25 sobre 280.941 lecturas: el 47,8 % tiene Bz positivo
+    # y **el 49 % del 5 % de lecturas más altas viene de Bz norte**. O sea que
+    # la mitad de las veces que el termómetro se dispara, lo dispara la
+    # orientación tranquila.
+    #
+    # No se corrige aquí: cambiar la fórmula movería los 3.261 ciclos de
+    # historia y los umbrales del semáforo con ellos. Se calcula al lado
+    # (`fantasma_solo_sur`) y se marca (`bz_es_norte`) para que la decisión de
+    # cambiarla sea del operador, con los dos números delante.
     bz_contribution = abs(bz) ** 2
     wind_contribution = viento * 0.02
     schumann_contribution = sch_wpc * 1.5
 
     fantasma = bz_contribution + wind_contribution + schumann_contribution
+    bz_es_norte = bz > 0
+    # El mismo índice si el Bz norte no contara: min(bz, 0)² deja fuera lo que
+    # no acopla.
+    fantasma_solo_sur = (min(bz, 0.0) ** 2) + wind_contribution + schumann_contribution
 
     pressure_modifier = 0.0
     if pressure_hpa < 1008.0:
@@ -117,6 +141,8 @@ def compute_fantasma(
         pressure_modifier=pressure_modifier,
         kp_modifier=kp_modifier,
         lod_modifier=lod_modifier,
+        bz_es_norte=bz_es_norte,
+        fantasma_solo_sur=round(fantasma_solo_sur, 3),
         components={
             "bz_nT": bz,
             "wind_kms": viento,
