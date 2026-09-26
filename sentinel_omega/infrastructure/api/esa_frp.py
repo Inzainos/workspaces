@@ -107,6 +107,13 @@ VARIABLES_FRP = ("FRP_MWIR", "FRP", "frp", "FRP_SWIR", "fire_radiative_power")
 # de muy baja potencia que son ruido de superficie caliente, no un evento.
 FRP_MINIMO_MW = 1.0
 
+# Ventana de búsqueda. El pipeline de alfa2 pasa days=30 (cobertura), pero
+# para anomalías térmicas lo que importa es lo reciente. Con orden ascendente
+# y $top=4 el catálogo devolvía los 4 productos MÁS VIEJOS de la ventana
+# (hallado el 2026-09-26: el conteo «actual» era del 27-ago).
+FRP_VENTANA_MAX_DIAS = 7
+ORDEN_RECIENTE = [("start_datetime", "DESC")]
+
 # Productos ya bajados: el ciclo del launcher es horario y la ventana de
 # búsqueda de 7 días devuelve casi siempre los mismos productos. Sin caché
 # se bajarían otra vez cada hora.
@@ -291,7 +298,9 @@ def leer_detecciones(
         hall = sorted(base.rglob(nombre))
         return hall[0] if hall else None
 
-    nc1 = _uno(ARCHIVO_MERGED) or _uno(ARCHIVO_ESTANDAR)
+    # NT (baseline 005) trae el formato viejo: `FRP_in.nc` (sólo MWIR, sin
+    # SWIR ni confianza). Se lee igual; `archivo` dice de dónde salió.
+    nc1 = _uno(ARCHIVO_MERGED) or _uno(ARCHIVO_ESTANDAR) or _uno("FRP_in.nc")
     if nc1 is not None:
         with h5py.File(nc1, "r") as f:
             mw = _vector(f, "FRP_MWIR")
@@ -364,6 +373,36 @@ def leer_detecciones(
 
 # ── descarga + ciclo ─────────────────────────────────────────────────
 
+def _clave_adquisicion(pid: str) -> str:
+    """Misma pasada = mismo satélite + mismo inicio/fin de adquisición.
+    `S3A_SL_2_FRP____20260827T043339_20260827T043639_...` -> S3A + fechas."""
+    if pid.startswith("S3") and len(pid) >= 47:
+        return pid[:3] + pid[16:47]
+    return pid
+
+
+def _una_por_adquisicion(prods: list) -> list:
+    """El catálogo trae la misma pasada dos veces: NR (casi tiempo real, el
+    formato verificado con merged + 500 m) y NT (reprocesado, `FRP_in.nc`).
+    Contar las dos duplica los fuegos. Se queda una; NR si existe."""
+    elegido: Dict[str, Any] = {}
+    orden: List[str] = []
+    for pr in prods:
+        pid = str(pr.properties.get("id", ""))
+        k = _clave_adquisicion(pid)
+        if k not in elegido:
+            elegido[k] = pr
+            orden.append(k)
+        elif "_NR_" in pid and "_NR_" not in str(
+                elegido[k].properties.get("id", "")):
+            elegido[k] = pr
+    # Decisión de Agente-T (2026-09-26): sólo NR. NT llega 1-2 días tarde y
+    # es otro producto; mezclarlos desalinea a alfa2 según la edad del dato.
+    # Un paso sin NR se salta.
+    return [elegido[k] for k in orden
+            if "_NR_" in str(elegido[k].properties.get("id", ""))]
+
+
 def _es_fatal(e: Exception) -> bool:
     if type(e).__name__ in _ERRORES_FATALES:
         return True
@@ -419,6 +458,7 @@ def medir_frp(
     zb = _bbox_de(zonas)
     if not zb:
         return None
+    days = min(days, FRP_VENTANA_MAX_DIAS)
     fin = datetime.now(timezone.utc)
     ini = fin - timedelta(days=days)
     try:
@@ -439,14 +479,14 @@ def medir_frp(
             res = dag.search(
                 collection=COLECCION, provider=PROVEEDOR, geom=bbox,
                 start=ini.strftime("%Y-%m-%d"), end=fin.strftime("%Y-%m-%d"),
-                limit=max_productos,
+                limit=max_productos * 2, sort_by=ORDEN_RECIENTE,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("búsqueda de FRP falló (%s): %s", zona, e)
             if _es_fatal(e):
                 abortar = True
             continue
-        for prod in list(res)[:max_productos]:
+        for prod in _una_por_adquisicion(list(res))[:max_productos]:
             pid = str(prod.properties.get("id", "?"))
             try:
                 ruta = _producto_local(dag, prod)
