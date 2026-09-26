@@ -14,6 +14,16 @@ The "muro" fires when >= 3 walls are simultaneously active with correlated
 precursors. The correlation score weights each wall by the confidence of
 its strongest active precursor.
 
+AVISO medido el 2026-09-26, al auditarlo: un muro se activa con UNA detección
+de cualquiera de sus miembros, sin umbral de confianza. Y dos de los detectores
+están prácticamente siempre encendidos --- SEISMIC_CLUSTER dispara con ~200
+eventos regionales, que es lo normal en el planeta, y SILENT_TRIGGER dispara
+PORQUE HAY CALMA (Kp bajo), que es el estado habitual. Resultado: el «breach»
+de 3 muros ocurrió el **66 % de los ciclos** del histórico, cuando la frase de
+arriba dice que casi nunca es coincidencia. Las confianzas, además, son un único
+valor fijo por tipo (0,95 / 0,9 / 0,7): son banderas, no medidas.
+Auditar esos detectores queda pendiente; está en la bitácora del 25-sep.
+
 Legacy: TITAN V32 only had walls 1+4. V53 added atmospheric. Sentinel Omega
 completes the picture with oceanic and financial correlation.
 """
@@ -34,11 +44,25 @@ WALL_OCEANICO = "OCEÁNICO"
 WALL_SOLAR = "SOLAR/GEOMAGNÉTICO"
 WALL_FINANCIERO = "FINANCIERO/SOCIAL"
 
+# FANTASMA estuvo en el muro GEOFÍSICO hasta el 2026-09-26, y no pertenece ahí:
+# el índice se calcula con Bz, viento solar y Schumann --- clima espacial puro.
+# Medido antes de moverlo: de 114 ciclos con el muro geofísico activo, **46
+# (40 %) lo tenían activo SOLO por FANTASMA**. O sea que dos de cada cinco veces
+# que el sistema informaba «dominio geofísico alterado», lo que estaba alterado
+# era el Sol.
+#
+# Eso vacía la premisa del Muro, que es su razón de existir: «si 3 o más se
+# activan a la vez, distintos dominios físicos están alterados al mismo tiempo
+# --- eso casi nunca es coincidencia». Con una señal solar contando como
+# geofísica, una sola causa podía encender dos frentes.
+#
+# El recuento de muros apenas cambia (medido: 0 ciclos tenían FANTASMA y otra
+# señal solar a la vez, así que el muro SOLAR se activa donde antes se activaba
+# el geofísico). Lo que cambia es que el dominio que se nombra es el correcto.
 WALL_MEMBERS = {
     WALL_GEOFISICO: {
         PrecursorType.SEISMIC_CLUSTER,
         PrecursorType.VOLCANICO,
-        PrecursorType.FANTASMA,
     },
     WALL_ATMOSFERICO: {
         PrecursorType.BLUE_JET,
@@ -55,6 +79,7 @@ WALL_MEMBERS = {
         PrecursorType.SCHUMANN,
         PrecursorType.SILENT_TRIGGER,
         PrecursorType.GRB,
+        PrecursorType.FANTASMA,   # movido del geofísico: es clima espacial
     },
     WALL_FINANCIERO: {
         PrecursorType.CORRELACION_FINANCIERA,
