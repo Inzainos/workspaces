@@ -61,11 +61,19 @@ FEATURE_ORDER: Dict[str, List[str]] = {
         "schumann_mean", "schumann_std", "kp_mean", "kp_max",
         "fase_lunar", "sismo_max_mag_win",
     ],
+    # beta2, rehecho el 2026-09-26. Tenía CUATRO rasgos repetidos cuatro veces,
+    # y los cuatro llegan ausentes desde que `tbl_desgasificacion_raw` se paró
+    # el 2026-07-31: un experto con dieciséis posiciones y cero materia. Ahora
+    # lleva la MAREA TERRESTRE (`core/mareas.py`), que es el forzamiento que el
+    # operador señaló y que se calcula por efemérides: sin API, sin huecos y
+    # disponible para cualquier instante, pasado o futuro. Los cuatro rasgos
+    # volcánicos se conservan --- son su dominio --- y vuelven solos el día que
+    # la fuente se alimente otra vez.
     "beta2": [
+        "marea_total", "marea_luna", "marea_sol", "marea_sicigia",
+        "marea_dist_luna", "marea_rango_24h", "marea_max_24h", "marea_deriv",
         "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
-        "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
-        "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
-        "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
+        "marea_total", "marea_sicigia", "marea_rango_24h", "marea_deriv",
     ],
     "delta": [
         "btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h",

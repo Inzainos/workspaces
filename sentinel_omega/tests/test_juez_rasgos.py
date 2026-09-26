@@ -73,11 +73,17 @@ def test_el_entrenamiento_lee_features_generales(tmp_path):
     ruta = tmp_path / "juez.db"
     conn = sqlite3.connect(ruta)
     conn.execute(
-        "CREATE TABLE TBL_JUEZ_AUDITORIA (bot_name TEXT, prediccion TEXT, "
+        # `id` va porque producción lo tiene (PRIMARY KEY AUTOINCREMENT) y el
+        # lector lo necesita para cruzar los rasgos reconstruidos. Un fixture
+        # que se aparta del esquema real es como se cuela un fallo en verde.
+        "CREATE TABLE TBL_JUEZ_AUDITORIA ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, bot_name TEXT, prediccion TEXT, "
         "confianza REAL, resultado TEXT, detalles_json TEXT, fase TEXT)"
     )
     conn.execute(
-        "INSERT INTO TBL_JUEZ_AUDITORIA VALUES ('alfa1','neutral',0.3,'FALLO',?,'viva')",
+        "INSERT INTO TBL_JUEZ_AUDITORIA (bot_name, prediccion, confianza, "
+        "resultado, detalles_json, fase) "
+        "VALUES ('alfa1','neutral',0.3,'FALLO',?,'viva')",
         (json.dumps({"firma_matches": [], "nodos": [], "features_generales": RASGOS}),),
     )
     conn.commit()
@@ -95,11 +101,17 @@ def test_los_metadatos_de_firma_no_valen_como_rasgos(tmp_path):
     ruta = tmp_path / "solo_firma.db"
     conn = sqlite3.connect(ruta)
     conn.execute(
-        "CREATE TABLE TBL_JUEZ_AUDITORIA (bot_name TEXT, prediccion TEXT, "
+        # `id` va porque producción lo tiene (PRIMARY KEY AUTOINCREMENT) y el
+        # lector lo necesita para cruzar los rasgos reconstruidos. Un fixture
+        # que se aparta del esquema real es como se cuela un fallo en verde.
+        "CREATE TABLE TBL_JUEZ_AUDITORIA ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, bot_name TEXT, prediccion TEXT, "
         "confianza REAL, resultado TEXT, detalles_json TEXT, fase TEXT)"
     )
     conn.execute(
-        "INSERT INTO TBL_JUEZ_AUDITORIA VALUES ('alfa1','neutral',0.3,'FALLO',?,'viva')",
+        "INSERT INTO TBL_JUEZ_AUDITORIA (bot_name, prediccion, confianza, "
+        "resultado, detalles_json, fase) "
+        "VALUES ('alfa1','neutral',0.3,'FALLO',?,'viva')",
         (json.dumps({"firma_matches": [{"firma_id": 3163, "similitud": 1.0,
                                         "recurrencia": 71}],
                      "features_generales": {}}),),
@@ -114,7 +126,11 @@ def test_la_cadena_completa_de_punta_a_punta(tmp_path):
     ruta = tmp_path / "cadena.db"
     conn = sqlite3.connect(ruta)
     conn.execute(
-        "CREATE TABLE TBL_JUEZ_AUDITORIA (bot_name TEXT, prediccion TEXT, "
+        # `id` va porque producción lo tiene (PRIMARY KEY AUTOINCREMENT) y el
+        # lector lo necesita para cruzar los rasgos reconstruidos. Un fixture
+        # que se aparta del esquema real es como se cuela un fallo en verde.
+        "CREATE TABLE TBL_JUEZ_AUDITORIA ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, bot_name TEXT, prediccion TEXT, "
         "confianza REAL, resultado TEXT, detalles_json TEXT, fase TEXT)"
     )
 
@@ -122,7 +138,9 @@ def test_la_cadena_completa_de_punta_a_punta(tmp_path):
         def registrar_prediccion(self, bot_name, prediccion, confianza,
                                  ventana_h=72, detalles=None, fase=None, **kw):
             conn.execute(
-                "INSERT INTO TBL_JUEZ_AUDITORIA VALUES (?,?,?,'FALLO',?,?)",
+                "INSERT INTO TBL_JUEZ_AUDITORIA (bot_name, prediccion, "
+                "confianza, resultado, detalles_json, fase) "
+                "VALUES (?,?,?,'FALLO',?,?)",
                 (bot_name, prediccion, confianza, json.dumps(detalles or {}), fase),
             )
             conn.commit()
