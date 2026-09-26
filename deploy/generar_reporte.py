@@ -299,6 +299,20 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             "WHERE resultado != 'PENDIENTE' AND verdad != ''"
         ).fetchall()
         molchan = evaluar_veredictos(filas_nulo, SEV_FALLO, SEV_FALSO_POS)
+        # Y lo mismo contado por EPISODIOS, que es la unidad honesta: el ciclo
+        # corre cada 5 min y la ventana dura 2 h, así que un solo sismo
+        # «confirma» hasta 24 predicciones seguidas y una alarma sostenida se
+        # cuenta como decenas de falsas alarmas. Medido el 2026-09-25: las 37
+        # ventanas-ciclo con evento de la fase viva eran 3 episodios reales.
+        episodios = None
+        try:
+            from sentinel_omega.core.precursor.baseline import evaluar_episodios
+            episodios = evaluar_episodios(conn.execute(
+                "SELECT timestamp, verdad, resultado FROM viva_real "
+                "WHERE resultado != 'PENDIENTE' AND verdad != ''"
+            ).fetchall())
+        except Exception:  # noqa: BLE001 — el reporte sale igual
+            pass
         if molchan is not None:
             ganancia = molchan.ganancia
             veredicto = {
@@ -341,6 +355,41 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 "",
                 f"**Veredicto:** {veredicto}",
                 "",
+            ]
+            if episodios is not None:
+                prec_ep = episodios["precision"]
+                lineas += [
+                    "### Lo mismo, contado por EPISODIOS",
+                    "",
+                    "> La tabla de arriba cuenta CICLOS, y los ciclos se "
+                    "solapan: el sistema mide cada 5 minutos con una ventana de "
+                    "2 horas, así que un solo sismo confirma hasta 24 "
+                    "predicciones seguidas y una alarma sostenida se cuenta como "
+                    "decenas de falsas alarmas. Un episodio es una racha de "
+                    "alarmas; un evento, un sismo. **Esta es la cuenta honesta.**",
+                    "",
+                    "| | contado por ciclos | contado por episodios |",
+                    "|---|---:|---:|",
+                    f"| Alarmas | {molchan.alarmas} | {episodios['episodios']} |",
+                    f"| Eventos | {molchan.con_evento} | "
+                    f"**{episodios['eventos_distintos']}** |",
+                    f"| Precisión de la alarma | "
+                    f"{f'{molchan.precision:.1%}' if molchan.precision is not None else '—'}"
+                    f" | {f'{prec_ep:.1%}' if prec_ep is not None else '—'} |",
+                    "",
+                ]
+                if not episodios["evidencia_suficiente"]:
+                    lineas += [
+                        "🔴 **Sin evidencia para concluir nada.** Hacen falta "
+                        f"{episodios['minimo_eventos']} episodios de evento "
+                        f"distintos y hay **{episodios['eventos_distintos']}**. "
+                        "Cualquier ganancia calculada con esta muestra es ruido: "
+                        "los números de arriba describen lo que pasó, no miden "
+                        "habilidad. Por eso el peso por mérito de los bots se "
+                        "queda quieto hasta que haya con qué juzgarlos.",
+                        "",
+                    ]
+            lineas += [
                 "### La asertividad, en su sitio",
                 "",
                 "> Este es el número que conviene no leer solo: cuenta como "

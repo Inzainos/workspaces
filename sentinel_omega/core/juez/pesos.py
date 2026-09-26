@@ -44,8 +44,13 @@ def cargar_pesos(
         pesos = {}
     if not por_merito:
         return pesos
-    for bot, m in pesos_por_merito(conn, minimo_ventanas=minimo_ventanas).items():
+    aplicados = pesos_por_merito(conn, minimo_ventanas=minimo_ventanas)
+    for bot, m in aplicados.items():
         pesos[bot] = m["peso"]
+    # Cuántos méritos se pudieron calcular de verdad. Sin esto, el arranque
+    # decía «MERITO contra el silencio» aunque no se hubiera aplicado ninguno
+    # por falta de evidencia, y el registro engañaba al que lo leyera.
+    pesos["_meritos_aplicados"] = float(len(aplicados))
     return pesos
 
 
