@@ -68,6 +68,22 @@ class Juez:
         self._conn.commit()
         return cur.lastrowid
 
+    _INDICES_LISTOS = False
+
+    def asegurar_indices(self) -> None:
+        """El índice que hace barata la racha. Una vez por proceso."""
+        if Juez._INDICES_LISTOS:
+            return
+        try:
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_juez_bot_id "
+                "ON TBL_JUEZ_AUDITORIA(bot_name, id)"
+            )
+            self._conn.commit()
+        except sqlite3.Error as e:
+            logger.debug("no se pudo crear idx_juez_bot_id: %s", e)
+        Juez._INDICES_LISTOS = True
+
     def reincidencia(self, bot_name: str) -> int:
         """Eventos seguidos que el bot NO ha visto, sin acierto de por medio.
 
@@ -84,11 +100,20 @@ class Juez:
         ventanas en calma no cuentan: son el 98 % y borrarían cualquier racha.
         Solo cuentan los eventos, que es donde el bot tiene algo que ver.
         """
+        # `ORDER BY id DESC` y no por fecha: `id` es el rowid, así que con el
+        # índice (bot_name, id) SQLite recorre hacia atrás y para al quinto.
+        # Ordenar por COALESCE(resuelto_at, created_at) obligaba a un B-TREE
+        # temporal sobre TODAS las filas del bot --- hasta 150.000 --- para
+        # sacar cinco. Medido el 2026-09-26: eso se comía **24 de los 38
+        # segundos** de un entrenamiento de 40 eventos, el 62 % del tiempo.
+        # Lo introduje yo el día anterior al añadir la racha; el índice que le
+        # faltaba va en `asegurar_indices()`.
+        self.asegurar_indices()
         filas = self._conn.execute(
             "SELECT resultado FROM TBL_JUEZ_AUDITORIA "
             "WHERE bot_name = ? AND resultado IN ('FALLO', 'ACIERTO') "
             "AND verdad != '' AND verdad NOT LIKE 'sin eventos%' "
-            "ORDER BY COALESCE(resuelto_at, created_at) DESC, id DESC "
+            "ORDER BY id DESC "
             "LIMIT ?",
             (bot_name, REINCIDENCIA_MAXIMA + 1),
         ).fetchall()

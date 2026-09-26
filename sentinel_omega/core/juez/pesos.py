@@ -12,6 +12,7 @@ Bounds keep any bot from being silenced or deified: [0.3, 1.5].
 import logging
 import re
 import sqlite3
+import time
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -373,3 +374,86 @@ def pesos_por_competencia(
         # Su MEJOR clase manda: el bot que solo sirve para una cosa, sirve.
         pesos[bot] = max(PESO_MIN, min(PESO_MAX, max(relativas)))
     return pesos
+
+
+# ─── La memoria del perfil: cómo cambia cada experto con el tiempo ───────────
+#
+# El perfil por clase dice quién es bueno en qué HOY. Guardarlo en cada barrido
+# convierte esa foto en una película, que es lo que permite decir «beta2 lleva
+# tres cortes mejorando en M5» o «jupiter se apagó». Sin historia, el Padre solo
+# puede reaccionar al último número, y un bot que empeora despacio no se nota.
+#
+# Tabla nueva, hacia delante: no reescribe nada de lo que ya hay.
+
+SQL_TABLA_COMPETENCIA = """
+CREATE TABLE IF NOT EXISTS tbl_competencia_historico (
+    ts          REAL    NOT NULL,
+    bot_name    TEXT    NOT NULL,
+    clase       TEXT    NOT NULL,
+    vistos      INTEGER NOT NULL,
+    total       INTEGER NOT NULL,
+    tasa        REAL    NOT NULL,
+    PRIMARY KEY (ts, bot_name, clase)
+)
+"""
+
+
+def guardar_competencia(
+    conn: sqlite3.Connection,
+    minimo: int = MINIMO_POR_CLASE,
+    ts: Optional[float] = None,
+) -> int:
+    """Guarda la foto de hoy. Devuelve cuántas filas escribió."""
+    perfil = competencia_por_clase(conn, minimo)
+    if not perfil:
+        return 0
+    momento = float(ts if ts is not None else time.time())
+    conn.execute(SQL_TABLA_COMPETENCIA)
+    filas = [
+        (momento, bot, clase, d["vistos"], d["total"], d["tasa"])
+        for bot, clases in perfil.items()
+        for clase, d in clases.items()
+    ]
+    conn.executemany(
+        "INSERT OR REPLACE INTO tbl_competencia_historico "
+        "(ts, bot_name, clase, vistos, total, tasa) VALUES (?,?,?,?,?,?)",
+        filas,
+    )
+    conn.commit()
+    return len(filas)
+
+
+def tendencia_competencia(
+    conn: sqlite3.Connection,
+    minimo_cortes: int = 2,
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Cómo se mueve cada bot en cada clase: {bot: {clase: {...}}}.
+
+    `cambio` es tasa de ahora menos la del corte más viejo que se conserva.
+    Positivo = está aprendiendo; negativo = se está apagando. None cuando no
+    hay al menos `minimo_cortes` fotos: con una sola no hay película.
+    """
+    try:
+        filas = conn.execute(
+            "SELECT bot_name, clase, ts, tasa FROM tbl_competencia_historico "
+            "ORDER BY bot_name, clase, ts"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    series: Dict[str, Dict[str, list]] = {}
+    for bot, clase, ts, tasa in filas:
+        series.setdefault(bot, {}).setdefault(clase, []).append((ts, tasa))
+    fuera: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for bot, clases in series.items():
+        for clase, serie in clases.items():
+            if len(serie) < minimo_cortes:
+                continue
+            primera, ultima = serie[0][1], serie[-1][1]
+            fuera.setdefault(bot, {})[clase] = {
+                "cortes": len(serie),
+                "tasa_actual": ultima,
+                "tasa_inicial": primera,
+                "cambio": ultima - primera,
+                "desde": serie[0][0],
+            }
+    return fuera

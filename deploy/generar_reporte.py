@@ -1348,6 +1348,60 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                                       sev_falso_positivo=SEV_FALSO_POS)
         except Exception:  # noqa: BLE001 — el reporte sale igual
             merito = {}
+        # ── Quién es bueno en QUÉ ──
+        try:
+            from sentinel_omega.core.juez.pesos import (
+                competencia_por_clase,
+                tendencia_competencia,
+            )
+            perfil = competencia_por_clase(conn)
+            tend = tendencia_competencia(conn)
+        except Exception:  # noqa: BLE001
+            perfil, tend = {}, {}
+        if perfil:
+            clases = sorted({c for d in perfil.values() for c in d})
+            lineas += [
+                "### Quién ve QUÉ — competencia por clase de evento",
+                "",
+                "> Un solo número por bot aplasta al especialista. Aquí, la "
+                "fracción de eventos de cada tamaño que cada bot SÍ vio. "
+                "Sale de las fases que discriminan (trasfondo y viva): la de "
+                "reconocimiento marca todo como acierto y no enseña nada. "
+                "La flecha compara con el primer corte guardado.",
+                "",
+                "| bot | " + " | ".join(clases) + " |",
+                "|---|" + "---:|" * len(clases),
+            ]
+            for bot in sorted(perfil, key=lambda b: -max(
+                    (d["tasa"] for d in perfil[b].values()), default=0)):
+                celdas = []
+                for clase in clases:
+                    d = perfil[bot].get(clase)
+                    if not d:
+                        celdas.append("—")
+                        continue
+                    txt = f"{d['tasa']:.0%} ({d['vistos']}/{d['total']})"
+                    cam = (tend.get(bot, {}).get(clase) or {}).get("cambio")
+                    if cam is not None and abs(cam) >= 0.02:
+                        txt += " ↑" if cam > 0 else " ↓"
+                    celdas.append(txt)
+                lineas.append(f"| {bot} | " + " | ".join(celdas) + " |")
+            mejores = {}
+            for clase in clases:
+                cand = [(b, perfil[b][clase]["tasa"]) for b in perfil
+                        if clase in perfil[b]]
+                if cand:
+                    mejores[clase] = max(cand, key=lambda x: x[1])
+            lineas += [
+                "",
+                "**El mejor de cada clase:** "
+                + " · ".join(f"{c} → **{b}** ({t:.0%})"
+                             for c, (b, t) in sorted(mejores.items())) + ".",
+                "",
+                "*El peso de cada bot en el consenso es el de su MEJOR clase: "
+                "un experto que solo sirve para una cosa, sirve.*",
+                "",
+            ]
         if merito:
             lineas += [
                 "### ¿Qué bot aporta algo? — mérito contra quedarse callado",

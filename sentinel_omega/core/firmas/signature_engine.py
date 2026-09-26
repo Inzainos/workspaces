@@ -373,6 +373,50 @@ def _vector(features: Dict[str, float]) -> np.ndarray:
     )
 
 
+def similitud_vec(va: np.ndarray, vb: np.ndarray) -> float:
+    """Igual que `similitud`, pero con los vectores YA construidos.
+
+    Existe por una medición del 2026-09-26: `similitud` rehacía el vector de
+    los DOS lados en cada llamada, y `registrar` compara un evento contra todas
+    las firmas de su clase. Resultado: 806.546 llamadas a `_vector` en 60
+    eventos --- 8 de los 22 segundos --- reconstruyendo una y otra vez los
+    mismos vectores. Construirlos una vez y compararlos es el mismo cálculo sin
+    el desperdicio.
+    """
+    mask = ~(np.isnan(va) | np.isnan(vb))
+    if mask.sum() < MIN_DIMENSIONES_COMPARABLES:
+        return 0.0
+    va, vb = va[mask], vb[mask]
+    scale = np.maximum(np.abs(va) + np.abs(vb), 1e-9) / 2.0
+    diff = np.abs(va - vb) / scale
+    return float(max(0.0, 1.0 - np.mean(np.minimum(diff, 2.0)) / 2.0))
+
+
+def similitudes_contra(va: np.ndarray, matriz: np.ndarray) -> np.ndarray:
+    """Las similitudes de UN vector contra MUCHOS, de una sola vez.
+
+    Exactamente el mismo cálculo que `similitud_vec`, fila a fila, pero en una
+    operación de matriz. Medido el 2026-09-26: comparar de una en una gastaba
+    549.549 llamadas de Python en 80 eventos --- 8 de los 12 segundos ---
+    porque cada evento se compara contra todas las firmas de su clase.
+
+    `matriz` es (n_firmas × n_rasgos). Devuelve un vector de n_firmas.
+    """
+    if matriz.size == 0:
+        return np.zeros(0, dtype=float)
+    mask = ~(np.isnan(va)[None, :] | np.isnan(matriz))
+    cuenta = mask.sum(axis=1)
+    with np.errstate(invalid="ignore"):
+        escala = np.maximum(np.abs(va)[None, :] + np.abs(matriz), 1e-9) / 2.0
+        diff = np.abs(va[None, :] - matriz) / escala
+    # Solo las dimensiones comparables entran en la media.
+    aporte = np.where(mask, np.minimum(diff, 2.0), 0.0).sum(axis=1)
+    sim = np.zeros(matriz.shape[0], dtype=float)
+    ok = cuenta >= MIN_DIMENSIONES_COMPARABLES
+    sim[ok] = np.maximum(0.0, 1.0 - (aporte[ok] / cuenta[ok]) / 2.0)
+    return sim
+
+
 def similitud(a: Dict[str, float], b: Dict[str, float]) -> float:
     """Similarity in [0,1] over the features BOTH vectors actually have.
 
@@ -394,6 +438,21 @@ class FirmaMemoria:
 
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
+        # Vector de cada firma, cacheado por (firma_id, su json). El json
+        # forma parte de la clave a propósito: cuando una firma se actualiza
+        # (media corrida), su json cambia y la entrada vieja deja de usarse
+        # sola. Sin esto se reconstruía el mismo vector en cada comparación.
+        self._cache_vectores: Dict[Tuple[int, str], np.ndarray] = {}
+
+    def _vector_de_firma(self, firma_id: int, features_json: str) -> np.ndarray:
+        clave = (firma_id, features_json)
+        v = self._cache_vectores.get(clave)
+        if v is None:
+            v = _vector(json.loads(features_json))
+            if len(self._cache_vectores) > 50000:
+                self._cache_vectores.clear()   # techo: no crecer sin límite
+            self._cache_vectores[clave] = v
+        return v
 
     def registrar(
         self,
@@ -418,11 +477,18 @@ class FirmaMemoria:
             (bot_name, event_class),
         ).fetchall()
 
+        # El vector del evento UNA vez, y todas las firmas de la clase en una
+        # sola operación de matriz.
+        v_evento = _vector(features)
         best_id, best_sim, best_row = None, 0.0, None
-        for row in rows:
-            sim = similitud(features, json.loads(row[1]))
-            if sim > best_sim:
-                best_id, best_sim, best_row = row[0], sim, row
+        if rows:
+            matriz = np.vstack([
+                self._vector_de_firma(r[0], r[1]) for r in rows
+            ])
+            sims = similitudes_contra(v_evento, matriz)
+            i = int(np.argmax(sims))
+            if sims[i] > 0.0:
+                best_id, best_sim, best_row = rows[i][0], float(sims[i]), rows[i]
 
         if best_id is not None and best_sim >= SIMILARITY_MATCH:
             old_features = json.loads(best_row[1])
