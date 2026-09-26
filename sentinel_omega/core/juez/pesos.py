@@ -10,6 +10,7 @@ Bounds keep any bot from being silenced or deified: [0.3, 1.5].
 """
 
 import logging
+import re
 import sqlite3
 from typing import Any, Dict, Optional
 
@@ -44,6 +45,16 @@ def cargar_pesos(
         pesos = {}
     if not por_merito:
         return pesos
+    # Orden de prioridad, de menos a más fundado:
+    #   1. el paseo almacenado (lo que ya había)
+    #   2. la COMPETENCIA por clase de evento --- 4.696 veredictos que
+    #      discriminan, y respeta al especialista: beta2 es malo en M3 y M4
+    #      pero el MEJOR en M5, así que conserva voz
+    #   3. el MÉRITO de la fase viva, si hay episodios de evento suficientes
+    #      (hoy no los hay: 3 en 17 días, así que se abstiene)
+    competencia = pesos_por_competencia(conn)
+    for bot, peso in competencia.items():
+        pesos[bot] = peso
     aplicados = pesos_por_merito(conn, minimo_ventanas=minimo_ventanas)
     for bot, m in aplicados.items():
         pesos[bot] = m["peso"]
@@ -51,6 +62,7 @@ def cargar_pesos(
     # decía «MERITO contra el silencio» aunque no se hubiera aplicado ninguno
     # por falta de evidencia, y el registro engañaba al que lo leyera.
     pesos["_meritos_aplicados"] = float(len(aplicados))
+    pesos["_competencias_aplicadas"] = float(len(competencia))
     return pesos
 
 
@@ -253,3 +265,111 @@ def pesos_por_merito(
         if m is not None:
             fuera[bot] = m
     return fuera
+
+
+# ─── Competencia por CLASE de evento ─────────────────────────────────────────
+#
+# Un solo número por bot no basta, y lo dijo el operador: «tal vez en esto estás
+# mal, pero para tal evento siempre le has atinado». Eso es medible.
+#
+# La fase de RECONOCIMIENTO no sirve para esto: sus 984.413 veredictos son
+# TODOS acierto --- en el preentrenamiento, registrar una firma cuenta como
+# acierto, así que ahí todos los bots son perfectos en todo. La que discrimina
+# es la fase de TRASFONDO (castigo desde abajo, 4.696 veredictos) y la viva.
+#
+# Medido el 2026-09-26 sobre el trasfondo, y esto es exactamente lo que un
+# número único escondía:
+#
+#     bot         M3            M4
+#     padre    65/133 (49 %)  331/535 (62 %)   <- el mejor en M3
+#     beta1    45/133 (34 %)  413/535 (77 %)   <- el mejor en M4
+#     omega    52/133 (39 %)  383/535 (72 %)
+#     alfa1    42/133 (32 %)  373/535 (70 %)
+#     jupiter   0/133 ( 0 %)   60/535 (11 %)
+#     loki      1/133 ( 1 %)   51/535 (10 %)
+#
+# No son el mismo experto: el Padre ve los pequeños y beta1 los medianos.
+
+FASES_QUE_DISCRIMINAN = ("trasfondo", "viva")
+MINIMO_POR_CLASE = 20
+
+
+def _clase_de(verdad: str) -> Optional[str]:
+    """La clase del evento desde la verdad del Juez: «…|M5.1» o «máx M5.0…»."""
+    m = re.search(r"M(\d+)(?:\.\d+)?", str(verdad or ""))
+    return f"M{m.group(1)}" if m else None
+
+
+def competencia_por_clase(
+    conn: sqlite3.Connection,
+    minimo: int = MINIMO_POR_CLASE,
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Qué tan bien ve cada bot CADA clase de evento.
+
+    Devuelve {bot: {clase: {vistos, total, tasa}}}. Solo clases con al menos
+    `minimo` eventos: con menos, la tasa es ruido y prometería una competencia
+    que no se ha medido.
+    """
+    try:
+        filas = conn.execute(
+            "SELECT LOWER(bot_name), verdad, resultado FROM TBL_JUEZ_AUDITORIA "
+            f"WHERE fase IN ({','.join('?' * len(FASES_QUE_DISCRIMINAN))}) "
+            "AND resultado IN ('ACIERTO', 'FALLO') AND verdad != '' "
+            "AND verdad NOT LIKE 'sin eventos%'",
+            FASES_QUE_DISCRIMINAN,
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+
+    crudo: Dict[str, Dict[str, list]] = {}
+    for bot, verdad, resultado in filas:
+        clase = _clase_de(verdad)
+        if clase is None:
+            continue
+        casilla = crudo.setdefault(bot, {}).setdefault(clase, [0, 0])
+        casilla[1] += 1
+        if resultado == "ACIERTO":
+            casilla[0] += 1
+
+    fuera: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for bot, clases in crudo.items():
+        for clase, (vistos, total) in clases.items():
+            if total < minimo:
+                continue
+            fuera.setdefault(bot, {})[clase] = {
+                "vistos": vistos, "total": total, "tasa": vistos / total,
+            }
+    return fuera
+
+
+def pesos_por_competencia(
+    conn: sqlite3.Connection,
+    minimo: int = MINIMO_POR_CLASE,
+) -> Dict[str, float]:
+    """El peso de cada bot RELATIVO al mejor en cada clase.
+
+    Para cada clase se mira quién es el mejor y se puntúa a los demás contra
+    él; el peso del bot es su mejor puntuación. Así, un bot flojo en general
+    pero el mejor en una clase conserva voz --- que es justo lo que un número
+    único aplastaba. Recortado a [PESO_MIN, PESO_MAX].
+    """
+    perfil = competencia_por_clase(conn, minimo)
+    if not perfil:
+        return {}
+    mejor_por_clase: Dict[str, float] = {}
+    for clases in perfil.values():
+        for clase, d in clases.items():
+            if d["tasa"] > mejor_por_clase.get(clase, 0.0):
+                mejor_por_clase[clase] = d["tasa"]
+    pesos: Dict[str, float] = {}
+    for bot, clases in perfil.items():
+        relativas = [
+            d["tasa"] / mejor_por_clase[clase]
+            for clase, d in clases.items()
+            if mejor_por_clase.get(clase, 0.0) > 0
+        ]
+        if not relativas:
+            continue
+        # Su MEJOR clase manda: el bot que solo sirve para una cosa, sirve.
+        pesos[bot] = max(PESO_MIN, min(PESO_MAX, max(relativas)))
+    return pesos
