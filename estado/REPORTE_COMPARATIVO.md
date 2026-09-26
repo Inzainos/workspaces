@@ -1,26 +1,44 @@
-# 🔄 Comparativo diario — 2026-09-20 vs 2026-09-19
-*Corte 12:09 hora MX*
+# 🔄 Comparativo diario — 2026-09-26 vs 2026-09-25
+*Corte 00:01 hora MX*
 
 | Métrica | Hoy | Ayer | Cambio |
 |---|---:|---:|---:|
-| Fantasma medio | 8.5 | 0.0 | — |
-| Fantasma máx | 8.6 | 0.0 | — |
-| Ciclos corridos | 4 | 0 | — |
-| Breaches del Muro | 0 | 0 | — |
-| Asertividad viva (resuelta en el día) | — | — | — |
-| Patrones cimáticos (total / nuevos 24h) | 1 | — | +1 |
+| Fantasma medio | 13.2 | 14.0 | ▼ -0.8 |
+| Fantasma máx | 14.1 | 16.3 | ▼ -2.2 |
+| Ciclos corridos | 65 | 287 | ▼ -222 |
+| Breaches del Muro | 0 | 0 | ＝ +0 |
+| Asertividad viva (resuelta en el día) | — | 95% (n=2367) | — |
+| Patrones cimáticos (total / nuevos 24h) | 279079 | — | +36 |
 
-> **Lectura rápida:** el sistema estuvo **en calma** · Fantasma medio **8.5** (MODERATE · atención) · Muro **sin roturas**.
+> **Lectura rápida:** el sistema estuvo **en calma** · Fantasma medio **13.2** (MODERATE · atención) · Muro **sin roturas**.
 
 ## ✅ Aciertos — Últimas 24 horas
 
 | Métrica | Valor |
 |---------|-------|
-| **Aciertos** | 0 |
+| **Aciertos** | 2242 |
 | **Fallos** | 0 |
-| **Falsos positivos** | 0 |
-| **Tasa de acierto** | 0.0% `░░░░░░░░░░░░` |
-| **Total predicciones** | 36 |
+| **Falsos positivos** | 116 |
+| **Tasa de acierto** | 89.0% `▓▓▓▓▓▓▓▓▓▓▓░` |
+| **Total predicciones** | 2520 |
+
+![Distribución de veredictos](graficas/aciertos_1d_pastel.png)
+
+### 🤖 Desempeño por Bot
+
+| Bot | Aciertos | Tasa | Confianza | Anticipación |
+|-----|----------|------|-----------|---------------|
+| alfa2 | 262/262 | 100% `▓▓▓▓▓▓▓▓` | 0.20 | 0.1d |
+| beta2 | 262/262 | 100% `▓▓▓▓▓▓▓▓` | 0.20 | 0.1d |
+| delta | 262/262 | 100% `▓▓▓▓▓▓▓▓` | 0.30 | 0.1d |
+| jupiter | 262/262 | 100% `▓▓▓▓▓▓▓▓` | 0.20 | 0.1d |
+| loki | 262/262 | 100% `▓▓▓▓▓▓▓▓` | 0.20 | 0.1d |
+| beta1 | 256/262 | 98% `▓▓▓▓▓▓▓▓` | 0.31 | 0.1d |
+| omega | 256/262 | 98% `▓▓▓▓▓▓▓▓` | 0.26 | 0.1d |
+| padre | 256/262 | 98% `▓▓▓▓▓▓▓▓` | 0.09 | 0.1d |
+| alfa1 | 164/262 | 63% `▓▓▓▓▓░░░` | 0.56 | 0.1d |
+
+![Desempeño por bot](graficas/aciertos_1d_barras.png)
 
 ![Fantasma 7 días](graficas/comparativo_fantasma.png)
 
