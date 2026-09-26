@@ -234,7 +234,7 @@ def test_repositorio_guarda_detecciones_sin_duplicar(tmp_path):
 
 class _Prod:
     def __init__(self, i):
-        self.properties = {"id": f"S3A_SL_2_FRP_prueba_{i}"}
+        self.properties = {"id": f"S3A_SL_2_FRP_prueba_{i}_NR_003"}
 
 
 class _DagSinCredenciales:
@@ -267,7 +267,7 @@ def test_producto_en_cache_no_se_vuelve_a_bajar(tmp_path, monkeypatch):
     import shutil
 
     cache = tmp_path / "cache"
-    shutil.copytree(MUESTRA, cache / "S3A_SL_2_FRP_prueba_0")
+    shutil.copytree(MUESTRA, cache / "S3A_SL_2_FRP_prueba_0_NR_003")
     dag = _DagSinCredenciales()
     dag.search = lambda **kw: [_Prod(0)]
     monkeypatch.setattr(esa_frp, "CACHE_DIR", cache)
@@ -312,3 +312,67 @@ def test_zona_nula_no_duplica(tmp_path):
     repo = SentinelRepository(db)
     assert repo.insert_frp_detecciones(det) == 34
     assert repo.insert_frp_detecciones(det) == 0
+
+
+NR = "S3A_SL_2_FRP____20260827T043339_20260827T043639_20260827T052950_0180_143_176______MAR_O_NR_003"
+NT = "S3A_SL_2_FRP____20260827T043339_20260827T043639_20260828T193636_0180_143_176_0180_PS1_O_NT_005"
+
+
+class _P:
+    def __init__(self, pid):
+        self.properties = {"id": pid}
+
+
+def test_la_misma_pasada_nr_y_nt_cuenta_una_vez():
+    """Hallado el 2026-09-26: el catálogo trae cada pasada como NR y como NT."""
+    otra = NR.replace("T043339_20260827T043639", "T162353_20260827T162653")
+    r = esa_frp._una_por_adquisicion([_P(NT), _P(NR), _P(otra)])
+    assert [p.properties["id"] for p in r] == [NR, otra]
+
+
+def test_busca_lo_mas_reciente_en_ventana_corta(monkeypatch, tmp_path):
+    """Con orden ascendente y $top=4 salían los 4 productos más viejos de una
+    ventana de 30 días: el conteo «actual» era de hace un mes."""
+    from datetime import datetime, timedelta, timezone
+
+    visto = {}
+
+    class _Dag:
+        def search(self, **kw):
+            visto.update(kw)
+            return []
+
+    monkeypatch.setattr(esa_frp, "CACHE_DIR", tmp_path / "c")
+    monkeypatch.setattr(esa_frp, "_dag", lambda: _Dag())
+    monkeypatch.setattr(esa_frp, "_bbox_de", lambda zonas: [
+        (z, TODO_EL_GRANULO) for z in zonas])
+    assert esa_frp.medir_frp(["z"], days=30) is None
+    assert visto["sort_by"] == [("start_datetime", "DESC")]
+    ini = datetime.strptime(visto["start"], "%Y-%m-%d").replace(
+        tzinfo=timezone.utc)
+    assert datetime.now(timezone.utc) - ini <= timedelta(days=8)
+
+
+def test_formato_nt_frp_in_tambien_da_detecciones(tmp_path):
+    """Conteo y detecciones deben salir del mismo archivo: antes el conteo
+    leía `FRP_in.nc` (NT) y las detecciones no, y daba «21 anomalías y 0
+    detecciones»."""
+    h5py = pytest.importorskip("h5py")
+    d = tmp_path / NT
+    d.mkdir()
+    with h5py.File(d / "FRP_in.nc", "w") as f:
+        f.create_dataset("FRP_MWIR", data=np.array([5.0, 12.0, 0.3, 40.0]))
+        f.create_dataset("FRP_uncertainty_MWIR", data=np.array([1.0, 2, 0.1, 3]))
+        f.create_dataset("latitude", data=np.array([15.0, 15.2, 15.1, 30.0]))
+        f.create_dataset("longitude", data=np.array([-93, -92.8, -93, -100.0]))
+    caja = {"lonmin": -93.5, "latmin": 14.5, "lonmax": -92.0, "latmax": 16.0}
+    det = esa_frp.leer_detecciones(d, caja, "chiapas")
+    assert esa_frp.leer_frp(d, bbox=caja) == 2
+    assert len(det) == 3
+    assert sum(x["frp_mwir"] >= esa_frp.FRP_MINIMO_MW for x in det) == 2
+    assert {x["archivo"] for x in det} == {"FRP_in.nc"}
+
+
+def test_un_paso_solo_nt_se_salta():
+    """Sólo NR (decisión de T): la variable sale siempre del mismo producto."""
+    assert esa_frp._una_por_adquisicion([_P(NT)]) == []
