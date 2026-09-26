@@ -38,6 +38,9 @@ from sentinel_omega.infrastructure.api.geophysical import (
     fetch_lod_series,
     compute_lunar_phase_series,
 )
+from sentinel_omega.infrastructure.api.esa_frp import (
+    contar_anomalias_termicas,
+)
 from sentinel_omega.infrastructure.api.esa_sentinel import (
     search_sentinel2,
     search_sentinel1_sar,
@@ -354,10 +357,15 @@ class GeodynamicPipeline:
             return self._locf_get("alfa2")
 
         logger.info(f"Alfa-2 pipeline: {len(zone_coverages)} zones analyzed")
-        result = {
-            "zone_coverages": zone_coverages,
-            "thermal_anomaly_count": 0,
-        }
+        # `thermal_anomaly_count` NO se pone a 0: estaba así desde siempre y
+        # era el único valor que la columna llegó a tener en 2.817 filas. El
+        # conteo real sale de un producto S3_SLSTR_L2FRP de la ESA
+        # (`api/esa_frp.py`), que hay que descargar y leer; hasta que eso corra,
+        # la clave se queda AUSENTE y quien la lea sabrá que no se midió.
+        result: Dict[str, Any] = {"zone_coverages": zone_coverages}
+        anomalias = contar_anomalias_termicas(target_zones, days=days)
+        if anomalias is not None:
+            result["thermal_anomaly_count"] = anomalias
         self._locf_set("alfa2", result)
         return result
 
