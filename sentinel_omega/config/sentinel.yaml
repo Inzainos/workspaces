@@ -52,7 +52,11 @@ juez:
   # paseo, 8 de 9 bots clavados en 1.000 y un castigo borrado en 5,9 h; con el
   # merito, dispersion 0.298 y se ve que solo beta2 le gana al silencio.
   # Encenderlo cambia como VOTA el consenso: decision del operador.
-  peso_por_merito: false
+  # Encendido el 2026-09-25 por orden del operador, con la medida delante:
+  # beta2 pasa a pesar 1.295 (11 de 37 eventos con 1 falsa alarma) y alfa1 a
+  # 0.300 (544 falsas alarmas por 5 detecciones), en vez de 1.000 los dos.
+  # Para revertir: poner false y reiniciar sentinel-omega.
+  peso_por_merito: true
   minimo_ventanas: 50
 consensus:
   min_families_for_alert: 2
