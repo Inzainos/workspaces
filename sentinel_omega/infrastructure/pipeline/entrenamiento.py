@@ -328,6 +328,7 @@ def entrenar_reconocimiento(
     db_path: str,
     max_eventos: Optional[int] = None,
     bots: Optional[List[str]] = None,
+    desde: Optional[str] = None,
 ) -> Dict:
     """Fase 1 — learn signatures from every observed historical event.
 
@@ -366,6 +367,13 @@ def entrenar_reconocimiento(
     if desde_global:
         query += "AND timestamp_blk >= ? "
         params = (MIN_MAGNITUD_OBSERVAR, desde_global)
+    # `desde` acota a lo que AÚN NO se ha aprendido. Medido el 2026-09-25: la
+    # corrida completa recorre 186.806 eventos a 1,5 por segundo --- 36 HORAS ---
+    # y por eso nunca se programó, así que el sistema dejó de aprender el 3 de
+    # septiembre. Con el corte, lo nuevo de un día se aprende en minutos.
+    if desde:
+        query += "AND timestamp_blk > ? "
+        params = params + (desde,)
     query += "ORDER BY timestamp_blk"
     eventos = conn.execute(query, params).fetchall()
     if max_eventos:
@@ -628,6 +636,35 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
 
     logger.info(f"Fase 2 completa: {stats}")
     conn.close()
+    return stats
+
+
+def ultimo_bloque_aprendido(db_path: str) -> Optional[str]:
+    """El bloque más reciente que YA produjo firma. None si no hay ninguno."""
+    conn = sqlite3.connect(db_path)
+    try:
+        fila = conn.execute("SELECT MAX(ts_evento) FROM tbl_firma_eventos").fetchone()
+        return fila[0] if fila else None
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
+def entrenar_incremental(db_path: str, max_eventos: Optional[int] = None) -> Dict:
+    """Aprende SOLO los eventos posteriores al último que ya dejó firma.
+
+    Existe porque la corrida completa tarda 36 h (186.806 eventos a 1,5/s,
+    medido el 2026-09-25) y por eso nunca se programó: el sistema dejaba de
+    aprender entre reconstrucciones manuales. Esto sí cabe en un temporizador.
+
+    No toca las fases 2, lags ni correlaciones: esas repasan todo el histórico
+    y son el grueso del coste. Aquí solo se registran las firmas nuevas.
+    """
+    desde = ultimo_bloque_aprendido(db_path)
+    logger.info("Entrenamiento incremental desde %s", desde or "el principio")
+    stats = entrenar_reconocimiento(db_path, max_eventos=max_eventos, desde=desde)
+    stats["desde"] = desde
     return stats
 
 

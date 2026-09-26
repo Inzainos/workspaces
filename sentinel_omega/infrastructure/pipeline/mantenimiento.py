@@ -143,6 +143,19 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
         # firma nueva era del 23-sep y ningún sismo posterior al 3-sep había
         # entrado (medido el 2026-09-25).
         stats["eventos_promovidos"] = promover_eventos_vivos(db_path)
+        # Y acto seguido, aprenderlos. Promover sin aprender deja los datos en
+        # la memoria sin convertirlos en firmas, que es lo que el sistema usa
+        # para reconocer. Medido el 2026-09-25: la corrida COMPLETA tarda 36 h
+        # (186.806 eventos a 1,5/s) y por eso nunca se programó; la incremental
+        # tardó 190 s con 22 días acumulados y dejó 89 firmas nuevas.
+        try:
+            from sentinel_omega.infrastructure.pipeline.entrenamiento import (
+                entrenar_incremental,
+            )
+            stats["aprendizaje"] = entrenar_incremental(db_path)
+        except Exception as e:  # noqa: BLE001 — el barrido sigue sin esto
+            logger.warning("Aprendizaje incremental falló (non-blocking): %s", e)
+            stats["aprendizaje"] = {"error": f"{type(e).__name__}: {e}"}
         stats["volcado_vivo"] = volcar_telemetria_viva(
             db_path, run_cascada=True, dry_run=False
         )
