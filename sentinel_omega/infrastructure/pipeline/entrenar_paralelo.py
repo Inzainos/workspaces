@@ -15,8 +15,21 @@ un merge que reconcilie la misma firma partida entre bloques — frágil. Partir
 por bot lo evita entero.
 
 Se reutiliza `entrenar_reconocimiento(..., bots=[bot])` sin tocar su lógica, así
-el resultado por-bot es byte-idéntico al secuencial. La equivalencia está
-probada en tests/test_entrenar_paralelo.py.
+el resultado por-bot es idéntico al secuencial **en la corrida completa**, que
+es como corre el rebuild.
+
+Con `max_eventos` NO lo es, y conviene saber por qué (medido el 2026-09-26):
+`entrenar_reconocimiento` recorta a los primeros N eventos ANTES de filtrar por
+`BOT_DESDE`. Entrenando a los nueve juntos, `desde_global` no se aplica --- no
+todos los bots tienen fecha de arranque --- así que los primeros 1.200 eventos
+salen de 1994 y beta2, que arranca en 2012, no registra ninguno. Entrenándolo
+solo, `desde_global` sí se aplica y recibe 1.200 eventos desde 2012. De ahí que
+una comparación con `max_eventos` dé +1.200 recurrencias en beta2 y delta y
+parezca que el paralelo infla la memoria. No las infla: está viendo otro tramo.
+
+En la corrida completa los conjuntos coinciden exactamente (beta2: 96.292
+eventos utilizables por los dos caminos), porque el recorte no existe y
+`desde_global` solo salta eventos que ese bot ignoraría de todos modos.
 
 Nota operativa: cada worker trabaja sobre una COPIA de la base (para leer el
 backcast y escribir sus firmas sin pelear el lock de SQLite). En un servidor con
@@ -75,6 +88,14 @@ def entrenar_reconocimiento_paralelo(
     tmp_owner = dir_trabajo is None
     dir_trabajo = dir_trabajo or tempfile.mkdtemp(prefix="entrena_par_")
 
+    if max_eventos:
+        logger.warning(
+            "max_eventos=%s: el resultado NO será idéntico al secuencial. El "
+            "recorte se aplica ANTES del filtro por fecha de arranque, así que "
+            "beta2, delta, loki y jupiter verán otro tramo de eventos que si se "
+            "entrenaran acompañados. Sirve para probar, no para comparar.",
+            max_eventos,
+        )
     logger.info(
         f"=== FASE 1 PARALELA: {len(bots)} bots en {n_workers} procesos "
         f"({', '.join(bots)}) ==="
@@ -149,6 +170,15 @@ def entrenar_reconocimiento_paralelo(
             except sqlite3.OperationalError:
                 pass
             origen.close()
+            # La copia se borra EN CUANTO se unen sus filas, no al final. Con
+            # ocho vivas a la vez el pico son 7,4 GB; así queda en una. Medido:
+            # copiar cuesta 7 s por base de 922 MB --- 56 s las ocho contra una
+            # corrida de más de una hora, así que el coste está en tenerlas, no
+            # en hacerlas.
+            try:
+                Path(res["copia"]).unlink()
+            except OSError as e:
+                logger.warning("no se pudo borrar %s: %s", res["copia"], e)
         destino.commit()
         destino.close()
     finally:
