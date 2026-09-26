@@ -148,24 +148,47 @@ def merito_relativo(
     minimo_ventanas: int = 50,
     sev_fallo: float = 10.0,
     sev_falso_positivo: float = 1.0,
+    minimo_eventos: int = 20,
 ) -> Optional[Dict[str, Any]]:
     """Mérito de un bot frente a callarse siempre, en la fase viva.
 
-    Devuelve None si no hay suficientes ventanas resueltas para juzgarlo: con
-    pocas, el peso sería ruido. `peso` va recortado a [PESO_MIN, PESO_MAX].
+    Devuelve None cuando NO HAY EVIDENCIA para juzgarlo, y quien llame debe
+    dejar su peso como estaba.
+
+    `minimo_eventos` cuenta episodios de evento DISTINTOS, no ventanas. Se
+    añadió el 2026-09-25 al descubrir que la cuenta por ciclos multiplica la
+    misma evidencia: el ciclo corre cada 5 min y la ventana dura 2 h, así que un
+    solo sismo «confirma» hasta 24 predicciones seguidas y una alarma sostenida
+    cuenta como decenas de falsas alarmas. Medido ese día sobre 17 días de fase
+    viva: 37 ventanas-ciclo con evento eran **3 episodios reales**, las «544
+    falsas alarmas» de alfa1 eran **8 episodios** (precisión 12,5 %, la mejor de
+    los nueve) y las «11 detecciones» de beta2 eran **una**. Con esa cuenta el
+    mérito castigaba al bot más preciso y premiaba al de una sola observación.
     """
-    from sentinel_omega.core.precursor.baseline import evaluar_veredictos
+    from sentinel_omega.core.precursor.baseline import (
+        evaluar_episodios,
+        evaluar_veredictos,
+    )
 
     try:
-        filas = conn.execute(
-            "SELECT verdad, resultado FROM TBL_JUEZ_AUDITORIA "
+        filas_ts = conn.execute(
+            "SELECT timestamp, verdad, resultado FROM TBL_JUEZ_AUDITORIA "
             "WHERE fase = 'viva' AND LOWER(bot_name) = ? "
             "AND resultado != 'PENDIENTE' AND verdad != ''",
             (bot.lower(),),
         ).fetchall()
     except sqlite3.OperationalError:
         return None
+    filas = [(v, r) for _, v, r in filas_ts]
     if len(filas) < minimo_ventanas:
+        return None
+    episodios = evaluar_episodios(filas_ts, minimo_eventos=minimo_eventos)
+    if episodios is None or not episodios["evidencia_suficiente"]:
+        logger.info(
+            "Mérito de %s sin evidencia: %s episodios de evento distintos "
+            "(hacen falta %s). El peso se queda como estaba.",
+            bot, (episodios or {}).get("eventos_distintos"), minimo_eventos,
+        )
         return None
     m = evaluar_veredictos(filas, sev_fallo, sev_falso_positivo)
     if m is None or m.coste_mudo <= 0:
@@ -189,6 +212,10 @@ def merito_relativo(
         "coste_mudo": m.coste_mudo,
         "ahorro": ahorro,
         "alarmas": m.alarmas,
+        "episodios": episodios["episodios"],
+        "episodios_con_evento": episodios["episodios_con_evento"],
+        "eventos_distintos": episodios["eventos_distintos"],
+        "precision_episodios": episodios["precision"],
         "precision": precision,
         "umbral_rentable": m.umbral_rentable,
         "alarma_rentable": (precision is not None
@@ -202,6 +229,7 @@ def pesos_por_merito(
     minimo_ventanas: int = 50,
     sev_fallo: float = 10.0,
     sev_falso_positivo: float = 1.0,
+    minimo_eventos: int = 20,
 ) -> Dict[str, Dict[str, Any]]:
     """El mérito de todos los bots que tienen veredictos vivos suficientes."""
     try:
@@ -215,7 +243,8 @@ def pesos_por_merito(
         return {}
     fuera = {}
     for bot in bots:
-        m = merito_relativo(conn, bot, minimo_ventanas, sev_fallo, sev_falso_positivo)
+        m = merito_relativo(conn, bot, minimo_ventanas, sev_fallo,
+                            sev_falso_positivo, minimo_eventos)
         if m is not None:
             fuera[bot] = m
     return fuera
