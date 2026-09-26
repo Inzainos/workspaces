@@ -8,7 +8,7 @@ Type=simple
 User=deamon
 WorkingDirectory=/home/deamon/workspaces/sentinel_omega/infrastructure/dashboard/web
 Environment=NODE_ENV=development
-ExecStart=/usr/bin/env npm run dev -- --host 0.0.0.0 --port 5173
+ExecStart=/usr/bin/env npm run dev -- --host 127.0.0.1 --port 5173
 Restart=always
 RestartSec=10
 

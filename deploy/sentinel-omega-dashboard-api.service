@@ -8,7 +8,7 @@ Type=simple
 User=deamon
 WorkingDirectory=/home/deamon/workspaces/sentinel_omega
 EnvironmentFile=/home/deamon/workspaces/deploy/.env
-ExecStart=/home/deamon/workspaces/.venv/bin/python -m uvicorn sentinel_omega.infrastructure.dashboard.api:app --host 0.0.0.0 --port 8787
+ExecStart=/home/deamon/workspaces/.venv/bin/python -m uvicorn sentinel_omega.infrastructure.dashboard.api:app --host 127.0.0.1 --port 8787
 Restart=always
 RestartSec=10
 
