@@ -669,8 +669,14 @@ class TestMuroCincoEventos:
     def test_five_walls_all_active(self):
         from sentinel_omega.core.precursor.muro_cinco_eventos import MuroCincoEventos
         muro = MuroCincoEventos()
+        # Una señal por DOMINIO. Este test usaba FANTASMA para el frente
+        # geofísico, pero el Fantasma se calcula con Bz, viento solar y
+        # Schumann: es clima espacial. El 2026-09-26 se movió al frente SOLAR
+        # (medido: el 40 % de las veces que el sistema decía «dominio geofísico
+        # alterado», lo alterado era el Sol). Aquí va SEISMIC_CLUSTER, que sí
+        # es de la Tierra.
         detections = [
-            self._make_detection(PrecursorType.FANTASMA),
+            self._make_detection(PrecursorType.SEISMIC_CLUSTER),
             self._make_detection(PrecursorType.NIEBLA_TULE),
             self._make_detection(PrecursorType.TSUNAMI),
             self._make_detection(PrecursorType.SILENT_TRIGGER),
