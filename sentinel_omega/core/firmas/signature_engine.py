@@ -433,6 +433,76 @@ def similitud(a: Dict[str, float], b: Dict[str, float]) -> float:
     return float(max(0.0, 1.0 - np.mean(np.minimum(diff, 2.0)) / 2.0))
 
 
+class _ClaseEnMemoria:
+    """Las firmas de un (bot, clase) como matriz viva, no rearmada cada vez.
+
+    Guarda las mismas cuatro columnas que leía el SELECT de `registrar` ---
+    `firma_id`, `features_json`, `recurrencia`, `eventos_json` --- y su vector,
+    en un buffer que se dobla al llenarse en vez de crecer fila a fila. `matriz()`
+    devuelve una VISTA de las filas en uso: no copia.
+
+    El orden es el de `ORDER BY firma_id`, y las firmas nuevas llegan siempre al
+    final porque el id es AUTOINCREMENT. Así `argmax` rompe los empates igual
+    que antes.
+    """
+
+    __slots__ = ("ids", "jsons", "recurrencias", "eventos", "_buf", "n", "_dim")
+
+    def __init__(self) -> None:
+        self.ids: List[int] = []
+        self.jsons: List[str] = []
+        self.recurrencias: List[int] = []
+        self.eventos: List[Optional[str]] = []
+        self._buf: Optional[np.ndarray] = None
+        self.n = 0
+        self._dim = 0
+
+    def agregar(
+        self,
+        firma_id: int,
+        features_json: str,
+        recurrencia: int,
+        eventos_json: Optional[str],
+        vector: Optional[np.ndarray],
+    ) -> None:
+        if vector is None:
+            raise ValueError("una firma sin vector no puede entrar en la matriz")
+        if self._buf is None:
+            self._dim = int(vector.shape[0])
+            self._buf = np.empty((max(8, 16), self._dim), dtype=vector.dtype)
+        if self.n == self._buf.shape[0]:
+            mayor = np.empty((self._buf.shape[0] * 2, self._dim),
+                             dtype=self._buf.dtype)
+            mayor[: self.n] = self._buf[: self.n]
+            self._buf = mayor
+        self._buf[self.n] = vector
+        self.ids.append(firma_id)
+        self.jsons.append(features_json)
+        self.recurrencias.append(recurrencia)
+        self.eventos.append(eventos_json)
+        self.n += 1
+
+    def actualizar(
+        self,
+        i: int,
+        features_json: str,
+        recurrencia: int,
+        vector: np.ndarray,
+    ) -> None:
+        self.jsons[i] = features_json
+        self.recurrencias[i] = recurrencia
+        self._buf[i] = vector
+
+    def fila(self, i: int) -> Tuple[int, str, int, Optional[str]]:
+        """La tupla que `registrar` esperaba del SELECT, en el mismo orden."""
+        return (self.ids[i], self.jsons[i], self.recurrencias[i], self.eventos[i])
+
+    def matriz(self) -> np.ndarray:
+        if self._buf is None or self.n == 0:
+            return np.zeros((0, 0), dtype=float)
+        return self._buf[: self.n]
+
+
 class FirmaMemoria:
     """CRUD + promotion over TBL_FIRMAS. One instance per database."""
 
@@ -443,6 +513,47 @@ class FirmaMemoria:
         # (media corrida), su json cambia y la entrada vieja deja de usarse
         # sola. Sin esto se reconstruía el mismo vector en cada comparación.
         self._cache_vectores: Dict[Tuple[int, str], np.ndarray] = {}
+        # La MATRIZ de comparación de cada (bot, clase), viva entre eventos.
+        #
+        # Medido el 2026-09-26, después del rebuild: el padre se lleva el 60-66 %
+        # de la Fase 1, y no porque calcule más, sino porque tiene 14.286 firmas
+        # contra las 1.632 de alfa1 --- y `registrar` leía LAS 14.286 FILAS de
+        # SQLite con su `features_json` completo y rearmaba la matriz con
+        # `vstack` **en cada evento**. Son 186.820 eventos: 2.700 millones de
+        # lecturas de fila y 186.820 matrices reconstruidas para comparar contra
+        # algo que entre un evento y el siguiente cambia en UNA fila.
+        #
+        # Aquí se mantiene viva y se actualiza esa fila. El cálculo es el mismo;
+        # lo que desaparece es el desperdicio. Es seguro porque dentro del bucle
+        # de entrenamiento `registrar` es el ÚNICO que escribe las columnas que
+        # entran en la comparación: los otros escritores de TBL_FIRMAS tocan
+        # `lag_promedio_h`/`lag_n`, que no van en el vector, o corren fuera.
+        self._clases: Dict[Tuple[str, str], _ClaseEnMemoria] = {}
+
+    def olvidar_matrices(self) -> None:
+        """Tirar las matrices cacheadas. Necesario si alguien de fuera escribe
+        en TBL_FIRMAS mientras esta instancia sigue viva."""
+        self._clases.clear()
+
+    def _clase(self, bot_name: str, event_class: str) -> "_ClaseEnMemoria":
+        clave = (bot_name, event_class)
+        c = self._clases.get(clave)
+        if c is None:
+            filas = self._conn.execute(
+                "SELECT firma_id, features_json, recurrencia, eventos_json "
+                "FROM TBL_FIRMAS WHERE bot_name = ? AND event_class = ? "
+                # El orden es explícito para que `argmax` rompa los empates
+                # igual siempre. `firma_id` es INTEGER PRIMARY KEY, así que es
+                # el mismo orden que devolvía el barrido sin ORDER BY.
+                "ORDER BY firma_id",
+                (bot_name, event_class),
+            ).fetchall()
+            c = _ClaseEnMemoria()
+            for f in filas:
+                c.agregar(f[0], f[1], f[2], f[3],
+                          self._vector_de_firma(f[0], f[1]))
+            self._clases[clave] = c
+        return c
 
     def _vector_de_firma(self, firma_id: int, features_json: str) -> np.ndarray:
         clave = (firma_id, features_json)
@@ -471,24 +582,20 @@ class FirmaMemoria:
 
         Returns (firma_id, estado, es_nueva).
         """
-        rows = self._conn.execute(
-            "SELECT firma_id, features_json, recurrencia, eventos_json "
-            "FROM TBL_FIRMAS WHERE bot_name = ? AND event_class = ?",
-            (bot_name, event_class),
-        ).fetchall()
+        clase = self._clase(bot_name, event_class)
 
         # El vector del evento UNA vez, y todas las firmas de la clase en una
-        # sola operación de matriz.
+        # sola operación de matriz --- que ya está armada y viva.
         v_evento = _vector(features)
         best_id, best_sim, best_row = None, 0.0, None
-        if rows:
-            matriz = np.vstack([
-                self._vector_de_firma(r[0], r[1]) for r in rows
-            ])
-            sims = similitudes_contra(v_evento, matriz)
+        best_i = -1
+        if clase.n:
+            sims = similitudes_contra(v_evento, clase.matriz())
             i = int(np.argmax(sims))
             if sims[i] > 0.0:
-                best_id, best_sim, best_row = rows[i][0], float(sims[i]), rows[i]
+                best_i = i
+                best_id, best_sim = clase.ids[i], float(sims[i])
+                best_row = clase.fila(i)
 
         if best_id is not None and best_sim >= SIMILARITY_MATCH:
             old_features = json.loads(best_row[1])
@@ -501,11 +608,16 @@ class FirmaMemoria:
                 else:
                     merged[k] = v
             estado = _estado(recurrencia)
+            nuevo_json = json.dumps(merged)
             self._conn.execute(
                 "UPDATE TBL_FIRMAS SET features_json = ?, recurrencia = ?, "
                 "estado = ?, ultima_vista = ? WHERE firma_id = ?",
-                (json.dumps(merged), recurrencia, estado, ts_evento, best_id),
+                (nuevo_json, recurrencia, estado, ts_evento, best_id),
             )
+            # La media corrida cambió el vector de ESA firma: se actualiza su
+            # fila, no la matriz entera.
+            clase.actualizar(best_i, nuevo_json, recurrencia,
+                             self._vector_de_firma(best_id, nuevo_json))
             # 1NF + muestreo: el evento es una FILA (append O(1)), y solo
             # guardamos los primeros CAP_EVENTOS_MUESTRA — el conteo fiel es
             # `recurrencia`. No escribimos la serie entera (era O(n²) y bulto).
@@ -533,6 +645,11 @@ class FirmaMemoria:
             (firma_id, evento_ref, ts_evento),
         )
         self._conn.commit()
+        # Se añade al final, que es donde la devolvería `ORDER BY firma_id`:
+        # el id es AUTOINCREMENT, así que la nueva siempre es la mayor.
+        nuevo_json = json.dumps(features)
+        clase.agregar(firma_id, nuevo_json, 1, None,
+                      self._vector_de_firma(firma_id, nuevo_json))
         return firma_id, "nueva", True
 
     def consolidadas(self, bot_name: Optional[str] = None) -> List[Dict[str, Any]]:
