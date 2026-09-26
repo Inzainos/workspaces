@@ -138,6 +138,11 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
     
     # Volcado 24h: telemetría viva → histórico + cascada
     try:
+        # Antes del volcado: pasar los sismos vivos a la memoria. Si esto no
+        # corre, el sistema sigue observando pero deja de aprender --- la última
+        # firma nueva era del 23-sep y ningún sismo posterior al 3-sep había
+        # entrado (medido el 2026-09-25).
+        stats["eventos_promovidos"] = promover_eventos_vivos(db_path)
         stats["volcado_vivo"] = volcar_telemetria_viva(
             db_path, run_cascada=True, dry_run=False
         )
@@ -845,6 +850,136 @@ def _ensure_hist_tables(conn: sqlite3.Connection) -> None:
             )
     conn.commit()
 
+
+
+# ─── El puente que faltaba: del evento vivo a la memoria ─────────────────────
+#
+# Medido el 2026-09-25, revisando la tubería entera. El sistema seguía
+# observando pero había dejado de RECORDAR:
+#
+#   TBL_HISTORICO_SISMICO        (vivo, USGS)          último: hoy      ✅
+#   tbl_eventos_sismicos_fuente  (fuente de topología) último: 15-sep
+#   tbl_historico_sismico_raw    (bloques por hora)    último:  3-sep
+#   tbl_firma_eventos            (de donde salen las firmas) último: 3-sep
+#
+# Dos cortes: la tabla fuente solo se llenaba con `topologia_cascada --refetch`
+# (que nadie programó) y los bloques solo se reconstruían cuando CAMBIABA la
+# topología --- «Ningún nodo cambió: no se reconstruye nada». Resultado: la
+# última firma nueva es del 23-sep y ningún sismo posterior al 3-sep entró en la
+# memoria. Para un sistema cuya premisa es reconocer lo que precedió a eventos
+# pasados, dejar de aprender de los nuevos lo vacía por dentro.
+#
+# Esto cierra el puente SIN red: el evento vivo ya trae todo lo que la tabla
+# fuente necesita (id, hora, lat, lon, magnitud); el nodo se calcula con la
+# misma geometría que usa la cascada. Es incremental y hacia delante: solo
+# INSERT OR IGNORE y recálculo de los bloques tocados. Nunca borra.
+
+def promover_eventos_vivos(db_path: str, dry_run: bool = False) -> Dict:
+    """Pasa los sismos vivos a la tabla fuente y refresca sus bloques.
+
+    Devuelve cuántos entraron y cuántos bloques se recalcularon. Un evento ya
+    presente no se duplica ni se toca: manda el que ya estaba.
+    """
+    from sentinel_omega.core.shared.geometria_uvg import nodo_mas_cercano
+
+    stats = {"eventos_nuevos": 0, "bloques_refrescados": 0, "omitidos": 0}
+    conn = sqlite3.connect(db_path)
+    try:
+        for tabla in ("TBL_HISTORICO_SISMICO", "tbl_eventos_sismicos_fuente",
+                      "tbl_historico_sismico_raw"):
+            existe = conn.execute(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name=?)", (tabla,)).fetchone()[0]
+            if not existe:
+                logger.info("promover_eventos_vivos: falta %s — se omite", tabla)
+                return stats
+
+        version = ""
+        try:
+            from sentinel_omega.infrastructure.pipeline.topologia_cascada import (
+                calcular_version_topologia,
+            )
+            version = calcular_version_topologia()
+        except Exception:  # noqa: BLE001 — la versión es informativa
+            pass
+
+        desde = conn.execute(
+            "SELECT MAX(time_utc) FROM tbl_eventos_sismicos_fuente"
+        ).fetchone()[0]
+
+        filas = conn.execute(
+            "SELECT event_id, timestamp, lat, lon, magnitude "
+            "FROM TBL_HISTORICO_SISMICO "
+            "WHERE event_id IS NOT NULL AND lat IS NOT NULL AND lon IS NOT NULL"
+        ).fetchall()
+
+        bloques = set()
+        for event_id, ts, lat, lon, mag in filas:
+            try:
+                cuando = datetime.fromtimestamp(float(ts), tz=timezone.utc)
+            except (TypeError, ValueError, OSError):
+                stats["omitidos"] += 1
+                continue
+            time_utc = cuando.strftime("%Y-%m-%d %H:%M:%S.%f")
+            if desde and time_utc <= desde:
+                continue
+            nodo = nodo_mas_cercano(float(lat), float(lon))
+            id_nodo = int(nodo["id"])
+            if not dry_run:
+                cur = conn.execute(
+                    "INSERT OR IGNORE INTO tbl_eventos_sismicos_fuente "
+                    "(usgs_id, time_utc, lat, lon, mag, id_nodo, "
+                    " topologia_version, updated_at) "
+                    "VALUES (?,?,?,?,?,?,?,datetime('now'))",
+                    (event_id, time_utc, float(lat), float(lon),
+                     float(mag) if mag is not None else None, id_nodo, version),
+                )
+                if cur.rowcount:
+                    stats["eventos_nuevos"] += 1
+                    bloques.add((cuando.strftime("%Y-%m-%d %H:00"), id_nodo))
+            else:
+                stats["eventos_nuevos"] += 1
+                bloques.add((cuando.strftime("%Y-%m-%d %H:00"), id_nodo))
+
+        # Refresco INCREMENTAL de los bloques tocados: se recalcula cada
+        # (hora, nodo) desde la tabla fuente, que es la verdad. Nada de DELETE
+        # general --- eso borraría 22 días de histórico para reconstruirlo.
+        for blk, id_nodo in sorted(bloques):
+            if dry_run:
+                # En seco la tabla fuente no tiene los eventos nuevos, así que
+                # contar desde ella daría 0. Se informa lo que SE REFRESCARÍA.
+                stats["bloques_refrescados"] += 1
+                continue
+            fila = conn.execute(
+                "SELECT COUNT(*), MAX(mag) FROM tbl_eventos_sismicos_fuente "
+                "WHERE id_nodo = ? AND strftime('%Y-%m-%d %H:00', time_utc) = ?",
+                (id_nodo, blk),
+            ).fetchone()
+            if not fila or not fila[0]:
+                continue
+            if True:
+                conn.execute(
+                    "INSERT INTO tbl_historico_sismico_raw "
+                    "(timestamp_blk, id_nodo, sismo_count, sismo_max_mag) "
+                    "VALUES (?,?,?,?) "
+                    "ON CONFLICT(timestamp_blk, id_nodo) DO UPDATE SET "
+                    "sismo_count = excluded.sismo_count, "
+                    "sismo_max_mag = excluded.sismo_max_mag",
+                    (blk, id_nodo, fila[0], fila[1]),
+                )
+            stats["bloques_refrescados"] += 1
+
+        if not dry_run:
+            conn.commit()
+    except sqlite3.Error as e:
+        logger.warning("promover_eventos_vivos falló (non-blocking): %s", e)
+    finally:
+        conn.close()
+    logger.info(
+        "Eventos vivos promovidos: %d nuevos, %d bloques refrescados",
+        stats["eventos_nuevos"], stats["bloques_refrescados"],
+    )
+    return stats
 
 def volcar_telemetria_viva(
     db_path: str,
