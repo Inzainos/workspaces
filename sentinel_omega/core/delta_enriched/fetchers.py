@@ -380,6 +380,14 @@ def _schumann_from_wpc() -> Optional[SchumannData]:
     )
 
 
+def _filtro_en_vivo_sch(con) -> str:
+    try:
+        from sentinel_omega.core.schumann_vivo import filtro_en_vivo
+        return filtro_en_vivo(con)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _schumann_from_db(days: int) -> Optional[SchumannData]:
     """LOCF from tbl_schumann_vivo excluding historical 7.83/0 placeholders."""
     import sqlite3
@@ -399,7 +407,8 @@ def _schumann_from_db(days: int) -> Optional[SchumannData]:
             "FROM tbl_schumann_vivo "
             "WHERE substr(timestamp_blk,1,10) >= ? "
             "  AND NOT (ABS(schumann_hz-7.83)<1e-9 AND schumann_activity=0) "
-            "GROUP BY d ORDER BY d",
+            + _filtro_en_vivo_sch(con) +
+            " GROUP BY d ORDER BY d",
             (cutoff,),
         ).fetchall()
         con.close()
