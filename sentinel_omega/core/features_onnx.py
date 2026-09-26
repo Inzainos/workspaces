@@ -79,13 +79,25 @@ FEATURE_ORDER: Dict[str, List[str]] = {
         "bz_mean", "kp_mean", "viento_avg", "bz_min",
         "kp_max", "schumann_mean", "fase_lunar", "kp_max_72h",
     ],
+    # loki y jupiter, corregidos el 2026-09-26. Pedían nombres que NO existen
+    # ni en sus firmas ni en el ciclo (`bz`, `solar_wind`, `schumann_activity`,
+    # `lod`, `latest_kp`, `storm_active`, `attention_z`, `corr_significant`):
+    # de 8 rasgos, loki llenaba 3 y jupiter UNO. Los demás llegaban como 0.0,
+    # que para el modelo significa «Bz cero, el Sol no emite rayos X», no «no lo
+    # sé». Ahora llevan los nombres reales de sus firmas, todos con variación
+    # medida.
+    #
+    # `lod` sale del vector de loki: la tabla de astronomía lleva parada desde
+    # 2025-12-31 y el ciclo no puede llenarlo en vivo. **Un rasgo que no se
+    # puede llenar al inferir no debe entrenarse** --- si no, el modelo aprende
+    # de una columna que en producción siempre vale cero.
     "loki": [
-        "bz", "solar_wind", "schumann_activity", "vix", "lod",
-        "kp_mean", "fase_lunar", "btc_volatilidad",
+        "bz_mean", "viento_avg", "schumann_mean", "vix",
+        "kp_mean", "fase_lunar", "btc_volatilidad", "bz_min",
     ],
     "jupiter": [
-        "latest_kp", "storm_active", "attention_z", "corr_significant",
-        "kp_mean", "xray_mean", "trends_mean", "schumann_mean",
+        "kp_mean", "kp_max", "kp_max_72h", "schumann_mean",
+        "schumann_std", "xray_mean", "xray_max", "trends_mean",
     ],
 }
 

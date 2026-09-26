@@ -105,6 +105,29 @@ class AllONNXModelsConfig:
         enabled=True
     ))
 
+    # loki y jupiter existían como modelos en disco --- el reentrenamiento
+    # semanal produce los OCHO --- pero no tenían entrada aquí, así que
+    # `try_load_onnx` devolvía None y nunca podían cargarse. Añadidos el
+    # 2026-09-26: en una arquitectura de expertos, un experto sin modelo no
+    # opina, y el que no opina tampoco puede ser corregido por el Juez.
+    loki: ONNXModelConfig = field(default_factory=lambda: ONNXModelConfig(
+        name="loki",
+        model_path="loki_unificado_rf.onnx",
+        input_features=8,
+        output_shape=(1, 2),
+        confidence_threshold=0.55,
+        enabled=True
+    ))
+
+    jupiter: ONNXModelConfig = field(default_factory=lambda: ONNXModelConfig(
+        name="jupiter",
+        model_path="jupiter_attention_rf.onnx",
+        input_features=8,
+        output_shape=(1, 2),
+        confidence_threshold=0.55,
+        enabled=True
+    ))
+
     runtime: ONNXRuntimeConfig = field(default_factory=ONNXRuntimeConfig)
 
     def get_enabled_models(self) -> Dict[str, ONNXModelConfig]:
@@ -113,6 +136,8 @@ class AllONNXModelsConfig:
             "alfa2": self.alfa2,
             "beta1": self.beta1,
             "beta2": self.beta2,
+            "loki": self.loki,
+            "jupiter": self.jupiter,
             "delta": self.delta,
             "omega": self.omega,
         }

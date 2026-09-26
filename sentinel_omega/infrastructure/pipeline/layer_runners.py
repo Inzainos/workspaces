@@ -11,6 +11,7 @@ Hierarchical validation:
 """
 
 import logging
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -263,6 +264,84 @@ class GeodynamicLayerRunner:
             logger.warning(f"Hurricane data fetch failed (non-blocking): {e}")
             return {}
 
+    def _aplicar_modelos(self, signals) -> None:
+        """Pasa los rasgos del ciclo por el modelo de cada bot.
+
+        El veredicto del modelo se ANOTA siempre en la señal (`onnx_*`), para
+        que el Juez pueda comparar después quién acertaba, y sustituye a la
+        rama de reglas solo cuando el modelo dice algo --- si devuelve None
+        (sin modelo, vector vacío o «nada que reportar»), manda la regla.
+
+        El techo de cada bot se respeta: delta nunca vota ALERT, porque el
+        estrés financiero es contexto, no evidencia sísmica.
+        """
+        from sentinel_omega.core.onnx_mixin import senal_desde_rasgos
+        from sentinel_omega.core.shared.agent_base import SignalType
+
+        try:
+            rasgos = self._rasgos_del_ciclo()
+        except Exception as e:  # noqa: BLE001 — el ciclo sigue con las reglas
+            logger.warning("No se pudieron armar los rasgos del ciclo: %s", e)
+            return
+        if not rasgos:
+            return
+
+        SIN_ALERTA = {"delta"}     # su techo es WATCH, por diseño
+        for sig in signals:
+            bot = str(getattr(sig, "agent_name", "") or "").lower()
+            if not bot:
+                continue
+            try:
+                salida = senal_desde_rasgos(
+                    bot, rasgos, permitir_alerta=bot not in SIN_ALERTA)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("%s: modelo no utilizable (%s)", bot, e)
+                continue
+            datos = getattr(sig, "data", None)
+            if not isinstance(datos, dict):
+                continue
+            if salida is None:
+                datos["onnx"] = False
+                continue
+            tipo, conf, nombre = salida
+            datos.update({
+                "onnx": True,
+                "onnx_senal": nombre,
+                "onnx_conf": round(float(conf), 4),
+                "regla_senal": sig.signal_type.value,
+                "regla_conf": round(float(sig.confidence or 0.0), 4),
+            })
+            if tipo != sig.signal_type or float(conf) > float(sig.confidence or 0):
+                logger.info(
+                    "%s: modelo %s (%.2f) sobre regla %s (%.2f)",
+                    bot, nombre, conf, sig.signal_type.value, sig.confidence or 0,
+                )
+            sig.signal_type = tipo
+            sig.confidence = float(conf)
+
+    def _rasgos_del_ciclo(self) -> Dict[str, float]:
+        """Los rasgos con los nombres canónicos, desde la misma función que
+        alimenta al Juez: si el modelo se entrena con esos nombres, tiene que
+        inferir con esos nombres."""
+        from sentinel_omega.launcher import _build_live_features
+        # La conexión es para los rasgos que viven en tablas (rayos X,
+        # tendencias). Se abre en SOLO LECTURA: el ciclo no escribe desde aquí.
+        conn = None
+        try:
+            import sqlite3
+            from sentinel_omega.config.sentinel_config import load_config
+            cfg = load_config()
+            ruta = (Path(__file__).resolve().parents[2]
+                    / cfg.databases.geodynamic_db)
+            conn = sqlite3.connect(f"file:{ruta}?mode=ro", uri=True, timeout=5)
+        except Exception as e:  # noqa: BLE001 — sin conexión, esos rasgos faltan
+            logger.debug("rasgos de tabla no disponibles: %s", e)
+        try:
+            return _build_live_features(self, conn) or {}
+        finally:
+            if conn is not None:
+                conn.close()
+
     def run(self, financial_data: Optional[Dict] = None) -> ConsensusResult:
         logger.info("=== Sentinel Omega Cycle ===")
 
@@ -375,6 +454,20 @@ class GeodynamicLayerRunner:
             logger.info(f"Loki signal: {signals[-1].signal_type.value} (conf={signals[-1].confidence:.2f})")
         except Exception as e:
             logger.warning(f"Loki layer failed (non-blocking): {e}")
+
+        # ── Cada experto opina con SU modelo ──────────────────────────
+        # Hasta el 2026-09-26 solo alfa1 y omega inferían con ONNX: se
+        # entrenaban OCHO modelos y seis no se usaban. Y eso deformaba la
+        # disciplina --- lo vio el operador: el que no alarma no puede ser
+        # castigado por alarmar, así que el Juez hundía al que participa
+        # (alfa1: 669 alarmas, peso 0.300) y dejaba en el techo a los que
+        # callan (loki, delta, alfa2: 0 alarmas, 0 castigos, peso 1.000, y los
+        # 37 eventos del periodo perdidos).
+        #
+        # La arquitectura es de expertos: cada bot en su dominio, con su modelo
+        # y su memoria, y el Padre buscando patrones entre patrones. Un experto
+        # que no opina no aporta, y tampoco se puede corregir.
+        self._aplicar_modelos(signals)
 
         consensus = self.padre.evaluate_consensus(signals)
         consensus.precursor_risk = risk
