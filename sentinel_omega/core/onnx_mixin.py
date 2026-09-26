@@ -87,3 +87,55 @@ def pad_vector(values: list, n: int) -> np.ndarray:
         except (TypeError, ValueError):
             pass
     return out
+
+
+# ─── Inferencia con el vector canónico, para cualquier bot ────────────────────
+#
+# Hasta el 2026-09-26 solo alfa1 y omega inferían con ONNX: el reentrenamiento
+# semanal producía OCHO modelos y seis no se usaban nunca. Y eso tenía un efecto
+# que no era obvio --- lo vio el operador: los bots que no alarman **no pueden
+# ser castigados por alarmar**, así que el Juez hundía al que participa (alfa1,
+# 669 alarmas, peso 0.300) y dejaba en el techo a los que callan (loki, delta,
+# alfa2: 0 alarmas, 0 castigos, peso 1.000, y los 37 eventos perdidos).
+#
+# `senal_desde_rasgos` arma el vector con el orden canónico (core/features_onnx)
+# y devuelve la señal del modelo, o None si no hay modelo o la salida es
+# degenerada --- en cuyo caso el agente usa su rama de reglas, como siempre.
+
+_SESIONES: Dict[str, Any] = {}
+
+
+def inferencia_de(bot: str):
+    """La sesión ONNX del bot, cargada una vez y reutilizada."""
+    if bot not in _SESIONES:
+        _, inferencia = try_load_onnx(bot)
+        _SESIONES[bot] = inferencia
+    return _SESIONES[bot]
+
+
+def senal_desde_rasgos(
+    bot: str,
+    rasgos: Dict[str, Any],
+    *,
+    permitir_alerta: bool = True,
+) -> Optional[Tuple[SignalType, float, str]]:
+    """Señal del modelo del bot a partir de rasgos POR NOMBRE.
+
+    Devuelve None cuando no hay modelo, cuando el vector sale vacío --- pedir
+    una predicción sobre todo ceros es pedir ruido --- o cuando la salida es
+    degenerada. El agente decide qué hacer con el None; lo normal es su rama
+    de reglas.
+    """
+    inferencia = inferencia_de(bot)
+    if inferencia is None:
+        return None
+    try:
+        from sentinel_omega.core.features_onnx import vector_para
+        vec = vector_para(bot, rasgos)
+    except (KeyError, ValueError) as e:
+        logger.debug("%s: no se pudo armar el vector (%s)", bot, e)
+        return None
+    if not np.any(np.abs(vec) > 1e-12):
+        logger.debug("%s: vector vacío, no se infiere", bot)
+        return None
+    return predict_signal(inferencia, vec, allow_alert=permitir_alerta)

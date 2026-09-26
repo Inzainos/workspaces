@@ -124,7 +124,9 @@ def verificar_juez(
 
     castigos = []
     refuerzos = []
+    silencios_acertados = 0
     try:
+        from sentinel_omega.core.juez.juez import ALERT_SIGNALS
         from sentinel_omega.core.juez.pesos import castigar, reforzar
         for r in resueltos:
             bot = r["bot_name"]
@@ -149,13 +151,32 @@ def verificar_juez(
                 nuevo = castigar(conn, bot, es_padre=es_padre, gravedad=1.0)
                 castigos.append({"bot": bot, "peso": nuevo, "motivo": "FALSO_POSITIVO"})
             elif res == "ACIERTO":
-                nuevo = reforzar(conn, bot)
-                refuerzos.append({"bot": bot, "peso": nuevo})
+                # NO todo acierto refuerza. Medido el 2026-09-25/26: el 98,9 %
+                # de los aciertos son «dije calma y hubo calma», y con eso el
+                # refuerzo borraba cualquier castigo en 5,9 h de mediana. Peor:
+                # premiaba a quien no participa. Los tres bots que NUNCA
+                # alarmaban (loki, delta, alfa2) perdieron los 37 eventos del
+                # periodo y seguían en el techo 1.000, mientras alfa1 --- el de
+                # mejor precisión por episodios (12,5 %) --- estaba en el suelo
+                # por haberse mojado 669 veces.
+                #
+                # Ahora solo refuerza el acierto que COSTÓ algo: haber alarmado
+                # y que el evento ocurriera. Acertar callando es lo esperable,
+                # no un mérito.
+                predijo = str(r.get("prediccion") or "").lower()
+                verdad = str(r.get("verdad") or "")
+                hubo_evento = bool(verdad) and not verdad.startswith("sin eventos")
+                if predijo in ALERT_SIGNALS and hubo_evento:
+                    nuevo = reforzar(conn, bot)
+                    refuerzos.append({"bot": bot, "peso": nuevo})
+                else:
+                    silencios_acertados += 1
         if castigos or refuerzos:
             conn.commit()
             logger.info(
-                f"Juez disciplina: castigos={len(castigos)} "
-                f"refuerzos={len(refuerzos)}"
+                "Juez disciplina: castigos=%d refuerzos=%d "
+                "(silencios acertados que ya NO refuerzan: %d)",
+                len(castigos), len(refuerzos), silencios_acertados,
             )
     except Exception as e:
         logger.warning(f"Disciplina post-Juez falló (non-blocking): {e}")

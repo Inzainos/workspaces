@@ -557,7 +557,7 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
 SCHUMANN_LOCF_HORAS = 6
 
 
-def _build_live_features(runner) -> dict:
+def _build_live_features(runner, conn=None) -> dict:
     """Build the firma feature vector from the live pipeline cache.
 
     Extrae features para los 5 bots entrenados:
@@ -604,20 +604,57 @@ def _build_live_features(runner) -> dict:
             logger.warning("agregados de OMNI fallaron (non-blocking): %s", e)
 
     # ── beta1: Kp / Schumann / sismicidad / lunar ─────────────────
+    # Medido el 2026-09-26: de los 10 rasgos que pide el modelo de beta1, el
+    # ciclo solo producía 5. Los otros cinco --- es_sicigia, kp_max_72h,
+    # schumann_std, sismo_count_72h y schumann_mean cuando la fuente falla ---
+    # llegaban como 0.0 al vector, que para el modelo significa «ese día no
+    # hubo sicigia» o «cero sismos», no «no lo sé». Se calculan aquí, de los
+    # mismos datos que ya trae el ciclo.
     beta1 = cache.get("beta1") or {}
     kp = beta1.get("kp_series")
     if kp is not None and len(kp) > 0:
         features["kp_mean"] = float(np.nanmean(kp))
         features["kp_max"] = float(np.nanmax(kp))
+        # La serie de Kp viene en tramos de 3 h: las últimas 24 muestras son
+        # 72 h. Si hay menos, se usa lo que haya --- nunca se rellena.
+        ventana72 = np.asarray(kp[-24:], dtype=float)
+        ventana72 = ventana72[np.isfinite(ventana72)]
+        if ventana72.size:
+            features["kp_max_72h"] = float(np.max(ventana72))
     if "schumann_frequency" in beta1:
         features["schumann_mean"] = float(beta1["schumann_frequency"])
+    # La dispersión de Schumann: el modelo la pide y nadie la calculaba.
+    for clave in ("schumann_std", "schumann_sigma", "schumann_desviacion"):
+        if clave in beta1 and beta1[clave] is not None:
+            features["schumann_std"] = float(beta1[clave])
+            break
+    else:
+        serie_sch = beta1.get("schumann_series")
+        if serie_sch is not None and len(serie_sch) > 1:
+            v = np.asarray(serie_sch, dtype=float)
+            v = v[np.isfinite(v)]
+            if v.size > 1:
+                features["schumann_std"] = float(np.std(v))
     mags = beta1.get("seismic_magnitudes")
     if mags is not None and len(mags) > 0:
         features["sismo_count_win"] = float(len(mags))
         features["sismo_max_mag_win"] = float(np.nanmax(mags))
+    # sismo_count_72h: el catálogo que trae beta1 ya es de las últimas 72 h
+    # (TARGET_WINDOW_H), así que es el mismo recuento; se nombra aparte porque
+    # el vector tiene las dos posiciones y dejarla en 0 decía «ningún sismo».
+    tiempos = beta1.get("seismic_times")
+    if tiempos is not None and len(tiempos) > 0:
+        features["sismo_count_72h"] = float(len(tiempos))
+    elif mags is not None and len(mags) > 0:
+        features["sismo_count_72h"] = float(len(mags))
     lunar = beta1.get("lunar_phase")
     if lunar is not None and len(lunar) > 0:
-        features["fase_lunar"] = float(lunar[-1])
+        fase = float(lunar[-1])
+        features["fase_lunar"] = fase
+        # Sicigia = luna nueva o llena: la fase (0-1) cerca de 0, 0,5 o 1.
+        # Es lo que el modelo espera en esa posición, y llegaba siempre 0.
+        distancia = min(abs(fase - x) for x in (0.0, 0.5, 1.0))
+        features["es_sicigia"] = 1.0 if distancia <= 0.05 else 0.0
 
     # ── beta2: desgasificación volcánica (proxy OWM) ──────────────
     _SO2_SCALE = 1e-4
@@ -644,9 +681,33 @@ def _build_live_features(runner) -> dict:
 
     # ── delta: volatilidad financiera BTC ─────────────────────────
     delta = cache.get("delta") or {}
-    for key in ("btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h"):
-        if key in delta:
+    for key in ("btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h",
+                "vix"):
+        if key in delta and delta[key] is not None:
             features[key] = float(delta[key])
+
+    # ── loki y jupiter: rayos X y tendencias ──────────────────────
+    # Sus modelos se entrenan con xray_mean/xray_max/trends_mean --- están en
+    # las firmas, con variación real --- y el ciclo no los producía, así que al
+    # inferir llegaban como 0.0: para el modelo, «el Sol no emite rayos X».
+    # Las dos tablas se llenan cada hora y estaban ahí sin usarse.
+    if conn is not None:
+        try:
+            fila = conn.execute(
+                "SELECT flux_avg, flux_max FROM tbl_xray_vivo "
+                "ORDER BY timestamp_blk DESC LIMIT 1"
+            ).fetchone()
+            if fila and fila[0] is not None:
+                features["xray_mean"] = float(fila[0])
+                features["xray_max"] = float(fila[1] or fila[0])
+            fila = conn.execute(
+                "SELECT solar_interest FROM tbl_trends_vivo "
+                "ORDER BY fecha DESC LIMIT 1"
+            ).fetchone()
+            if fila and fila[0] is not None:
+                features["trends_mean"] = float(fila[0])
+        except Exception as e:  # noqa: BLE001 — el ciclo sigue sin estos
+            logger.warning("rayos X / tendencias no disponibles: %s", e)
 
     # ── alfa2: cobertura satelital ────────────────────────────────
     alfa2_data = getattr(runner, "_last_alfa2_data", None)
@@ -787,7 +848,7 @@ def _auditar_ciclo(geo, repo, runner) -> None:
             logger.warning(f"Persistencia Schumann viva falló (non-blocking): {e}")
 
         matches = []
-        features = _build_live_features(runner)
+        features = _build_live_features(runner, conn)
         if features:
             matches = memoria.match_estado_actual(features)
             for m in matches[:5]:

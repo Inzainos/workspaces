@@ -237,6 +237,11 @@ class Juez:
                 # acierta si la reincidencia vale 1: con la racha o la firma
                 # conocida de por medio salía topada en 3.0 casi siempre.
                 "gravedad": float(max(1.0, gravedad)),
+                # La verdad VIAJA también. Sin ella, la disciplina no puede
+                # distinguir un acierto que costó algo (alarmó y ocurrió) de
+                # uno que salió gratis (calló y hubo calma), y acababa
+                # premiando a quien nunca se moja.
+                "verdad": verdad,
             })
             if resultado == "FALLO":
                 logger.warning(
