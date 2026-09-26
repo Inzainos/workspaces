@@ -25,6 +25,10 @@ from aciertos_reporte import seccion_aciertos_markdown
 # castigo del silencio, el coste de este reporte tiene que moverse con él.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sentinel_omega.core.precursor.baseline import evaluar_veredictos
+# Los umbrales del semáforo se LEEN de donde viven. Estaban escritos a mano en
+# cuatro sitios de este archivo, así que recalibrarlos no habría llegado al
+# texto: la misma familia de fallo que todo lo de hoy.
+from sentinel_omega.core.precursor.risk_calculator import RISK_THRESHOLDS as _UMB
 
 try:
     from sentinel_omega.core.juez.juez import (
@@ -118,8 +122,13 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             "",
             "> El **Fantasma** es el termómetro principal: combina en un solo "
             "número la agitación del campo magnético, el viento solar y la "
-            "resonancia de la Tierra. Verde 🟢 <5 = calma · Amarillo 🟡 5-15 · "
-            "Naranja 🟠 15-30 · Rojo 🔴 ≥30 = condiciones muy cargadas. "
+            f"resonancia de la Tierra. Verde 🟢 <{_UMB['MODERATE']:.0f} = calma · "
+            f"Amarillo 🟡 {_UMB['MODERATE']:.0f}-{_UMB['HIGH']:.0f} · "
+            f"Naranja 🟠 {_UMB['HIGH']:.0f}-{_UMB['CRITICAL']:.0f} · "
+            f"Rojo 🔴 ≥{_UMB['CRITICAL']:.0f} = condiciones muy cargadas. "
+            "Umbrales recalibrados el 25-sep sobre 280.942 lecturas (percentiles "
+            "50/90/98): los de antes dejaban el 69,8 % en amarillo y el verde "
+            "era inalcanzable. "
             "El **Muro de los 5** son cinco frentes de vigilancia "
             "(tierra, atmósfera, océano, sol, mercados); si 3 o más se activan "
             "a la vez, distintos dominios físicos están alterados al mismo "
@@ -176,10 +185,16 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 "piso permanente: el viento nunca baja de ~300 km/s |",
                 "| Schumann × 1,5 | ≤ 1,5 | como mucho un 4-10 % del total |",
                 "",
-                f"*El viento solar solo ya aporta {ap_viento:.1f}, y el umbral "
-                f"VERDE es <5: medido sobre 3.261 ciclos, VERDE salió **3 veces "
-                f"(0,1 %)**. El estado «normal» de este sistema es AMARILLO "
-                f"(74,9 %), que por tanto no informa de nada.*",
+                f"*El viento solar solo ya aporta {ap_viento:.1f}, y con el "
+                f"umbral VERDE en 5 que había hasta el 25-sep eso bastaba para "
+                f"salir de verde siempre: VERDE salió **6 veces en 280.942 "
+                f"lecturas** y el 69,8 % del histórico caía en amarillo. Los "
+                f"umbrales se recalibraron a los percentiles 50/90/98 de la "
+                f"distribución real ({_UMB['MODERATE']:.0f} / "
+                f"{_UMB['HIGH']:.0f} / {_UMB['CRITICAL']:.0f}), y ahora "
+                f"reparten 50/40/8/2 %. La discriminación sigue siendo DÉBIL: "
+                f"en el tramo rojo la tasa de M7+ a 72 h es 13,1 % contra 10,7 % "
+                f"en verde, o sea 1,22x. Leerlo así.*",
                 "",
             ]
             if norte:
@@ -210,9 +225,9 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     if ciclo:
         f_, m_, b_ = ciclo[3] or 0, ciclo[7] or 0, bool(ciclo[8])
         s_ = mejor_sim or 0
-        if b_ and f_ >= 30:
+        if b_ and f_ >= _UMB["CRITICAL"]:
             nivel_sem = "🔴 ROJO"
-        elif b_ or (f_ >= 15 and s_ >= 0.85):
+        elif b_ or (f_ >= _UMB["HIGH"] and s_ >= 0.85):
             nivel_sem = "🟠 NARANJA"
         elif f_ >= 5 or s_ >= 0.80:
             nivel_sem = "🟡 AMARILLO"
@@ -232,11 +247,18 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             "|---|---|---|",
         ]
         filas_sem = [
-            ("🔴 ROJO", "Muro ≥3/5 (breach) **y** Fantasma ≥30", "Escalamiento interno"),
-            ("🟠 NARANJA", "Muro ≥3/5 (breach) **o** (Fantasma ≥15 y firma ≥85%)", "Revisión manual inmediata"),
-            ("🟡 AMARILLO", "Fantasma 5–15 **o** firma ≥80%", "Vigilancia reforzada"),
-            ("🔵 AZUL", "Fantasma <5 con detecciones o muros 1–2", "Seguimiento ampliado"),
-            ("🟢 VERDE", "Fantasma <5, muro 0/5, sin firmas ≥80%", "Monitoreo base"),
+            ("🔴 ROJO", f"Muro ≥3/5 (breach) **y** Fantasma ≥{_UMB['CRITICAL']:.0f}",
+             "Escalamiento interno"),
+            ("🟠 NARANJA",
+             f"Muro ≥3/5 (breach) **o** (Fantasma ≥{_UMB['HIGH']:.0f} y firma ≥85%)",
+             "Revisión manual inmediata"),
+            ("🟡 AMARILLO",
+             f"Fantasma {_UMB['MODERATE']:.0f}–{_UMB['HIGH']:.0f} **o** firma ≥80%",
+             "Vigilancia reforzada"),
+            ("🔵 AZUL", f"Fantasma <{_UMB['MODERATE']:.0f} con detecciones o muros 1–2",
+             "Seguimiento ampliado"),
+            ("🟢 VERDE", f"Fantasma <{_UMB['MODERATE']:.0f}, muro 0/5, sin firmas ≥80%",
+             "Monitoreo base"),
         ]
         for nombre, regla, accion in filas_sem:
             marca = "➡ " if nombre == nivel_sem else ""

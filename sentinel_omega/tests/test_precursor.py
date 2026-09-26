@@ -86,7 +86,11 @@ class TestFantasmaFormula:
         risk = compute_fantasma(bz=-3.0, viento=350.0, sch_wpc=0.1)
         expected = (350 * 0.02) + (3.0 ** 2) + (0.1 * 1.5)
         assert abs(risk.fantasma - expected) < 0.01
-        assert risk.risk_level == "HIGH"
+        # 16,15 era HIGH con los umbrales de V32 (15). Recalibrados el
+        # 2026-09-25 sobre 280.942 lecturas, esas condiciones son las de un día
+        # CORRIENTE: caen en el tramo medio, no en el alto. Los viejos dejaban
+        # el 69,8 % del histórico en amarillo y el verde en 6 horas de 280.942.
+        assert risk.risk_level == "MODERATE"
 
     def test_is_elevated_property(self):
         low = compute_fantasma(bz=0, viento=0, sch_wpc=0)
@@ -139,14 +143,17 @@ class TestLodModifier:
 class TestRiskClassification:
 
     def test_thresholds(self):
+        """Umbrales recalibrados el 2026-09-25 a los percentiles 50/90/98 de la
+        distribución real (11,5 / 28,6 / 77,7). Ver test_fantasma.py para la
+        medición y por qué los de V32 no separaban nada."""
         assert classify_risk(0.0) == "LOW"
-        assert classify_risk(4.9) == "LOW"
-        assert classify_risk(5.0) == "MODERATE"
-        assert classify_risk(14.9) == "MODERATE"
-        assert classify_risk(15.0) == "HIGH"
-        assert classify_risk(29.9) == "HIGH"
-        assert classify_risk(30.0) == "CRITICAL"
-        assert classify_risk(100.0) == "CRITICAL"
+        assert classify_risk(11.4) == "LOW"
+        assert classify_risk(11.5) == "MODERATE"
+        assert classify_risk(28.5) == "MODERATE"
+        assert classify_risk(28.6) == "HIGH"
+        assert classify_risk(77.6) == "HIGH"
+        assert classify_risk(77.7) == "CRITICAL"
+        assert classify_risk(500.0) == "CRITICAL"
 
 
 class TestComputeRiskFromSignals:

@@ -53,11 +53,43 @@ class PrecursorRisk:
         return self.risk_level in ("HIGH", "CRITICAL")
 
 
-RISK_THRESHOLDS = {
+# Los de siempre, heredados de TITAN V32. Se conservan para poder releer los
+# 3.261 ciclos de historia con la vara con la que se escribieron.
+RISK_THRESHOLDS_V32 = {
     "LOW": 0.0,
     "MODERATE": 5.0,
     "HIGH": 15.0,
     "CRITICAL": 30.0,
+}
+
+# Recalibrados el 2026-09-25 sobre 280.942 lecturas horarias reales. Los de V32
+# no separaban nada:
+#
+#   umbral    repartía                      M7+ en 72 h
+#   VERDE     6 horas de 280.942 (0,00 %)   ---
+#   AMARILLO  69,8 %                        10,87 %
+#   NARANJA   21,0 %                        11,27 %
+#   ROJO       9,2 %                        11,80 %
+#
+# VERDE era inalcanzable porque el viento solar solo ya aporta 8-10 y el umbral
+# era 5. Y la escala completa separaba 0,93 puntos de riesgo: los cuatro colores
+# decían lo mismo. Puestos en los percentiles 50/90/98 de la propia
+# distribución:
+#
+#   VERDE     50,0 %   10,71 %
+#   AMARILLO  40,0 %   11,27 %
+#   NARANJA    8,0 %   11,43 %
+#   ROJO       2,0 %   13,08 %   <- 1,22x la tasa del VERDE
+#
+# Sigue siendo una discriminación DÉBIL --- 2,4 puntos de separación --- y hay
+# que leerla así. Pero al menos los colores reparten y el extremo dice algo.
+# El índice NO cambia de valor, así que la historia sigue comparable; lo que
+# cambia es dónde se ponen las rayas.
+RISK_THRESHOLDS = {
+    "LOW": 0.0,
+    "MODERATE": 11.5,   # percentil 50
+    "HIGH": 28.6,       # percentil 90
+    "CRITICAL": 77.7,   # percentil 98
 }
 
 
@@ -89,21 +121,30 @@ def compute_fantasma(
     - Kp >= 5 (storm level) multiplies by up to 1.5×
     - LOD anomaly (>0.5 ms) adds coupling factor
     """
-    # OJO con `abs(bz) ** 2`. Viene de la fórmula heredada de TITAN V32 y es
-    # SIMÉTRICA: un Bz de +10 nT (norte) puntúa igual que uno de -10 (sur),
-    # cuando el propio encabezado de este módulo dice «southward = negative =
-    # geomagnetically active». El Bz norte no activa el acoplamiento con la
-    # magnetosfera: lo SUPRIME.
+    # Sobre `abs(bz) ** 2`, que parece un error y NO lo es --- esto costó una
+    # medición y merece quedar escrito.
     #
-    # Medido el 2026-09-25 sobre 280.941 lecturas: el 47,8 % tiene Bz positivo
-    # y **el 49 % del 5 % de lecturas más altas viene de Bz norte**. O sea que
-    # la mitad de las veces que el termómetro se dispara, lo dispara la
-    # orientación tranquila.
+    # La fórmula es simétrica: +10 nT (norte) puntúa igual que -10 (sur), y el
+    # encabezado de este módulo dice «southward = negative = geomagnetically
+    # active». Parecía un error de signo: el Bz norte no activa el acoplamiento
+    # con la magnetosfera, lo suprime.
     #
-    # No se corrige aquí: cambiar la fórmula movería los 3.261 ciclos de
-    # historia y los umbrales del semáforo con ellos. Se calcula al lado
-    # (`fantasma_solo_sur`) y se marca (`bz_es_norte`) para que la decisión de
-    # cambiarla sea del operador, con los dos números delante.
+    # Se probó la versión «corregida» --- min(bz,0)², solo sur --- contra 32
+    # años de sismos y 280.942 horas de clima espacial, midiendo qué fracción
+    # del 1 % de horas más altas precede a un evento:
+    #
+    #        objetivo          simétrica |Bz|²   solo sur min(bz,0)²
+    #        M7,0+ en 72 h         1,32x               1,13x
+    #        M7,0+ en 24 h         1,42x               1,09x
+    #        M6,5+ en 24 h         1,26x               1,19x
+    #        M7,5+ en 72 h         0,90x               1,20x
+    #
+    # **La simétrica gana** donde más importa. La lectura razonable: |Bz| grande
+    # mide CAMPO PERTURBADO en cualquier dirección --- la envoltura de una
+    # eyección solar trae Bz grande y fluctuante --- y eso lleva más información
+    # que el signo. Así que se queda como está, ahora por medición y no por
+    # herencia. `fantasma_solo_sur` se conserva como diagnóstico, no como la
+    # versión buena: los datos la rechazan.
     bz_contribution = abs(bz) ** 2
     wind_contribution = viento * 0.02
     schumann_contribution = sch_wpc * 1.5
