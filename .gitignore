@@ -39,3 +39,6 @@ scratchpad/
 
 # caché de productos Sentinel-3 FRP (esa_frp.CACHE_DIR)
 sentinel_omega/data/cache/
+
+# respaldos locales de prod (~3 GB); se quedan en disco, nunca al repo
+sentinel_omega/data/backups/
