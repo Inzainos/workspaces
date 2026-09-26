@@ -293,13 +293,18 @@ def run(args):
         por_merito = bool(getattr(getattr(config, "juez", None), "peso_por_merito", False))
         minimo = int(getattr(getattr(config, "juez", None), "minimo_ventanas", 50))
         pesos = cargar_pesos(repo._conn, por_merito=por_merito, minimo_ventanas=minimo)
+        aplicados = int(pesos.pop("_meritos_aplicados", 0))
         if pesos and orch._runner is not None:
             orch._runner.padre.set_pesos(pesos)
-            logger.info(
-                "Pesos disciplinarios cargados (%s): %s",
-                "MERITO contra el silencio" if por_merito else "paseo multiplicativo",
-                pesos,
-            )
+            if not por_merito:
+                origen = "paseo multiplicativo"
+            elif aplicados:
+                origen = f"MERITO contra el silencio ({aplicados} bots)"
+            else:
+                origen = ("merito PEDIDO pero SIN EVIDENCIA todavia "
+                          "(hacen falta mas episodios de evento): se usan los "
+                          "pesos almacenados")
+            logger.info("Pesos disciplinarios cargados (%s): %s", origen, pesos)
     except Exception as e:
         logger.warning(f"Could not load bot weights: {e}")
 
