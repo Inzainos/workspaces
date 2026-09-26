@@ -142,6 +142,21 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
         # corre, el sistema sigue observando pero deja de aprender --- la última
         # firma nueva era del 23-sep y ningún sismo posterior al 3-sep había
         # entrado (medido el 2026-09-25).
+        # Vaciado de medianoche: el barrido corre a las 00:00, así que el WAL
+        # empieza el día en cero aunque el disparador por tamaño no se haya
+        # disparado nunca. Va PRIMERO: el resto del barrido escribe bastante, y
+        # vaciar antes deja ese trabajo sobre un registro limpio.
+        try:
+            from sentinel_omega.config.sentinel_config import load_config
+            from sentinel_omega.infrastructure.database.wal import volcar_wal
+            if bool(getattr(getattr(load_config(), "wal", None), "vaciado_diario", True)):
+                stats["wal"] = volcar_wal(db_path, modo="TRUNCATE")
+                logger.info("Vaciado de medianoche del WAL: %s", stats["wal"])
+            else:
+                logger.info("Vaciado diario del WAL desactivado por configuración")
+        except Exception as e:  # noqa: BLE001 — el barrido sigue sin esto
+            logger.warning("Vaciado del WAL falló (non-blocking): %s", e)
+
         stats["eventos_promovidos"] = promover_eventos_vivos(db_path)
         # Y acto seguido, aprenderlos. Promover sin aprender deja los datos en
         # la memoria sin convertirlos en firmas, que es lo que el sistema usa

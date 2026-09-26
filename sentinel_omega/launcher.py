@@ -288,6 +288,11 @@ def run(args):
     logger.info("Creating orchestrator with live pipelines...")
     orch = SentinelOrchestrator.create_with_live_pipelines(config)
 
+    # Fuera del try de los pesos: si aquel falla, el umbral del WAL tiene que
+    # existir igual --- el ciclo lo usa más abajo y un NameError ahí tumbaría
+    # la revisión del registro justo cuando algo va mal.
+    _UMBRAL_WAL_MB = float(getattr(getattr(config, "wal", None), "umbral_mb", 800.0))
+
     try:
         from sentinel_omega.core.juez.pesos import cargar_pesos
         por_merito = bool(getattr(getattr(config, "juez", None), "peso_por_merito", False))
@@ -325,6 +330,17 @@ def run(args):
 
             except Exception as e:
                 logger.error(f"Cycle failed: {e}", exc_info=True)
+
+            # El disparador del WAL. Mirar el tamaño de un archivo cuesta
+            # microsegundos, así que puede correr en cada ciclo; el volcado solo
+            # se dispara por encima del umbral. Va FUERA del try del ciclo a
+            # propósito: si el ciclo falla, el registro sigue creciendo igual y
+            # es justo cuando más falta hace vaciarlo.
+            try:
+                from sentinel_omega.infrastructure.database.wal import volcar_si_crece
+                volcar_si_crece(str(db_path), umbral_mb=_UMBRAL_WAL_MB)
+            except Exception as e:  # noqa: BLE001 — nunca tumbar el ciclo por esto
+                logger.warning("Revisión del WAL falló (non-blocking): %s", e)
 
             if args.once:
                 logger.info("--once flag: exiting after single cycle.")

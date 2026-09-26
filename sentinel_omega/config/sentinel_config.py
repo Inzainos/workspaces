@@ -87,6 +87,19 @@ class LayerConfig:
 
 
 @dataclass
+class WalConfig:
+    """Cuándo vaciar el registro de escritura (WAL) a la base.
+
+    El 2026-09-25 llegó a 999,8 MB --- más que la base --- porque el volcado
+    automático de SQLite venía fallando: un lector de larga vida mantiene una
+    instantánea abierta y las páginas no se pueden reclamar. Una copia hecha
+    con `cp` del .db en ese estado NO incluye el WAL, y sale sin datos.
+    """
+    umbral_mb: float = 800.0      # el disparador, revisado en cada ciclo
+    vaciado_diario: bool = True   # y a medianoche, pase lo que pase
+
+
+@dataclass
 class JuezConfig:
     """Cómo se calcula el peso con el que vota cada bot.
 
@@ -136,6 +149,7 @@ class SentinelOmegaConfig:
     onnx: ONNXConfig = field(default_factory=ONNXConfig)
     jupyter: JupyterConfig = field(default_factory=JupyterConfig)
     juez: JuezConfig = field(default_factory=JuezConfig)
+    wal: WalConfig = field(default_factory=WalConfig)
 
     layers: Dict[str, LayerConfig] = field(default_factory=lambda: {
         "geodynamic": LayerConfig(refresh_interval_s=300),
@@ -167,6 +181,10 @@ def load_config(yaml_path: Optional[str] = None) -> SentinelOmegaConfig:
                 for k, v in data["database"].items():
                     if hasattr(cfg.databases, k):
                         setattr(cfg.databases, k, v)
+            if "wal" in data:
+                for k, v in (data["wal"] or {}).items():
+                    if hasattr(cfg.wal, k):
+                        setattr(cfg.wal, k, v)
             if "juez" in data:
                 for k, v in (data["juez"] or {}).items():
                     if hasattr(cfg.juez, k):

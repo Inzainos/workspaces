@@ -46,6 +46,13 @@ precursor:
     moderate: 10.0
     high: 20.0
     critical: 30.0
+wal:
+  # El registro de escritura (WAL) llego a 999,8 MB el 2026-09-25, mas que la
+  # base, porque el volcado automatico de SQLite venia fallando: un lector de
+  # larga vida mantiene una instantanea abierta y no se pueden reclamar las
+  # paginas. Y una copia hecha con `cp` en ese estado NO incluye el WAL.
+  umbral_mb: 800        # el ciclo lo revisa y vuelca si lo pasa
+  vaciado_diario: true  # y a medianoche, con el barrido, pase lo que pase
 juez:
   # Peso con el que vota cada bot. false = paseo multiplicativo (el de siempre);
   # true = merito medido contra quedarse callado. Medido el 2026-09-25: con el
