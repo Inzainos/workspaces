@@ -522,7 +522,9 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
                         zona=zona,
                         coverage_score=round(coverage_score * 0.4 + clarity * 0.3 +
                                              max(0, 1.0 - revisit / 12.0) * 0.3, 4),
-                        thermal_anomalies=alfa2_data.get("thermal_anomaly_count", 0),
+                        # None, no 0: la columna acepta NULL y así el
+                        # histórico distingue «no se midió» de «no hubo».
+                        thermal_anomalies=alfa2_data.get("thermal_anomaly_count"),
                         clear_passes=clear_passes,
                         total_passes=total,
                         revisit_days=revisit,
@@ -732,10 +734,22 @@ def _build_live_features(runner, conn=None) -> dict:
             total_passes += total_p
         if scores:
             features["satellite_coverage_score"] = round(float(np.mean(scores)), 4)
-            features["satellite_thermal_anomalies"] = float(
-                alfa2_data.get("thermal_anomaly_count", 0)
-            )
             features["satellite_clear_passes"] = float(clear_total)
+            # La anomalía térmica solo entra si SE MIDIÓ.
+            #
+            # Medido el 2026-09-26: `fetch_alfa2_data` devolvía
+            # `"thermal_anomaly_count": 0` LITERAL, y de las 2.817 filas del
+            # histórico la columna tenía **un solo valor distinto: 0**. El bot
+            # que se llama «Satellite Thermal Anomaly Detection» nunca había
+            # medido una anomalía térmica: el cero era un marcador de posición
+            # que el entrenamiento leía como «aquí nunca pasa nada».
+            #
+            # Cero es un valor medido; faltante es faltante. Mientras el conteo
+            # no venga de un producto real (`api/esa_frp.py`, S3_SLSTR_L2FRP),
+            # la clave NO se escribe y `vector_para` la deja fuera.
+            anomalias = alfa2_data.get("thermal_anomaly_count")
+            if anomalias is not None:
+                features["satellite_thermal_anomalies"] = float(anomalias)
 
     # ── beta2: marea terrestre ────────────────────────────────────
     # El tirón de la Luna y el Sol, por efemérides. Es la única fuente del

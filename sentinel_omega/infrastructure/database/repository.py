@@ -550,12 +550,18 @@ class SentinelRepository:
         timestamp_blk: str,
         zona: str,
         coverage_score: float = 0.0,
-        thermal_anomalies: int = 0,
+        thermal_anomalies: Optional[int] = None,
         clear_passes: int = 0,
         total_passes: int = 0,
         revisit_days: float = 0.0,
     ) -> None:
-        """Persiste datos de cobertura ESA Sentinel para una zona y ciclo."""
+        """Persiste datos de cobertura ESA Sentinel para una zona y ciclo.
+
+        `thermal_anomalies` por defecto es **None**, no 0. Hasta el 2026-09-26
+        era 0 y nadie lo sobreescribía nunca: la columna llegó a 2.817 filas con
+        un único valor distinto, y el entrenamiento lo leía como «aquí nunca hay
+        anomalías térmicas». Cero es un valor medido; lo que no se midió va NULL.
+        """
         self._execute(
             "INSERT OR REPLACE INTO tbl_cobertura_satelital "
             "(timestamp_blk, zona, coverage_score, thermal_anomalies, "
