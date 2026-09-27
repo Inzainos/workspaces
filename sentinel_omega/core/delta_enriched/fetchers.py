@@ -160,6 +160,15 @@ _SWPC_PROTON_URLS = (
 )
 
 
+def _rtsw_valida(row) -> bool:
+    """Fila RTSW utilizable: nave activa y overall_quality == 0 (ver noaa._rtsw_validas)."""
+    return (
+        isinstance(row, dict)
+        and row.get("active") is True
+        and row.get("overall_quality") == 0
+    )
+
+
 def _get_json(url: str, timeout: int = 30):
     import urllib.request, json
     req = urllib.request.Request(url, headers={"User-Agent": "SentinelOmega/2.5"})
@@ -203,6 +212,8 @@ def fetch_space_weather(days: int = 30) -> Optional[SpaceWeather]:
     try:
         wind_data = _get_json(_SWPC_SOLAR_WIND_URL)
         for row in wind_data:
+            if not _rtsw_valida(row):
+                continue
             dt = _parse_ts(row.get("time_tag", ""))
             if dt is None or dt < cutoff:
                 continue
@@ -226,6 +237,8 @@ def fetch_space_weather(days: int = 30) -> Optional[SpaceWeather]:
     try:
         mag_data = _get_json(_SWPC_MAG_URL)
         for row in mag_data:
+            if not _rtsw_valida(row):
+                continue
             dt = _parse_ts(row.get("time_tag", ""))
             if dt is None or dt < cutoff:
                 continue
@@ -239,41 +252,9 @@ def fetch_space_weather(days: int = 30) -> Optional[SpaceWeather]:
     except Exception as exc:
         logger.warning("NOAA MAG/Bz fetch failed: %s", exc)
 
-    # Supplement with 7-day product feeds (array-of-arrays) for longer windows
-    try:
-        plasma7 = _get_json("https://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json")
-        # header then rows: [time, density, speed, temperature]
-        for row in plasma7[1:] if isinstance(plasma7, list) and plasma7 and isinstance(plasma7[0], list) else []:
-            if not row or len(row) < 3:
-                continue
-            dt = _parse_ts(str(row[0]))
-            if dt is None or dt < cutoff:
-                continue
-            day = dt.strftime("%Y-%m-%d")
-            try:
-                if row[2] not in (None, ""):
-                    wind_speed_by_day[day].append(float(row[2]))
-                if row[1] not in (None, ""):
-                    wind_density_by_day[day].append(float(row[1]))
-            except (TypeError, ValueError):
-                pass
-    except Exception as exc:
-        logger.warning("NOAA plasma-7-day failed: %s", exc)
-    try:
-        mag7 = _get_json("https://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json")
-        # header then rows: [time, bx, by, bz, ...]  (bz often index 3)
-        for row in mag7[1:] if isinstance(mag7, list) and mag7 and isinstance(mag7[0], list) else []:
-            if not row or len(row) < 4:
-                continue
-            dt = _parse_ts(str(row[0]))
-            if dt is None or dt < cutoff:
-                continue
-            try:
-                bz_by_day[dt.strftime("%Y-%m-%d")].append(float(row[3]))
-            except (TypeError, ValueError):
-                pass
-    except Exception as exc:
-        logger.warning("NOAA mag-7-day failed: %s", exc)
+    # products/solar-wind/{plasma,mag}-7-day.json: 404 desde 2026-09-10 (toda
+    # la familia, también 1-day). Sin sustituto de 7 días; las ventanas largas
+    # salen de tbl_clima_espacial_raw (_space_weather_from_db).
 
     proton_by_day: Dict[str, list] = defaultdict(list)
     for url in _SWPC_PROTON_URLS:

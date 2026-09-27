@@ -65,7 +65,8 @@ class TestNOAAConnectors:
     @patch("sentinel_omega.infrastructure.api.noaa.get_session")
     def test_fetch_solar_wind(self, mock_get):
         mock_get.return_value.get.return_value = _mock_response([
-            {"time_tag": "2024-01-01T00:00:00Z", "proton_speed": "400.5", "proton_density": "5.2"},
+            {"time_tag": "2024-01-01T00:00:00Z", "proton_speed": "400.5", "proton_density": "5.2",
+             "active": True, "overall_quality": 0},
         ])
         df = fetch_solar_wind()
         assert df is not None
@@ -73,7 +74,8 @@ class TestNOAAConnectors:
     @patch("sentinel_omega.infrastructure.api.noaa.get_session")
     def test_fetch_mag_field(self, mock_get):
         mock_get.return_value.get.return_value = _mock_response([
-            {"time_tag": "2024-01-01T00:00:00Z", "bz_gsm": "-3.5"},
+            {"time_tag": "2024-01-01T00:00:00Z", "bz_gsm": "-3.5",
+             "active": True, "overall_quality": 0},
         ])
         df = fetch_mag_field()
         assert df is not None

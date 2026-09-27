@@ -112,6 +112,23 @@ def fetch_proton_flux(energy: str = ">=10 MeV") -> Optional[pd.DataFrame]:
     return None
 
 
+def _rtsw_validas(df: pd.DataFrame) -> pd.DataFrame:
+    """Solo las filas RTSW utilizables: ``active is True`` y ``overall_quality == 0``.
+
+    rtsw_*_1m.json trae una fila por minuto POR NAVE (SOLAR1, ACE, IMAP...) y
+    solo una está activa. Las inactivas no son intercambiables: ACE reporta
+    densidades de ~0.05 p/cm³ con overall_quality 0. Antes se mezclaban las
+    tres y el ``duplicated(keep="last")`` de la tubería elegía nave al azar.
+    Si faltan las columnas no se puede validar la fila y se descarta. Los
+    minutos sin fila válida quedan como hueco: no se interpola.
+    """
+    if "active" not in df.columns or "overall_quality" not in df.columns:
+        return df.iloc[0:0]
+    activa = df["active"].map(lambda v: isinstance(v, (bool, np.bool_)) and bool(v))
+    calidad = pd.to_numeric(df["overall_quality"], errors="coerce") == 0
+    return df[activa & calidad]
+
+
 @circuit("noaa")
 def fetch_solar_wind() -> Optional[pd.DataFrame]:
     """Fetch real-time solar wind data (Bz, speed, density)."""
@@ -120,11 +137,15 @@ def fetch_solar_wind() -> Optional[pd.DataFrame]:
         resp = get_session().get(url, timeout=TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
-        df = pd.DataFrame(data)
+        df = _rtsw_validas(pd.DataFrame(data))
+        if df.empty:
+            logger.warning("Solar wind: sin filas RTSW activas con overall_quality==0 — sin dato")
+            return None
         cols = ["time_tag", "proton_speed", "proton_density"]
         available = [c for c in cols if c in df.columns]
         if available:
-            df["time_tag"] = pd.to_datetime(df["time_tag"])
+            # time_tag de RTSW es UTC sin 'Z': se fija UTC explícito.
+            df["time_tag"] = pd.to_datetime(df["time_tag"], utc=True)
             for c in available[1:]:
                 df[c] = pd.to_numeric(df[c], errors="coerce")
             logger.info(f"Fetched {len(df)} solar wind records")
@@ -142,9 +163,13 @@ def fetch_mag_field() -> Optional[pd.DataFrame]:
         resp = get_session().get(url, timeout=TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
-        df = pd.DataFrame(data)
+        df = _rtsw_validas(pd.DataFrame(data))
+        if df.empty:
+            logger.warning("Magnetometer: sin filas RTSW activas con overall_quality==0 — sin dato")
+            return None
         if "time_tag" in df.columns and "bz_gsm" in df.columns:
-            df["time_tag"] = pd.to_datetime(df["time_tag"])
+            # time_tag de RTSW es UTC sin 'Z': se fija UTC explícito.
+            df["time_tag"] = pd.to_datetime(df["time_tag"], utc=True)
             df["bz_gsm"] = pd.to_numeric(df["bz_gsm"], errors="coerce")
             logger.info(f"Fetched {len(df)} Bz records")
             return df[["time_tag", "bz_gsm"]].sort_values("time_tag")

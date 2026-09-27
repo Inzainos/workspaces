@@ -7,14 +7,19 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("clima_gapfill")
 
 KP_URL = "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json"
+# products/solar-wind/{plasma,mag}-7-day.json: 404 desde 2026-09-10. RTSW solo
+# cubre ~24 h; huecos más viejos necesitan otra fuente.
 PLASMA_URLS = [
     "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json",
-    "https://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json",
 ]
 MAG_URLS = [
     "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json",
-    "https://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json",
 ]
+
+
+def rtsw_valida(row):
+    """Fila RTSW utilizable: nave activa y overall_quality == 0."""
+    return isinstance(row, dict) and row.get("active") is True and row.get("overall_quality") == 0
 
 def get_json(url):
     req = urllib.request.Request(url, headers={"User-Agent": "SentinelOmega/2.5"})
@@ -53,10 +58,12 @@ def main():
         except Exception:
             pass
 
-    # rtsw wind dict rows OR products array
+    # rtsw wind dict rows (solo active y overall_quality==0)
     if isinstance(plasma, list) and plasma:
         if isinstance(plasma[0], dict):
             for row in plasma:
+                if not rtsw_valida(row):
+                    continue
                 ts = str(row.get("time_tag") or row.get("time") or "")
                 if not ts.startswith("2026"):
                     continue
@@ -67,22 +74,12 @@ def main():
                         buckets[blk]["speed"].append(float(speed))
                     except Exception:
                         pass
-        elif isinstance(plasma[0], list):
-            for row in plasma[1:]:
-                if not row or len(row) < 3:
-                    continue
-                ts = str(row[0])
-                if not ts.startswith("2026"):
-                    continue
-                blk = ts[:13].replace("T", " ") + ":00"
-                try:
-                    buckets[blk]["speed"].append(float(row[2]))
-                except Exception:
-                    pass
 
     if isinstance(mag, list) and mag:
         if isinstance(mag[0], dict):
             for row in mag:
+                if not rtsw_valida(row):
+                    continue
                 ts = str(row.get("time_tag") or row.get("time") or "")
                 if not ts.startswith("2026"):
                     continue
@@ -93,18 +90,6 @@ def main():
                         buckets[blk]["bz"].append(float(bz))
                     except Exception:
                         pass
-        elif isinstance(mag[0], list):
-            for row in mag[1:]:
-                if not row or len(row) < 4:
-                    continue
-                ts = str(row[0])
-                if not ts.startswith("2026"):
-                    continue
-                blk = ts[:13].replace("T", " ") + ":00"
-                try:
-                    buckets[blk]["bz"].append(float(row[3]))
-                except Exception:
-                    pass
 
     rows = sorted(buckets.keys())
     log.info("hourly buckets=%s", len(rows))
