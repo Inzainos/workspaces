@@ -48,3 +48,4 @@ sentinel_omega/data/backups/
 *.db-shm
 *.log.*
 *.egg-info/
+scratchpad/*.sql.gz
