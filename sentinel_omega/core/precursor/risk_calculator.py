@@ -103,13 +103,18 @@ def classify_risk(fantasma: float) -> str:
     return "LOW"
 
 
+def _lod_txt(lod_ms: Optional[float]) -> str:
+    """LOD para mostrar: «sin dato» cuando no hay valor del IERS."""
+    return "sin dato" if lod_ms is None else f"{lod_ms:.2f} ms"
+
+
 def compute_fantasma(
     bz: float,
     viento: float,
     sch_wpc: float,
     pressure_hpa: float = 1013.0,
     kp: float = 0.0,
-    lod_ms: float = 0.0,
+    lod_ms: Optional[float] = None,
 ) -> PrecursorRisk:
     """
     Compute precursor risk using the TITAN V32 fantasma formula.
@@ -119,7 +124,8 @@ def compute_fantasma(
     Modifiers applied post-core:
     - Low pressure (<1008 hPa) adds up to 3.0
     - Kp >= 5 (storm level) multiplies by up to 1.5×
-    - LOD anomaly (>0.5 ms) adds coupling factor
+    - LOD anomaly (>0.5 ms) adds coupling factor. `lod_ms=None` means no
+      IERS value: no LOD modifier, and it is stored as NULL, never as 0.
     """
     # Sobre `abs(bz) ** 2`, que parece un error y NO lo es --- esto costó una
     # medición y merece quedar escrito.
@@ -166,7 +172,7 @@ def compute_fantasma(
         fantasma *= kp_modifier
 
     lod_modifier = 0.0
-    if abs(lod_ms) > 0.5:
+    if lod_ms is not None and abs(lod_ms) > 0.5:
         lod_modifier = min(2.0, abs(lod_ms) * 0.5)
         fantasma += lod_modifier
 
@@ -207,7 +213,7 @@ def compute_risk_from_signals(
     viento = 0.0
     sch_wpc = 0.0
     kp = 0.0
-    lod_ms = 0.0
+    lod_ms: Optional[float] = None
     pressure_hpa = 1013.0
 
     for sig in agent_signals:
@@ -247,6 +253,6 @@ def format_risk_report(risk: PrecursorRisk) -> str:
         "<b>Modifiers:</b>",
         f"  Pressure = <code>+{risk.pressure_modifier:.2f}</code> ({risk.components.get('pressure_hpa', 1013):.0f} hPa)",
         f"  Kp = <code>×{risk.kp_modifier:.2f}</code> (Kp={risk.components.get('kp', 0):.1f})",
-        f"  LOD = <code>+{risk.lod_modifier:.2f}</code> ({risk.components.get('lod_ms', 0):.2f} ms)",
+        f"  LOD = <code>+{risk.lod_modifier:.2f}</code> ({_lod_txt(risk.components.get('lod_ms'))})",
     ]
     return "\n".join(lines)

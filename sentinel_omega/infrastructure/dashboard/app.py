@@ -229,7 +229,7 @@ def render_precursor_risk():
         st.markdown(f"- **Viento**: {latest['viento_km_s']:.0f} km/s")
         st.markdown(f"- **Schumann**: {latest['schumann_hz']:.2f} Hz ({latest['schumann_activity']:.0f}%)")
         st.markdown(f"- **Presión**: {latest['presion_hpa']:.0f} hPa")
-        st.markdown(f"- **LOD**: {latest['lod_ms']:.2f} ms")
+        st.markdown("- **LOD**: " + ("sin dato" if latest['lod_ms'] is None or latest['lod_ms'] != latest['lod_ms'] else f"{latest['lod_ms']:.2f} ms"))
         st.markdown(f"- **Fase Lunar**: {latest['fase_lunar']:.2f}")
         st.markdown(f"- **Protones**: {latest['protones']:.1f}")
 
@@ -280,7 +280,7 @@ def _render_fantasma_waterfall(repo: SentinelRepository):
     else:
         kp_effect = 0.0
     lod_mod = 0.0
-    if abs(r["lod_ms"]) > 0.5:
+    if r["lod_ms"] is not None and r["lod_ms"] == r["lod_ms"] and abs(r["lod_ms"]) > 0.5:
         lod_mod = min(2.0, abs(r["lod_ms"]) * 0.5)
 
     labels = ["Bz²", "Viento", "Schumann", "Presión", "Kp Storm", "LOD", "Total"]

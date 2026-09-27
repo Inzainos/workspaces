@@ -223,7 +223,9 @@ class GeodynamicLayerRunner:
         kp = float(np.nanmean(kp_series)) if kp_series is not None and len(kp_series) > 0 else 0.0
 
         lod_series = beta1_data.get("lod_ms")
-        lod_ms = float(np.nanmean(lod_series)) if lod_series is not None and len(lod_series) > 0 else 0.0
+        lod_ms = float(np.nanmean(lod_series)) if lod_series is not None and len(lod_series) > 0 else None
+        if lod_ms is not None and not np.isfinite(lod_ms):
+            lod_ms = None  # sin dato del IERS: NULL, no un 0 sintético
 
         pressure_hpa = 1013.0
         pg = beta2_data.get("pressure_gradient")

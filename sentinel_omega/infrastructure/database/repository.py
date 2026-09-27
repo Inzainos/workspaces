@@ -52,7 +52,7 @@ class SentinelRepository:
         viento: float = 0.0,
         protones: float = 0.0,
         kp: float = 0.0,
-        lod_ms: float = 0.0,
+        lod_ms: Optional[float] = None,
         schumann_hz: float = 7.83,
         schumann_activity: float = 0.0,
         fase_lunar: float = 0.0,

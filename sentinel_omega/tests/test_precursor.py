@@ -1150,3 +1150,46 @@ class TestScannerPrecipitacion:
         prec = [d for d in detections if d.tipo == PrecursorType.PRECIPITACION]
         if prec:
             assert prec[0].confidence >= 0.70
+
+
+# ── lod_ms sin dato: NULL, nunca un 0 sintético (26-sep) ──────────────
+
+def test_lod_none_no_aplica_modificador():
+    risk = compute_fantasma(bz=0, viento=0, sch_wpc=0, lod_ms=None)
+    assert risk.lod_modifier == 0.0
+    assert risk.components["lod_ms"] is None
+
+
+def test_lod_por_defecto_es_sin_dato():
+    risk = compute_fantasma(bz=1.0, viento=300.0, sch_wpc=0.0)
+    assert risk.components["lod_ms"] is None
+    assert risk.lod_modifier == 0.0
+
+
+def test_reporte_con_lod_none_dice_sin_dato():
+    from sentinel_omega.core.precursor.risk_calculator import format_risk_report
+    texto = format_risk_report(compute_fantasma(bz=0, viento=0, sch_wpc=0, lod_ms=None))
+    assert "sin dato" in texto
+
+
+def test_guardado_con_lod_none_queda_null(tmp_path):
+    import sqlite3
+    from sentinel_omega.infrastructure.database.repository import SentinelRepository
+    db = tmp_path / "lod.db"
+    repo = SentinelRepository(db_path=str(db))
+    _init = getattr(repo, "init_schema", None) or getattr(repo, "initialize", None)
+    if callable(_init):
+        _init()
+    risk = compute_fantasma(bz=2.0, viento=400.0, sch_wpc=0.1, lod_ms=None)
+    rid = repo.insert_precursor_cosmico(
+        bz=2.0, viento=400.0, lod_ms=risk.components["lod_ms"],
+        fantasma=risk.fantasma, nivel_riesgo=risk.risk_level,
+    )
+    con = sqlite3.connect(db)
+    try:
+        val = con.execute(
+            "SELECT lod_ms FROM TBL_PRECURSORES_COSMICOS WHERE rowid = ?", (rid,)
+        ).fetchone()[0]
+    finally:
+        con.close()
+    assert val is None

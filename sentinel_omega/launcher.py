@@ -432,7 +432,7 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
                 viento=_scalar(risk.components.get("wind_kms", 0)),
                 protones=_prot,
                 kp=_scalar(risk.components.get("kp", 0)),
-                lod_ms=_scalar(risk.components.get("lod_ms", 0)),
+                lod_ms=_scalar(risk.components.get("lod_ms"), None),  # sin dato = NULL, no 0
                 schumann_hz=_sch_hz if _sch_hz is not None else 7.83,
                 schumann_activity=_scalar(risk.components.get("schumann_wpc", 0)) * 100,
                 presion_hpa=_scalar(risk.components.get("pressure_hpa", 1013)),
