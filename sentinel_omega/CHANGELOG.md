@@ -1,3 +1,108 @@
+## 2026-09-27 (tarde) — El tiempo de vida de una firma, en horas y para los nueve bots
+
+Pedido del operador: *«si una firma es idéntica a una que vimos en el pasado
+podremos intuir que tiene cierto tiempo de vida, y por eso hay que meterlos en
+el entrenamiento»*. Estaba implementado a medias; lo que faltaba era medible.
+
+### Changed — `infrastructure/pipeline/entrenamiento.py`
+
+- **Los nueve bots, no solo `padre`.** Había un filtro fijo
+  `if f["bot_name"] == "padre"` en `calcular_lags_anticipacion`, y por eso solo
+  **182 de 19.578 firmas** tenían `lag_promedio_h` --- las 182 de padre. Ninguna
+  firma de alfa1, beta1 ni el resto podía decir cuánto anticipa.
+- **Resolución de 1 h en vez de 48–96 h.** La rejilla
+  `[336, 240, 168, 120, 72, 24]` mide en DÍAS: medido, de 37 valores distintos
+  los seis puntos exactos concentraban las firmas. Y como el barrido va de lejos
+  a cerca y para en el primer emparejamiento, **redondeaba hacia abajo** --- una
+  firma que empieza a emparejar a las 100 h se registraba como 72.
+
+  El nuevo `_lag_detectado` es de dos etapas: la rejilla gruesa **acota** (mismo
+  resultado que antes) y una **bisección refina dentro del tramo**. No se
+  bisecta todo el rango a propósito: eso asumiría que la similitud es monótona
+  en el tiempo y **eso no está medido** --- una firma puede emparejar a 100 h, no
+  a 80 y otra vez a 60. Acotar confina la suposición a un tramo de 96 h, y si el
+  refinamiento falla se devuelve el punto grueso: nunca peor que antes.
+  ~13 sondeos contra los <=6 de antes, en vez de los 336 de un barrido horario.
+- **El tope de muestra es por BOT Y CLASE.** Era por clase; padre tiene el 73 %
+  de las firmas, así que sin este cambio quitar el filtro no habría servido de
+  nada. Y un log por bot, porque antes el reparto era «padre: todo, el resto:
+  nada» y no había forma de notarlo (regla dura 10).
+
+**Medido sobre copia de la base y repoblado en producción:**
+
+| | antes | ahora |
+|---|---:|---:|
+| firmas con lag | 182 | **1.058** |
+| bots cubiertos | 1 | **8** (todos los que forman firmas) |
+| valores distintos | 37 | **569** |
+| clases medidas | 8 | **11** |
+| en punto exacto de rejilla | 100 % | **16,4 %** |
+| coste | — | **20,6 s** (0,4 % del entrenamiento) |
+
+Aparecieron `TORMENTA_Kp6/Kp7/Kp9`, que no existían en `tbl_lag_anticipacion`
+porque solo se medía a padre y las tormentas son firmas de otros bots. Kp7
+anticipa ~12,7 días; Kp9 ~11,1.
+
+Los promedios por clase NO son comparables uno a uno con los de antes: cambió la
+población (ocho bots en vez de uno) además de la resolución.
+
+### Added — el ancla de la cuenta regresiva (`tbl_firma_racha_viva`)
+
+`format_lag_line` sabía restar el transcurrido al lag aprendido, pero se anclaba
+en `tbl_cimatica_patrones.primera_vez`, y **el rebuild pone esa columna al 100 %
+en la fecha del rebuild** (279.453 de 279.453 filas). La cuenta regresiva se
+reiniciaba entera en cada reconstrucción: un número plausible que no medía nada.
+`TBL_FIRMAS.primera_vista` tampoco sirve --- guarda fechas reales (1994–2026)
+pero es la primera vez HISTÓRICA, y restarle el transcurrido da «restan 0 h».
+
+Tabla nueva (forward-only), llenada por `launcher._registrar_racha_viva` en cada
+ciclo: `firma_id`, `inicio_ts`, `ultimo_ts`, `ciclos`. Si la firma se vio hace
+menos de `RACHA_TOLERANCIA_MIN` (20 min, dos ciclos de holgura) la racha
+**continúa** y su origen no se mueve; si hubo un hueco mayor, empieza una nueva.
+Es dato VIVO: no se reconstruye del histórico y el rebuild no lo toca.
+
+`alert_enrichment.ancla_de_racha_viva` lo prefiere al patrón cimático, y se lleva
+**el lag de ESA firma**, no el promedio de su clase. Sin racha, cae al
+comportamiento anterior.
+
+De punta a punta, firma real de beta1 (lag propio 202,7 h) con 40 h de racha:
+
+    ⏱ Lag típico: ~203 h (restan ~163 h) · cuenta regresiva: ~163 h restantes
+      · freq: 2 → vigilar hasta 04/10 10:00 UTC
+
+### Changed — `launcher.py`: la ventana, en horas
+
+El launcher ya priorizaba correctamente el lag DE LA FIRMA sobre el promedio de
+clase, pero lo imprimía dividido por 24. Con la rejilla vieja eso no perdía nada;
+con resolución de 1 h sí --- 202,7 h impresas como «8 días». Se añade
+`ventana_tipica_h` y se **conserva** `ventana_tipica_dias`, que leen `muro_lags`,
+`generar_reporte` y el reporte ejecutivo. Campo añadido, ninguno quitado.
+
+### Descubierto al verificar
+
+`analizar_factores_lag` ya existía y ahora tiene material. Lo que diferencia una
+firma de aviso CORTO de una de aviso largo:
+
+| rasgo | rápidas | lentas |
+|---|---:|---:|
+| `so2_kt_win` (SO₂ volcánico) | **91,66** | 4,60 |
+| `so2_kt_90d` | 268,25 | 105,91 |
+| `sismo_count_72h` | 4,14 | 1,59 |
+| `es_sicigia` | 0,25 | 0,11 |
+
+**La desgasificación volcánica activa y la sismicidad reciente predicen un aviso
+corto**; su ausencia, uno largo. Es «qué firmas caen en qué banda de horas», y ya
+es consultable.
+
+### Verificación
+
+23 pruebas nuevas (15 de lag + 8 de racha). Suite completa: `PYTEST_EXIT=0`,
+cero `FAILED`. El lag ya está repoblado en producción; la racha necesita
+**reinicio** para empezar a registrarse --- **no requiere rebuild**, por ser dato
+vivo.
+
+---
+
 ## 2026-09-27 — El cero de «no lo sé»: 792 falsas alarmas de alfa1 y el latido silenciado
 
 Cinco defectos de la misma familia — un número que NO es una medición ocupando la

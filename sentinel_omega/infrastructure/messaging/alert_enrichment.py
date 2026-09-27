@@ -186,6 +186,40 @@ def epicentro_reciente(conn: sqlite3.Connection, hours: float = 72.0) -> Optiona
     return out
 
 
+def ancla_de_racha_viva(conn, event_class: Optional[str]):
+    """(inicio de la racha, lag PROPIO de la firma, ciclos) o (None, None, None).
+
+    El ancla correcta de la cuenta regresiva. Se prefiere a
+    `tbl_cimatica_patrones.primera_vez` porque esa columna la resetea el rebuild
+    --- medido el 2026-09-27: 279.453 de 279.453 filas con la fecha del rebuild,
+    o sea que la cuenta regresiva se reiniciaba al máximo cada reconstrucción.
+
+    Y devuelve el lag de la FIRMA, no el promedio de su clase: si el patrón vivo
+    es idéntico a uno del pasado, su propio tiempo de vida es mejor estimación
+    que la media de todos los de su tipo. Es lo que pidió el operador.
+
+    Solo cuenta una racha que siga viva (`ultimo_ts` reciente); una que se apagó
+    no dice nada del presente.
+    """
+    if not event_class:
+        return None, None, None
+    try:
+        fila = conn.execute(
+            "SELECT r.inicio_ts, f.lag_promedio_h, r.ciclos "
+            "FROM tbl_firma_racha_viva r "
+            "JOIN TBL_FIRMAS f ON f.firma_id = r.firma_id "
+            "WHERE f.event_class = ? AND f.lag_promedio_h IS NOT NULL "
+            "  AND r.ultimo_ts >= datetime('now', '-30 minutes') "
+            "ORDER BY r.ciclos DESC, f.recurrencia DESC LIMIT 1",
+            (event_class,),
+        ).fetchone()
+    except Exception:  # noqa: BLE001 — sin la tabla se cae al patrón cimático
+        return None, None, None
+    if not fila:
+        return None, None, None
+    return fila[0], _as_float(fila[1]), fila[2]
+
+
 def lag_for_event_class(conn: sqlite3.Connection, event_class: Optional[str] = None) -> Tuple[Optional[float], Optional[float]]:
     if not event_class:
         # generic seismic lag if table exists
@@ -299,15 +333,26 @@ def enrich_precursor_row(
                 "VOLCANIC_PRECURSOR": "ERUPCION_VEI4",
             }
             ec = tipo_map.get(tipo, "SISMO_M5")
-            cim = conn.execute(
-                "SELECT primera_vez, frecuencia FROM tbl_cimatica_patrones "
-                "WHERE event_class = ? AND ambito = 'general' "
-                "ORDER BY frecuencia DESC LIMIT 1",
-                (ec,)
-            ).fetchone()
-            if cim:
-                out["primera_vez"] = cim[0]
-                out["frecuencia"] = cim[1]
+            # PRIMERO la racha viva de una firma de esa clase: su inicio es un
+            # instante real y su lag es el de ESA firma. Solo si no hay racha se
+            # cae al patrón cimático, cuyo `primera_vez` lo resetea el rebuild.
+            inicio, lag_firma, ciclos = ancla_de_racha_viva(conn, ec)
+            if inicio:
+                out["primera_vez"] = inicio
+                out["frecuencia"] = ciclos
+                if lag_firma:
+                    out["lag_horas"] = lag_firma
+                    out["lag_de_la_firma"] = True
+            else:
+                cim = conn.execute(
+                    "SELECT primera_vez, frecuencia FROM tbl_cimatica_patrones "
+                    "WHERE event_class = ? AND ambito = 'general' "
+                    "ORDER BY frecuencia DESC LIMIT 1",
+                    (ec,)
+                ).fetchone()
+                if cim:
+                    out["primera_vez"] = cim[0]
+                    out["frecuencia"] = cim[1]
         except Exception:
             pass
 

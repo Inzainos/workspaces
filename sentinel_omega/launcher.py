@@ -576,6 +576,64 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
 # sentinel_omega/core/schumann_vivo.py). Decisión del Capitán, 2026-09-26.
 
 
+# Tolerancia para considerar que una racha CONTINÚA. El ciclo corre cada ~5 min
+# (300 s por defecto); con 20 min se aguanta un ciclo lento o dos perdidos sin
+# partir la racha en dos, y un reinicio largo sí la parte, que es lo correcto.
+RACHA_TOLERANCIA_MIN = 20
+
+
+def _registrar_racha_viva(conn, matches) -> None:
+    """Cuándo empezó la racha de emparejamiento ACTUAL de cada firma.
+
+    Es el ancla que le faltaba a la cuenta regresiva. Medido el 2026-09-27:
+    `format_lag_line` sabe restar el tiempo transcurrido al lag aprendido, pero
+    se anclaba en `tbl_cimatica_patrones.primera_vez`, y **el rebuild pone esa
+    columna al 100 % en la fecha del rebuild** (279.453 de 279.453 filas). Así
+    que la cuenta regresiva se reiniciaba entera cada vez que se reconstruía la
+    memoria, mostrando un número plausible que no medía nada.
+
+    `TBL_FIRMAS.primera_vista` tampoco sirve: guarda fechas reales (1994–2026)
+    pero es la primera vez HISTÓRICA, y restarle el transcurrido da «restan 0 h».
+
+    Lo que hace falta es un tercer dato que no existía: el instante en que la
+    firma empezó a emparejar EN ESTA racha. Con eso, «restan ~N h» cuenta de
+    verdad hacia abajo mientras el patrón se mantiene, y se reinicia solo cuando
+    el patrón desaparece y vuelve --- que es lo que el operador describió.
+
+    Es dato VIVO: no se puede reconstruir del histórico y no lo toca el rebuild.
+    """
+    if not matches:
+        return
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tbl_firma_racha_viva ("
+            "firma_id TEXT PRIMARY KEY, inicio_ts TEXT NOT NULL, "
+            "ultimo_ts TEXT NOT NULL, ciclos INTEGER NOT NULL DEFAULT 1)"
+        )
+        for m in matches:
+            fid = m.get("firma_id")
+            if not fid:
+                continue
+            # Si la última vez que se vio es reciente, la racha sigue; si no,
+            # empieza una nueva. `excluded` es la fila que se intentó insertar.
+            conn.execute(
+                "INSERT INTO tbl_firma_racha_viva "
+                "  (firma_id, inicio_ts, ultimo_ts, ciclos) "
+                "VALUES (?, datetime('now'), datetime('now'), 1) "
+                "ON CONFLICT(firma_id) DO UPDATE SET "
+                "  inicio_ts = CASE WHEN ultimo_ts >= datetime('now', ?) "
+                "                   THEN inicio_ts ELSE datetime('now') END, "
+                "  ciclos    = CASE WHEN ultimo_ts >= datetime('now', ?) "
+                "                   THEN ciclos + 1 ELSE 1 END, "
+                "  ultimo_ts = datetime('now')",
+                (str(fid), f"-{RACHA_TOLERANCIA_MIN} minutes",
+                 f"-{RACHA_TOLERANCIA_MIN} minutes"),
+            )
+        conn.commit()
+    except Exception as e:  # noqa: BLE001 — el ciclo no se cae por la racha
+        logger.warning("Racha viva de firmas no registrada (%s)", e)
+
+
 def _build_live_features(runner, conn=None) -> dict:
     """Build the firma feature vector from the live pipeline cache.
 
@@ -866,6 +924,7 @@ def _auditar_ciclo(geo, repo, runner) -> None:
         features = _build_live_features(runner, conn)
         if features:
             matches = memoria.match_estado_actual(features)
+            _registrar_racha_viva(conn, matches)
             for m in matches[:5]:
                 try:
                     nodo = conn.execute(
@@ -889,10 +948,20 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                         (m["firma_id"],),
                     ).fetchone()
                     if lag_firma:
+                        # En HORAS, que es la resolución que el entrenamiento
+                        # mide desde el 2026-09-27 (antes la rejilla era de 48 a
+                        # 96 h, así que dividir por 24 no perdía nada; ahora sí:
+                        # 202,7 h impresas como «8 días» tiran la precisión que
+                        # se acaba de ganar). `ventana_tipica_dias` se conserva
+                        # porque lo leen muro_lags, generar_reporte y el
+                        # ejecutivo --- campo añadido, ninguno quitado.
+                        m["ventana_tipica_h"] = round(lag_firma[0], 1)
                         m["ventana_tipica_dias"] = round(lag_firma[0] / 24, 1)
+                        m["lag_n"] = lag_firma[1]
                         ventana = (
-                            f" — ESTA firma suele presentarse en "
-                            f"~{lag_firma[0]/24:.0f} días (n={lag_firma[1]})"
+                            f" — ESTA firma suele presentarse "
+                            f"~{lag_firma[0]:.0f} h antes "
+                            f"({lag_firma[0]/24:.1f} d, n={lag_firma[1]})"
                         )
                     else:
                         lag = conn.execute(
@@ -901,10 +970,12 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                             (m["event_class"],),
                         ).fetchone()
                         if lag:
+                            # Promedio de la CLASE: la firma no tiene el suyo.
+                            m["ventana_tipica_h"] = round(lag[0], 1)
                             m["ventana_tipica_dias"] = round(lag[0] / 24, 1)
                             ventana = (
-                                f" — ventana típica ~{lag[0]/24:.0f} días "
-                                f"(hasta {lag[1]/24:.0f}d)"
+                                f" — ventana típica de su clase ~{lag[0]:.0f} h "
+                                f"({lag[0]/24:.1f} d, hasta {lag[1]:.0f} h)"
                             )
                 except Exception:
                     pass

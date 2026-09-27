@@ -225,6 +225,12 @@ sentinel_omega/
     `BOT_FEATURES` decide qué rasgos llevan las firmas de cada bot; un rasgo
     que no esté ahí no puede entrar al vector ONNX de ese bot (entrenaría en
     cero y en vivo recibiría un valor real).
+    `calcular_lags_anticipacion` aprende **cuánto avisa cada firma, en horas**:
+    reprueba sus eventos con la ventana desplazada atrás y se queda con el
+    desplazamiento más temprano en que aún emparejaba. Escribe
+    `TBL_FIRMAS.lag_promedio_h`/`lag_n` (por firma) y `tbl_lag_anticipacion`
+    (por clase). Los nueve bots y resolución de 1 h desde el 2026-09-27; corre
+    en ~21 s, así que se puede repoblar sin rebuild completo.
   - `infrastructure/pipeline/mantenimiento.py` — barrido diario/correlaciones/sesgo/poda.
 - Reporting:
   - `infrastructure/pipeline/reporte_sentinel.py` — reportes general/padre/omega.

@@ -759,17 +759,113 @@ def entrenar(
 
 # Offsets probados: la ventana de la firma termina N horas ANTES del evento.
 # El lag de un evento es el offset MÁS TEMPRANO donde la firma ya se reconocía.
+# Rejilla GRUESA para acotar el inicio del emparejamiento (14d, 10d, 7d, 5d, 3d, 1d).
+# Sus huecos son de 48 a 96 h, así que por sí sola mide en días, no en horas:
+# medido el 2026-09-27, de 37 valores distintos de `lag_promedio_h` los seis
+# puntos exactos de esta rejilla concentran las firmas y el resto son promedios
+# de dos o tres puntos. Y como el barrido va de lejos a cerca y para en el primer
+# emparejamiento, SIEMPRE REDONDEA HACIA ABAJO: una firma que empieza a emparejar
+# a las 100 h se registra como 72.
 LAG_OFFSETS_H = [336, 240, 168, 120, 72, 24]
+
+# Resolución del refinamiento por bisección dentro del tramo acotado.
+LAG_RESOLUCION_H = 1
+
+# Tope de evaluaciones POR BOT Y CLASE, no por clase. Con el tope por clase,
+# quitar el filtro de `padre` no habría servido de nada: padre tiene 14.289 de
+# las 19.578 firmas, así que se habría comido el presupuesto entero y los otros
+# ocho bots seguirían sin lag.
 LAG_MUESTRA_POR_CLASE = 150
 
 
-def calcular_lags_anticipacion(db_path: str) -> Dict:
-    """Average anticipation lead time per event class (in-sample).
+def _lag_detectado(conn, firma_features, t0, id_nodo) -> Optional[float]:
+    """El offset MÁS GRANDE (en horas) en que la firma todavía se reconocía.
 
-    For consolidated Padre signatures, re-test each member event with the
-    window shifted back in time: if the signature already matched 7 days
-    before the event, the system had ~7 days of warning. Persisted to
-    tbl_lag_anticipacion for the report.
+    Es «el tiempo de vida de la firma»: cuánta anticipación dio ESTE patrón
+    sobre ESTE evento. Dos etapas, y la primera es exactamente el barrido que
+    había hasta el 2026-09-27:
+
+      1. **Rejilla gruesa** `LAG_OFFSETS_H`, de más lejos a más cerca; el primer
+         emparejamiento gana. Da el mismo resultado que antes.
+      2. **Bisección** entre ese punto y el inmediatamente anterior --- el que NO
+         emparejó --- hasta `LAG_RESOLUCION_H`.
+
+    La bisección NO se aplica sobre todo el rango, y es deliberado: eso asumiría
+    que la similitud es monótona en el tiempo, y **eso no está medido**. Una firma
+    puede emparejar a 100 h, no a 80 y otra vez a 60; un barrido binario global se
+    saltaría el inicio real. Acotar primero con la rejilla confina la suposición
+    al interior de UN tramo, que es donde está la transición, y si el refinamiento
+    no encuentra nada se devuelve el punto grueso: **nunca peor que antes**.
+
+    Coste: <=6 sondeos de la rejilla + ~7 de bisección sobre un tramo de 96 h =
+    ~13, contra los <=6 de antes. Resolución 48 veces más fina por ~2x el coste,
+    en vez de las 336 evaluaciones de un barrido horario completo.
+    """
+    from datetime import timedelta as _td2
+
+    def empareja(offset_h: int) -> bool:
+        ts = (t0 - _td2(hours=offset_h)).strftime("%Y-%m-%d %H:%M")
+        f = extraer_features_ventana(conn, ts, id_nodo)
+        if f is None:
+            return False
+        return similitud(f, firma_features) >= SIMILARITY_ALERT
+
+    bruto = None
+    sin_emparejar = None        # el offset MAYOR que no emparejó
+    for offset_h in LAG_OFFSETS_H:
+        if empareja(offset_h):
+            bruto = offset_h
+            break
+        sin_emparejar = offset_h
+    if bruto is None:
+        return None
+    if sin_emparejar is None:
+        # Emparejó ya en el punto más lejano de la rejilla: el inicio real puede
+        # estar aún antes, pero fuera de la ventana de la firma. No se extrapola.
+        return float(bruto)
+
+    lo, hi = bruto, sin_emparejar          # empareja(lo) y no empareja(hi)
+    while hi - lo > LAG_RESOLUCION_H:
+        mid = (lo + hi) // 2
+        if mid <= lo or mid >= hi:
+            break
+        if empareja(mid):
+            lo = mid
+        else:
+            hi = mid
+    return float(lo)
+
+
+def calcular_lags_anticipacion(db_path: str) -> Dict:
+    """Anticipación aprendida: cuánto avisa cada firma, en horas.
+
+    Para cada firma consolidada se reprueba cada uno de sus eventos con la
+    ventana desplazada atrás en el tiempo. Si la firma ya emparejaba 7 días
+    antes del evento, el sistema tuvo ~7 días de aviso. Se persiste por firma en
+    `TBL_FIRMAS.lag_promedio_h` / `lag_n` y agregado por clase en
+    `tbl_lag_anticipacion`.
+
+    El objetivo, que es lo que lo hace útil en vivo: si una firma viva es
+    idéntica a una que ya se vio en el pasado, **trae su propio tiempo de vida**
+    en vez del promedio de su clase --- y entonces el aviso puede decir «restan
+    ~N h» con un número que significa algo.
+
+    Cambiado el 2026-09-27, a pedido del operador:
+
+      * **Los nueve bots, no solo `padre`.** Había un filtro fijo
+        `if f["bot_name"] == "padre"`, y por eso solo 182 de 19.578 firmas
+        tenían lag --- las 182 de padre. Ninguna firma de alfa1, beta1 ni el
+        resto podía decir cuánto anticipa.
+      * **Resolución de 1 h en vez de 48–96 h**, por bisección dentro del tramo
+        acotado (ver `_lag_detectado`).
+      * **El tope de muestra es por BOT Y CLASE.** Con el tope por clase, quitar
+        el filtro no habría servido: padre tiene el 73 % de las firmas y se
+        habría llevado el presupuesto entero.
+
+    Nota sobre `tbl_lag_anticipacion`: su agregado por clase ahora mezcla los
+    nueve bots, no solo padre, así que responde «cuánto avisa esta clase de
+    evento» en vez de «cuánto avisa el padre». Es lo que el digest de Telegram
+    imprime como `SISMO_M4: ~152h`.
     """
     from datetime import datetime as _dt, timedelta as _td
     from sentinel_omega.core.firmas.signature_engine import similitud
@@ -783,16 +879,18 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
     )
 
     memoria = FirmaMemoria(conn)
-    consolidadas = [
-        f for f in memoria.consolidadas() if f["bot_name"] == "padre"
-    ]
+    consolidadas = list(memoria.consolidadas())
 
     lags_por_clase: Dict[str, List[float]] = {}
-    evaluados_por_clase: Dict[str, int] = {}
+    # La clave del tope es (bot, clase), no la clase: ver LAG_MUESTRA_POR_CLASE.
+    evaluados: Dict[tuple, int] = {}
+    lags_por_bot: Dict[str, int] = {}
 
     for firma in consolidadas:
         clase = firma["event_class"]
-        if evaluados_por_clase.get(clase, 0) >= LAG_MUESTRA_POR_CLASE:
+        bot = firma["bot_name"]
+        cupo = (bot, clase)
+        if evaluados.get(cupo, 0) >= LAG_MUESTRA_POR_CLASE:
             continue
         # Muestra de 3 eventos desde la tabla hija (no cargamos el array entero).
         eventos = [
@@ -805,7 +903,7 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
 
         lags_firma: List[float] = []
         for ref in eventos:  # muestra por firma (ya viene limitada a 3)
-            if evaluados_por_clase.get(clase, 0) >= LAG_MUESTRA_POR_CLASE:
+            if evaluados.get(cupo, 0) >= LAG_MUESTRA_POR_CLASE:
                 break
             try:
                 ts_evento, nodo_part, _ = ref.split("|")
@@ -814,19 +912,12 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
             except ValueError:
                 continue
 
-            evaluados_por_clase[clase] = evaluados_por_clase.get(clase, 0) + 1
-            lag_detectado = None
-            for offset_h in LAG_OFFSETS_H:  # earliest first
-                ts_shift = (t0 - _td(hours=offset_h)).strftime("%Y-%m-%d %H:%M")
-                features = extraer_features_ventana(conn, ts_shift, id_nodo)
-                if features is None:
-                    continue
-                if similitud(features, firma["features"]) >= SIMILARITY_ALERT:
-                    lag_detectado = float(offset_h)
-                    break  # earliest matching offset = max anticipation
+            evaluados[cupo] = evaluados.get(cupo, 0) + 1
+            lag_detectado = _lag_detectado(conn, firma["features"], t0, id_nodo)
             if lag_detectado is not None:
                 lags_por_clase.setdefault(clase, []).append(lag_detectado)
                 lags_firma.append(lag_detectado)
+                lags_por_bot[bot] = lags_por_bot.get(bot, 0) + 1
 
         # Per-signature lead time: THIS firma's own typical window
         if lags_firma:
@@ -854,6 +945,10 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
     conn.commit()
     conn.close()
     logger.info(f"Lags de anticipación: {resultado}")
+    # Por bot, para que se vea si algún bot quedó sin medir. Antes este número
+    # era «padre: todo, el resto: nada» y no había forma de notarlo desde el log.
+    logger.info("Lags por bot (firmas con anticipación medida): %s",
+                dict(sorted(lags_por_bot.items(), key=lambda kv: -kv[1])) or "NINGUNO")
 
     factores = analizar_factores_lag(db_path)
     resultado["factores"] = factores
