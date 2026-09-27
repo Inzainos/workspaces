@@ -1072,3 +1072,29 @@ class TestCascadaNoSeLanzaEnVano:
         conn.close()
         mantenimiento.volcar_telemetria_viva(str(ruta))
         assert llamadas, "con eventos, la cascada tiene que correr"
+
+
+def test_features_excluyen_schumann_congelado(db):
+    """Filas del enjambre con en_vivo=0 (8,26 Hz congelado) no entran a la firma."""
+    conn, _ = db
+    conn.execute("CREATE TABLE IF NOT EXISTS tbl_enjambre_telemetria ("
+                 "timestamp_blk TEXT NOT NULL, id_nodo INTEGER NOT NULL, "
+                 "schumann_hz REAL, PRIMARY KEY (timestamp_blk, id_nodo))")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(tbl_enjambre_telemetria)")}
+    if "en_vivo" not in cols:
+        conn.execute("ALTER TABLE tbl_enjambre_telemetria ADD COLUMN en_vivo INTEGER DEFAULT 1")
+    info = conn.execute("PRAGMA table_info(tbl_clima_espacial_raw)").fetchall()
+    vals = {"timestamp_blk": "2026-09-20 10:00", "bz_promedio": -3.0, "kp_promedio": 2.0}
+    for _cid, name, _typ, notnull, dflt, _pk in info:
+        if notnull and dflt is None and name not in vals:
+            vals[name] = 0
+    conn.execute(f"INSERT INTO tbl_clima_espacial_raw ({','.join(vals)}) "
+                 f"VALUES ({','.join('?' * len(vals))})", list(vals.values()))
+    conn.executemany("INSERT INTO tbl_enjambre_telemetria VALUES (?,0,?,?)", [
+        ("2026-09-20 08:00", 7.9, 1), ("2026-09-20 09:00", 7.9, 1),
+        ("2026-09-20 10:00", 8.26, 0), ("2026-09-20 11:00", 8.26, 0),
+    ])
+    conn.commit()
+    f = extraer_features_ventana(conn, "2026-09-21 00:00", 45)
+    assert f is not None
+    assert f["schumann_mean"] == pytest.approx(7.9)
