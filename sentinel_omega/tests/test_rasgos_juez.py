@@ -259,3 +259,66 @@ def test_cargar_reconstruidos_sin_tabla_no_revienta(tmp_path):
     p = tmp_path / "vacia.db"
     sqlite3.connect(str(p)).close()
     assert cargar_reconstruidos(str(p)) == {}
+
+
+def test_un_total_parcial_no_se_presenta_como_completo(base):
+    """`sum(f[1] or 0 ...)` --- cazado por C el 2026-09-26.
+
+    `satellite_thermal_anomalies` y `satellite_clear_passes` son TOTALES sobre
+    las zonas vigiladas. Contar las NULL como cero da un total parcial que el
+    modelo no puede distinguir de uno completo. Y `thermal_anomalies` es NULL
+    desde que se quitó el cero fabricado, así que es el caso vivo.
+    """
+    base.executemany(
+        "INSERT INTO tbl_cobertura_satelital_historico "
+        "(timestamp_blk, zona, coverage_score, thermal_anomalies, clear_passes, "
+        " total_passes, revisit_days) VALUES (?,?,?,?,?,?,?)",
+        [("2026-09-10 10:00", "z1", 0.8, 3, 20, 50, 3.0),
+         ("2026-09-10 10:00", "z2", 0.7, None, 15, 40, 4.0)],   # z2 sin medir
+    )
+    base.commit()
+    rasgos, fuentes = rasgos_en(base, "2026-09-10 12:00")
+    assert "satelital" in fuentes
+    assert rasgos["satellite_coverage_score"] == pytest.approx(0.75)
+    # el total de anomalías NO entra: sería «3» cuando z2 no se midió
+    assert "satellite_thermal_anomalies" not in rasgos
+    # el de pasadas claras sí, porque las dos zonas lo tienen
+    assert rasgos["satellite_clear_passes"] == pytest.approx(35.0)
+
+
+def test_con_todas_las_zonas_medidas_el_total_si_entra(base):
+    base.executemany(
+        "INSERT INTO tbl_cobertura_satelital_historico "
+        "(timestamp_blk, zona, coverage_score, thermal_anomalies, clear_passes, "
+        " total_passes, revisit_days) VALUES (?,?,?,?,?,?,?)",
+        [("2026-09-10 10:00", "z1", 0.8, 3, 20, 50, 3.0),
+         ("2026-09-10 10:00", "z2", 0.7, 0, 15, 40, 4.0)],   # 0 MEDIDO
+    )
+    base.commit()
+    rasgos, _ = rasgos_en(base, "2026-09-10 12:00")
+    assert rasgos["satellite_thermal_anomalies"] == pytest.approx(3.0)
+
+
+def test_sin_so2_no_se_dice_cero_kilotones(base):
+    """`SUM(so2_kt)` es NULL si todas las filas lo son. El `or 0.0` afirmaba
+    «cero kilotones medidos», que es una afirmación sobre el volcán."""
+    base.execute(
+        "INSERT INTO tbl_desgasificacion_raw VALUES (?,?,?,?,?,?)",
+        ("2026-09-10 10:00", "n1", "Popocatepetl", "vulcaniana", 2.0, None),
+    )
+    base.commit()
+    rasgos, fuentes = rasgos_en(base, "2026-09-10 12:00")
+    assert "volcanes" in fuentes
+    assert rasgos["erupciones_win"] == pytest.approx(1.0)
+    assert "so2_kt_win" not in rasgos
+    assert "so2_kt_90d" not in rasgos
+
+
+def test_con_so2_medido_si_entra(base):
+    base.execute(
+        "INSERT INTO tbl_desgasificacion_raw VALUES (?,?,?,?,?,?)",
+        ("2026-09-10 10:00", "n1", "Popocatepetl", "vulcaniana", 2.0, 4.5),
+    )
+    base.commit()
+    rasgos, _ = rasgos_en(base, "2026-09-10 12:00")
+    assert rasgos["so2_kt_win"] == pytest.approx(4.5)

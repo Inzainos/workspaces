@@ -248,11 +248,21 @@ def _satelital(conn: sqlite3.Connection, ini: str, fin: str) -> Dict[str, float]
     filas = [f for f in filas if f[0] is not None]
     if not filas:
         return {}
-    return {
-        "satellite_coverage_score": float(np.mean([f[0] for f in filas])),
-        "satellite_thermal_anomalies": float(sum(f[1] or 0 for f in filas)),
-        "satellite_clear_passes": float(sum(f[2] or 0 for f in filas)),
-    }
+    fuera = {"satellite_coverage_score": float(np.mean([f[0] for f in filas]))}
+    # `sum(f[1] or 0 ...)` --- cazado por C el 2026-09-26 --- convertía un NULL
+    # en un 0 MEDIDO. Y es peor que eso: estos rasgos son TOTALES sobre las
+    # zonas vigiladas, así que sumar las medidas y contar las NULL como cero da
+    # un total parcial presentado como completo. Un total incompleto no es el
+    # mismo número que un total: el modelo no puede distinguirlos.
+    #
+    # `thermal_anomalies` es NULL desde el arreglo del cero fabricado, así que
+    # esto es exactamente el caso vivo, no un hipotético.
+    for i, clave in ((1, "satellite_thermal_anomalies"),
+                     (2, "satellite_clear_passes")):
+        valores = [f[i] for f in filas]
+        if all(v is not None for v in valores):
+            fuera[clave] = float(sum(valores))
+    return fuera
 
 
 def _filtro_en_vivo(conn) -> str:
@@ -342,11 +352,15 @@ def _volcanes(conn: sqlite3.Connection, ini: str, fin: str) -> Dict[str, float]:
     if not fila or not fila[0]:
         return {}
     n = float(fila[0])
-    kt = float(fila[1] or 0.0)
-    return {
-        "erupciones_win": n, "so2_kt_win": kt,
-        "erupciones_90d": n, "so2_kt_90d": kt,
-    }
+    fuera = {"erupciones_win": n, "erupciones_90d": n}
+    # `SUM(so2_kt)` devuelve NULL si TODAS las filas lo tienen en NULL. El
+    # `or 0.0` lo convertía en «cero kilotones medidos», que es una afirmación
+    # sobre el volcán. Si no hay SO2, la clave no entra.
+    if fila[1] is not None:
+        kt = float(fila[1])
+        fuera["so2_kt_win"] = kt
+        fuera["so2_kt_90d"] = kt
+    return fuera
 
 
 def _marea(conn: sqlite3.Connection, ini: str, fin: str) -> Dict[str, float]:
