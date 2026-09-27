@@ -427,14 +427,21 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
                 except (TypeError, ValueError):
                     return default
 
+            # Schumann sin lectura viva = NULL, no el 7.83 / 0 inventado de antes.
+            _sch_wpc = _scalar(risk.components.get("schumann_wpc"), None)
+            if _sch_wpc is not None and _sch_wpc != _sch_wpc:
+                _sch_wpc = None
+            _sch_hz_v = _scalar(_sch_hz, None)
+            if _sch_hz_v is not None and _sch_hz_v != _sch_hz_v:
+                _sch_hz_v = None
             repo.insert_precursor_cosmico(
                 bz=_scalar(risk.components.get("bz_nT"), None),  # sin dato = NULL, no 0
                 viento=_scalar(risk.components.get("wind_kms"), None),  # sin dato = NULL, no 0
                 protones=_prot,
                 kp=_scalar(risk.components.get("kp", 0)),
                 lod_ms=_scalar(risk.components.get("lod_ms"), None),  # sin dato = NULL, no 0
-                schumann_hz=_sch_hz if _sch_hz is not None else 7.83,
-                schumann_activity=_scalar(risk.components.get("schumann_wpc", 0)) * 100,
+                schumann_hz=_sch_hz_v,  # sin dato = NULL, no 7.83
+                schumann_activity=_sch_wpc * 100 if _sch_wpc is not None else None,  # sin dato = NULL, no 0
                 presion_hpa=_scalar(risk.components.get("pressure_hpa", 1013)),
                 fantasma=_scalar(risk.fantasma),
                 nivel_riesgo=risk.risk_level,

@@ -175,6 +175,18 @@ def render_sidebar():
 # TAB 1: Precursor Risk (Fantasma)
 # ══════════════════════════════════════════════════════════════════════
 
+def _es_dato(v) -> bool:
+    """True si hay valor: ni None ni NaN (NULL de la DB llega como cualquiera)."""
+    return v is not None and v == v
+
+
+def _sch_txt(hz, act) -> str:
+    """Schumann para mostrar; «sin dato» cuando PREC guardó NULL."""
+    if not _es_dato(hz):
+        return "sin dato"
+    return f"{hz:.2f} Hz" + (f" ({act:.0f}%)" if _es_dato(act) else "")
+
+
 def render_precursor_risk():
     st.subheader("Índice Fantasma — TITAN V32 Precursor Risk")
 
@@ -194,7 +206,7 @@ def render_precursor_risk():
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Fantasma Index", f"{fantasma:.2f}")
     col2.metric("Risk Level", risk_level)
-    col3.metric("Schumann", f"{latest['schumann_hz']:.2f} Hz")
+    col3.metric("Schumann", f"{latest['schumann_hz']:.2f} Hz" if _es_dato(latest['schumann_hz']) else "sin dato")
     col4.metric("Kp", f"{latest['kp']:.1f}")
 
     c1, c2 = st.columns([2, 1])
@@ -227,7 +239,7 @@ def render_precursor_risk():
         st.markdown("**Componentes:**")
         st.markdown("- **Bz²**: " + ("sin dato" if latest['bz_nT'] is None or latest['bz_nT'] != latest['bz_nT'] else f"{latest['bz_nT']:.1f} nT"))
         st.markdown("- **Viento**: " + ("sin dato" if latest['viento_km_s'] is None or latest['viento_km_s'] != latest['viento_km_s'] else f"{latest['viento_km_s']:.0f} km/s"))
-        st.markdown(f"- **Schumann**: {latest['schumann_hz']:.2f} Hz ({latest['schumann_activity']:.0f}%)")
+        st.markdown("- **Schumann**: " + _sch_txt(latest['schumann_hz'], latest['schumann_activity']))
         st.markdown(f"- **Presión**: {latest['presion_hpa']:.0f} hPa")
         st.markdown("- **LOD**: " + ("sin dato" if latest['lod_ms'] is None or latest['lod_ms'] != latest['lod_ms'] else f"{latest['lod_ms']:.2f} ms"))
         st.markdown(f"- **Fase Lunar**: {latest['fase_lunar']:.2f}")
@@ -268,7 +280,7 @@ def _render_fantasma_waterfall(repo: SentinelRepository):
     r = breakdown[0]
     bz_c = abs(r["bz_nT"]) ** 2 if r["bz_nT"] is not None and r["bz_nT"] == r["bz_nT"] else 0.0
     wind_c = r["viento_km_s"] * 0.02 if r["viento_km_s"] is not None and r["viento_km_s"] == r["viento_km_s"] else 0.0
-    sch_c = (r["schumann_activity"] / 100.0) * 1.5
+    sch_c = (r["schumann_activity"] / 100.0) * 1.5 if _es_dato(r["schumann_activity"]) else 0.0
     pressure_mod = 0.0
     if r["presion_hpa"] < 1008.0:
         pressure_mod = min(3.0, (1008.0 - r["presion_hpa"]) / 5.0)
@@ -1436,13 +1448,16 @@ def render_schumann_monitor():
 
     df = pd.DataFrame(trend)
     df["time"] = pd.to_datetime(df["timestamp"], unit="s")
+    # NULL (sin lectura viva) → NaN: las gráficas dejan hueco, no un 7.83 falso.
+    df["schumann_hz"] = pd.to_numeric(df["schumann_hz"], errors="coerce")
+    df["schumann_activity"] = pd.to_numeric(df["schumann_activity"], errors="coerce")
 
     latest = trend[0]
+    hz0, act0 = latest["schumann_hz"], latest["schumann_activity"]
     col1, col2, col3 = st.columns(3)
-    col1.metric("Frecuencia Schumann", f"{latest['schumann_hz']:.2f} Hz")
-    col2.metric("Actividad WPC", f"{latest['schumann_activity']:.0f}%")
-    deviation = latest["schumann_hz"] - 7.83
-    col3.metric("Desviación de 7.83 Hz", f"{deviation:+.3f} Hz")
+    col1.metric("Frecuencia Schumann", f"{hz0:.2f} Hz" if _es_dato(hz0) else "sin dato")
+    col2.metric("Actividad WPC", f"{act0:.0f}%" if _es_dato(act0) else "sin dato")
+    col3.metric("Desviación de 7.83 Hz", f"{hz0 - 7.83:+.3f} Hz" if _es_dato(hz0) else "sin dato")
 
     fig = make_subplots(
         rows=2, cols=1,
@@ -1500,7 +1515,11 @@ def render_schumann_monitor():
                 showscale=True,
                 colorbar=dict(title="WPC %"),
             ),
-            text=[f"{row['schumann_hz']:.2f} Hz / {row['schumann_activity']:.0f}%" for _, row in df.iterrows()],
+            text=[
+                f"{row['schumann_hz']:.2f} Hz / {row['schumann_activity']:.0f}%"
+                if _es_dato(row['schumann_hz']) and _es_dato(row['schumann_activity']) else "sin dato"
+                for _, row in df.iterrows()
+            ],
             hoverinfo="text",
         ))
         fig3.update_layout(

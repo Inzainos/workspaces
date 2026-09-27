@@ -221,7 +221,15 @@ class GeodynamicLayerRunner:
                 serie_v = serie_v[np.isfinite(serie_v)]
                 viento = float(serie_v.mean()) if serie_v.size else None
 
-        sch_wpc = beta1_data.get("schumann_activity", 0.0) / 100.0
+        # Sin lectura viva de Schumann (la API falló o dio el placeholder):
+        # None → NULL en PREC y «sin dato» en el reporte, no un 0 sintético.
+        # Beta-1 y el vector ONNX siguen con su propio 0 = «no lo sé».
+        _sch_act = beta1_data.get("schumann_activity")
+        try:
+            _sch_act = float(_sch_act) if _sch_act is not None else None
+        except (TypeError, ValueError):
+            _sch_act = None
+        sch_wpc = _sch_act / 100.0 if _sch_act is not None and np.isfinite(_sch_act) else None
 
         kp_series = beta1_data.get("kp_series")
         kp = float(np.nanmean(kp_series)) if kp_series is not None and len(kp_series) > 0 else 0.0

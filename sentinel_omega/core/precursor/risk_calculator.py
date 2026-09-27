@@ -118,10 +118,15 @@ def _viento_txt(viento: Optional[float]) -> str:
     return "viento=sin dato" if viento is None else f"{viento:.0f} km/s"
 
 
+def _sch_txt(sch_wpc: Optional[float]) -> str:
+    """Schumann para mostrar: «sin dato» cuando no hubo lectura viva de Tomsk."""
+    return "Schumann=sin dato" if sch_wpc is None else f"{sch_wpc * 100:.0f}% WPC"
+
+
 def compute_fantasma(
     bz: Optional[float],
     viento: Optional[float],
-    sch_wpc: float,
+    sch_wpc: Optional[float],
     pressure_hpa: float = 1013.0,
     kp: float = 0.0,
     lod_ms: Optional[float] = None,
@@ -139,6 +144,9 @@ def compute_fantasma(
     - `bz=None` (or NaN) means no magnetometer data: no Bz² term, and it is
       stored as NULL, never as 0. Same for `viento=None` (no plasma data): no
       wind term, stored as NULL.
+    - `sch_wpc=None` (or NaN) means no live Schumann reading: no Schumann
+      term, and PREC stores schumann_hz / schumann_activity as NULL, never
+      the old 7.83 / 0 placeholder.
     """
     # Sobre `abs(bz) ** 2`, que parece un error y NO lo es --- esto costó una
     # medición y merece quedar escrito.
@@ -170,7 +178,9 @@ def compute_fantasma(
     if viento is not None and viento != viento:  # NaN → sin dato
         viento = None
     wind_contribution = viento * 0.02 if viento is not None else 0.0
-    schumann_contribution = sch_wpc * 1.5
+    if sch_wpc is not None and sch_wpc != sch_wpc:  # NaN → sin dato
+        sch_wpc = None
+    schumann_contribution = sch_wpc * 1.5 if sch_wpc is not None else 0.0
 
     fantasma = bz_contribution + wind_contribution + schumann_contribution
     bz_es_norte = bz is not None and bz > 0
@@ -228,7 +238,7 @@ def compute_risk_from_signals(
     """
     bz: Optional[float] = None
     viento: Optional[float] = None
-    sch_wpc = 0.0
+    sch_wpc: Optional[float] = None
     kp = 0.0
     lod_ms: Optional[float] = None
     pressure_hpa = 1013.0
@@ -240,7 +250,7 @@ def compute_risk_from_signals(
             bz = data["bz_mean"]
         if "plasma_speed" in data:
             viento = data["plasma_speed"]
-        if "schumann_activity_pct" in data:
+        if data.get("schumann_activity_pct") is not None:
             sch_wpc = data["schumann_activity_pct"] / 100.0
         if "kp_mean" in data:
             kp = data["kp_mean"]
@@ -265,7 +275,7 @@ def format_risk_report(risk: PrecursorRisk) -> str:
         "<b>Components:</b>",
         f"  Bz² = <code>{risk.bz_contribution:.2f}</code> ({_bz_txt(risk.components.get('bz_nT'))})",
         f"  Wind = <code>{risk.wind_contribution:.2f}</code> ({_viento_txt(risk.components.get('wind_kms'))})",
-        f"  Schumann = <code>{risk.schumann_contribution:.2f}</code>",
+        f"  Schumann = <code>{risk.schumann_contribution:.2f}</code> ({_sch_txt(risk.components.get('schumann_wpc'))})",
         "",
         "<b>Modifiers:</b>",
         f"  Pressure = <code>+{risk.pressure_modifier:.2f}</code> ({risk.components.get('pressure_hpa', 1013):.0f} hPa)",
