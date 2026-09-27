@@ -163,13 +163,32 @@ class DeltaAgent(BaseAgent):
                         if v is None]
             if sin_dato:
                 reasons.append(f"sin dato: {', '.join(sin_dato)}")
-            # Techo WATCH: estrés financiero fuerte = contexto para el Padre,
-            # nunca un voto de ALERT sísmico.
+            # Techo WATCH: el estrés financiero es CONTEXTO para el Padre, no
+            # evidencia sísmica.
+            #
+            # Hasta el 2026-09-26 este comentario decía exactamente eso y la
+            # línea siguiente emitía ALERT. Tres fuentes no concordaban:
+            #
+            #   este comentario        -> «nunca un voto de ALERT sísmico»
+            #   layer_runners.py:303   -> SIN_ALERTA = {"delta"}
+            #   CLAUDE.md              -> «ALERT si combined>0.6»
+            #
+            # Y el tope de `SIN_ALERTA` sólo capa la rama ONNX
+            # (`permitir_alerta`), así que la regla podía emitir ALERT cuando el
+            # modelo callaba --- es decir, el techo se caía justo cuando delta
+            # tenía menos datos. Era un hueco latente: en fase viva delta nunca
+            # alarmó (2.464 neutral, 0 alert), y los 65.232 «alert» de la fase
+            # de reconocimiento son del arnés de entrenamiento, que registra
+            # `alert` para los OCHO bots al reproducir eventos conocidos.
+            #
+            # La confianza se conserva: un estrés fuerte (combined > 0,6) sigue
+            # valiendo más que el WATCH moderado de abajo, y esa diferencia es
+            # información que el Padre usa.
             return self.emit_signal(
-                SignalType.ALERT, min(0.5 + combined * 0.3, 0.8),
+                SignalType.WATCH, min(0.5 + combined * 0.3, 0.8),
                 data=signal_data,
                 reasoning=(
-                    f"Financial stress (Active Vote): "
+                    f"Financial stress (contexto, techo WATCH): "
                     f"{', '.join(reasons) or 'elevated composite'}"
                 ),
             )

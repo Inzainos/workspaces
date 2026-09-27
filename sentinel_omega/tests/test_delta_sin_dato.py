@@ -82,3 +82,52 @@ def test_los_inicializadores_tambien_son_none():
     ag = DeltaAgent()
     for attr in ("_fear_greed", "_vix", "_btc_dominance", "_yield_spread"):
         assert getattr(ag, attr) is None, attr
+
+
+# ─── El techo de delta: tres fuentes que no concordaban ──────────────────────
+
+def test_delta_nunca_vota_alert_por_mucho_estres_que_haya():
+    """Hasta el 2026-09-26 tres fuentes se contradecían:
+
+        `delta/agent.py`      el comentario decía «nunca un voto de ALERT
+                              sísmico» y la línea siguiente emitía ALERT
+        `layer_runners.py`    SIN_ALERTA = {"delta"}
+        `CLAUDE.md`           «ALERT si combined>0.6»
+
+    Y `SIN_ALERTA` sólo capa la rama ONNX (`permitir_alerta`), así que la regla
+    podía emitir ALERT cuando el modelo callaba: el techo se caía justo cuando
+    delta tenía menos datos. El estrés financiero es CONTEXTO para el Padre, no
+    evidencia sísmica.
+    """
+    from sentinel_omega.core.shared.agent_base import SignalType
+
+    ag = DeltaAgent()
+    ag.ingest({"vix": 45.0, "yield_spread": -0.8, "fear_greed": 95.0})
+    sig = ag.analyze()
+    assert sig.signal_type != SignalType.ALERT
+    assert sig.signal_type == SignalType.WATCH
+    # la confianza se conserva: el estrés fuerte pesa más que el WATCH moderado
+    assert sig.confidence > 0.6
+
+
+def test_el_codigo_de_delta_no_emite_alert_en_ninguna_rama():
+    import inspect
+
+    codigo = inspect.getsource(DeltaAgent)
+    codigo = "\n".join(ln.split("#")[0] for ln in codigo.splitlines())
+    assert "SignalType.ALERT" not in codigo, "alguna rama volvió a votar ALERT"
+
+
+def test_el_runner_y_claude_md_dicen_lo_mismo_que_el_codigo():
+    """Las tres fuentes tienen que concordar, o la siguiente auditoría vuelve
+    a perder una tarde en decidir cuál manda."""
+    from pathlib import Path
+
+    runner = Path(
+        "sentinel_omega/infrastructure/pipeline/layer_runners.py"
+    ).read_text()
+    assert 'SIN_ALERTA = {"delta"}' in runner
+
+    doc = Path("sentinel_omega/CLAUDE.md").read_text()
+    assert "NUNCA ALERT" in doc
+    assert "ALERT si combined>0.6" not in doc

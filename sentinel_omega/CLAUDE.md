@@ -31,7 +31,7 @@ Orchestrator → GeodynamicLayerRunner → 8 Agents (SNT×5 + Omega + Loki) → 
 │       ↑ validates
 ├── Beta-2 (The Analyst — réplica histórica + gas/presión) — 14yr training
 │
-├── Delta  (Fin stress — ALERT si combined>0.6) — 10yr training
+├── Delta  (Fin stress — WATCH si combined>0.6; NUNCA ALERT) — 10yr training
 │
 ├── Loki  (Fractal-Bayesiano: Gauss-Jordan→Fourier→Bayes, nodo Tlaxcala)
 ├── Omega  (Memoria/correlación: ritmo cósmico — luna, Schumann, envolvente
