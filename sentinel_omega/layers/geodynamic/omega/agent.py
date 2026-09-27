@@ -30,24 +30,9 @@ SCHUMANN_FUNDAMENTAL_HZ = 7.83
 SCHUMANN_DESVIACION_MINIMA_HZ = 0.4
 
 
-def _primero(d, *claves):
-    """El primer valor REAL entre varias claves, o None si ninguna lo trae.
-
-    Sustituye a `float(d.get("a") or d.get("b") or 0.0)`. Ese `or` trataba un
-    **0 medido** como ausencia --- Bz cruzando cero, Kp en calma --- y saltaba a
-    la clave siguiente o al respaldo. Aquí sólo None y NaN son ausencia.
-    """
-    for k in claves:
-        v = d.get(k)
-        if v is None:
-            continue
-        try:
-            fv = float(v)
-        except (TypeError, ValueError):
-            continue
-        if fv == fv:          # descarta NaN
-            return fv
-    return None
+# El ayudante vive en `core/shared/agent_base.py`: omega y delta caían en el
+# mismo patrón y no conviene tener dos copias que luego divergan.
+from sentinel_omega.core.shared.agent_base import valor_medido as _primero
 
 
 class OmegaAgent(BaseAgent):

@@ -128,3 +128,34 @@ class PadreAgent(ABC):
         agreement = sum(1 for s in non_neutral if s.signal_type == dominant) / len(non_neutral)
 
         return agreement < min_agreement
+
+
+def valor_medido(datos, *claves):
+    """El primer valor REAL entre varias claves, o None si ninguna lo trae.
+
+    Sustituye al patrón `float(d.get("a") or d.get("b") or <constante>)`, que
+    tenía dos filos y los dos se midieron el 2026-09-26:
+
+    1. La constante de respaldo se volvía una MEDICIÓN a ojos del que decidía.
+       Omega hacía `or 7.83` y luego `if abs(sch - 7.83) >= 0.4`: sin lectura la
+       desviación daba cero y concluía «Schumann normal». Delta hacía `or 0.5`
+       en `yield_spread` y luego `if yield_spread < 0`: sin dato, «spread
+       normal». Ninguno había medido nada.
+    2. El `or` trata un **0 medido** como ausencia. Bz cruzando cero --- que es
+       precisamente cuando importa --- o Kp en calma saltaban a la clave
+       siguiente o al respaldo.
+
+    Aquí sólo None, NaN y lo no convertible son ausencia. El que llama decide
+    qué hacer con None, y lo que no puede hacer es fingir que midió.
+    """
+    for clave in claves:
+        v = datos.get(clave)
+        if v is None:
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv == fv:          # descarta NaN
+            return fv
+    return None

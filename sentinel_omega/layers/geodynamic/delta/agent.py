@@ -24,11 +24,21 @@ from typing import Any, Dict, Optional
 
 import logging
 
-from sentinel_omega.core.shared.agent_base import BaseAgent, AgentSignal, SignalType
+from sentinel_omega.core.shared.agent_base import (
+    AgentSignal,
+    BaseAgent,
+    SignalType,
+    valor_medido,
+)
 from sentinel_omega.core.snt_engine import SatellizationEngine, NBodyMatrix
 
 
 logger = logging.getLogger(__name__)
+
+
+def _n(v, dec: int) -> str:
+    """Formatea un número que puede ser None, sin fingir un cero."""
+    return "sin dato" if v is None else f"{float(v):.{dec}f}"
 
 
 class DeltaAgent(BaseAgent):
@@ -41,37 +51,47 @@ class DeltaAgent(BaseAgent):
         self._nbody = NBodyMatrix()
 
         self._ingested: bool = False
-        self._fear_greed: float = 50.0
-        self._vix: float = 20.0
-        self._btc_dominance: float = 0.5
-        self._yield_spread: float = 0.5
+        self._fear_greed: Optional[float] = None
+        self._vix: Optional[float] = None
+        self._btc_dominance: Optional[float] = None
+        self._yield_spread: Optional[float] = None
         self._sector_values: Dict[str, float] = {}
         self._crypto_ratios: Dict[str, float] = {}
 
     def ingest(self, data: Dict[str, Any]) -> None:
-        self._fear_greed = data.get("fear_greed", 50.0)
-        self._vix = data.get("vix", 20.0)
-        self._btc_dominance = data.get("btc_dominance", 0.5)
-        self._yield_spread = data.get("yield_spread", 0.5)
+        # Sin respaldos fabricados (2026-09-26, auditoría). Los cuatro valores
+        # por defecto describían un mercado NORMAL --- miedo 50, VIX 20,
+        # dominancia 0,5 y spread 0,5 --- y la decisión los leía como medidos:
+        # `if self._yield_spread < 0` con el 0,5 de relleno concluye «curva no
+        # invertida» sin haber consultado nada. Delta no tiene fuente financiera
+        # desde el 2026-01-01, así que venía decidiendo con los cuatro inventados.
+        self._fear_greed = valor_medido(data, "fear_greed")
+        self._vix = valor_medido(data, "vix")
+        self._btc_dominance = valor_medido(data, "btc_dominance")
+        self._yield_spread = valor_medido(data, "yield_spread")
         self._sector_values = data.get("sector_market_caps", {})
         self._crypto_ratios = data.get("crypto_ratios", {})
         self._ingested = True
         self.logger.info(
-            f"Delta: FGI={self._fear_greed:.0f}, VIX={self._vix:.1f}, "
-            f"BTC_dom={self._btc_dominance:.1%}, spread={self._yield_spread:.2f}"
+            f"Delta: FGI={_n(self._fear_greed, 0)}, VIX={_n(self._vix, 1)}, "
+            f"BTC_dom={_n(self._btc_dominance, 3)}, "
+            f"spread={_n(self._yield_spread, 2)}"
         )
 
     def _market_fear_score(self) -> float:
         score = 0.0
-        if self._fear_greed < 20:
-            score += 0.4
-        elif self._fear_greed > 80:
-            score += 0.3
-        if self._vix > 35:
-            score += 0.4
-        elif self._vix < 12:
-            score += 0.2
-        if self._yield_spread < 0:
+        if self._fear_greed is not None:
+            if self._fear_greed < 20:
+                score += 0.4
+            elif self._fear_greed > 80:
+                score += 0.3
+        if self._vix is not None:
+            if self._vix > 35:
+                score += 0.4
+            elif self._vix < 12:
+                score += 0.2
+        # Sin spread NO se suma ni se descarta: no medir no es «curva normal».
+        if self._yield_spread is not None and self._yield_spread < 0:
             score += 0.2
         return min(1.0, score)
 
@@ -126,17 +146,23 @@ class DeltaAgent(BaseAgent):
         logger.info(
             "DELTA diag: combined=%.3f fear=%.3f vix=%s spread=%s | "
             "umbrales ALERT(>0.6) WATCH(>0.35)",
-            combined, fear_score, self._vix, self._yield_spread,
+            combined, fear_score, _n(self._vix, 1), _n(self._yield_spread, 2),
         )
 
         if combined > 0.6:
             reasons = []
             if fear_score > 0.5:
                 reasons.append(f"market fear ({fear_score:.2f})")
-            if self._vix > 35:
+            if self._vix is not None and self._vix > 35:
                 reasons.append(f"VIX extreme ({self._vix:.1f})")
-            if self._yield_spread < 0:
+            if self._yield_spread is not None and self._yield_spread < 0:
                 reasons.append("yield curve inverted")
+            sin_dato = [n for n, v in (("VIX", self._vix),
+                                       ("spread", self._yield_spread),
+                                       ("FGI", self._fear_greed))
+                        if v is None]
+            if sin_dato:
+                reasons.append(f"sin dato: {', '.join(sin_dato)}")
             # Techo WATCH: estrés financiero fuerte = contexto para el Padre,
             # nunca un voto de ALERT sísmico.
             return self.emit_signal(
@@ -155,6 +181,18 @@ class DeltaAgent(BaseAgent):
                 reasoning=f"Moderate financial anomaly (score={combined:.2f})",
             )
 
+        # «Normal bounds» solo si se midió algo. Sin una sola fuente ---
+        # y delta no tiene fuente financiera desde el 2026-01-01 --- decir
+        # «mercados dentro de lo normal» es afirmar lo que no se consultó.
+        medidos = [v for v in (self._fear_greed, self._vix,
+                               self._btc_dominance, self._yield_spread)
+                   if v is not None]
+        if not medidos:
+            return self.emit_signal(
+                SignalType.NO_SIGNAL, 0.0,
+                data=signal_data,
+                reasoning="Sin datos financieros: no se midió nada",
+            )
         return self.emit_signal(
             SignalType.NEUTRAL, 0.3,
             data=signal_data,
