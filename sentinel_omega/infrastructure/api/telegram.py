@@ -63,6 +63,39 @@ from sentinel_omega.infrastructure.api._http import get_session
 logger = logging.getLogger(__name__)
 
 TELEGRAM_API = "https://api.telegram.org"
+
+
+def sin_token(texto: object) -> str:
+    """El texto con cualquier token de bot enmascarado.
+
+    Encontrado el 2026-09-27 auditando el repo: el token viejo estaba en el log
+    rotado `data/sentinel_omega.log.1` **195 veces**, y de ahí pasó a cuatro
+    commits de git en un repo PÚBLICO. No lo puso nadie a mano: la URL de la API
+    lleva el token dentro (`/bot<token>/sendMessage`), así que cuando `requests`
+    falla su excepción TRAE la URL, y estos tres `logger.error(f"...: {e}")` la
+    escribían entera.
+
+    Rotar el token no arregla esto: el siguiente fallo de red vuelve a filtrar
+    el nuevo. Se enmascara por patrón --- `<dígitos>:<35 caracteres>` --- y no
+    comparando contra la variable de entorno, para que también cubra un token
+    de otro bot que aparezca en el mismo mensaje.
+    """
+    import re
+
+    # Dos detalles que hacen la diferencia entre enmascarar y fingir que se
+    # enmascara, los dos aprendidos a golpes el 2026-09-27:
+    #
+    #   * sin `\b` delante: en `.../bot8412345678:AAH…` la `t` y el dígito son
+    #     los dos caracteres de palabra, así que NO hay frontera y el patrón con
+    #     `\b` no casaba --- por eso una primera pasada dejó el log intacto
+    #   * `{30,}` en vez de `{35}`: el token suele traer 35 caracteres tras los
+    #     dos puntos, pero no está garantizado, y un patrón clavado en 35 falla
+    #     EN SILENCIO con uno de 36. Enmascarar de más es inofensivo; de menos,
+    #     es una fuga
+    return re.sub(
+        r"(?<![0-9])[0-9]{8,10}:[A-Za-z0-9_-]{30,}",
+        "<TOKEN>", str(texto),
+    )
 TIMEOUT = 10
 
 # Umbrales estilo Centinela V2 (fantasma 0–10 o 0–1 se normaliza)
@@ -145,7 +178,7 @@ def send_alert(message: str, parse_mode: str = "HTML", reply_markup: Optional[di
         logger.info("Telegram alert sent successfully")
         return True
     except Exception as e:
-        logger.error(f"Telegram send failed: {e}")
+        logger.error("Telegram send failed: %s", sin_token(e))
         return False
 
 
@@ -186,7 +219,7 @@ def send_photo(photo_path: str, caption: str = "", parse_mode: str = "HTML") -> 
             logger.info(f"Telegram photo sent: {photo_path}")
             return True
     except Exception as e:
-        logger.error(f"Telegram photo failed: {e}")
+        logger.error("Telegram photo failed: %s", sin_token(e))
         return False
 
 
@@ -205,7 +238,7 @@ def send_document(doc_path: str, caption: str = "") -> bool:
             logger.info(f"Telegram document sent: {doc_path}")
             return True
     except Exception as e:
-        logger.error(f"Telegram document failed: {e}")
+        logger.error("Telegram document failed: %s", sin_token(e))
         return False
 
 def notify_online() -> bool:
