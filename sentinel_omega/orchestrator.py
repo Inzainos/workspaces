@@ -233,7 +233,28 @@ class SentinelOrchestrator:
         fantasma = float(getattr(risk, "fantasma", 0) or 0) if risk else None
         bz = comps.get("bz_nT")
         wind = comps.get("wind_kms")
-        sch = comps.get("schumann_hz") or comps.get("schumann_wpc")
+        # Los Hz de Schumann salen de beta1, NO de `components`.
+        #
+        # Encontrado el 2026-09-26 auditando: aquí decía
+        # `comps.get("schumann_hz") or comps.get("schumann_wpc")`, y
+        # `components` **solo lleva `schumann_wpc`** --- `schumann_hz` no existe
+        # en `risk_calculator`. Así que ese `or` no era un respaldo: era el único
+        # camino, y mandaba una FRACCIÓN 0-1 al lugar de los Hz.
+        # `telegram.py` lo imprime como «Schumann: {x:.2f} Hz», de modo que el
+        # parte decía «0,21 Hz» cuando la fundamental es 7,83.
+        #
+        # Y el `or` se disparaba también con un 0 legítimo, no solo con None.
+        #
+        # Con Schumann en NULL mientras Tomsk esté caído, `schumann_frequency`
+        # no llega y aquí queda None: el parte omite la línea, que es lo honesto.
+        # Nunca se sustituye por la fracción --- un número en la unidad
+        # equivocada es peor que no dar el dato.
+        sch = None
+        if self._runner is not None:
+            _cache = getattr(getattr(self._runner, "pipeline", None), "_cache", {}) or {}
+            _hz = (_cache.get("beta1") or {}).get("schumann_frequency")
+            if _hz is not None and float(_hz) == float(_hz):   # descarta NaN
+                sch = float(_hz)
 
         n = dispatch_cycle_alerts(
             fantasma=fantasma if fantasma is not None else None,

@@ -100,23 +100,31 @@ def test_alfa1_pregunta_con_el_orden_canonico():
     assert "for i, feat in enumerate(self.FEATURES)" not in fuente
 
 
-def test_omega_pregunta_con_el_orden_canonico():
+def _fuente_feature_vector() -> str:
+    """El código de `_feature_vector`, entero.
+
+    Antes se cortaba con `fuente[i:i + 2000]`, una ventana de bytes fija, y al
+    crecer la función con comentarios la aserción dejaba de alcanzar la línea
+    que buscaba: la prueba se ponía roja sin que el código cambiara de
+    comportamiento. `inspect.getsource` de la función devuelve justo su cuerpo.
+    """
     import inspect
-    from sentinel_omega.layers.geodynamic.omega import agent
-    fuente = inspect.getsource(agent)
-    i = fuente.index("def _feature_vector")
-    bloque = fuente[i:i + 2000]
+
+    from sentinel_omega.layers.geodynamic.omega.agent import OmegaAgent
+    return inspect.getsource(OmegaAgent._feature_vector)
+
+
+def test_omega_pregunta_con_el_orden_canonico():
+    bloque = _fuente_feature_vector()
     assert 'vector_para("omega"' in bloque
     assert "return [fase, sicigia" not in bloque
 
 
 def test_omega_no_mete_la_senal_de_beta_en_el_vector():
     # beta_conf/beta_alert ocupaban las posiciones de bz_min y kp_max.
-    import inspect
-    from sentinel_omega.layers.geodynamic.omega import agent
-    i = inspect.getsource(agent).index("def _feature_vector")
-    bloque = inspect.getsource(agent)[i:i + 2000]
-    rasgos = bloque[bloque.index("rasgos = {"):bloque.index("}", bloque.index("rasgos = {"))]
+    bloque = _fuente_feature_vector()
+    ini = bloque.index("candidatos = {")
+    rasgos = bloque[ini:bloque.index("}", ini)]
     assert "beta_conf" not in rasgos and "beta_alert" not in rasgos
 
 

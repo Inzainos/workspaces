@@ -361,7 +361,11 @@ def format_centinela_threat(
             f"⚠️ Fantasma: <b>{r:.2f}</b>\n"
             f"🧲 Bz: {bz:.1f} nT\n"
             f"💨 Viento: {wind:.0f} km/s"
-            + (f"\n🌐 Schumann: {schumann:.2f} Hz" if schumann else ""),
+            # `is not None`, no `if schumann`: con el falsy, un 0 medido
+            # desaparecía del parte igual que un None. Aquí sólo llegan Hz
+            # (ver orchestrator.py); antes podía llegar una fracción de WPC.
+            + (f"\n🌐 Schumann: {schumann:.2f} Hz"
+               if schumann is not None else ""),
         )
     if bz <= TH_BZ_CRACK:
         return (

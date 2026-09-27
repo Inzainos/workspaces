@@ -16,6 +16,40 @@ from sentinel_omega.core.shared.agent_base import BaseAgent, AgentSignal, Signal
 logger = logging.getLogger(__name__)
 
 
+# La fundamental de Schumann. Es una REFERENCIA física --- contra ella se mide
+# la desviación ---, NO un valor de relleno.
+#
+# Hasta el 2026-09-26 cumplía los dos papeles a la vez: `float(d.get(...) or
+# 7.83)`. Sin lectura, `sch` valía 7.83, `abs(sch - SCHUMANN_FUNDAMENTAL_HZ)`
+# daba 0 y omega concluía «Schumann normal» sin haber medido nada. Con Tomsk
+# caído desde el 11 de septiembre, eso es lo que venía pasando cada ciclo.
+#
+# Faltante es faltante: ahora `sch` es None y las dos ramas que lo usan lo
+# tratan como «no lo sé».
+SCHUMANN_FUNDAMENTAL_HZ = 7.83
+SCHUMANN_DESVIACION_MINIMA_HZ = 0.4
+
+
+def _primero(d, *claves):
+    """El primer valor REAL entre varias claves, o None si ninguna lo trae.
+
+    Sustituye a `float(d.get("a") or d.get("b") or 0.0)`. Ese `or` trataba un
+    **0 medido** como ausencia --- Bz cruzando cero, Kp en calma --- y saltaba a
+    la clave siguiente o al respaldo. Aquí sólo None y NaN son ausencia.
+    """
+    for k in claves:
+        v = d.get(k)
+        if v is None:
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv == fv:          # descarta NaN
+            return fv
+    return None
+
+
 class OmegaAgent(BaseAgent):
     """Bot de correlación espacial independiente."""
 
@@ -43,13 +77,18 @@ class OmegaAgent(BaseAgent):
 
     def _feature_vector(self) -> list:
         d = self._data
-        fase = float(d.get("fase_lunar") or d.get("moon_phase") or 0.0)
+        # `_primero` en vez de `or`: el `or` se dispara con un 0 LEGÍTIMO
+        # (Bz cruzando cero, Kp en calma) y salta a la clave siguiente o al
+        # respaldo. Y donde no hay dato, la clave NO entra: `vector_para` deja
+        # 0.0 ahí, que es exactamente con lo que se entrenó el modelo. Meter
+        # 7.83 sería preguntarle con un valor que nunca vio en ese hueco.
+        fase = _primero(d, "fase_lunar", "moon_phase")
         sicigia = 1.0 if d.get("es_sicigia") or d.get("syzygy") else 0.0
-        sch_mean = float(d.get("schumann_mean") or d.get("schumann_hz") or 7.83)
-        sch_std = float(d.get("schumann_std") or 0.0)
-        bz = float(d.get("bz") or d.get("bz_nT") or 0.0)
-        kp = float(d.get("kp") or d.get("kp_max") or 0.0)
-        wind = float(d.get("viento") or d.get("wind_kms") or 0.0)
+        sch_mean = _primero(d, "schumann_mean", "schumann_hz")
+        sch_std = _primero(d, "schumann_std")
+        bz = _primero(d, "bz", "bz_nT")
+        kp = _primero(d, "kp", "kp_max")
+        wind = _primero(d, "viento", "wind_kms")
         beta_conf = float(self._beta_signal.confidence) if self._beta_signal else 0.0
         beta_alert = 0.0
         if self._beta_signal and self._beta_signal.signal_type in (
@@ -63,7 +102,7 @@ class OmegaAgent(BaseAgent):
         # La señal de beta no está en el vector del modelo: se usa en la rama de
         # reglas de `analyze`, que es donde tiene sentido.
         from sentinel_omega.core.features_onnx import vector_para
-        rasgos = {
+        candidatos = {
             "fase_lunar": fase,
             "es_sicigia": sicigia,
             "schumann_mean": sch_mean,
@@ -71,37 +110,47 @@ class OmegaAgent(BaseAgent):
             "bz_mean": bz,
             "kp_mean": kp,
             "viento_avg": wind,
-            "bz_min": float(d.get("bz_min") or bz),
-            "kp_max": float(d.get("kp_max") or kp),
-            "kp_max_72h": float(d.get("kp_max_72h") or d.get("kp_max") or kp),
+            "bz_min": _primero(d, "bz_min") if _primero(d, "bz_min") is not None else bz,
+            "kp_max": _primero(d, "kp_max") if _primero(d, "kp_max") is not None else kp,
+            "kp_max_72h": _primero(d, "kp_max_72h", "kp_max") if
+                          _primero(d, "kp_max_72h", "kp_max") is not None else kp,
         }
+        rasgos = {k: v for k, v in candidatos.items() if v is not None}
         self._ultimo_beta = (beta_conf, beta_alert)   # para la rama de reglas
         return list(vector_para("omega", rasgos))
 
     def analyze(self) -> AgentSignal:
         d = self._data
-        bz = float(d.get("bz") or d.get("bz_nT") or 0.0)
-        kp = float(d.get("kp") or d.get("kp_max") or 0.0)
-        sch = float(d.get("schumann_hz") or d.get("schumann_mean") or 7.83)
+        bz = _primero(d, "bz", "bz_nT")
+        kp = _primero(d, "kp", "kp_max")
+        sch = _primero(d, "schumann_hz", "schumann_mean")
         reasoning_parts = []
 
         signal = SignalType.NEUTRAL
         conf = 0.2
 
         stress = 0.0
-        if bz <= -8:
+        if bz is None:
+            reasoning_parts.append("Bz=sin dato")
+        elif bz <= -8:
             stress += 0.35
             reasoning_parts.append(f"Bz={bz:.1f} (sur fuerte)")
         elif bz <= -5:
             stress += 0.2
             reasoning_parts.append(f"Bz={bz:.1f}")
-        if kp >= 6:
+        if kp is None:
+            reasoning_parts.append("Kp=sin dato")
+        elif kp >= 6:
             stress += 0.35
             reasoning_parts.append(f"Kp={kp:.1f}")
         elif kp >= 5:
             stress += 0.2
             reasoning_parts.append(f"Kp={kp:.1f}")
-        if abs(sch - 7.83) >= 0.4:
+        if sch is None:
+            # Sin lectura no se suma estrés NI se dice que está normal: la
+            # ausencia se nombra, para que el parte no parezca una medición.
+            reasoning_parts.append("Schumann=sin dato")
+        elif abs(sch - SCHUMANN_FUNDAMENTAL_HZ) >= SCHUMANN_DESVIACION_MINIMA_HZ:
             stress += 0.15
             reasoning_parts.append(f"Schumann={sch:.2f} Hz")
 
