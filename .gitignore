@@ -42,3 +42,9 @@ sentinel_omega/data/cache/
 
 # respaldos locales de prod (~3 GB); se quedan en disco, nunca al repo
 sentinel_omega/data/backups/
+
+# Limpieza 2026-09-26: nunca versionar WAL/SHM, logs rotados ni egg-info
+*.db-wal
+*.db-shm
+*.log.*
+*.egg-info/
