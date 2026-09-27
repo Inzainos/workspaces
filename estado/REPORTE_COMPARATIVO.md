@@ -1,26 +1,26 @@
-# 🔄 Comparativo diario — 2026-09-26 vs 2026-09-25
-*Corte 00:01 hora MX*
+# 🔄 Comparativo diario — 2026-09-27 vs 2026-09-26
+*Corte 00:06 hora MX*
 
 | Métrica | Hoy | Ayer | Cambio |
 |---|---:|---:|---:|
-| Fantasma medio | 13.2 | 14.0 | ▼ -0.8 |
-| Fantasma máx | 14.1 | 16.3 | ▼ -2.2 |
-| Ciclos corridos | 65 | 287 | ▼ -222 |
+| Fantasma medio | 9.5 | 11.5 | ▼ -2.0 |
+| Fantasma máx | 9.7 | 14.1 | ▼ -4.4 |
+| Ciclos corridos | 60 | 210 | ▼ -150 |
 | Breaches del Muro | 0 | 0 | ＝ +0 |
-| Asertividad viva (resuelta en el día) | — | 95% (n=2367) | — |
-| Patrones cimáticos (total / nuevos 24h) | 279079 | — | +36 |
+| Asertividad viva (resuelta en el día) | — | 82% (n=1665) | — |
+| Patrones cimáticos (total / nuevos 24h) | 279472 | — | +279472 |
 
-> **Lectura rápida:** el sistema estuvo **en calma** · Fantasma medio **13.2** (MODERATE · atención) · Muro **sin roturas**.
+> **Lectura rápida:** el sistema estuvo **en calma** · Fantasma medio **9.5** (MODERATE · atención) · Muro **sin roturas**.
 
 ## ✅ Aciertos — Últimas 24 horas
 
 | Métrica | Valor |
 |---------|-------|
-| **Aciertos** | 2242 |
+| **Aciertos** | 1359 |
 | **Fallos** | 0 |
-| **Falsos positivos** | 116 |
-| **Tasa de acierto** | 89.0% `▓▓▓▓▓▓▓▓▓▓▓░` |
-| **Total predicciones** | 2520 |
+| **Falsos positivos** | 297 |
+| **Tasa de acierto** | 74.0% `▓▓▓▓▓▓▓▓▓░░░` |
+| **Total predicciones** | 1836 |
 
 ![Distribución de veredictos](graficas/aciertos_1d_pastel.png)
 
@@ -28,15 +28,15 @@
 
 | Bot | Aciertos | Tasa | Confianza | Anticipación |
 |-----|----------|------|-----------|---------------|
-| alfa2 | 262/262 | 100% `▓▓▓▓▓▓▓▓` | 0.20 | 0.1d |
-| beta2 | 262/262 | 100% `▓▓▓▓▓▓▓▓` | 0.20 | 0.1d |
-| delta | 262/262 | 100% `▓▓▓▓▓▓▓▓` | 0.30 | 0.1d |
-| jupiter | 262/262 | 100% `▓▓▓▓▓▓▓▓` | 0.20 | 0.1d |
-| loki | 262/262 | 100% `▓▓▓▓▓▓▓▓` | 0.20 | 0.1d |
-| beta1 | 256/262 | 98% `▓▓▓▓▓▓▓▓` | 0.31 | 0.1d |
-| omega | 256/262 | 98% `▓▓▓▓▓▓▓▓` | 0.26 | 0.1d |
-| padre | 256/262 | 98% `▓▓▓▓▓▓▓▓` | 0.09 | 0.1d |
-| alfa1 | 164/262 | 63% `▓▓▓▓▓░░░` | 0.56 | 0.1d |
+| alfa2 | 184/184 | 100% `▓▓▓▓▓▓▓▓` | 0.20 | 0.1d |
+| beta2 | 184/184 | 100% `▓▓▓▓▓▓▓▓` | 0.30 | 0.1d |
+| delta | 184/184 | 100% `▓▓▓▓▓▓▓▓` | 0.33 | 0.1d |
+| jupiter | 184/184 | 100% `▓▓▓▓▓▓▓▓` | 0.28 | 0.1d |
+| loki | 184/184 | 100% `▓▓▓▓▓▓▓▓` | 0.29 | 0.1d |
+| omega | 176/184 | 96% `▓▓▓▓▓▓▓▓` | 0.54 | 0.1d |
+| padre | 131/184 | 71% `▓▓▓▓▓▓░░` | 0.29 | 0.1d |
+| beta1 | 88/184 | 48% `▓▓▓▓░░░░` | 0.51 | 0.1d |
+| alfa1 | 44/184 | 24% `▓▓░░░░░░` | 0.60 | 0.1d |
 
 ![Desempeño por bot](graficas/aciertos_1d_barras.png)
 

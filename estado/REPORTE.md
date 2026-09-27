@@ -1,6 +1,6 @@
 # 🌍 Sentinel Omega — Estado del Sistema
 
-**Generado:** 2026-09-26 16:39 UTC (10:39 UTC-6)
+**Generado:** 2026-09-27 08:55 UTC (02:55 UTC-6)
 
 > **¿Qué es esto?** Sentinel Omega es un sistema que vigila señales físicas del planeta (campo magnético solar, resonancia de la Tierra, actividad sísmica, gases volcánicos, incluso el nerviosismo de los mercados) buscando *precursores*: condiciones que en 32 años de historia han aparecido **antes** de eventos naturales fuertes. No predice con certeza — reconoce parecidos con el pasado y avisa cuando el presente se parece demasiado a los días previos a un evento. Este reporte es una foto de lo que el sistema ve ahora.
 
@@ -10,23 +10,21 @@
 
 | Métrica | Valor | Lectura |
 |---|---|---|
-| Fantasma | 🟢 **9.9** `▓▓░░░░░░░░` | calma |
+| Fantasma | 🟢 **9.3** `▓▓░░░░░░░░` | calma |
 | Consenso de los 6 bots | NEUTRAL (20%) | evaluando |
-| Muro de los 5 frentes | 2/5 activos | estable — sin convergencia crítica |
-| Precursores detectados | 2 | ["SILENT_TRIGGER", "SEISMIC_CLUSTER"] |
-| Hora de la medición | 2026-09-26 14:25 UTC | |
+| Muro de los 5 frentes | 1/5 activos | estable — sin convergencia crítica |
+| Precursores detectados | 1 | ["SEISMIC_CLUSTER"] |
+| Hora de la medición | 2026-09-27 07:22 UTC | |
 
 ### De qué está hecho ese número
 
 | Término | Aporte | |
 |---|---:|---|
-| Bz² (Bz = 3.6 nT) | 12.8 | ⚠️ **Bz NORTE**: esta orientación *suprime* el acoplamiento con la magnetosfera, pero el índice la puntúa igual que la sur porque eleva al cuadrado el valor absoluto |
-| Viento solar (482 km/s) × 0,02 | 9.6 | piso permanente: el viento nunca baja de ~300 km/s |
+| Bz² (Bz = -2.7 nT) | 7.5 | Bz sur: la orientación que sí acopla |
+| Viento solar (441 km/s) × 0,02 | 8.8 | piso permanente: el viento nunca baja de ~300 km/s |
 | Schumann × 1,5 | ≤ 1,5 | como mucho un 4-10 % del total |
 
-*El viento solar solo ya aporta 9.6, y con el umbral VERDE en 5 que había hasta el 25-sep eso bastaba para salir de verde siempre: VERDE salió **6 veces en 280.942 lecturas** y el 69,8 % del histórico caía en amarillo. Los umbrales se recalibraron a los percentiles 50/90/98 de la distribución real (12 / 29 / 78), y ahora reparten 50/40/8/2 %. La discriminación sigue siendo DÉBIL: en el tramo rojo la tasa de M7+ a 72 h es 13,1 % contra 10,7 % en verde, o sea 1,22x. Leerlo así.*
-
-🔎 **Con este Bz norte, el índice marca 22.4; contando solo el Bz sur marcaría 9.6.** Medido: el 49 % del 5 % de lecturas más altas del histórico viene de Bz norte, o sea de la orientación tranquila.
+*El viento solar solo ya aporta 8.8, y con el umbral VERDE en 5 que había hasta el 25-sep eso bastaba para salir de verde siempre: VERDE salió **6 veces en 280.942 lecturas** y el 69,8 % del histórico caía en amarillo. Los umbrales se recalibraron a los percentiles 50/90/98 de la distribución real (12 / 29 / 78), y ahora reparten 50/40/8/2 %. La discriminación sigue siendo DÉBIL: en el tramo rojo la tasa de M7+ a 72 h es 13,1 % contra 10,7 % en verde, o sea 1,22x. Leerlo así.*
 
 ## 🚦 Semáforo — reglas fijas del nivel de riesgo
 
@@ -40,7 +38,7 @@
 | 🔵 AZUL | Fantasma <12 con detecciones o muros 1–2 | Seguimiento ampliado |
 | 🟢 VERDE | Fantasma <12, muro 0/5, sin firmas ≥80% | Monitoreo base |
 
-**Nivel del corte: 🟡 AMARILLO** — con Fantasma 9.9, muro 2/5 y firma máxima 100%.
+**Nivel del corte: 🟡 AMARILLO** — con Fantasma 9.3, muro 1/5 y firma máxima 100%.
 
 ## 📈 Operación reciente — hoy vs cómo solía estar
 
@@ -48,10 +46,10 @@
 
 | Métrica | Actual | Prom. 7d | Prom. 30d | Máx 30d | Percentil |
 |---|---:|---:|---:|---:|---:|
-| Fantasma | 9.9 | 12.3 | 21.1 | 62.3 | P12 |
-| Muro de los 5 | 2 | 0.4 | 0.9 | 3 | P98 |
-| Silent Trigger | activo | 35% ciclos | 37% ciclos | — | — |
-| Asertividad viva | 93% | 89% | — | — | — |
+| Fantasma | 9.3 | 11.8 | 19.9 | 62.3 | P8 |
+| Muro de los 5 | 1 | 0.5 | 1.0 | 3 | P71 |
+| Silent Trigger | inactivo | 33% ciclos | 36% ciclos | — | — |
+| Asertividad viva | 92% | 87% | — | — | — |
 
 *Los promedios de 30 días combinan los ciclos conservados y el resumen diario del barrido (lo compactado no se pierde, se resume).*
 
@@ -61,15 +59,15 @@
 
 | Métrica | Valor | Qué dice |
 |---|---:|---|
-| Ventanas evaluadas (viva) | 20979 | |
-| Ventanas con evento real (**tasa base**) | 1.6% | el piso a superar |
-| Ventanas en alarma | 1247 (5.9%) | cuánto tiempo el sistema se moja |
+| Ventanas evaluadas (viva) | 22086 | |
+| Ventanas con evento real (**tasa base**) | 1.5% | el piso a superar |
+| Ventanas en alarma | 1483 (6.7%) | cuánto tiempo el sistema se moja |
 | Eventos detectados | 20 de 333 (6.0%) | de los eventos reales, cuántos vio |
-| **Precisión de la alarma** | 1.6% | de sus alarmas, cuántas tenían evento |
-| **Ganancia** (precisión ÷ tasa base) | 1.01× | 1× = no aporta nada |
-| Diagonal de Molchan (perdidos + alarma) | 0.999 | 1.000 = sin habilidad; menos = habilidad |
+| **Precisión de la alarma** | 1.3% | de sus alarmas, cuántas tenían evento |
+| **Ganancia** (precisión ÷ tasa base) | 0.89× | 1× = no aporta nada |
+| Diagonal de Molchan (perdidos + alarma) | 1.007 | 1.000 = sin habilidad; menos = habilidad |
 
-**Veredicto:** 🟡 ganancia marginal sobre alertar a ciegas
+**Veredicto:** 🔴 SIN ganancia: alertar SIEMPRE habría rendido igual o mejor — la asertividad de abajo aún no es habilidad
 
 ### Lo mismo, contado por EPISODIOS
 
@@ -77,9 +75,9 @@
 
 | | contado por ciclos | contado por episodios |
 |---|---:|---:|
-| Alarmas | 1247 | 9 |
+| Alarmas | 1483 | 10 |
 | Eventos | 333 | **3** |
-| Precisión de la alarma | 1.6% | 11.1% |
+| Precisión de la alarma | 1.3% | 10.0% |
 
 🔴 **Sin evidencia para concluir nada.** Hacen falta 20 episodios de evento distintos y hay **3**. Cualquier ganancia calculada con esta muestra es ruido: los números de arriba describen lo que pasó, no miden habilidad. Por eso el peso por mérito de los bots se queda quieto hasta que haya con qué juzgarlos.
 
@@ -89,13 +87,13 @@
 
 | | Asertividad | Coste con las severidades del Juez |
 |---|---:|---:|
-| Sistema | 92.7% | 4357 |
-| Bot MUDO (nunca alarma) | 98.4% | 3330 |
-| Bot ALARMISTA (siempre alarma) | 1.6% | 20646 |
+| Sistema | 92.0% | 4593 |
+| Bot MUDO (nunca alarma) | 98.5% | 3330 |
+| Bot ALARMISTA (siempre alarma) | 1.5% | 21753 |
 
 *El coste pesa cada FALLO (callarse y que pase algo) ×10 y cada falsa alarma ×1, las severidades del propio Juez: castigar el silencio al décuplo es deliberado, para que los bots no se acostumbren a callar. Menos coste es mejor.*
 
-*Esa asimetría fija el **umbral de rentabilidad de una alarma**: alarmar sale a cuenta cuando la probabilidad de evento en la ventana supera 9.1%. Hoy las alarmas se disparan con un 1.6%, que es 6 veces menos.*
+*Esa asimetría fija el **umbral de rentabilidad de una alarma**: alarmar sale a cuenta cuando la probabilidad de evento en la ventana supera 9.1%. Hoy las alarmas se disparan con un 1.3%, que es 7 veces menos.*
 
 *Con 50 nodos reales y radio de 5°, casi toda ventana de 72 h tiene un M4.5+ cerca de algún nodo: para ganar de verdad, las predicciones tendrán que volverse específicas por nodo, no globales.*
 
@@ -106,13 +104,13 @@
 | Precursor | Confianza | Zona |
 |---|---|---|
 | Enjambre Sísmico Local | 95% `▓▓▓▓▓` | regional |
-| Patrón Silent Trigger (Calma) | 80% `▓▓▓▓░` | global |
 | Enjambre Sísmico Local | 95% `▓▓▓▓▓` | regional |
-| Patrón Silent Trigger (Calma) | 80% `▓▓▓▓░` | global |
 | Enjambre Sísmico Local | 95% `▓▓▓▓▓` | regional |
-| Patrón Silent Trigger (Calma) | 80% `▓▓▓▓░` | global |
 | Enjambre Sísmico Local | 95% `▓▓▓▓▓` | regional |
-| Patrón Silent Trigger (Calma) | 80% `▓▓▓▓░` | global |
+| Patrón Silent Trigger (Calma) | 90% `▓▓▓▓░` | global |
+| Enjambre Sísmico Local | 95% `▓▓▓▓▓` | regional |
+| Patrón Silent Trigger (Calma) | 90% `▓▓▓▓░` | global |
+| Enjambre Sísmico Local | 95% `▓▓▓▓▓` | regional |
 
 ## 🎯 Firma Match — la memoria reconoce el momento actual
 
@@ -123,8 +121,8 @@
 | **100%** `▓▓▓▓▓` | SISMO_M5 | **Ghost Banda Sea** (-5.0, 130.0) · nodo 83 | 71 | ~6 días |
 | **100%** `▓▓▓▓▓` | SISMO_M4 | **Ghost Tonga-Fiji** (-18.0, -178.0) · nodo 64 | 291 | ~6 días |
 | **100%** `▓▓▓▓▓` | SISMO_M6 | **GeoBat Sumatra Hidrotermal** (1.0, 98.0) · nodo 109 | 8 | ~8 días |
-| **93%** `▓▓▓▓▓` | SISMO_M4 | **Tonga-Kermadec** (-20.0, -175.0) · nodo 26 | 27 | ~6 días |
-| **91%** `▓▓▓▓▓` | SISMO_M4 | **Ghost Tonga-Fiji** (-18.0, -178.0) · nodo 64 | 68 | ~6 días |
+| **94%** `▓▓▓▓▓` | SISMO_M4 | **Ghost Tonga-Fiji** (-18.0, -178.0) · nodo 64 | 68 | ~6 días |
+| **94%** `▓▓▓▓▓` | SISMO_M5 | **Ghost Mariana** (15.0, 147.0) · nodo 81 | 26 | ~6 días |
 
 *SISMO_M5 / M6 / M7 = sismo de magnitud 5+, 6+ o 7+. La zona es el punto de la malla global UVG-125 donde se aprendió la firma (nombre y coordenadas lat, lon); los nodos 'Ghost' son puntos teóricos de la malla sin estación física encima.*
 
@@ -132,8 +130,8 @@
 
 > Varias firmas independientes convergen en las MISMAS fechas. La ventana se fijó al **detectarla** y el contador **baja** cada ciclo mientras la señal persiste — no se re-proyecta desde hoy.
 
-- **Faltan ~2–7 días** (ventana 2026-09-28 → 2026-10-03)
-- Detectada hace **2 días** · clases: SISMO_M4, SISMO_M5, SISMO_M6
+- **Faltan ~3–8 días** (ventana 2026-09-30 → 2026-10-05)
+- Detectada hace **0 días** · clases: SISMO_M4, SISMO_M5, SISMO_M6
 
 ## ⏱ Anticipación — con cuánto tiempo suele avisar
 
@@ -143,9 +141,9 @@
 |---|---|---|---|---|
 | ERUPCION_VEI3 | **6.8 días** | 14.0 d | 1.0 d | 73 |
 | ERUPCION_VEI4 | **2.6 días** | 10.0 d | 1.0 d | 24 |
-| SISMO_M3_obs | **9.0 días** | 10.0 d | 7.0 d | 3 |
+| SISMO_M3_obs | **11.7 días** | 14.0 d | 7.0 d | 3 |
 | SISMO_M4 | **6.3 días** | 14.0 d | 1.0 d | 111 |
-| SISMO_M4_obs | **8.5 días** | 14.0 d | 1.0 d | 8 |
+| SISMO_M4_obs | **9.8 días** | 14.0 d | 1.0 d | 10 |
 | SISMO_M5 | **6.0 días** | 14.0 d | 1.0 d | 118 |
 | SISMO_M6 | **8.2 días** | 14.0 d | 1.0 d | 127 |
 | SISMO_M7 | **9.4 días** | 14.0 d | 1.0 d | 14 |
@@ -158,11 +156,11 @@
 
 | Variable | En firmas rápidas | En firmas lentas | Qué indica |
 |---|---|---|---|
-| Campo magnético solar (Bz promedio) | 0.03 | -0.05 | más presente cuando el evento llega PRONTO |
-| Campo magnético solar (Bz, últimas 72h) | 0.06 | -0.05 | más presente cuando el evento llega PRONTO |
-| Gas volcánico SO₂ en la ventana (kilotones) | 89.10 | 5.06 | más presente cuando el evento llega PRONTO |
-| Sismos en las últimas 72h | 4.15 | 1.60 | más presente cuando el evento llega PRONTO |
-| Gas volcánico SO₂ (90 días) | 203.50 | 89.04 | más presente cuando el evento llega PRONTO |
+| Campo magnético solar (Bz promedio) | 0.04 | -0.05 | más presente cuando el evento llega PRONTO |
+| Gas volcánico SO₂ en la ventana (kilotones) | 93.27 | 4.90 | más presente cuando el evento llega PRONTO |
+| Campo magnético solar (Bz, últimas 72h) | -0.01 | -0.07 | más presente cuando el evento llega PRONTO |
+| Gas volcánico SO₂ (90 días) | 231.25 | 90.52 | más presente cuando el evento llega PRONTO |
+| Sismos en las últimas 72h | 4.17 | 1.65 | más presente cuando el evento llega PRONTO |
 | es_sicigia | 0.27 | 0.14 | más presente cuando el evento llega PRONTO |
 
 *Rápidas = tercio de firmas con menor anticipación; lentas = tercio con mayor.*
@@ -173,15 +171,15 @@
 
 | Bot | Firmas aprendidas | Veces confirmadas | Credibilidad |
 |---|---|---|---|
-| alfa1 | 1,632 | 187,270 | 1.42 `▓▓▓▓▓▓` |
-| beta1 | 994 | 187,477 | 1.42 `▓▓▓▓▓▓` |
-| beta2 | 809 | 96,692 | 1.35 `▓▓▓▓▓░` |
+| alfa1 | 1,632 | 187,298 | 1.42 `▓▓▓▓▓▓` |
+| beta1 | 993 | 187,505 | 1.42 `▓▓▓▓▓▓` |
+| beta2 | 809 | 96,720 | 1.35 `▓▓▓▓▓░` |
 | delta | 676 | 65,394 | 1.29 `▓▓▓▓▓░` |
-| jupiter | 21 | 1,691 | 0.86 `▓▓▓░░░` |
-| loki | 898 | 75,073 | 1.29 `▓▓▓▓▓░` |
-| omega | 304 | 187,477 | 1.42 `▓▓▓▓▓▓` |
-| padre | 14,286 | 187,477 | 0.94 `▓▓▓▓░░` |
-| alfa2 | _en vivo · 22 ciclos · 3062 pases observados_ | — | 1.00 `▓▓▓▓░░` |
+| jupiter | 14 | 1,719 | 0.86 `▓▓▓░░░` |
+| loki | 858 | 74,169 | 1.29 `▓▓▓▓▓░` |
+| omega | 307 | 187,391 | 1.42 `▓▓▓▓▓▓` |
+| padre | 14,289 | 187,505 | 0.94 `▓▓▓▓░░` |
+| alfa2 | _en vivo · 20 ciclos · 2860 pases observados_ | — | 1.00 `▓▓▓▓░░` |
 
 ## 🎯 Asertividad — ¿qué tan bien le ha ido?
 
@@ -190,22 +188,22 @@
 | Métrica | Valor |
 |---|---|
 | **Histórica** (examen sobre 32 años) | 98.0% |
-| **Viva** (operación real, auditada) | 92.7% |
-| **Últimos 7 días** (viva) | 89.2% |
+| **Viva** (operación real, auditada) | 92.0% |
+| **Últimos 7 días** (viva) | 87.3% |
 
 ### Por bot
 
 | Bot | Histórica | Viva | Viva 7d | Credibilidad |
 |---|---|---|---|---|
-| alfa1 | 97.9% | 69.2% | 55.1% | 1.42 |
-| alfa2 | — | 98.4% | 94.8% | 1.00 |
-| beta1 | 98.2% | 92.8% | 93.0% | 1.42 |
-| beta2 | 97.2% | 98.8% | 96.6% | 1.35 |
-| delta | 99.6% | 98.4% | 94.8% | 1.29 |
-| jupiter | 98.2% | 89.1% | 87.7% | 0.86 |
-| loki | 98.3% | 98.4% | 94.8% | 1.29 |
-| omega | 98.0% | 96.1% | 93.0% | 1.42 |
-| padre | 98.0% | 92.5% | 93.2% | 0.94 |
+| alfa1 | 97.9% | 67.6% | 51.6% | 1.42 |
+| alfa2 | — | 98.5% | 95.7% | 1.00 |
+| beta1 | 98.2% | 89.3% | 80.1% | 1.42 |
+| beta2 | 97.2% | 98.9% | 97.2% | 1.35 |
+| delta | 99.6% | 98.5% | 95.7% | 1.29 |
+| jupiter | 97.3% | 89.7% | 90.0% | 0.86 |
+| loki | 98.3% | 98.5% | 95.7% | 1.29 |
+| omega | 98.1% | 96.0% | 93.1% | 1.42 |
+| padre | 98.0% | 90.7% | 86.6% | 0.94 |
 
 *La histórica mide reconocimiento de patrones dentro de los mismos datos con que se entrenó (por eso es tan alta). La viva es la prueba honesta: predicciones a futuro calificadas contra la realidad.*
 
@@ -220,7 +218,7 @@
 | padre | 99.8% | **99.0%** | +0.8% ✅ |
 | beta1 | 100.0% | **99.8%** | +0.2% ✅ |
 | omega | 100.0% | **99.8%** | +0.2% ✅ |
-| loki | 39.9% | **39.6%** | +0.2% ✅ |
+| loki | 39.4% | **39.1%** | +0.2% ✅ |
 | alfa1 | 100.0% | **100.0%** | +0.0% ✅ |
 | jupiter | 0.8% | **0.8%** | +0.0% ✅ |
 | alfa2 | — | **—** | — |
@@ -233,13 +231,13 @@
 
 | Variable | 🌋VEIVEI3 | 🌋VEIVEI4 | 🌋VEIVEI5 | M3_obs | M4 | M4_obs | M5 | M6 | M7 | ☀️KpKp6 | ☀️KpKp7 | ☀️KpKp9 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Campo magnético solar (Bz, últimas 72h | 🔴2.4 | 🔵-4.2 | 🔵0.4 | 🔵-47.2 | ⬜1.0 | 🔵-68.6 | 🔵0.7 | 🟠1.9 | ⬜1.1 | 🔴48.8 | 🔴2.3 | 🔴5.2 |
-| Campo magnético solar (Bz promedio) | 🔵-0.2 | 🔵-0.7 | 🔵-2.5 | 🔵-26.5 | ⬜1.1 | 🔵-31.9 | ⬜1.0 | 🟡1.3 | 🔵0.7 | 🔴16.0 | 🔴7.0 | 🔴3.1 |
+| Campo magnético solar (Bz, últimas 72h | 🔴2.4 | 🔵-4.2 | 🔵0.4 | 🔵-39.6 | ⬜1.0 | 🔵-51.1 | 🔵0.7 | 🟠1.9 | ⬜1.0 | 🔴48.4 | 🔴2.2 | 🔴5.2 |
+| Campo magnético solar (Bz promedio) | 🔵-0.2 | 🔵-0.7 | 🔵-2.4 | 🔵-22.7 | ⬜1.1 | 🔵-33.8 | ⬜1.0 | 🟡1.2 | 🔵0.6 | 🔴15.6 | 🔴6.8 | 🔴3.0 |
 | Rendimiento de Bitcoin en la ventana | 🟠1.6 | 🔴2.4 | 🔵-3.7 |   —   | ⬜0.9 |   —   | ⬜1.0 | ⬜1.2 | ⬜0.9 |   —   | 🔵-1.5 | 🟡1.5 |
-| Gas volcánico SO₂ en la ventana (kilot | ⬜1.0 | 🔴2.8 | 🔴2.3 | 🔴4.1 | ⬜1.0 | 🔵0.0 | ⬜1.0 | ⬜0.9 | 🔵0.7 | 🔵0.7 | 🔵0.6 | ⬜0.9 |
-| Erupciones (90 días) | 🟡1.3 | ⬜0.9 | 🔴2.4 | 🔵0.7 | ⬜1.0 | ⬜0.8 | ⬜1.0 | ⬜1.0 | ⬜1.0 | ⬜0.8 | ⬜1.0 | 🟡1.2 |
-| lod | 🔵0.8 | ⬜1.1 | 🔵-0.3 | 🔵0.5 | ⬜1.0 | 🔵0.3 | ⬜1.0 | ⬜1.0 | ⬜1.1 | 🟡1.2 | 🟠1.6 | 🟡1.3 |
-| Erupciones registradas en la ventana | 🟡1.4 | 🟠1.6 | 🟠1.6 | 🔵0.7 | ⬜1.0 | 🔵0.0 | ⬜1.0 | ⬜1.0 | ⬜0.8 | 🔵0.6 | ⬜0.9 | 🔵0.6 |
+| Gas volcánico SO₂ en la ventana (kilot | ⬜1.0 | 🔴2.8 | 🔴2.3 | 🔴2.7 | ⬜1.0 | 🔵0.0 | ⬜1.0 | ⬜0.9 | 🔵0.7 | 🔵0.7 | 🔵0.6 | ⬜0.9 |
+| Erupciones (90 días) | 🟡1.3 | ⬜0.9 | 🔴2.4 | 🔵0.8 | ⬜1.0 | ⬜0.8 | ⬜1.0 | ⬜1.0 | ⬜1.0 | ⬜0.8 | ⬜1.0 | 🟡1.2 |
+| lod | 🔵0.8 | ⬜1.1 | 🔵-0.3 | 🔵0.6 | ⬜1.0 | 🔵0.3 | ⬜1.0 | ⬜1.0 | ⬜1.1 | 🟡1.2 | 🟠1.5 | 🟡1.3 |
+| Erupciones registradas en la ventana | 🟡1.4 | 🟠1.6 | 🟠1.6 | 🔵0.5 | ⬜1.0 | 🔵0.0 | ⬜1.0 | ⬜1.0 | ⬜0.8 | 🔵0.6 | ⬜0.9 | 🔵0.6 |
 | es_sicigia | ⬜0.8 | ⬜1.0 | 🔵0.0 | 🔵0.0 | ⬜1.0 | 🔵0.0 | ⬜1.0 | ⬜0.9 | 🔵0.7 | ⬜0.9 | 🟡1.2 | 🔵0.8 |
 
 ## 🏆 Top 10 patrones del sistema
@@ -248,16 +246,16 @@
 
 | # | Evento | Bot | Zona / Nodo | Veces | Estado | Aviso |
 |---|---|---|---|---|---|---|
-| 1 | 🌎 **SISMO_M4** | omega | Ghost Mariana | 12,434 | ✅ consolidada | — |
-| 2 | 🌎 **SISMO_M4** | omega | Ghost Banda Sea | 8,742 | ✅ consolidada | — |
-| 3 | 🌎 **SISMO_M4** | omega | Ghost Kamchatka-Kuril | 8,150 | ✅ consolidada | — |
-| 4 | 🌎 **SISMO_M4** | omega | Ghost Philippines-Taiwan | 7,926 | ✅ consolidada | — |
-| 5 | 🌎 **SISMO_M4** | omega | Ghost Scotia Arc | 6,849 | ✅ consolidada | — |
-| 6 | 🌎 **SISMO_M4** | omega | Filipinas | 6,785 | ✅ consolidada | — |
-| 7 | 🌎 **SISMO_M4** | omega | Ghost Alaska-Aleutian | 6,248 | ✅ consolidada | — |
+| 1 | 🌎 **SISMO_M4** | omega | Ghost Mariana | 12,433 | ✅ consolidada | — |
+| 2 | 🌎 **SISMO_M4** | omega | Ghost Banda Sea | 8,699 | ✅ consolidada | — |
+| 3 | 🌎 **SISMO_M4** | omega | Ghost Philippines-Taiwan | 8,148 | ✅ consolidada | — |
+| 4 | 🌎 **SISMO_M4** | omega | Ghost Kamchatka-Kuril | 8,082 | ✅ consolidada | — |
+| 5 | 🌎 **SISMO_M4** | omega | Ghost Scotia Arc | 6,840 | ✅ consolidada | — |
+| 6 | 🌎 **SISMO_M4** | omega | Filipinas | 6,821 | ✅ consolidada | — |
+| 7 | 🌎 **SISMO_M4** | omega | Ghost Alaska-Aleutian | 6,243 | ✅ consolidada | — |
 | 8 | 🌎 **SISMO_M4** | omega | Ghost Vanuatu | 5,703 | ✅ consolidada | — |
 | 9 | 🌎 **SISMO_M4** | omega | Ghost Hindu Kush | 5,099 | ✅ consolidada | — |
-| 10 | 🌎 **SISMO_M5** | omega | Cascadia | 4,653 | ✅ consolidada | — |
+| 10 | 🌎 **SISMO_M5** | omega | Cascadia | 4,650 | ✅ consolidada | — |
 
 ## 📊 Patrones por tipo de evento — top 5 por clase
 
@@ -297,58 +295,58 @@
 
 | Bot | Zona (nodo de la malla) | Veces vista | Estado | Aviso típico |
 |---|---|---|---|---|
-| beta2 | Ghost Aleutian W (52.0, 175.0) | 54 | ✅ consolidada | — |
-| padre | Ghost Aleutian W (52.0, 175.0) | 45 | ✅ consolidada | — |
-| omega | Ghost Aleutian W (52.0, 175.0) | 44 | ✅ consolidada | — |
-| beta1 | Ghost Alaska-Aleutian (55.0, -165.0) | 31 | ✅ consolidada | — |
-| jupiter | Ghost Caribbean-PR (19.5, -65.0) | 28 | ✅ consolidada | — |
+| beta2 | Ghost Aleutian W (52.0, 175.0) | 55 | ✅ consolidada | — |
+| padre | Ghost Aleutian W (52.0, 175.0) | 44 | ✅ consolidada | — |
+| jupiter | Caribe Norte (18.5, -67.0) | 34 | ✅ consolidada | — |
+| beta1 | Ghost Alaska-Aleutian (55.0, -165.0) | 29 | ✅ consolidada | — |
+| omega | Ghost Aleutian W (52.0, 175.0) | 24 | ✅ consolidada | — |
 
 ### 🌎 SISMO_M4
 
 | Bot | Zona (nodo de la malla) | Veces vista | Estado | Aviso típico |
 |---|---|---|---|---|
-| omega | Ghost Mariana (15.0, 147.0) | 12,434 | ✅ consolidada | — |
-| omega | Ghost Banda Sea (-5.0, 130.0) | 8,742 | ✅ consolidada | — |
-| omega | Ghost Kamchatka-Kuril (48.0, 153.0) | 8,150 | ✅ consolidada | — |
-| omega | Ghost Philippines-Taiwan (20.0, 122.0) | 7,926 | ✅ consolidada | — |
-| omega | Ghost Scotia Arc (-57.0, -30.0) | 6,849 | ✅ consolidada | — |
+| omega | Ghost Mariana (15.0, 147.0) | 12,433 | ✅ consolidada | — |
+| omega | Ghost Banda Sea (-5.0, 130.0) | 8,699 | ✅ consolidada | — |
+| omega | Ghost Philippines-Taiwan (20.0, 122.0) | 8,148 | ✅ consolidada | — |
+| omega | Ghost Kamchatka-Kuril (48.0, 153.0) | 8,082 | ✅ consolidada | — |
+| omega | Ghost Scotia Arc (-57.0, -30.0) | 6,840 | ✅ consolidada | — |
 
 ### 🌎 SISMO_M4_obs
 
 | Bot | Zona (nodo de la malla) | Veces vista | Estado | Aviso típico |
 |---|---|---|---|---|
-| beta2 | Ghost Ryukyu (26.0, 128.0) | 87 | ✅ consolidada | — |
-| omega | Ghost Ryukyu (26.0, 128.0) | 78 | ✅ consolidada | — |
-| jupiter | Etna-Sicilia (37.8, 15.0) | 49 | ✅ consolidada | — |
-| padre | Ghost Colombia Interior (4.0, -75.0) | 38 | ✅ consolidada | ~1 días |
-| jupiter | Ghost Ryukyu (26.0, 128.0) | 31 | ✅ consolidada | — |
+| beta2 | Ghost Ryukyu (26.0, 128.0) | 93 | ✅ consolidada | — |
+| jupiter | Ghost Colombia Interior (4.0, -75.0) | 67 | ✅ consolidada | — |
+| padre | Ghost Ryukyu (26.0, 128.0) | 36 | ✅ consolidada | ~11 días |
+| omega | Ghost Ryukyu (26.0, 128.0) | 34 | ✅ consolidada | — |
+| beta1 | Ghost Colombia Interior (4.0, -75.0) | 31 | ✅ consolidada | — |
 
 ### 🌎 SISMO_M5
 
 | Bot | Zona (nodo de la malla) | Veces vista | Estado | Aviso típico |
 |---|---|---|---|---|
-| omega | Cascadia (46.0, -124.0) | 4,653 | ✅ consolidada | — |
-| omega | Ghost Mariana (15.0, 147.0) | 3,727 | ✅ consolidada | — |
+| omega | Cascadia (46.0, -124.0) | 4,650 | ✅ consolidada | — |
+| omega | Ghost Mariana (15.0, 147.0) | 3,708 | ✅ consolidada | — |
 | omega | Filipinas (14.5, 121.0) | 3,518 | ✅ consolidada | — |
-| omega | Ghost Mariana (15.0, 147.0) | 3,395 | ✅ consolidada | — |
-| omega | Ghost Kamchatka-Kuril (48.0, 153.0) | 3,117 | ✅ consolidada | — |
+| omega | Ghost Mariana (15.0, 147.0) | 3,379 | ✅ consolidada | — |
+| omega | Ghost Kamchatka-Kuril (48.0, 153.0) | 3,178 | ✅ consolidada | — |
 
 ### 🌎 SISMO_M6
 
 | Bot | Zona (nodo de la malla) | Veces vista | Estado | Aviso típico |
 |---|---|---|---|---|
 | omega | Ghost Banda Sea (-5.0, 130.0) | 469 | ✅ consolidada | — |
-| omega | Nueva Zelanda (-41.0, 174.0) | 454 | ✅ consolidada | — |
-| omega | Ghost San Andreas Mid (35.5, -119.5) | 410 | ✅ consolidada | — |
+| omega | Nueva Zelanda (-41.0, 174.0) | 452 | ✅ consolidada | — |
+| omega | Ghost San Andreas Mid (35.5, -119.5) | 416 | ✅ consolidada | — |
 | omega | Ghost Banda Sea (-5.0, 130.0) | 379 | ✅ consolidada | — |
-| omega | Ghost Chiapas Interior (15.5, -93.0) | 336 | ✅ consolidada | — |
+| omega | Ghost Chiapas Interior (15.5, -93.0) | 334 | ✅ consolidada | — |
 
 ### 🌎 SISMO_M7
 
 | Bot | Zona (nodo de la malla) | Veces vista | Estado | Aviso típico |
 |---|---|---|---|---|
-| omega | Ghost Tonga-Fiji (-18.0, -178.0) | 110 | ✅ consolidada | — |
-| omega | Ghost Banda Sea (-5.0, 130.0) | 77 | ✅ consolidada | — |
+| omega | Ghost Tonga-Fiji (-18.0, -178.0) | 109 | ✅ consolidada | — |
+| omega | Ghost Banda Sea (-5.0, 130.0) | 78 | ✅ consolidada | — |
 | omega | Filipinas (14.5, 121.0) | 58 | ✅ consolidada | — |
 | omega | GeoBat Sumatra Hidrotermal (1.0, 98.0) | 51 | ✅ consolidada | — |
 | beta1 | Ghost Cascadia Gap (44.0, -125.0) | 45 | ✅ consolidada | — |
@@ -389,9 +387,9 @@
 
 | Conjunto de dominios | Casos | Secuencia dominante | % | Veredicto |
 |---|---:|---|---:|---|
-| COSMICO+DESGAS+SISMICO+SOLAR | 95 | DESGAS+SISMICO+SOLAR→COSMICO | 16% | **INDIFERENTE** |
-| COSMICO+SISMICO+SOLAR | 92 | SISMICO+SOLAR→COSMICO | 28% | **INDIFERENTE** |
-| COSMICO+DESGAS+FINANCIERO+SISMICO+SOLAR | 49 | DESGAS+FINANCIERO+SISMICO+SOLAR→COSMICO | 14% | **INDIFERENTE** |
+| COSMICO+DESGAS+SISMICO+SOLAR | 97 | COSMICO+SISMICO+SOLAR→DESGAS | 10% | **INDIFERENTE** |
+| COSMICO+SISMICO+SOLAR | 86 | SISMICO+SOLAR→COSMICO | 24% | **INDIFERENTE** |
+| COSMICO+DESGAS+FINANCIERO+SISMICO+SOLAR | 47 | COSMICO+DESGAS+SISMICO+SOLAR→FINANCIERO | 6% | **INDIFERENTE** |
 
 ## 🌐 Cimática: cómo se mueve la energía por la malla
 
@@ -415,14 +413,14 @@
 > El Juez es un auditor que **nunca predice**: solo registra cada aviso de los bots y, cuando se cierra la ventana de 72 horas, lo compara contra el catálogo sísmico real (USGS) y dicta sentencia. Dejar pasar un evento castiga 10 veces más que una falsa alarma — preferimos un sistema nervioso a uno dormido. **Solo la fase viva puntúa asertividad**; el resto es bitácora de entrenamiento y no se mezcla.
 
 **Operación viva (lo que cuenta):**
-- ACIERTO — avisó y el evento ocurrió: 19,439
+- ACIERTO — avisó y el evento ocurrió: 20,310
 - FALLO — el evento ocurrió sin aviso (lo más castigado): 313
-- FALSO POSITIVO — avisó y no pasó nada: 1,227
-- PENDIENTE — ventana de 72h aún abierta: 225
+- FALSO POSITIVO — avisó y no pasó nada: 1,463
+- PENDIENTE — ventana de 72h aún abierta: 306
 
 **Bitácora de entrenamiento (reconocimiento/backtest/trasfondo — no puntúa):**
-- ACIERTO: 985,934
-- FALLO: 1,267
+- ACIERTO: 985,074
+- FALLO: 1,277
 
 ## 🧾 Bitácora del sistema — versión, cambios y salud
 
@@ -431,13 +429,13 @@
 | Campo | Este corte | Corte anterior | Cambio |
 |---|---|---|---|
 | Versión del modelo | 2.5.4 | 2.5.4 | sin cambio |
-| Asertividad viva *(cuenta los silencios)* | 92.7% | 92.7% | -0.0% |
-| **Ganancia real** (precisión ÷ tasa base) | 1.01× | — | 1× = no aporta |
-| Aciertos / Fallos (vivos) | 19,439 / 313 | 19,271 / 313 | +168 aciertos |
-| Pendientes de auditoría | 225 | 378 | -153 |
-| Pesos de bots | 8 bots | — | alfa1 0.30→1.42; beta1 1.00→1.42; beta2 1.00→1.35; delta 1.00→1.29; jupiter 1.00→0.86; loki 1.00→1.29; omega 1.00→1.42; padre 1.00→0.94 |
+| Asertividad viva *(cuenta los silencios)* | 92.0% | 92.0% | -0.1% |
+| **Ganancia real** (precisión ÷ tasa base) | 0.89× | — | 1× = no aporta |
+| Aciertos / Fallos (vivos) | 20,310 / 313 | 20,156 / 313 | +154 aciertos |
+| Pendientes de auditoría | 306 | 369 | -63 |
+| Pesos de bots | 8 bots | — | alfa1 0.30→1.42; beta1 0.30→1.42; omega 0.95→1.42; padre 0.30→0.94 |
 
-*Asertividad viva, últimos cortes: 93% → 93% → 93% → 93% → 93%*
+*Asertividad viva, últimos cortes: 93% → 92% → 92% → 92% → 92%*
 
 ### Quién ve QUÉ — competencia por clase de evento
 
@@ -445,17 +443,17 @@
 
 | bot | M3 | M4 | M5 |
 |---|---:|---:|---:|
-| beta1 | 37% (22/59) | 72% (179/249) | 3% (1/29) |
-| omega | 44% (26/59) | 69% (171/249) | 3% (1/29) |
-| alfa1 | 31% (18/59) | 61% (152/249) | 17% (5/29) |
-| padre | 49% (29/59) | 60% (149/249) | 7% (2/29) |
-| beta2 | 14% (8/59) | 18% (44/249) | 38% (11/29) |
-| jupiter | 5% (3/59) | 12% (29/249) | 0% (0/29) |
-| loki | 3% (2/59) | 5% (13/249) | 0% (0/29) |
+| beta1 | 35% (25/71) ↓ | 70% (167/237) | 3% (1/29) |
+| omega | 52% (37/71) ↑ | 70% (165/237) | 3% (1/29) |
+| padre | 44% (31/71) ↓ | 65% (155/237) ↑ | 7% (2/29) |
+| alfa1 | 34% (24/71) ↑ | 64% (151/237) ↑ | 17% (5/29) |
+| beta2 | 11% (8/71) ↓ | 18% (43/237) | 38% (11/29) |
+| jupiter | 4% (3/71) | 10% (23/237) | 0% (0/29) |
+| loki | 0% (0/71) ↓ | 1% (3/237) ↓ | 0% (0/29) |
 | delta | — | — | 0% (0/29) |
 | alfa2 | — | — | 0% (0/29) |
 
-**El mejor de cada clase:** M3 → **padre** (49%) · M4 → **beta1** (72%) · M5 → **beta2** (38%).
+**El mejor de cada clase:** M3 → **omega** (52%) · M4 → **beta1** (70%) · M5 → **beta2** (38%).
 
 *El peso de cada bot en el consenso es el de su MEJOR clase: un experto que solo sirve para una cosa, sirve.*
 
@@ -468,111 +466,111 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Aciertos** | 19439 |
+| **Aciertos** | 20310 |
 | **Fallos** | 313 |
-| **Falsos positivos** | 1227 |
-| **Tasa de acierto** | 91.7% `▓▓▓▓▓▓▓▓▓▓▓░` |
-| **Total predicciones** | 21204 |
+| **Falsos positivos** | 1463 |
+| **Tasa de acierto** | 90.7% `▓▓▓▓▓▓▓▓▓▓▓░` |
+| **Total predicciones** | 22392 |
 
 ### 🤖 Desempeño por Bot
 
 | Bot | Aciertos | Tasa | Confianza | Anticipación (días) |
 |-----|----------|------|-----------|----------------------|
-| beta2 | 2304/2331 | 99% `▓▓▓▓▓▓▓▓` | 0.20 | 0.1 |
-| alfa2 | 2294/2331 | 98% `▓▓▓▓▓▓▓▓` | 0.04 | 0.1 |
-| delta | 2294/2331 | 98% `▓▓▓▓▓▓▓▓` | 0.30 | 0.1 |
-| loki | 2294/2331 | 98% `▓▓▓▓▓▓▓▓` | 0.20 | 0.1 |
-| omega | 2240/2331 | 96% `▓▓▓▓▓▓▓▓` | 0.34 | 0.1 |
-| beta1 | 2164/2331 | 93% `▓▓▓▓▓▓▓░` | 0.31 | 0.1 |
-| padre | 2157/2331 | 93% `▓▓▓▓▓▓▓░` | 0.14 | 0.1 |
-| jupiter | 2078/2331 | 89% `▓▓▓▓▓▓▓░` | 0.23 | 0.1 |
-| alfa1 | 1614/2331 | 69% `▓▓▓▓▓▓░░` | 0.45 | 0.1 |
+| beta2 | 2427/2454 | 99% `▓▓▓▓▓▓▓▓` | 0.21 | 0.1 |
+| alfa2 | 2417/2454 | 98% `▓▓▓▓▓▓▓▓` | 0.05 | 0.1 |
+| delta | 2417/2454 | 98% `▓▓▓▓▓▓▓▓` | 0.30 | 0.1 |
+| loki | 2417/2454 | 98% `▓▓▓▓▓▓▓▓` | 0.21 | 0.1 |
+| omega | 2355/2454 | 96% `▓▓▓▓▓▓▓▓` | 0.35 | 0.1 |
+| padre | 2227/2454 | 91% `▓▓▓▓▓▓▓░` | 0.15 | 0.1 |
+| jupiter | 2201/2454 | 90% `▓▓▓▓▓▓▓░` | 0.24 | 0.1 |
+| beta1 | 2191/2454 | 89% `▓▓▓▓▓▓▓░` | 0.33 | 0.1 |
+| alfa1 | 1658/2454 | 68% `▓▓▓▓▓░░░` | 0.46 | 0.1 |
 
 ### 🎯 Eventos Predichos Correctamente (más recientes primero)
 
 #### LOKI — CALMA — (zonas monitoreadas)
 
-- **Predicción:** 2026-09-26 12:01 UTC
-- **Evento real:** 2026-09-26 14:04 UTC
+- **Predicción:** 2026-09-27 04:02 UTC
+- **Evento real:** 2026-09-27 06:05 UTC
 - **Anticipación:** 0.1 días
-- **Confianza:** 20.0% `▓▓░░░░░░░░`
+- **Confianza:** 35.4% `▓▓▓▓░░░░░░`
 - **Fase:** viva
 
 #### OMEGA — CALMA — (zonas monitoreadas)
 
-- **Predicción:** 2026-09-26 12:01 UTC
-- **Evento real:** 2026-09-26 14:04 UTC
+- **Predicción:** 2026-09-27 04:02 UTC
+- **Evento real:** 2026-09-27 06:05 UTC
 - **Anticipación:** 0.1 días
-- **Confianza:** 40.0% `▓▓▓▓░░░░░░`
+- **Confianza:** 68.6% `▓▓▓▓▓▓▓░░░`
 - **Fase:** viva
 
 #### JUPITER — CALMA — (zonas monitoreadas)
 
-- **Predicción:** 2026-09-26 12:01 UTC
-- **Evento real:** 2026-09-26 14:04 UTC
+- **Predicción:** 2026-09-27 04:02 UTC
+- **Evento real:** 2026-09-27 06:05 UTC
 - **Anticipación:** 0.1 días
-- **Confianza:** 20.0% `▓▓░░░░░░░░`
+- **Confianza:** 49.5% `▓▓▓▓▓░░░░░`
 - **Fase:** viva
 
 #### ALFA2 — CALMA — (zonas monitoreadas)
 
-- **Predicción:** 2026-09-26 12:01 UTC
-- **Evento real:** 2026-09-26 14:04 UTC
+- **Predicción:** 2026-09-27 04:02 UTC
+- **Evento real:** 2026-09-27 06:05 UTC
 - **Anticipación:** 0.1 días
 - **Confianza:** 20.0% `▓▓░░░░░░░░`
 - **Fase:** viva
 
 #### DELTA — CALMA — (zonas monitoreadas)
 
-- **Predicción:** 2026-09-26 12:01 UTC
-- **Evento real:** 2026-09-26 14:04 UTC
+- **Predicción:** 2026-09-27 04:02 UTC
+- **Evento real:** 2026-09-27 06:05 UTC
 - **Anticipación:** 0.1 días
-- **Confianza:** 30.0% `▓▓▓░░░░░░░`
+- **Confianza:** 39.7% `▓▓▓▓░░░░░░`
 - **Fase:** viva
 
 #### BETA2 — CALMA — (zonas monitoreadas)
 
-- **Predicción:** 2026-09-26 12:01 UTC
-- **Evento real:** 2026-09-26 14:04 UTC
-- **Anticipación:** 0.1 días
-- **Confianza:** 20.0% `▓▓░░░░░░░░`
-- **Fase:** viva
-
-#### BETA1 — CALMA — (zonas monitoreadas)
-
-- **Predicción:** 2026-09-26 12:01 UTC
-- **Evento real:** 2026-09-26 14:04 UTC
-- **Anticipación:** 0.1 días
-- **Confianza:** 30.0% `▓▓▓░░░░░░░`
-- **Fase:** viva
-
-#### PADRE — SISMO_M5 — (Ghost Banda Sea)
-
-- **Predicción:** 2026-09-26 12:01 UTC
-- **Evento real:** 2026-09-26 14:04 UTC
-- **Anticipación:** 0.1 días
-- **Confianza:** 20.0% `▓▓░░░░░░░░`
-- **Fase:** viva
-
-#### LOKI — CALMA — (zonas monitoreadas)
-
-- **Predicción:** 2026-09-26 11:56 UTC
-- **Evento real:** 2026-09-26 14:04 UTC
-- **Anticipación:** 0.1 días
-- **Confianza:** 20.0% `▓▓░░░░░░░░`
-- **Fase:** viva
-
-#### OMEGA — CALMA — (zonas monitoreadas)
-
-- **Predicción:** 2026-09-26 11:56 UTC
-- **Evento real:** 2026-09-26 14:04 UTC
+- **Predicción:** 2026-09-27 04:02 UTC
+- **Evento real:** 2026-09-27 06:05 UTC
 - **Anticipación:** 0.1 días
 - **Confianza:** 40.0% `▓▓▓▓░░░░░░`
 - **Fase:** viva
 
-_... y 19429 aciertos más en los últimos 30 días_
+#### LOKI — CALMA — (zonas monitoreadas)
+
+- **Predicción:** 2026-09-27 03:56 UTC
+- **Evento real:** 2026-09-27 06:05 UTC
+- **Anticipación:** 0.1 días
+- **Confianza:** 35.4% `▓▓▓▓░░░░░░`
+- **Fase:** viva
+
+#### OMEGA — CALMA — (zonas monitoreadas)
+
+- **Predicción:** 2026-09-27 03:56 UTC
+- **Evento real:** 2026-09-27 06:05 UTC
+- **Anticipación:** 0.1 días
+- **Confianza:** 68.6% `▓▓▓▓▓▓▓░░░`
+- **Fase:** viva
+
+#### JUPITER — CALMA — (zonas monitoreadas)
+
+- **Predicción:** 2026-09-27 03:56 UTC
+- **Evento real:** 2026-09-27 06:05 UTC
+- **Anticipación:** 0.1 días
+- **Confianza:** 49.5% `▓▓▓▓▓░░░░░`
+- **Fase:** viva
+
+#### ALFA2 — CALMA — (zonas monitoreadas)
+
+- **Predicción:** 2026-09-27 03:56 UTC
+- **Evento real:** 2026-09-27 06:05 UTC
+- **Anticipación:** 0.1 días
+- **Confianza:** 20.0% `▓▓░░░░░░░░`
+- **Fase:** viva
+
+_... y 20300 aciertos más en los últimos 30 días_
 
 ---
 *Todos los datos provienen de fuentes públicas oficiales (NOAA, USGS, NASA, ESA). Nada aquí es un pronóstico oficial de protección civil: es investigación de precursores en curso.*
 
-*Ciclos totales: 3,371 · Sentinel Omega · Fractal Core Research*
+*Ciclos totales: 3,503 · Sentinel Omega · Fractal Core Research*
