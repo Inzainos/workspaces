@@ -173,18 +173,31 @@ Tomsk (Schumann) · IERS (LOD) · Yahoo Finance (BTC, keyless) ·
 OpenWeatherMap (`OPENWEATHERMAP_KEY`) · NASA NEO (`NASA_API_KEY`, fallback DEMO_KEY) ·
 ESA Copernicus vía eodag.
 
-## Alertas y reportes (canal: correo, Telegram en pausa)
+## Alertas y reportes (canal: TELEGRAM — el correo se eliminó)
 
-Alertas y reportes viajan por email a `elan.zainos.corona@gmail.com` vía el
-outbox `tbl_correo_salida` (fail-soft: sin `SMTP_USER`/`SMTP_PASS` quedan
-PENDIENTES, nunca se fingen enviados). Rutinas del vigilante (hora MX=UTC-6):
-ciclo del Padre cada 2 h · Juez verifica real vs predicción cada 4 h ·
-reporte ejecutivo cada 6 h · comparativo diario 12am/12pm · semanal domingo
-12:15pm · mensual fin de mes 12:30pm. La cimática
-(`tbl_cimatica_patrones`) toma un snapshot de telemetría por ciclo: patrón
-nuevo guarda todo, patrón repetido suma +1 a la frecuencia; cualquier
-alta/incremento dispara la revisión del Padre y, si amerita, alerta por
-correo.
+**El correo ya no existe.** `infrastructure/api/correo.py` se borró el
+2026-09-15, `deploy/enviar_correos.py` despacha por Telegram, y las variables
+SMTP están comentadas. `tbl_correo_salida` sigue en la base pero **cero código la
+referencia**: vestigio, no canal. Si lees una versión de este archivo que dice
+«canal: correo, Telegram en pausa», está desactualizada — corregido el 2026-09-27
+contra el código, no contra la fecha del documento.
+
+**El bot NO es de este repo.** `@IngZainos_bot` lo maneja **Consensus Expert
+Agent** (`~/consensus-expert-agent`) y es compartido. Consecuencias que importan:
+
+- Sentinel es **solo saliente** — `sendMessage`/`sendPhoto`/`sendDocument`, sin
+  `getUpdates` ni webhook, así que no compite con el poller de allá.
+- Los comandos entrantes (`/start`, `/task`, `/audit`) viven **allá**, no aquí.
+- `TELEGRAM_BOT_TOKEN` es **compartido**: rotarlo desde este repo rompe el otro.
+  Coordinar antes. (Es el mismo token cuyos valores viejos se purgaron del
+  historial de git el 2026-09-27.)
+
+Rutinas del vigilante (hora MX=UTC-6): ciclo del Padre cada 2 h · Juez verifica
+real vs predicción cada 4 h · reporte ejecutivo cada 6 h · comparativo diario
+12am/12pm · semanal domingo 12:15pm · mensual fin de mes 12:30pm. La cimática
+(`tbl_cimatica_patrones`) toma un snapshot de telemetría por ciclo: patrón nuevo
+guarda todo, patrón repetido suma +1 a la frecuencia; cualquier alta/incremento
+dispara la revisión del Padre y, si amerita, aviso por Telegram.
 
 ## Telegram — consenso Padre (2026-09-03)
 

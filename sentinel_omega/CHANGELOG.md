@@ -108,10 +108,17 @@ Schumann que quedan están alineados, 0,0 en los dos lados). Reinicio del operad
    documentado en `AGENTS.md` como decisión deliberada; el vector cambia cuando
    haya historia.
 
-### Nota de documentación
+### Nota de documentación — y una corrección de criterio
 
-La entrada del 2026-09-15 dice «Email removido … Telegram». `AGENTS.md`
-(2026-09-24) dice «canal: correo, Telegram en pausa». El más reciente manda.
+La entrada del 2026-09-15 dice «Email removido … Telegram»; `AGENTS.md`
+(2026-09-24) decía «canal: correo, Telegram en pausa». Concluí que **manda el más
+reciente** y me equivoqué: la deriva estaba en el archivo MÁS NUEVO. Verificado
+contra el código —`correo.py` no existe, `enviar_correos.py` despacha por
+Telegram, `tbl_correo_salida` tiene cero referencias, variables SMTP comentadas
+por el operador— el canal es **Telegram**. `AGENTS.md` corregido.
+
+**El más nuevo no es el correcto: el código es la autoridad.** Es la Regla 0
+—«verifícalo contra el código»— y la apliqué a los rasgos y no a los documentos.
 
 ---
 
