@@ -1,6 +1,8 @@
 """
 Crypto market data connectors.
 Yahoo Finance and CoinGecko public endpoints (no key required for basic usage).
+CoinGecko: if COINGECKO_API_KEY (Demo key) is set, it is sent as the
+``x-cg-demo-api-key`` header; the key is never logged.
 Binance public market data API.
 
 SNT application: fits R(t) = dominant/shadow on BTC/altcoin dominance ratios
@@ -8,6 +10,7 @@ to detect satellization, convergence (alt season), and collapse precursors.
 """
 
 import logging
+import os
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -17,6 +20,37 @@ from sentinel_omega.infrastructure.api._http import get_session
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 15
+
+# ── CoinGecko (Demo API key support) ────────────────────────────────
+COINGECKO_BASE_URL = "https://api.coingecko.com/api/v3"
+COINGECKO_API_KEY_ENV = "COINGECKO_API_KEY"
+COINGECKO_DEMO_HEADER = "x-cg-demo-api-key"
+
+
+def _coingecko_api_key() -> str:
+    """Read the Demo key at call time (systemd EnvironmentFile / os.environ)."""
+    return os.environ.get(COINGECKO_API_KEY_ENV, "").strip()
+
+
+def coingecko_headers() -> Dict[str, str]:
+    """Headers for CoinGecko requests: Demo key header if set, else empty."""
+    key = _coingecko_api_key()
+    return {COINGECKO_DEMO_HEADER: key} if key else {}
+
+
+def mask_coingecko_key(text: object) -> str:
+    """Return str(text) with the CoinGecko key (if any) replaced by '***'."""
+    out = str(text)
+    key = _coingecko_api_key()
+    return out.replace(key, "***") if key else out
+
+
+def _coingecko_get(url: str):
+    """GET a CoinGecko URL; adds the Demo header only when a key is set."""
+    headers = coingecko_headers()
+    if headers:
+        return get_session().get(url, timeout=TIMEOUT, headers=headers)
+    return get_session().get(url, timeout=TIMEOUT)
 
 
 def fetch_yahoo_chart(
@@ -68,11 +102,11 @@ def fetch_coingecko_market_chart(
 ) -> Optional[pd.DataFrame]:
     """Fetch price history from CoinGecko (public, rate-limited)."""
     url = (
-        f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
+        f"{COINGECKO_BASE_URL}/coins/{coin_id}/market_chart"
         f"?vs_currency={vs_currency}&days={days}"
     )
     try:
-        resp = get_session().get(url, timeout=TIMEOUT)
+        resp = _coingecko_get(url)
         resp.raise_for_status()
         data = resp.json()
 
@@ -85,21 +119,21 @@ def fetch_coingecko_market_chart(
         logger.info(f"CoinGecko: {coin_id} — {len(df)} price records")
         return df
     except Exception as e:
-        logger.error(f"CoinGecko fetch failed for {coin_id}: {e}")
+        logger.error(f"CoinGecko fetch failed for {coin_id}: {mask_coingecko_key(e)}")
     return None
 
 
 def fetch_coingecko_dominance() -> Optional[Dict[str, float]]:
     """Fetch BTC and ETH dominance percentages from CoinGecko."""
-    url = "https://api.coingecko.com/api/v3/global"
+    url = f"{COINGECKO_BASE_URL}/global"
     try:
-        resp = get_session().get(url, timeout=TIMEOUT)
+        resp = _coingecko_get(url)
         resp.raise_for_status()
         data = resp.json().get("data", {}).get("market_cap_percentage", {})
         logger.info(f"CoinGecko dominance: BTC={data.get('btc', 0):.1f}%")
         return data
     except Exception as e:
-        logger.error(f"CoinGecko dominance fetch failed: {e}")
+        logger.error(f"CoinGecko dominance fetch failed: {mask_coingecko_key(e)}")
     return None
 
 

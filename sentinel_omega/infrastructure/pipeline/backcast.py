@@ -251,10 +251,8 @@ def extraer_psique_financiera(year: int) -> pd.DataFrame:
     params = {"vs_currency": "usd", "from": start_ts, "to": end_ts}
     logger.info(f"  Fetching CoinGecko BTC: {year}")
     try:
-        api_key = os.environ.get("COINGECKO_API_KEY", "")
-        headers = {}
-        if api_key:
-            headers["x-cg-demo-api-key"] = api_key
+        from sentinel_omega.infrastructure.api.crypto import coingecko_headers
+        headers = coingecko_headers()
         r = requests.get(url, params=params, headers=headers, timeout=30)
         r.raise_for_status()
         data = r.json()
@@ -263,7 +261,8 @@ def extraer_psique_financiera(year: int) -> pd.DataFrame:
             df["fecha"] = pd.to_datetime(df["time_ms"], unit="ms")
             return df[["fecha", "precio"]]
     except Exception as e:
-        logger.error(f"CoinGecko fetch failed for {year}: {e}")
+        from sentinel_omega.infrastructure.api.crypto import mask_coingecko_key
+        logger.error(f"CoinGecko fetch failed for {year}: {mask_coingecko_key(e)}")
     return pd.DataFrame()
 
 
