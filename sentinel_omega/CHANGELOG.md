@@ -1,3 +1,49 @@
+## 2026-09-27 (cierre) — El modelo gana siempre, aunque confíe menos
+
+Primer hallazgo del registro arreglado. Sobre cinco horas de operación real, la
+consulta que era imposible hasta hoy:
+
+| bot | el modelo dijo | la regla decía | veces |
+|---|---|---|---:|
+| **beta1** | `WATCH` | `neutral` | **22** |
+| **beta2** | `NEUTRAL` | `watch` | **8** |
+
+beta1 convirtió en alarma 22 veredictos que su regla daba por calmos --- coherente
+con que el tope de 500 lo tenía silenciado y ahora habla.
+
+**El caso de beta2 es el que importa.** `layer_runners._aplicar_modelos` asigna
+`sig.signal_type` y `sig.confidence` **sin condición**: el modelo gana siempre que
+hable, aunque su confianza sea MENOR que la de la regla. La condición que parece
+guardar eso --- `if tipo != sig.signal_type or conf > sig.confidence` --- solo
+decide si se escribe una línea de log, no si se sustituye.
+
+Un modelo con 0,35 de confianza apaga una alarma de regla con 0,60. En un sistema
+de pérdida asimétrica, donde omitir pesa 10× y `AGENTS.md` dice que «el sistema
+prefiere sobre-alertar a sub-alertar», ocho alarmas bajadas en cinco horas van
+contra el principio declarado.
+
+**No se toca**: es una decisión de diseño del operador, no un bug evidente. Lo que
+cambió es que ahora se puede ver, y por eso llevaba quién sabe cuánto ocurriendo.
+
+### Verificado en producción
+
+`reasoning` con atribución, sobre una fila real:
+
+    beta1  neutral 0.548
+      reasoning: modelo ONNX: NEUTRAL (55%) [regla: neutral (30%) — Normal
+                 spectral distribution; Schumann sin dato]
+      onnx=True  onnx_senal=NEUTRAL  regla_senal=neutral
+
+`tbl_firma_racha_viva`: 23 firmas con racha abierta en el primer ciclo tras el
+reinicio (14517), cinco con lag propio sirviendo de ancla.
+
+Nota de proceso: los campos `onnx_*` entraron a las 08:49 locales, no en el
+reinicio de las 13:42 --- hubo un reinicio intermedio (probablemente el watchdog)
+que no se registró, así que llevaban cinco horas funcionando mientras se decía que
+esperaban reinicio.
+
+---
+
 ## 2026-09-27 (tarde) — El tiempo de vida de una firma, en horas y para los nueve bots
 
 Pedido del operador: *«si una firma es idéntica a una que vimos en el pasado
