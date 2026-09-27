@@ -90,14 +90,61 @@ def test_los_nan_no_contaminan_la_media():
 
 # ─── Los dos agentes que SÍ infieren con ONNX ────────────────────────────────
 
-def test_alfa1_pregunta_con_el_orden_canonico():
+def test_alfa1_no_pregunta_a_su_modelo_por_su_cuenta():
+    """Un modelo, un vector, un sitio.
+
+    Hasta el 2026-09-27 alfa1 inferí­a dos veces: aquí con los agregados de su
+    propia ventana OMNI, y en `_aplicar_modelos` con el vector canónico del
+    ciclo. En el ciclo 14419 dieron respuestas OPUESTAS --- WATCH 72 % y
+    NO_SIGNAL 31 % --- porque `omni_dataframe` no tiene columna `kp_index`
+    (nunca la ha tenido: se arma con magnetómetro y viento), así que `kp_mean`
+    y `kp_max` llegaban como 0,0 y el modelo los leía como «Kp = 0», quietud
+    extrema, no como «no lo sé».
+
+    Coste medido en el Juez: 792 `watch` FALSO_POSITIVO contra 5 ACIERTO, todos
+    de esa rama; cero desde la rama de reglas.
+    """
     import inspect
+
     from sentinel_omega.layers.geodynamic.alfa1 import agent
-    fuente = inspect.getsource(agent.Alfa1Agent._analyze_onnx)
-    assert 'vector_para(' in fuente and "agregados_omni(" in fuente
-    # La regresión exacta: armar la fila desde self.FEATURES, que son las
-    # columnas CRUDAS de OMNI, no los agregados que el modelo aprendió.
-    assert "for i, feat in enumerate(self.FEATURES)" not in fuente
+
+    assert not hasattr(agent.Alfa1Agent, "_analyze_onnx"), (
+        "volvió la segunda inferencia: el Juez registra el vector canónico, "
+        "así que un veredicto sobre otro vector no se puede auditar")
+    fuente = inspect.getsource(agent.Alfa1Agent)
+    assert "_inference.predict(" not in fuente, (
+        "el agente pregunta al modelo; eso le toca a _aplicar_modelos")
+
+
+def test_el_vector_canonico_sigue_siendo_quien_pregunta():
+    """Lo que se quitó del agente tiene que seguir existiendo en el runner."""
+    import inspect
+
+    from sentinel_omega.infrastructure.pipeline import layer_runners
+
+    fuente = inspect.getsource(layer_runners.GeodynamicLayerRunner._aplicar_modelos)
+    assert "senal_desde_rasgos(" in fuente
+    assert "_rasgos_del_ciclo()" in fuente
+
+
+def test_kp_no_puede_salir_del_dataframe_de_omni():
+    """La raíz del fantasma: `agregados_omni` mapea `kp_index`, pero
+    `omni_dataframe` se arma solo con magnetómetro y viento. Si algún día se
+    añade Kp ahí, esta prueba avisa de que hay DOS fuentes para las mismas dos
+    posiciones y hay que decidir cuál manda."""
+    import inspect
+
+    from sentinel_omega.infrastructure.pipeline import data_pipeline
+
+    fuente = inspect.getsource(data_pipeline.GeodynamicPipeline.fetch_alfa1_data)
+    # El dataframe sale de un concat de los `frames` que se van agregando.
+    armado = fuente.split("omni_df = pd.concat")[0]
+    agregados = [l.strip() for l in armado.splitlines() if "frames.append(" in l]
+    assert agregados, "cambió el armado del omni_dataframe; revisar esta prueba"
+    assert all("kp" not in l.lower() for l in agregados), (
+        "entró Kp al omni_dataframe: ahora hay DOS fuentes de kp_mean/kp_max "
+        "(esta y la kp_series de beta1 en launcher.py) y hay que decidir cuál "
+        "manda --- es lo que produjo el fantasma de alfa1")
 
 
 def _fuente_feature_vector() -> str:

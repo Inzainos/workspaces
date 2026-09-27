@@ -149,6 +149,14 @@ class GeodynamicPipeline:
             prot_df = fetch_proton_flux()
             if prot_df is not None and len(prot_df):
                 result["proton_flux"] = float(prot_df["flux"].iloc[-1])
+                # El MÁXIMO de la ventana, aparte del último valor. El vector
+                # de alfa1 tiene una posición `proton_max` y hasta hoy llegaba
+                # siempre vacía: este flujo no viaja como columna del
+                # `omni_dataframe`, así que `agregados_omni` no podía verlo y
+                # ni el agente ni el ciclo producían el rasgo. Medido el
+                # 2026-09-27: con `proton_max` ausente el modelo canónico de
+                # alfa1 se abstenía (NO_SIGNAL 0,31).
+                result["proton_flux_max"] = float(prot_df["flux"].max())
         except Exception as exc:  # noqa: BLE001 — no bloquea el ciclo
             logger.warning("Proton flux fetch failed (non-blocking): %s", exc)
 

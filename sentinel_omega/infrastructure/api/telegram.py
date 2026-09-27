@@ -371,6 +371,44 @@ def format_precursor_alert(
     )
 
 
+# Rango en el que un número puede ser la resonancia Schumann. La fundamental es
+# 7,83 Hz y los armónicos suben a 14,3 · 20,8 · 27,3 · 33,8; nada por debajo de
+# 1 Hz ni por encima de 60 es esa señal.
+#
+# Es la SEGUNDA capa. La primera está en `orchestrator.py`, que solo deja pasar
+# Hz de verdad --- antes mandaba `schumann_wpc`, una fracción 0–1, y el parte
+# publicaba «0,21 Hz» con toda naturalidad. Medido el 2026-09-27: el formateador
+# imprimía esa fracción sin pestañear, así que la defensa era de una sola capa.
+# Un número en la unidad equivocada es peor que no dar el dato.
+HZ_SCHUMANN_MIN = 1.0
+HZ_SCHUMANN_MAX = 60.0
+
+
+def hz_schumann_valido(v) -> Optional[float]:
+    """El valor si puede ser Hz de Schumann; None si no, con aviso.
+
+    Un 0,0 MEDIDO no pasa: cero hercios no es una lectura de la cavidad, es
+    ausencia de señal. Eso lo distingue del `or` falsy que se arregló antes ---
+    ahí el problema era descartar un cero legítimo de Bz o de Kp.
+    """
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if f != f:  # NaN
+        return None
+    if not (HZ_SCHUMANN_MIN <= f <= HZ_SCHUMANN_MAX):
+        logger.warning(
+            "Schumann fuera de rango (%.4f): no se publica. Por debajo de %.0f Hz "
+            "suele ser la fracción de actividad (schumann_wpc), no hercios",
+            f, HZ_SCHUMANN_MIN,
+        )
+        return None
+    return f
+
+
 def format_centinela_threat(
     risk: float,
     bz: float,
@@ -386,6 +424,7 @@ def format_centinela_threat(
         r = r / 10.0
     bz = float(bz)
     wind = float(wind)
+    schumann = hz_schumann_valido(schumann)
 
     if r >= TH_RISK_CRIT:
         return (

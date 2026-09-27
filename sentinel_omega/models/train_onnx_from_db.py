@@ -116,6 +116,51 @@ def _features_to_vector(features: dict, bot: str) -> np.ndarray:
     return vector_para(bot, features)
 
 
+def purgar_no_medidos(features: dict) -> dict:
+    """Quita del diccionario los números que NO son mediciones.
+
+    Medido el 2026-09-27: 387 filas vivas de `TBL_JUEZ_AUDITORIA` traen
+    `schumann_mean = 8.26` y **ningún** `schumann_std`. Ese 8,26 es
+    `7.83 + 21.46 × 0.02`: la fundamental de libro más una actividad CONGELADA
+    que precede en siete semanas a cualquier lectura, no un dato de Tomsk. Un
+    solo valor en las 387 filas, además, no distingue nada.
+
+    El daño no es el valor: es el **desajuste entre entrenar y preguntar**. El
+    ciclo en vivo entrega ausencia —Schumann en NULL mientras Tomsk esté
+    caído—, que `vector_para` convierte en 0,0; el entrenamiento entregaba
+    8,26. El modelo aprendía con un número y luego se le preguntaba con otro.
+
+    El criterio NO es el nombre del rasgo ni el valor 8,26, porque los dos
+    envejecen mal: si Tomsk vuelve, filtrar por nombre seguiría descartando
+    lecturas buenas —el mismo defecto al revés— y filtrar por valor se cae en
+    cuanto cambie la fórmula del relleno. El criterio es la **forma**: un
+    agregado de ventana produce media *y* dispersión, así que una media suelta
+    no salió de una ventana de muestras.
+
+    El relleno entra por DOS caminos y este criterio los cubre los dos:
+
+      * `detalles_json` --- 387 filas, lo que el bot vio en su momento
+      * `tbl_juez_rasgos_reconstruidos` --- 72 filas. `rasgos_juez._schumann`
+        filtra correctamente hoy (`AND COALESCE(en_vivo,1)=1`, y las 21 filas
+        de `tbl_schumann_vivo` están todas marcadas `en_vivo=0`), pero esa
+        tabla es MATERIALIZADA: se llenó antes de que existiera la bandera. Un
+        filtro correcto no limpia lo que ya se guardó sin él. La raíz se cierra
+        rematerializándola; esta purga es el cinturón.
+
+    El coste de este criterio: si Tomsk vuelve y una ventana trae UNA sola
+    lectura, `_schumann` devuelve su media sin desviación y aquí se descartaría.
+    Hoy no cuesta nada --- en toda la base no hay una sola lectura viva de
+    Schumann, las 72 reconstruidas son el mismo 8,26 sin `std` --- y cuando
+    haya serie real traerá las dos y pasará intacta.
+    """
+    fuera = dict(features)
+    for base in ("schumann",):
+        media, desv = f"{base}_mean", f"{base}_std"
+        if media in fuera and desv not in fuera:
+            fuera.pop(media)
+    return fuera
+
+
 def load_firmas_from_db(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """bot -> (X, y_conf, y_sig)"""
     out: Dict[str, list] = {b: [] for b in BOT_DIMS}
@@ -202,6 +247,7 @@ def load_juez_feedback(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray, 
             len(reconstruidos),
         )
     n_reconstruidas = 0
+    n_purgadas = 0
     for juez_id, bot_name, prediccion, confianza, resultado, det_json in rows:
         bot = (bot_name or "").lower()
         if bot in ("padre", "padre_geo"):
@@ -235,6 +281,16 @@ def load_juez_feedback(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray, 
             if respaldo:
                 features = dict(respaldo)
                 n_reconstruidas += 1
+        # Después del respaldo, porque el relleno entra por los DOS caminos.
+        # `rasgos_juez._schumann` filtra bien hoy (`AND COALESCE(en_vivo,1)=1`,
+        # y las 21 filas de `tbl_schumann_vivo` están marcadas en_vivo=0), pero
+        # `tbl_juez_rasgos_reconstruidos` es una tabla MATERIALIZADA: se llenó
+        # antes de que existiera la bandera y conserva 72 filas con el 8,26.
+        # El filtro correcto no limpia lo que ya se guardó sin él.
+        antes = len(features)
+        features = purgar_no_medidos(features)
+        if len(features) != antes:
+            n_purgadas += 1
         vec = _features_to_vector(features, bot)
         pred = (prediccion or "").lower()
         conf0 = float(confianza or 0.3)
@@ -274,6 +330,13 @@ def load_juez_feedback(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray, 
             "Juez: %d muestras entraron con rasgos RECONSTRUIDOS de la "
             "telemetría de su ventana (las anteriores al 2026-09-25 llevan "
             "features_generales vacío)", n_reconstruidas,
+        )
+    if n_purgadas:
+        logger.info(
+            "Juez: %d muestras traían una media sin su desviación --- no es un "
+            "agregado de ventana, es relleno. Se purgó para que el "
+            "entrenamiento vea la misma ausencia que ve el ciclo en vivo",
+            n_purgadas,
         )
     if sin_rasgos:
         logger.warning(

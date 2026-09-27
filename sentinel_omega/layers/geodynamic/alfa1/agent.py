@@ -95,62 +95,45 @@ class Alfa1Agent(BaseAgent):
         idx = self._available.index("bz_gsm")
         return float(np.nanmean(self._latest_features[:, idx]))
 
-    def _analyze_onnx(self) -> Optional[AgentSignal]:
-        """Rama ML: inferencia ONNX sobre el vector de features más reciente.
-
-        Devuelve None si la inferencia no es utilizable (sin wrapper, vector
-        incompleto o salida degenerada) — el caller cae a la rama de umbral.
-        """
-        if self._inference is None or self._latest_features is None:
-            return None
-        try:
-            # El vector se arma con el orden CANÓNICO del modelo
-            # (core/features_onnx.py), no con self.FEATURES.
-            #
-            # Medido el 2026-09-25: esto mandaba los valores CRUDOS del último
-            # instante en las posiciones de OTROS rasgos. El modelo se entrena
-            # con agregados de la ventana de 72 h --- posición 0 `bz_mean`,
-            # posición 4 `bz_min` --- y aquí se le pasaba `bz_gsm` en la 0 y
-            # `dst_index` en la 4: ni siquiera la misma magnitud. No reventaba
-            # porque onnx_config solo comprueba que haya 10 números.
-            from sentinel_omega.core.features_onnx import (
-                agregados_omni,
-                vector_para,
-            )
-            fila = vector_para(
-                "alfa1",
-                agregados_omni(self._available, self._latest_features),
-            )
-            conf, signal_name = self._inference.predict(fila)
-            tipo = {
-                "ALERT": SignalType.ALERT,
-                "WATCH": SignalType.WATCH,
-                "NEUTRAL": SignalType.NEUTRAL,
-            }.get(signal_name)
-            if tipo is None or conf <= 0.0:
-                return None   # salida degenerada → fallback honesto
-            bz = self._bz_mean()
-            return self.emit_signal(
-                tipo, float(min(conf, 0.95)),
-                data={"onnx": True,
-                      "bz_mean": bz if bz is not None else 0.0},
-                reasoning=f"ONNX inference: {signal_name} ({conf:.0%})",
-            )
-        except Exception as e:
-            self.logger.warning(f"Alfa-1 ONNX inference failed: {e} — fallback")
-            return None
+    # ─── Por qué alfa1 ya NO pregunta a su modelo desde aquí ──────────────
+    #
+    # Hasta el 2026-09-27 este agente hacía su propia inferencia ONNX, además
+    # de la que hace `layer_runners._aplicar_modelos` con el vector canónico
+    # del ciclo. Mismo modelo, DOS vectores, y en el ciclo 14419 dieron
+    # respuestas opuestas: WATCH 72 % aquí, NO_SIGNAL 31 % allá.
+    #
+    # La causa, medida: `omni_dataframe` se arma solo con magnetómetro y
+    # viento (`data_pipeline.fetch_alfa1_data`) y NUNCA ha tenido columna
+    # `kp_index` --- el Kp se busca aparte y vive en `kp_series` de beta1. Así
+    # que `agregados_omni` no producía Kp, `vector_para` ponía 0,0 en sus dos
+    # posiciones, y el modelo leía ese 0,0 no como «no lo sé» sino como
+    # «Kp = 0»: quietud geomagnética extrema. De ahí salía el WATCH.
+    #
+    # Lo que costó, contado en el Juez:
+    #
+    #     watch FALSO_POSITIVO, desde esta rama     792
+    #     watch ACIERTO,        desde esta rama       5
+    #     watch desde la rama de reglas               0
+    #
+    # 792 falsas alarmas contra 5 aciertos, y todas nacidas de un rasgo
+    # AUSENTE. Eso hundió el peso de alfa1 al suelo (0,300) y cada rebuild lo
+    # devolvía a 1,425, porque el camino histórico de las firmas no pasa por
+    # este vector y era ciego al defecto.
+    #
+    # El veredicto del modelo ahora sale de un solo sitio: el vector canónico,
+    # que es además EL QUE EL JUEZ REGISTRA. Si el modelo infiere sobre un
+    # vector que no se guarda, el Juez califica una decisión que no puede
+    # reproducir y el reentrenamiento aprende de otra cosa.
+    #
+    # Aquí queda la rama de reglas, que es lo que este agente sabe hacer solo.
 
     def analyze(self) -> AgentSignal:
         if self._latest_features is None:
             return self.emit_signal(SignalType.NO_SIGNAL, 0.0,
                                    reasoning="No data ingested")
 
-        # Rama ML si hay modelo; si no, umbral de Bz (y se dice cuál corre)
-        if self._model is not None:
-            resultado = self._analyze_onnx()
-            if resultado is not None:
-                return resultado
-
+        # Solo la regla. El modelo habla en `_aplicar_modelos`, con el vector
+        # canónico del ciclo y una sola vez (ver el bloque de arriba).
         bz_mean = self._bz_mean()
         if bz_mean is None:
             # Sin columna bz_gsm no hay regla de Bz que aplicar — se dice.

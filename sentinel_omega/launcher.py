@@ -621,6 +621,14 @@ def _build_live_features(runner, conn=None) -> dict:
             features.update(agregados_omni(columnas, omni[columnas].values))
         except Exception as e:  # noqa: BLE001 — el ciclo sigue sin estos rasgos
             logger.warning("agregados de OMNI fallaron (non-blocking): %s", e)
+    # `proton_max` no sale de `agregados_omni`: el flujo de protones se busca
+    # aparte (`data_pipeline`) y NO viaja como columna del `omni_dataframe`, así
+    # que la posición del vector llegaba siempre vacía --- y con ella ausente el
+    # modelo canónico de alfa1 se abstenía (medido el 2026-09-27, NO_SIGNAL
+    # 0,31, mientras el agente con su propio vector decía WATCH 0,72).
+    _prot_max = alfa1.get("proton_flux_max")
+    if _prot_max is not None:
+        features["proton_max"] = float(_prot_max)
 
     # ── beta1: Kp / Schumann / sismicidad / lunar ─────────────────
     # Medido el 2026-09-26: de los 10 rasgos que pide el modelo de beta1, el
@@ -654,18 +662,47 @@ def _build_live_features(runner, conn=None) -> dict:
             v = v[np.isfinite(v)]
             if v.size > 1:
                 features["schumann_std"] = float(np.std(v))
+    # Los conteos sísmicos se calculan como los calcula la FIRMA, o no
+    # significan lo mismo. Medido el 2026-09-27 (ciclo 14419):
+    #
+    #   entrenamiento (signature_engine.py:180/281)  del NODO, 336 h y 72 h,
+    #                                                 SUM sobre el histórico
+    #   inferencia    (esto, antes)                   global, 30 d, len() del
+    #                                                 catálogo de USGS
+    #
+    # Y el catálogo viene topado (`api/usgs.py: MAX_RESULTS = 500`), así que
+    # `len(...)` valía 500 en TODOS los ciclos. Contra la distribución con la
+    # que se entrenó --- mediana 7, p75 14, p99 244, solo 34 de 15.282 firmas
+    # llegan a 500 --- eso ponía al modelo, cada cinco minutos, por encima del
+    # percentil 99,8: «enjambre extremo en este nodo», permanente y falso.
+    #
+    # El ciclo es global y la firma es por nodo, así que se manda el MÁXIMO
+    # sobre los nodos: conserva la escala aprendida (14-sep: máx 99) y
+    # responde a la pregunta que el rasgo hace, «¿hay algún nodo enjambrado?».
+    # Sin conexión no se inventa nada: el rasgo se omite y `vector_para` pone
+    # 0,0, que es «no lo sé».
+    if conn is not None:
+        for nombre, horas in (("sismo_count_win", 336), ("sismo_count_72h", 72)):
+            try:
+                fila = conn.execute(
+                    "SELECT COALESCE(MAX(n),0) FROM ("
+                    "  SELECT SUM(sismo_count) AS n"
+                    "  FROM tbl_historico_sismico_raw"
+                    f" WHERE timestamp_blk >= datetime('now','-{horas} hours')"
+                    "  GROUP BY id_nodo)"
+                ).fetchone()
+            except Exception as e:  # noqa: BLE001 — el ciclo sigue sin el rasgo
+                logger.warning("%s no se pudo contar (%s): queda sin dato",
+                               nombre, e)
+                continue
+            if fila and fila[0] is not None:
+                features[nombre] = float(fila[0])
+
     mags = beta1.get("seismic_magnitudes")
     if mags is not None and len(mags) > 0:
-        features["sismo_count_win"] = float(len(mags))
+        # La magnitud máxima NO se topa: el catálogo llega recortado a 500, pero
+        # el máximo de esos 500 sigue siendo un máximo medido.
         features["sismo_max_mag_win"] = float(np.nanmax(mags))
-    # sismo_count_72h: el catálogo que trae beta1 ya es de las últimas 72 h
-    # (TARGET_WINDOW_H), así que es el mismo recuento; se nombra aparte porque
-    # el vector tiene las dos posiciones y dejarla en 0 decía «ningún sismo».
-    tiempos = beta1.get("seismic_times")
-    if tiempos is not None and len(tiempos) > 0:
-        features["sismo_count_72h"] = float(len(tiempos))
-    elif mags is not None and len(mags) > 0:
-        features["sismo_count_72h"] = float(len(mags))
     lunar = beta1.get("lunar_phase")
     if lunar is not None and len(lunar) > 0:
         fase = float(lunar[-1])
