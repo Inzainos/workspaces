@@ -10,7 +10,12 @@ vibrational pattern (The Figure).
 
 import numpy as np
 from typing import Any, Dict, Optional
-from sentinel_omega.core.shared.agent_base import BaseAgent, AgentSignal, SignalType
+from sentinel_omega.core.shared.agent_base import (
+    AgentSignal,
+    BaseAgent,
+    SignalType,
+    valor_medido,
+)
 
 LOD_REF_MS: float = 3.0
 MIN_CICLOS_LUNARES = 3
@@ -36,15 +41,26 @@ class Beta1Agent(BaseAgent):
         self._kp_series: Optional[np.ndarray] = None
         self._lod_ms: Optional[np.ndarray] = None
         self._lunar_phase: Optional[np.ndarray] = None
-        self._schumann_hz: float = 7.83
-        self._schumann_activity: float = 0.0
+        # None, no 7.83 ni 0.0 (auditoría del 2026-09-26). Beta-1 es el LATIDO:
+        # CLAUDE.md dice que todo se correlaciona contra él. Con el 7.83 y el 0.0
+        # de relleno, tres de sus cinco rutas de decisión quedaban muertas EN
+        # SILENCIO --- `schumann_excited` (>15 %), `schumann_strong` (>30 %) y
+        # `composite_vibration` --- mientras reportaba 7.83 Hz al 0 % como si lo
+        # hubiera medido. Con Tomsk congelado desde julio, eso es lo que venía
+        # pasando cada ciclo.
+        #
+        # Su ruta principal NO depende de Schumann (`high_freq_ratio > 0.6` sale
+        # del espectro de Kp), así que sin Schumann sigue pudiendo alarmar. Lo
+        # que cambia es que ahora lo DICE en vez de aparentar una medición.
+        self._schumann_hz: Optional[float] = None
+        self._schumann_activity: Optional[float] = None
 
     def ingest(self, data: Dict[str, Any]) -> None:
         self._kp_series = data.get("kp_series")
         self._lod_ms = data.get("lod_ms")
         self._lunar_phase = data.get("lunar_phase")
-        self._schumann_hz = data.get("schumann_frequency", 7.83)
-        self._schumann_activity = data.get("schumann_activity", 0.0)
+        self._schumann_hz = valor_medido(data, "schumann_frequency", "schumann_hz")
+        self._schumann_activity = valor_medido(data, "schumann_activity")
         self.logger.info("Beta-1 (Artist) data ingested")
 
     def _generate_cymatic_figure(self) -> Dict[str, Any]:
@@ -70,7 +86,11 @@ class Beta1Agent(BaseAgent):
             "schumann_hz": self._schumann_hz,
             "lunar_phase": fase_luna,
             "earth_rotation": lod_last,
-            "composite_vibration": (spec["high_freq_ratio"] * self._schumann_activity) / 100.0
+            # None, no 0.0: «no medí la vibración» no es «la vibración es cero».
+            "composite_vibration": (
+                (spec["high_freq_ratio"] * self._schumann_activity) / 100.0
+                if self._schumann_activity is not None else None
+            ),
         }
         return figure
 
@@ -107,18 +127,26 @@ class Beta1Agent(BaseAgent):
         figure = self._generate_cymatic_figure()
         tl = self._compute_tl_features()
 
-        schumann_excited = self._schumann_activity > 15.0
-        schumann_strong = self._schumann_activity > 30.0
+        # Tres estados, no dos: excitado, no excitado y NO LO SÉ. Antes el
+        # relleno de 0.0 hacía que «no lo sé» se comportara como «no excitado»,
+        # y nadie podía notar la diferencia leyendo el veredicto.
+        sch_act = self._schumann_activity
+        schumann_excited = None if sch_act is None else sch_act > 15.0
+        schumann_strong = None if sch_act is None else sch_act > 30.0
         high_freq_ratio = figure["high_freq_ratio"]
+        comp_vib = figure["composite_vibration"]
 
         signal_data = {
             "cymatic_figure": figure,
             "dominant_period_h": figure["dominant_period"],
             "high_freq_ratio": high_freq_ratio,
             "spectral_energy": figure["spectral_energy"],
-            "schumann_hz": float(self._schumann_hz),
-            "schumann_activity_pct": float(self._schumann_activity),
-            "schumann_excited": bool(schumann_excited),
+            # None se propaga como None: quien lea esto tiene que poder
+            # distinguir «no hubo excitación» de «no se midió».
+            "schumann_hz": self._schumann_hz,
+            "schumann_activity_pct": sch_act,
+            "schumann_excited": schumann_excited,
+            "schumann_sin_dato": sch_act is None,
             "fase_luna": tl["fase_luna"],
             "rotacion_tierra": tl["rotacion_tierra"],
             "correlacion_TL": tl["correlacion_TL"],
@@ -132,16 +160,21 @@ class Beta1Agent(BaseAgent):
                 confidence += 0.1
             reasons = ["Elevated high-frequency Kp components"]
             if schumann_excited:
-                reasons.append(f"measured Schumann excitation {self._schumann_activity:.0f}%")
+                reasons.append(f"measured Schumann excitation {sch_act:.0f}%")
+            elif sch_act is None:
+                # Se alarmó solo con el espectro de Kp. Decirlo importa: el
+                # operador tiene que saber que el latido no entró en la cuenta.
+                reasons.append("Schumann sin dato (solo espectro Kp)")
             return self.emit_signal(
                 SignalType.ALERT, min(confidence, 0.95),
                 data=signal_data,
                 reasoning=" + ".join(reasons),
             )
 
-        if schumann_strong or figure["composite_vibration"] > 0.5:
+        vibracion_alta = comp_vib is not None and comp_vib > 0.5
+        if schumann_strong or vibracion_alta:
             confidence = 0.45 if schumann_strong else 0.35
-            if figure["composite_vibration"] > 0.5:
+            if vibracion_alta:
                 confidence = max(confidence, 0.6)
             return self.emit_signal(
                 SignalType.WATCH, confidence,
@@ -152,7 +185,10 @@ class Beta1Agent(BaseAgent):
         return self.emit_signal(
             SignalType.NEUTRAL, 0.3,
             data=signal_data,
-            reasoning="Normal spectral distribution"
+            reasoning=(
+                "Normal spectral distribution"
+                + ("; Schumann sin dato" if sch_act is None else "")
+            ),
         )
 
     def health_check(self) -> bool:

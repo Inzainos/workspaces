@@ -68,7 +68,11 @@ class Beta2Agent(BaseAgent):
         similar_magnitude = 0.0
         confidence = 0.0
         
-        if figure.get("spectral_energy", 0) > 1e5 and figure.get("schumann_activity", 0) > 20:
+        # `.get(clave, 0)` no protege de un None PRESENTE: beta1 ahora manda
+        # None cuando no midió el Schumann, y `None > 20` revienta.
+        _act = figure.get("schumann_activity")
+        _ene = figure.get("spectral_energy")
+        if (_ene is not None and _ene > 1e5) and (_act is not None and _act > 20):
             match_found = True
             similar_magnitude = 6.5
             confidence = 0.75

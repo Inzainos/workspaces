@@ -1428,3 +1428,240 @@ def test_dashboard_waterfall_con_null_no_revienta():
         app._render_fantasma_waterfall(repo)
     y = fake_go.Waterfall.call_args.kwargs["y"]
     assert y[0] == 0.0 and y[1] == 0.0
+
+
+# ── Schumann sin lectura viva: NULL en PREC, «sin dato» (26-sep) ──────
+# 323 filas de PREC guardaron 7.83 / 0 inventados cuando Tomsk no dio
+# lectura (launcher: `else 7.83` y `schumann_wpc` 0). Ahora PREC guarda
+# NULL y el reporte dice «Schumann=sin dato»; el vector ONNX sigue
+# recibiendo 0 = «no lo sé» (Loki y Beta-1 no aceptan NULL/NaN).
+
+def test_schumann_none_no_aporta_y_queda_none():
+    risk = compute_fantasma(bz=-2.0, viento=400.0, sch_wpc=None)
+    assert risk.components["schumann_wpc"] is None
+    assert risk.schumann_contribution == 0.0
+    assert risk.fantasma == pytest.approx(4.0 + 400.0 * 0.02)
+
+
+def test_schumann_nan_es_sin_dato():
+    risk = compute_fantasma(bz=0.0, viento=0.0, sch_wpc=float("nan"))
+    assert risk.components["schumann_wpc"] is None
+    assert risk.schumann_contribution == 0.0
+    assert risk.fantasma == 0.0
+
+
+def test_schumann_vivo_pasa_igual():
+    risk = compute_fantasma(bz=0.0, viento=0.0, sch_wpc=0.2146)
+    assert risk.components["schumann_wpc"] == pytest.approx(0.2146)
+    assert risk.schumann_contribution == pytest.approx(0.2146 * 1.5)
+
+
+def test_reporte_con_schumann_none_dice_sin_dato():
+    texto = format_risk_report(compute_fantasma(bz=-1.0, viento=400.0, sch_wpc=None))
+    assert "Schumann=sin dato" in texto
+
+
+def test_reporte_con_schumann_vivo_muestra_valor():
+    texto = format_risk_report(compute_fantasma(bz=-1.0, viento=400.0, sch_wpc=0.2146))
+    assert "Schumann=sin dato" not in texto
+    assert "21% WPC" in texto
+
+
+def test_riesgo_desde_senales_sin_schumann_es_none():
+    risk = compute_risk_from_signals([{"bz_mean": -3.0}])
+    assert risk.components["schumann_wpc"] is None
+    risk = compute_risk_from_signals([{"schumann_activity_pct": 30.0}])
+    assert risk.components["schumann_wpc"] == pytest.approx(0.3)
+
+
+@pytest.mark.parametrize("beta1", [
+    {},                                        # la API no respondió
+    {"schumann_activity": None},
+    {"schumann_activity": float("nan")},
+])
+def test_runner_sin_schumann_da_none(beta1):
+    from types import SimpleNamespace
+    from sentinel_omega.infrastructure.pipeline.layer_runners import GeodynamicLayerRunner
+    risk = GeodynamicLayerRunner._compute_precursor_risk(SimpleNamespace(), {}, beta1, {})
+    assert risk.components["schumann_wpc"] is None
+    assert risk.schumann_contribution == 0.0
+
+
+def test_runner_con_schumann_vivo_pasa():
+    from types import SimpleNamespace
+    from sentinel_omega.infrastructure.pipeline.layer_runners import GeodynamicLayerRunner
+    risk = GeodynamicLayerRunner._compute_precursor_risk(
+        SimpleNamespace(), {}, {"schumann_activity": 21.46, "schumann_frequency": 8.26}, {})
+    assert risk.components["schumann_wpc"] == pytest.approx(0.2146)
+
+
+def _kwargs_guardado(risk, runner=None):
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from sentinel_omega.launcher import _log_cycle_summary
+    status = SimpleNamespace(last_precursor_risk=risk, active_precursors=[],
+                             alerts_dispatched=0, uptime_s=1.0, last_muro=None)
+    repo = MagicMock()
+    try:
+        _log_cycle_summary(status, {}, repo, None, runner=runner)
+    except Exception:
+        pass  # lo que viene después del guardado no importa aquí
+    assert repo.insert_precursor_cosmico.called
+    return repo.insert_precursor_cosmico.call_args.kwargs
+
+
+def test_launcher_guarda_schumann_none_no_783():
+    kw = _kwargs_guardado(compute_fantasma(bz=-2.0, viento=400.0, sch_wpc=None))
+    assert kw["schumann_hz"] is None
+    assert kw["schumann_activity"] is None
+
+
+def test_launcher_guarda_schumann_vivo():
+    from types import SimpleNamespace
+    runner = SimpleNamespace(pipeline=SimpleNamespace(_cache={
+        "beta1": {"schumann_frequency": 8.26, "schumann_activity": 21.46},
+        "alfa1": {},
+    }))
+    kw = _kwargs_guardado(compute_fantasma(bz=-2.0, viento=400.0, sch_wpc=0.2146), runner)
+    assert kw["schumann_hz"] == pytest.approx(8.26)
+    assert kw["schumann_activity"] == pytest.approx(21.46)
+
+
+def test_guardado_con_schumann_none_queda_null(tmp_path):
+    import sqlite3
+    from sentinel_omega.infrastructure.database.repository import SentinelRepository
+    db = tmp_path / "sch.db"
+    repo = SentinelRepository(db_path=str(db))
+    _init = getattr(repo, "init_schema", None) or getattr(repo, "initialize", None)
+    if callable(_init):
+        _init()
+    rid1 = repo.insert_precursor_cosmico(bz=-1.0, viento=400.0,
+                                         schumann_hz=None, schumann_activity=None)
+    rid2 = repo.insert_precursor_cosmico(bz=-1.0, viento=400.0)   # sin argumentos
+    rid3 = repo.insert_precursor_cosmico(schumann_hz=8.26, schumann_activity=21.46)
+    con = sqlite3.connect(db)
+    try:
+        q = "SELECT schumann_hz, schumann_activity FROM TBL_PRECURSORES_COSMICOS WHERE rowid = ?"
+        f1, f2, f3 = (con.execute(q, (r,)).fetchone() for r in (rid1, rid2, rid3))
+    finally:
+        con.close()
+    assert f1 == (None, None)
+    assert f2 == (None, None)
+    assert f3 == (8.26, 21.46)
+
+
+def test_onnx_schumann_ausente_sigue_en_cero():
+    """El vector ONNX no cambia: Schumann ausente = 0.0, nunca NaN."""
+    from sentinel_omega.core.features_onnx import FEATURE_ORDER, vector_para
+    for bot in ("beta1", "omega", "loki", "jupiter"):
+        for rasgos in ({"kp_mean": 3.0},
+                       {"kp_mean": 3.0, "schumann_mean": None, "schumann_std": float("nan")}):
+            vec = vector_para(bot, rasgos)
+            assert np.isfinite(vec).all()
+            for i, clave in enumerate(FEATURE_ORDER[bot][:len(vec)]):
+                if clave.startswith("schumann"):
+                    assert vec[i] == 0.0
+
+
+def test_features_vivas_sin_schumann_no_inventan_valor():
+    """_build_live_features no pone schumann_mean si no hubo lectura viva."""
+    from types import SimpleNamespace
+    from sentinel_omega.launcher import _build_live_features
+    from sentinel_omega.core.features_onnx import vector_para
+    runner = SimpleNamespace(pipeline=SimpleNamespace(_cache={
+        "beta1": {"kp_series": np.array([2.0, 3.0, 4.0])}, "alfa1": {},
+    }))
+    feats = _build_live_features(runner, None) or {}
+    assert "schumann_mean" not in feats
+    assert vector_para("beta1", feats)[2] == 0.0
+
+
+def test_el_vector_onnx_sin_schumann_sigue_con_cero():
+    """El VECTOR ONNX guarda su 0 = «no lo sé»; no recibe NULL.
+
+    Ajustado el 2026-09-26 por la auditoría. Antes afirmaba
+    `b1._schumann_activity == 0.0`, que es el ATRIBUTO INTERNO del agente, no
+    el vector. Son cosas distintas: `beta1/agent.py` no tiene rama ONNX ---
+    su vector lo arma `vector_para()` en `_aplicar_modelos` desde los rasgos
+    del ciclo ---, así que ese 0,0 interno no protegía al modelo de nada.
+    Lo que sí hacía era matar en silencio tres de las cinco rutas de decisión
+    de beta1: `schumann_excited` (>15 %), `schumann_strong` (>30 %) y
+    `composite_vibration`, mientras publicaba 7,83 Hz al 0 % como medición.
+
+    La condición de T --- «el vector ONNX sigue recibiendo 0 como no lo sé»,
+    porque con eso se entrenaron los ocho modelos --- se comprueba aquí donde
+    de verdad vive: en `vector_para`. Beta-1 en sí ahora dice «sin dato», que
+    es lo honesto. Ver `tests/test_beta1_sin_schumann.py`.
+    """
+    from sentinel_omega.core.features_onnx import FEATURE_ORDER, vector_para
+    from sentinel_omega.layers.geodynamic.beta1.agent import Beta1Agent
+    from sentinel_omega.layers.geodynamic.loki.agent import LokiAgent
+
+    # sin Schumann en los rasgos del ciclo, las dos posiciones quedan en 0.0
+    vec = vector_para("beta1", {"kp_mean": 3.0, "kp_max": 4.0})
+    orden = FEATURE_ORDER["beta1"]
+    assert vec[orden.index("schumann_mean")] == 0.0
+    assert vec[orden.index("schumann_std")] == 0.0
+
+    # y beta1 ya no finge una medición
+    b1 = Beta1Agent()
+    b1.ingest({"kp_series": np.array([2.0, 3.0] * 30)})
+    assert b1._schumann_activity is None
+    assert b1._schumann_hz is None
+    sig = b1.analyze()
+    assert sig.data["schumann_sin_dato"] is True
+
+    loki = LokiAgent()
+    loki.ingest({})
+    assert np.isfinite(loki._data_vector).all()
+    assert loki._data_vector[2] == 0.0
+
+
+def _fake_st():
+    from unittest.mock import MagicMock
+    st = MagicMock()
+    st.columns.side_effect = lambda n, *a, **k: [MagicMock() for _ in range(n if isinstance(n, int) else len(n))]
+    return st
+
+
+def test_dashboard_waterfall_con_schumann_null_no_revienta():
+    pytest.importorskip("streamlit")
+    pytest.importorskip("plotly")
+    from unittest.mock import MagicMock, patch
+    from sentinel_omega.infrastructure.dashboard import app
+    fila = {"timestamp": 1.0, "bz_nT": -2.0, "viento_km_s": 400.0, "schumann_hz": None,
+            "schumann_activity": None, "kp": 2.0, "lod_ms": None, "presion_hpa": 1013.0,
+            "fase_lunar": 0.5, "protones": 0.1, "fantasma": 12.0, "nivel_riesgo": "MODERATE"}
+    repo = MagicMock()
+    repo.fantasma_component_breakdown.return_value = [fila]
+    with patch.object(app, "st", _fake_st()), patch.object(app, "go") as fake_go:
+        app._render_fantasma_waterfall(repo)
+    y = fake_go.Waterfall.call_args.kwargs["y"]
+    assert y[2] == 0.0
+
+
+def test_dashboard_precursor_y_monitor_con_schumann_null_dicen_sin_dato():
+    pytest.importorskip("streamlit")
+    pytest.importorskip("plotly")
+    from unittest.mock import MagicMock, patch
+    from sentinel_omega.infrastructure.dashboard import app
+    fila = {"timestamp": 1.0, "bz_nT": -2.0, "viento_km_s": 400.0, "schumann_hz": None,
+            "schumann_activity": None, "kp": 2.0, "lod_ms": None, "presion_hpa": 1013.0,
+            "fase_lunar": 0.5, "protones": 0.1, "fantasma": 12.0, "nivel_riesgo": "MODERATE"}
+    repo = MagicMock()
+    repo.get_precursores_cosmicos.return_value = [fila, dict(fila, timestamp=2.0)]
+    repo.fantasma_component_breakdown.return_value = [fila]
+    repo.schumann_trend.return_value = [
+        {"timestamp": 2.0, "schumann_hz": None, "schumann_activity": None},
+        {"timestamp": 1.0, "schumann_hz": None, "schumann_activity": None},
+    ]
+    st = _fake_st()
+    with patch.object(app, "st", st), patch.object(app, "go"), \
+         patch.object(app, "make_subplots"), patch.object(app, "get_repo", return_value=repo), \
+         patch.object(app, "_render_risk_distribution", create=True):
+        app.render_precursor_risk()
+        app.render_schumann_monitor()
+    textos = [str(c.args[0]) for c in st.markdown.call_args_list if c.args]
+    assert "- **Schumann**: sin dato" in textos
+    assert app._sch_txt(8.26, 21.46) == "8.26 Hz (21%)"
+    assert app._sch_txt(float("nan"), None) == "sin dato"
