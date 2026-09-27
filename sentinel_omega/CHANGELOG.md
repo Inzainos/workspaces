@@ -1,3 +1,120 @@
+## 2026-09-27 — El cero de «no lo sé»: 792 falsas alarmas de alfa1 y el latido silenciado
+
+Cinco defectos de la misma familia — un número que NO es una medición ocupando la
+posición de un rasgo — encontrados y medidos contra la base en producción. Los
+cuatro primeros son instancias de reglas duras que ya estaban escritas en
+`AGENTS.md` (7, 8, 9, 10); se anotan con su número para no volver a presentarlas
+como hallazgos nuevos.
+
+### Changed — comportamiento de pipeline
+
+- **`layers/geodynamic/alfa1/agent.py`** — se quita su inferencia ONNX propia.
+  `omni_dataframe` se arma solo con magnetómetro y viento y **nunca ha tenido
+  columna `kp_index`**, así que `agregados_omni` no producía Kp, `vector_para`
+  ponía 0,0 y el modelo leía ese 0,0 como «Kp CERO»: quietud extrema. Mismo
+  modelo, ciclo 14419: con Kp real → `NO_SIGNAL 0.3114`; sin Kp → `WATCH 0.7165`
+  (la respuesta al dato ausente pesaba el doble, así que ganaba el consenso).
+  En el Juez: **792 `watch` FALSO_POSITIVO contra 5 ACIERTO**, todos de esa rama;
+  cero desde la rama de reglas. Ahora el modelo opina en un solo sitio,
+  `_aplicar_modelos`, con el vector canónico — **el que el Juez registra**.
+  (Regla 7: desconfía del default benigno.)
+- **`launcher.py`** — los conteos sísmicos se calculan como los calcula la firma:
+  del **nodo** y en 336 h / 72 h desde `tbl_historico_sismico_raw`, máximo sobre
+  nodos. Antes era `len()` del catálogo global de USGS, topado a `limit=500` (el
+  conteo real es 1.967), así que valían **500 constante en todos los ciclos**.
+  Contra la distribución entrenada — mediana 7, p75 14, p99 244 — eso ponía al
+  modelo por encima del percentil 99,8 en cada ciclo. Verificado en vivo (ciclo
+  14432): **500/500 → 99/27**. Sin conexión el rasgo se omite, no se inventa.
+  (Regla 9: verifica el índice contra el dato.)
+- **`infrastructure/pipeline/layer_runners.py`** — `_aplicar_modelos` sustituye
+  también el `reasoning`. Antes cambiaba señal y confianza y dejaba el texto de
+  la regla, así que el Juez guardaba filas como `beta1 watch 0.735 "Normal
+  spectral distribution"`: el texto describe la regla y el veredicto es del
+  modelo. Ahora conserva los dos y dice cuál mandó. Con `None` del modelo el
+  texto de la regla queda intacto. (Regla 10: una sustitución silenciosa esconde
+  lo que pasó.)
+- **`models/train_onnx_from_db.py`** — `purgar_no_medidos()`: una media sin su
+  desviación no salió de una ventana de muestras. Saca el `schumann_mean = 8.26`
+  congelado (`7.83 + 21.46×0.02`) de las 387 filas del `detalles_json` y de las
+  72 de `tbl_juez_rasgos_reconstruidos` — tabla MATERIALIZADA que se llenó antes
+  de que existiera la bandera `en_vivo`; **un filtro correcto no limpia lo que ya
+  se guardó sin él**. 451 muestras purgadas, 0 apariciones del 8,26 en los
+  vectores. El criterio es la forma, no el nombre ni el valor: una lectura real
+  futura traerá las dos y pasará intacta.
+- **`infrastructure/api/telegram.py`** — `hz_schumann_valido()` (1–60 Hz): la
+  fundamental es 7,83 y los armónicos llegan a 33,8; nada bajo 1 Hz es esa señal.
+  El formateador publicaba la fracción de WPC como «0,21 Hz» si alguien se la
+  pasaba; la defensa vivía solo en `orchestrator.py`. **Cambio de comportamiento:**
+  un `0.0` medido ya no se publica — cero hercios no es una lectura de la cavidad.
+  Nota de prioridad: `AGENTS.md` dice «canal: correo, Telegram en pausa», o sea
+  esto endurece el canal pausado. El de correo se revisó y **no** tiene el
+  defecto (`generar_reporte.py` lee la columna `schumann_hz`, que
+  `launcher.py:443` escribe NULL sin dato).
+- **`infrastructure/api/usgs.py`** — `MAX_RESULTS` expuesto y
+  `count_earthquakes()` contra el endpoint `count` de FDSN (sin tope). No se usa
+  en el ciclo — los conteos salen del histórico por nodo — pero deja medible que
+  500 era un tope.
+- **`infrastructure/pipeline/data_pipeline.py`** — expone `proton_flux_max`.
+  `proton_max` llegaba siempre vacío al vector de alfa1. **No cambia nada hoy y
+  conviene decirlo**: medido, el modelo responde igual con `proton_max` en 0, en
+  0,29 o en 120 — nunca aprendió a usarlo. Sirve para el próximo reentrenamiento.
+- **`infrastructure/pipeline/entrenamiento.py`** — `BOT_FEATURES["delta"]` suma
+  `vix`. El bot FINANCIERO no llevaba el índice del miedo en sus firmas (0 de
+  676) mientras loki, geofísico, sí. Las firmas del próximo rebuild lo llevarán;
+  hasta entonces **no** entra al vector.
+
+### Descubierto al verificar
+
+- **El 500 estaba silenciando al latido.** Sensibilidad de beta1 con todo lo
+  demás fijo: `win=500 → NO_SIGNAL 0.2000`, y **WATCH 0.73–0.79 en 0, 3, 7, 27,
+  99, 100 y 244**. Durante todos los ciclos vivos el modelo de beta1 quedaba
+  anulado por un tope de catálogo — y beta1 es *el latido*. Es el espejo del
+  fantasma de alfa1: allí un rasgo ausente fabricaba una alarma, aquí un tope la
+  suprimía. No se veía por lo que ya dice `test_expertos_onnx.py`: **«el que no
+  alarma no puede ser castigado por alarmar»**.
+- **`juez_cycle_register.py` no persiste `sig.data`.** Los campos `onnx_senal` /
+  `regla_senal` que `_aplicar_modelos` calcula «para que el Juez pueda comparar
+  después quién acertaba» (su propio docstring) **no llegan**: 0 filas de
+  `TBL_JUEZ_AUDITORIA` los tienen. En todo el histórico no hay forma estructurada
+  de saber si un veredicto lo dio el modelo o la regla. Es la señal medida y no
+  conectada, en el camino de auditoría.
+- **El peso vivo contra el histórico ya no es una pregunta de diseño.** alfa1
+  caía al suelo 0,300 en vivo y cada rebuild lo devolvía a 1,425: el vivo estaba
+  castigando el fantasma y el histórico era ciego porque las firmas no pasan por
+  ese vector. El rebuild no borraba aprendizaje — borraba el único sitio donde el
+  defecto se veía. Toca **volver a medirlo** tras el reinicio, no cambiar la regla.
+
+### Verificación
+
+Rebuild en SERIE 01:24:40→02:55:58, código 0. Matriz viva del motor de firmas
+medida contra la corrida de la mañana en la misma máquina: **7.404 s → 5.322 s**,
+total **126 → 91 min (1,39×)**. 19.578 firmas, **sin rasgo de Schumann** (397→0,
+verificado contra el respaldo). Los 8 ONNX reentrenados con los arreglos dentro;
+auditoría de los 8 vectores: **cero desajustes del tipo fantasma** (los 7 de
+Schumann que quedan están alineados, 0,0 en los dos lados). Reinicio del operador
+04:56:10; ciclo 14432 verificado contra la base, no contra el log.
+
+### Pendiente (propuesto, no hecho)
+
+1. Conectar los campos `onnx_*` al `detalles` del Juez (dos líneas; vuelve la
+   comparación consultable con `json_extract`).
+2. Rematerializar `tbl_juez_rasgos_reconstruidos` — raíz del 8,26; la purga es el
+   cinturón.
+3. Codificar la ausencia aparte del valor (bandera «kp presente»). El fantasma
+   sigue DENTRO del modelo —sin Kp responde WATCH 0,726— pero ya no tiene ruta.
+   Mientras el vector no pueda decir «no lo sé», cada 0,0 es un fantasma esperando.
+4. alfa2 con rasgos de ESA: `tbl_frp_detecciones` lleva **una fila** (S3B del
+   2026-09-26, guerrero_gap, 5,68 MW, confianza 75). Su límite de 3 features está
+   documentado en `AGENTS.md` como decisión deliberada; el vector cambia cuando
+   haya historia.
+
+### Nota de documentación
+
+La entrada del 2026-09-15 dice «Email removido … Telegram». `AGENTS.md`
+(2026-09-24) dice «canal: correo, Telegram en pausa». El más reciente manda.
+
+---
+
 ## 2026-09-15 — Email removido, ONNX full suite, Telegram Mini App, lag en horas
 
 - **Email removido:** eliminado `infrastructure/api/correo.py`; `deploy/enviar_correos.py` ahora flushea digest horario por Telegram; `reporte_ejecutivo.py` y `reporte_periodico.py` usan AlertService → Telegram. Variables SMTP/MAIL eliminadas de docs.

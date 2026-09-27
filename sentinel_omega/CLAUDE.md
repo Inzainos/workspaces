@@ -201,11 +201,24 @@ sentinel_omega/
 
 - Core runtime:
   - `infrastructure/pipeline/data_pipeline.py` — ingesta multi-fuente + LOCF.
+    Expone `proton_flux` (último) y `proton_flux_max` (máximo de ventana): el
+    flujo de protones NO viaja como columna del `omni_dataframe`, así que sin
+    esto la posición `proton_max` del vector de alfa1 llegaba siempre vacía.
   - `infrastructure/pipeline/layer_runners.py` — ciclo fetch→ingest→analyze→consensus.
+    `_aplicar_modelos` es **el único sitio donde un modelo opina**: sustituye
+    señal, confianza **y `reasoning`** (antes dejaba el texto de la regla junto
+    al veredicto del modelo, y el registro se contradecía). Con `None` del
+    modelo manda la regla y su texto queda intacto.
   - `infrastructure/pipeline/juez_cycle_register.py` — registro de predicciones por ciclo.
+    **Su `detalles` NO lee `sig.data`**, así que los campos `onnx_*` /
+    `regla_*` que `_aplicar_modelos` calcula no se persisten: la atribución
+    modelo-vs-regla solo vive en el texto del `reasoning`. Pendiente conectarlo.
 - One-time / batch:
   - `infrastructure/pipeline/backcast.py` — carga histórica one-time.
   - `infrastructure/pipeline/entrenamiento.py` + `entrenar_paralelo.py` — aprendizaje por fases.
+    `BOT_FEATURES` decide qué rasgos llevan las firmas de cada bot; un rasgo
+    que no esté ahí no puede entrar al vector ONNX de ese bot (entrenaría en
+    cero y en vivo recibiría un valor real).
   - `infrastructure/pipeline/mantenimiento.py` — barrido diario/correlaciones/sesgo/poda.
 - Reporting:
   - `infrastructure/pipeline/reporte_sentinel.py` — reportes general/padre/omega.

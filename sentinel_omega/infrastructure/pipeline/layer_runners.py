@@ -318,20 +318,41 @@ class GeodynamicLayerRunner:
                 datos["onnx"] = False
                 continue
             tipo, conf, nombre = salida
+            regla_senal = sig.signal_type.value
+            regla_conf = float(sig.confidence or 0.0)
+            regla_texto = sig.reasoning or "(la regla no dejó texto)"
             datos.update({
                 "onnx": True,
                 "onnx_senal": nombre,
                 "onnx_conf": round(float(conf), 4),
-                "regla_senal": sig.signal_type.value,
-                "regla_conf": round(float(sig.confidence or 0.0), 4),
+                "regla_senal": regla_senal,
+                "regla_conf": round(regla_conf, 4),
             })
             if tipo != sig.signal_type or float(conf) > float(sig.confidence or 0):
                 logger.info(
                     "%s: modelo %s (%.2f) sobre regla %s (%.2f)",
-                    bot, nombre, conf, sig.signal_type.value, sig.confidence or 0,
+                    bot, nombre, conf, regla_senal, regla_conf,
                 )
             sig.signal_type = tipo
             sig.confidence = float(conf)
+            # El `reasoning` también, o el registro miente. Hasta el 2026-09-27
+            # aquí se sustituían la señal y la confianza y se dejaba el texto de
+            # la REGLA, así que el Juez guardaba filas como
+            #
+            #     beta1  watch 0.735  "Normal spectral distribution"
+            #
+            # --- el texto describe lo que concluyó la regla y el veredicto es
+            # del modelo. Quien audita esa fila lee una contradicción y no sabe
+            # cuál mandó. Es primo de la regla dura 10 de AGENTS.md: una
+            # sustitución silenciosa esconde lo que de verdad pasó.
+            #
+            # Se conservan LOS DOS. El texto de la regla no se tira: es la
+            # segunda opinión, y cuando el modelo se equivoque va a ser lo
+            # primero que haya que leer.
+            sig.reasoning = (
+                f"modelo ONNX: {nombre} ({conf:.0%}) "
+                f"[regla: {regla_senal} ({regla_conf:.0%}) — {regla_texto}]"
+            )
 
     def _rasgos_del_ciclo(self) -> Dict[str, float]:
         """Los rasgos con los nombres canónicos, desde la misma función que
