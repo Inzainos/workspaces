@@ -51,21 +51,34 @@ _CICLO = {
 }
 
 
-def test_con_el_kp_real_el_modelo_se_abstiene(modelo):
-    nombre, _ = _pred(modelo, _CICLO)
-    assert nombre == "NO_SIGNAL", (
-        f"con el Kp medido el modelo dijo {nombre}; el registro del ciclo 14419 "
-        "dice que se abstuvo")
+def test_con_el_kp_real_el_modelo_no_alarma(modelo):
+    """Con el Kp medido (1,94 / 3,0) no hay alarma. Se afirma que NO alarma, no
+    la etiqueta exacta: `NO_SIGNAL` y `NEUTRAL` son los dos «nada que
+    reportar» y cuál de los dos sale depende del reentrenamiento."""
+    nombre, conf = _pred(modelo, _CICLO)
+    assert nombre not in ("WATCH", "ALERT"), (
+        f"con el Kp medido el modelo alarmó ({nombre} {conf:.3f}); el registro "
+        "del ciclo 14419 dice que no")
 
 
 def test_con_el_kp_ausente_el_modelo_inventa_un_watch(modelo):
-    """La prueba del fantasma: quitar el rasgo cambia la respuesta a WATCH con
-    alta confianza. No es que el modelo mida algo distinto --- es que lee la
-    ausencia como una medición."""
+    """La prueba del fantasma: quitar el rasgo cambia la respuesta a una alarma.
+    No es que el modelo mida algo distinto --- es que lee la ausencia como una
+    medición.
+
+    Se afirma la FORMA, no el número. La primera versión de esta prueba fijaba
+    `conf == 0.717`, el valor exacto del modelo del 2026-09-27 03:01; dos
+    reentrenamientos lo movieron a 0,726 y la prueba se puso roja sin que el
+    comportamiento cambiara. Un `.onnx` se regenera cada semana: clavarle una
+    constante es fijar un artefacto, no un invariante.
+    """
     sin_kp = {k: v for k, v in _CICLO.items() if not k.startswith("kp")}
     nombre, conf = _pred(modelo, sin_kp)
-    assert (nombre, round(conf, 3)) == ("WATCH", 0.717), (
-        f"el fantasma cambió de forma: ahora sale {nombre} {conf:.3f}")
+    assert nombre in ("WATCH", "ALERT"), (
+        f"el fantasma cambió de forma: con el Kp ausente sale {nombre} "
+        f"{conf:.3f}. Si ya no alarma, esta prueba sobra --- bórrala con una "
+        "medición que lo respalde, no la relajes")
+    assert conf > 0.6, f"la alarma fantasma bajó a {conf:.3f}"
 
 
 def test_el_fantasma_es_mas_confiado_que_la_medicion(modelo):

@@ -40,8 +40,22 @@ BOT_DIMS: Dict[str, int] = {
 }
 
 # Las repeticiones son RELLENO deliberado, no descuidos: alfa2 tiene 3 rasgos
-# reales para 8 posiciones y beta2 cuatro para 16. Mientras los dos lados usen
-# esta misma tabla, repetir un valor es inofensivo.
+# reales para 8 posiciones. Mientras los dos lados usen esta misma tabla,
+# repetir un valor es inofensivo --- redundancia, no falsedad. Es un defecto
+# DISTINTO del que costó 792 falsas alarmas en alfa1: allí el problema era un
+# rasgo AUSENTE que el modelo leía como un cero medido (ver
+# `tests/test_fantasma_alfa1_kp_cero.py`). Repetir no inventa información;
+# rellenar con 0,0 sí.
+#
+# Lo que sí hay que cuidar al tocar esta tabla: **un rasgo solo entra si existe
+# en el material de ENTRENAMIENTO y en el CICLO VIVO.** Añadir uno que el ciclo
+# no puede llenar es fabricar el fantasma a mano.
+#
+# alfa2 sigue con 3 y no se puede mejorar hoy: sus rasgos de ESA
+# (`api/esa_frp.py`, verificado contra un producto real) llevan **una sola
+# detección** en `tbl_frp_detecciones` --- un producto S3B del 2026-09-26,
+# guerrero_gap, FRP 5,68 MW. Una fila no es material de entrenamiento. El
+# vector de alfa2 cambia cuando haya historia, no antes.
 FEATURE_ORDER: Dict[str, List[str]] = {
     "alfa1": [
         "bz_mean", "viento_avg", "proton_max", "proton_max",
@@ -75,6 +89,21 @@ FEATURE_ORDER: Dict[str, List[str]] = {
         "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
         "marea_total", "marea_sicigia", "marea_rango_24h", "marea_deriv",
     ],
+    # `vix` NO está aquí, y el intento de añadirlo el 2026-09-27 quedó anotado
+    # porque el error es instructivo: medí la cobertura de `vix` sobre las
+    # firmas de delta+alfa2+padre JUNTAS y salió 6.959, así que lo añadí. Pero
+    # padre tiene 14.289 de esas firmas y **delta tiene 0 de 676** --- el
+    # 6.959 era de padre. Añadirlo así da al modelo una columna que vale 0 en
+    # todo el entrenamiento y 14,87 en producción: el fantasma de alfa1 en
+    # espejo, entrenar con cero e inferir con un dato real.
+    #
+    # Verificado además en el modelo reentrenado con `vix` dentro: la salida es
+    # IDÉNTICA con vix 11, 14,87, 22 y 35. No lo usaba.
+    #
+    # La causa está en `entrenamiento.BOT_FEATURES["delta"]`, que construye sus
+    # firmas con solo los cuatro `btc_*`. Ahí sí se añadió `vix`, así que las
+    # firmas del PRÓXIMO rebuild lo llevarán. Cuando haya cobertura, entra aquí.
+    # Primero el dato, después el vector.
     "delta": [
         "btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h",
         "btc_volatilidad", "btc_ret_win", "btc_vol_max",

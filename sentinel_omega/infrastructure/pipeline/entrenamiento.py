@@ -55,7 +55,13 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
               "sismo_count_win", "sismo_max_mag_win", "fase_lunar",
               "es_sicigia", "kp_max_72h", "sismo_count_72h"],
     "beta2": ["so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d"],
-    "delta": ["btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h"],
+    # `vix` se añade el 2026-09-27: el bot FINANCIERO no llevaba el índice
+    # del miedo en sus firmas --- 0 de 676 --- mientras loki, que es
+    # geofísico, sí lo tenía, y padre lo tenía en 6.959. Sin esto, el
+    # vector de delta no puede incorporarlo: entrenaría con la columna en
+    # cero y en vivo recibiría 14,87.
+    "delta": ["btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h",
+              "vix"],
     # alfa2 entrena desde la tabla tbl_cobertura_satelital, que se acumula en
     # ciclos en vivo (no hay backcast de 14 años de cobertura ESA Sentinel).
     # Las firmas de alfa2 empiezan en 0 y crecen con el tiempo operativo.
