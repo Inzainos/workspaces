@@ -178,7 +178,9 @@ ESA Copernicus vía eodag.
 **El correo ya no existe.** `infrastructure/api/correo.py` se borró el
 2026-09-15, `deploy/enviar_correos.py` despacha por Telegram, y las variables
 SMTP están comentadas. `tbl_correo_salida` sigue en la base pero **cero código la
-referencia**: vestigio, no canal. Si lees una versión de este archivo que dice
+referencia**: vestigio, no canal. Se conserva a propósito (decisión del operador,
+2026-09-27, «por si acaso»); está vacía y no se consulta. No la rellenes ni la
+leas — si vuelve el correo, se decide entonces. Su DDL está en la bitácora. Si lees una versión de este archivo que dice
 «canal: correo, Telegram en pausa», está desactualizada — corregido el 2026-09-27
 contra el código, no contra la fecha del documento.
 

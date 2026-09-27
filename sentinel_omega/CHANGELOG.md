@@ -94,16 +94,33 @@ auditoría de los 8 vectores: **cero desajustes del tipo fantasma** (los 7 de
 Schumann que quedan están alineados, 0,0 en los dos lados). Reinicio del operador
 04:56:10; ciclo 14432 verificado contra la base, no contra el log.
 
+### Conectado (a orden del operador, «conecta el campo»)
+
+- **`infrastructure/pipeline/juez_cycle_register.py`** — el `detalles` ahora
+  persiste `onnx`, `onnx_senal`, `onnx_conf`, `regla_senal` y `regla_conf` desde
+  `sig.data`. Era lo que el docstring de `_aplicar_modelos` prometía desde el
+  principio: «para que el Juez pueda comparar después quién acertaba». Con esto
+  la comparación es SQL en vez de prosa:
+
+      SELECT bot_name, resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA
+      WHERE json_extract(detalles_json,'$.onnx_senal') IS NOT NULL
+        AND json_extract(detalles_json,'$.onnx_senal')
+         != json_extract(detalles_json,'$.regla_senal')
+      GROUP BY 1,2;
+
+  Se copian SOLO esas cinco claves, no `sig.data` entero: si cada agente vuelca
+  lo que quiera en su `data`, el `detalles_json` de todas las filas crece sin
+  control. `onnx: False` también se guarda --- distingue «decidió la regla» de
+  «no hubo modelo». Retrocompatible: las filas de antes no las tienen. 6 pruebas.
+
 ### Pendiente (propuesto, no hecho)
 
-1. Conectar los campos `onnx_*` al `detalles` del Juez (dos líneas; vuelve la
-   comparación consultable con `json_extract`).
-2. Rematerializar `tbl_juez_rasgos_reconstruidos` — raíz del 8,26; la purga es el
+1. Rematerializar `tbl_juez_rasgos_reconstruidos` — raíz del 8,26; la purga es el
    cinturón.
-3. Codificar la ausencia aparte del valor (bandera «kp presente»). El fantasma
+2. Codificar la ausencia aparte del valor (bandera «kp presente»). El fantasma
    sigue DENTRO del modelo —sin Kp responde WATCH 0,726— pero ya no tiene ruta.
    Mientras el vector no pueda decir «no lo sé», cada 0,0 es un fantasma esperando.
-4. alfa2 con rasgos de ESA: `tbl_frp_detecciones` lleva **una fila** (S3B del
+3. alfa2 con rasgos de ESA: `tbl_frp_detecciones` lleva **una fila** (S3B del
    2026-09-26, guerrero_gap, 5,68 MW, confianza 75). Su límite de 3 features está
    documentado en `AGENTS.md` como decisión deliberada; el vector cambia cuando
    haya historia.

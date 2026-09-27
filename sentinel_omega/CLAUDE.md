@@ -210,9 +210,15 @@ sentinel_omega/
     al veredicto del modelo, y el registro se contradecía). Con `None` del
     modelo manda la regla y su texto queda intacto.
   - `infrastructure/pipeline/juez_cycle_register.py` — registro de predicciones por ciclo.
-    **Su `detalles` NO lee `sig.data`**, así que los campos `onnx_*` /
-    `regla_*` que `_aplicar_modelos` calcula no se persisten: la atribución
-    modelo-vs-regla solo vive en el texto del `reasoning`. Pendiente conectarlo.
+    Persiste `onnx` / `onnx_senal` / `onnx_conf` / `regla_senal` / `regla_conf`
+    desde `sig.data`, así que **quién decidió —modelo o regla— es consultable**:
+
+        WHERE json_extract(detalles_json,'$.onnx_senal')
+           != json_extract(detalles_json,'$.regla_senal')
+
+    Copia SOLO esas cinco claves, no `sig.data` entero, para que el
+    `detalles_json` no crezca con lo que cada agente meta en su `data`. Las
+    filas anteriores al 2026-09-27 no las tienen.
 - One-time / batch:
   - `infrastructure/pipeline/backcast.py` — carga histórica one-time.
   - `infrastructure/pipeline/entrenamiento.py` + `entrenar_paralelo.py` — aprendizaje por fases.

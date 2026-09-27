@@ -591,7 +591,7 @@ Estos scripts también forman parte del pipeline operativo aunque no siempre se 
 | `infrastructure/pipeline/data_pipeline_locf_patch.py` | módulo interno | Parchea `GeodynamicPipeline` para que LOCF use caché persistente en DB (`tbl_locf_cache`). |
 | `infrastructure/pipeline/entrenamiento.py` | módulo interno | Entrenamiento por fases (F1/F1b/F2), lags y correlaciones sobre backcast. `BOT_FEATURES` define los rasgos de las firmas por bot: **primero el dato aquí, después el vector en `core/features_onnx.py`**. |
 | `infrastructure/pipeline/entrenar_paralelo.py` | módulo interno | Variante paralela del entrenamiento por bot (misma lógica funcional). |
-| `infrastructure/pipeline/juez_cycle_register.py` | módulo interno | Registra predicciones del ciclo para auditoría del Juez (Padre + agentes). Guarda 4 claves fijas y **no lee `sig.data`**, así que la atribución modelo-vs-regla solo queda en el texto del `reasoning`. |
+| `infrastructure/pipeline/juez_cycle_register.py` | módulo interno | Registra predicciones del ciclo para auditoría del Juez (Padre + agentes). Guarda además `onnx_senal` / `regla_senal` / sus confianzas, así que **quién decidió es consultable** con `json_extract`, no parseando prosa. |
 | `infrastructure/pipeline/mantenimiento.py` | módulo interno | Barrido diario del historial operativo + correlaciones + sesgo + poda cimática. |
 | `infrastructure/pipeline/reporte_sentinel.py` | módulo interno | Genera reportes `general`, `padre`, `omega`. |
 | `infrastructure/pipeline/reporte_engine.py` | módulo interno | Capa DRY para reportes + versionado en `estado/historial` y actualización de `REPORTE.md`. |

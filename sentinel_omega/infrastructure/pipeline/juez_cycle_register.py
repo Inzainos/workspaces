@@ -67,17 +67,50 @@ def register_cycle_predictions(
             if not name or st is None:
                 continue
             pred = st.value if hasattr(st, "value") else str(st)
+            detalles = {
+                "nodos": nodos_pred,
+                "padre_signal": geo.final_signal.value,
+                "reasoning": (getattr(sig, "reasoning", "") or "")[:500],
+                "features_generales": features,
+            }
+            # Quién decidió: el modelo o la regla.
+            #
+            # `layer_runners._aplicar_modelos` calcula estos cinco campos y los
+            # deja en `sig.data` diciendo, en su propio docstring, «para que el
+            # Juez pueda comparar después quién acertaba». Este registrador
+            # armaba el `detalles` con cuatro claves fijas y **nunca leía
+            # `sig.data`**, así que se calculaban y se tiraban: medido el
+            # 2026-09-27, **0 filas** de `TBL_JUEZ_AUDITORIA` tenían
+            # `onnx_senal`. En todo el histórico no hay forma estructurada de
+            # saber si un veredicto lo dio el modelo o la regla --- el único
+            # rastro era la prosa del `reasoning`, que además describía la
+            # REGLA aunque mandara el modelo (arreglado el mismo día).
+            #
+            # La señal medida y no conectada, en el camino de auditoría.
+            #
+            # Con esto la comparación es consultable en vez de parseable:
+            #
+            #   SELECT bot_name, resultado, COUNT(*) FROM TBL_JUEZ_AUDITORIA
+            #   WHERE json_extract(detalles_json,'$.onnx_senal') IS NOT NULL
+            #     AND json_extract(detalles_json,'$.onnx_senal')
+            #      != json_extract(detalles_json,'$.regla_senal')
+            #   GROUP BY 1,2;
+            #
+            # Solo se copian las claves que `_aplicar_modelos` produce; no se
+            # volcó `sig.data` entero a propósito, para que el `detalles_json`
+            # no crezca con lo que cada agente decida meter en su `data`.
+            datos = getattr(sig, "data", None)
+            if isinstance(datos, dict):
+                for clave in ("onnx", "onnx_senal", "onnx_conf",
+                              "regla_senal", "regla_conf"):
+                    if clave in datos:
+                        detalles[clave] = datos[clave]
             juez.registrar_prediccion(
                 bot_name=str(name).lower(),
                 prediccion=pred,
                 confianza=conf,
                 ventana_h=ventana_h,
-                detalles={
-                    "nodos": nodos_pred,
-                    "padre_signal": geo.final_signal.value,
-                    "reasoning": (getattr(sig, "reasoning", "") or "")[:500],
-                    "features_generales": features,
-                },
+                detalles=detalles,
                 fase="viva",
             )
             n_bots += 1
