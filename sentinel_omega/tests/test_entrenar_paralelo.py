@@ -141,13 +141,21 @@ def test_cada_copia_se_borra_al_unirla(tmp_path):
     assert quedan == [], f"copias sin borrar: {quedan}"
 
 
-def test_el_rebuild_pide_la_fase_1_en_paralelo():
+def test_el_rebuild_puede_pedir_la_fase_1_en_paralelo():
     """El módulo existía con sus pruebas desde antes y nadie lo llamaba: el
-    rebuild usaba el secuencial. Esta prueba es para que no vuelva a pasar."""
+    rebuild usaba el secuencial. Esta prueba es para que no vuelva a pasar.
+
+    Se comprueba el CABLEADO, no un literal: la elección va por
+    `REBUILD_PARALELO` porque el paralelo nunca ha corrido completo, y meterlo
+    fijo obligaría a editar código para volver a serie.
+    """
     from pathlib import Path
 
     fuente = Path("deploy/rebuild_completo.py").read_text()
-    assert "paralelo=True" in fuente
+    assert "REBUILD_PARALELO" in fuente
+    assert "entrenar(DB, paralelo=paralelo)" in fuente
+    # y por defecto, serie: la opción segura no necesita que nadie se acuerde
+    assert 'os.environ.get("REBUILD_PARALELO", "0") == "1"' in fuente
 
     import inspect
 

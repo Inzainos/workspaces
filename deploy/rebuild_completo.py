@@ -137,12 +137,19 @@ def tuning(vacuum: bool):
 
 def entrenar():
     from sentinel_omega.infrastructure.pipeline.entrenamiento import entrenar
-    # `paralelo=True`: la Fase 1 por bot, un proceso cada uno. El módulo existía
-    # con sus pruebas desde antes y NADIE lo llamaba --- el rebuild usaba el
-    # secuencial. Techo medido el 2026-09-26, ya con la matriz viva del motor
-    # de firmas: 2,53x, y lo fija el padre, que ve todos los eventos y no se
-    # puede partir.
-    return entrenar(DB, paralelo=True)
+    # La Fase 1 por bot, un proceso cada uno. El módulo existía con sus pruebas
+    # desde antes y NADIE lo llamaba --- el rebuild usaba el secuencial. Techo
+    # medido el 2026-09-26, ya con la matriz viva del motor de firmas: 2,53x, y
+    # lo fija el padre, que ve todos los eventos y no se puede partir.
+    #
+    # Se elige con REBUILD_PARALELO en vez de dejarlo fijo, porque la decisión
+    # tiene riesgo: el paralelo nunca ha corrido completo. Sus pruebas pasan y
+    # la equivalencia está argumentada, pero NO medida --- si produjera firmas
+    # mal, se descubriría con la memoria ya reconstruida. Por defecto, serie.
+    import os
+    paralelo = os.environ.get("REBUILD_PARALELO", "0") == "1"
+    logger.info("Fase 1 en %s", "PARALELO (por bot)" if paralelo else "SERIE")
+    return entrenar(DB, paralelo=paralelo)
 
 
 def disciplina_y_barrido():
