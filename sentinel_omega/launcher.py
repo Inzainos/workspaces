@@ -428,8 +428,8 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
                     return default
 
             repo.insert_precursor_cosmico(
-                bz=_scalar(risk.components.get("bz_nT", 0)),
-                viento=_scalar(risk.components.get("wind_kms", 0)),
+                bz=_scalar(risk.components.get("bz_nT"), None),  # sin dato = NULL, no 0
+                viento=_scalar(risk.components.get("wind_kms"), None),  # sin dato = NULL, no 0
                 protones=_prot,
                 kp=_scalar(risk.components.get("kp", 0)),
                 lod_ms=_scalar(risk.components.get("lod_ms"), None),  # sin dato = NULL, no 0

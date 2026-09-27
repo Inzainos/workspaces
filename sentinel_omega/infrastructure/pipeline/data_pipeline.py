@@ -133,7 +133,11 @@ class GeodynamicPipeline:
             return self._locf_get("alfa1")
 
         omni_df = pd.concat(frames, axis=1)
-        omni_df = omni_df.sort_index().ffill().dropna(how="all")
+        # ffill(limit=1): solo alinea minutos vecinos de mag y viento. Sin
+        # límite, un minuto sin SOLAR1 activa heredaba el último valor real
+        # (arrastre); los huecos reales quedan NaN y los consumidores usan
+        # nanmean / filtran finitos.
+        omni_df = omni_df.sort_index().ffill(limit=1).dropna(how="all")
         logger.info(f"Alfa-1 pipeline: {len(omni_df)} records, {list(omni_df.columns)}")
         result = {"omni_dataframe": omni_df.reset_index(names=["time_tag"])}
         # Flujo de protones >=10 MeV (mismo canal que el histórico

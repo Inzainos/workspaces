@@ -108,9 +108,19 @@ def _lod_txt(lod_ms: Optional[float]) -> str:
     return "sin dato" if lod_ms is None else f"{lod_ms:.2f} ms"
 
 
+def _bz_txt(bz: Optional[float]) -> str:
+    """Bz para mostrar: «sin dato» cuando el magnetómetro no dio valor."""
+    return "Bz=sin dato" if bz is None else f"Bz={bz:.1f} nT"
+
+
+def _viento_txt(viento: Optional[float]) -> str:
+    """Viento solar para mostrar: «sin dato» cuando el feed de plasma no dio valor."""
+    return "viento=sin dato" if viento is None else f"{viento:.0f} km/s"
+
+
 def compute_fantasma(
-    bz: float,
-    viento: float,
+    bz: Optional[float],
+    viento: Optional[float],
     sch_wpc: float,
     pressure_hpa: float = 1013.0,
     kp: float = 0.0,
@@ -126,6 +136,9 @@ def compute_fantasma(
     - Kp >= 5 (storm level) multiplies by up to 1.5×
     - LOD anomaly (>0.5 ms) adds coupling factor. `lod_ms=None` means no
       IERS value: no LOD modifier, and it is stored as NULL, never as 0.
+    - `bz=None` (or NaN) means no magnetometer data: no Bz² term, and it is
+      stored as NULL, never as 0. Same for `viento=None` (no plasma data): no
+      wind term, stored as NULL.
     """
     # Sobre `abs(bz) ** 2`, que parece un error y NO lo es --- esto costó una
     # medición y merece quedar escrito.
@@ -151,15 +164,19 @@ def compute_fantasma(
     # que el signo. Así que se queda como está, ahora por medición y no por
     # herencia. `fantasma_solo_sur` se conserva como diagnóstico, no como la
     # versión buena: los datos la rechazan.
-    bz_contribution = abs(bz) ** 2
-    wind_contribution = viento * 0.02
+    if bz is not None and bz != bz:  # NaN → sin dato
+        bz = None
+    bz_contribution = abs(bz) ** 2 if bz is not None else 0.0
+    if viento is not None and viento != viento:  # NaN → sin dato
+        viento = None
+    wind_contribution = viento * 0.02 if viento is not None else 0.0
     schumann_contribution = sch_wpc * 1.5
 
     fantasma = bz_contribution + wind_contribution + schumann_contribution
-    bz_es_norte = bz > 0
+    bz_es_norte = bz is not None and bz > 0
     # El mismo índice si el Bz norte no contara: min(bz, 0)² deja fuera lo que
     # no acopla.
-    fantasma_solo_sur = (min(bz, 0.0) ** 2) + wind_contribution + schumann_contribution
+    fantasma_solo_sur = ((min(bz, 0.0) ** 2) if bz is not None else 0.0) + wind_contribution + schumann_contribution
 
     pressure_modifier = 0.0
     if pressure_hpa < 1008.0:
@@ -209,8 +226,8 @@ def compute_risk_from_signals(
     Extract variables from agent signal data dicts and compute fantasma.
     Used by the orchestrator to compute precursor risk from a completed cycle.
     """
-    bz = 0.0
-    viento = 0.0
+    bz: Optional[float] = None
+    viento: Optional[float] = None
     sch_wpc = 0.0
     kp = 0.0
     lod_ms: Optional[float] = None
@@ -246,8 +263,8 @@ def format_risk_report(risk: PrecursorRisk) -> str:
         f"Fantasma Index: <code>{risk.fantasma:.2f}</code>",
         "",
         "<b>Components:</b>",
-        f"  Bz² = <code>{risk.bz_contribution:.2f}</code> (Bz={risk.components.get('bz_nT', 0):.1f} nT)",
-        f"  Wind = <code>{risk.wind_contribution:.2f}</code> ({risk.components.get('wind_kms', 0):.0f} km/s)",
+        f"  Bz² = <code>{risk.bz_contribution:.2f}</code> ({_bz_txt(risk.components.get('bz_nT'))})",
+        f"  Wind = <code>{risk.wind_contribution:.2f}</code> ({_viento_txt(risk.components.get('wind_kms'))})",
         f"  Schumann = <code>{risk.schumann_contribution:.2f}</code>",
         "",
         "<b>Modifiers:</b>",

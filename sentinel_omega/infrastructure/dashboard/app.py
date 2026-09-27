@@ -225,8 +225,8 @@ def render_precursor_risk():
 
     with c2:
         st.markdown("**Componentes:**")
-        st.markdown(f"- **Bz²**: {latest['bz_nT']:.1f} nT")
-        st.markdown(f"- **Viento**: {latest['viento_km_s']:.0f} km/s")
+        st.markdown("- **Bz²**: " + ("sin dato" if latest['bz_nT'] is None or latest['bz_nT'] != latest['bz_nT'] else f"{latest['bz_nT']:.1f} nT"))
+        st.markdown("- **Viento**: " + ("sin dato" if latest['viento_km_s'] is None or latest['viento_km_s'] != latest['viento_km_s'] else f"{latest['viento_km_s']:.0f} km/s"))
         st.markdown(f"- **Schumann**: {latest['schumann_hz']:.2f} Hz ({latest['schumann_activity']:.0f}%)")
         st.markdown(f"- **Presión**: {latest['presion_hpa']:.0f} hPa")
         st.markdown("- **LOD**: " + ("sin dato" if latest['lod_ms'] is None or latest['lod_ms'] != latest['lod_ms'] else f"{latest['lod_ms']:.2f} ms"))
@@ -266,8 +266,8 @@ def _render_fantasma_waterfall(repo: SentinelRepository):
     st.markdown("**Descomposición del Fantasma (Waterfall)**")
 
     r = breakdown[0]
-    bz_c = abs(r["bz_nT"]) ** 2
-    wind_c = r["viento_km_s"] * 0.02
+    bz_c = abs(r["bz_nT"]) ** 2 if r["bz_nT"] is not None and r["bz_nT"] == r["bz_nT"] else 0.0
+    wind_c = r["viento_km_s"] * 0.02 if r["viento_km_s"] is not None and r["viento_km_s"] == r["viento_km_s"] else 0.0
     sch_c = (r["schumann_activity"] / 100.0) * 1.5
     pressure_mod = 0.0
     if r["presion_hpa"] < 1008.0:

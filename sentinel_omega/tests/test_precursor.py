@@ -1193,3 +1193,238 @@ def test_guardado_con_lod_none_queda_null(tmp_path):
     finally:
         con.close()
     assert val is None
+
+
+# ── bz_nT sin dato: NULL, nunca un 0 sintético (26-sep) ───────────────
+# PREC 12047 y 12110 guardaron bz_nT=0.0 en ciclos en que falló el
+# magnetómetro: la columna bz_gsm no venía y el ciclo ponía 0.
+
+def test_bz_none_no_aporta_y_queda_none():
+    risk = compute_fantasma(bz=None, viento=400.0, sch_wpc=0.1)
+    assert risk.components["bz_nT"] is None
+    assert risk.bz_contribution == 0.0
+    assert risk.bz_es_norte is False
+    assert risk.fantasma == pytest.approx(400.0 * 0.02 + 0.1 * 1.5)
+
+
+def test_bz_nan_es_sin_dato():
+    risk = compute_fantasma(bz=float("nan"), viento=400.0, sch_wpc=0.0)
+    assert risk.components["bz_nT"] is None
+    assert risk.bz_contribution == 0.0
+
+
+def test_reporte_con_bz_none_dice_sin_dato():
+    from sentinel_omega.core.precursor.risk_calculator import format_risk_report
+    texto = format_risk_report(compute_fantasma(bz=None, viento=400.0, sch_wpc=0.0))
+    assert "Bz=sin dato" in texto
+
+
+def test_riesgo_desde_senales_sin_bz_es_none():
+    from sentinel_omega.core.precursor.risk_calculator import compute_risk_from_signals
+    risk = compute_risk_from_signals([{"plasma_speed": 450.0}])
+    assert risk.components["bz_nT"] is None
+
+
+@pytest.mark.parametrize("columnas", [
+    {"plasma_speed": [450.0, 460.0]},                                   # falla el magnetómetro
+    {"bz_gsm": [float("nan"), float("nan")], "plasma_speed": [450.0, 460.0]},
+])
+def test_runner_sin_bz_gsm_da_bz_none(columnas):
+    import pandas as pd
+    from types import SimpleNamespace
+    omni = pd.DataFrame(columnas)
+    from sentinel_omega.infrastructure.pipeline.layer_runners import GeodynamicLayerRunner
+    risk = GeodynamicLayerRunner._compute_precursor_risk(
+        SimpleNamespace(), {"omni_dataframe": omni}, {}, {})
+    assert risk.components["bz_nT"] is None
+    assert risk.components["wind_kms"] == pytest.approx(455.0)
+
+
+def test_runner_con_bz_gsm_sigue_igual():
+    import numpy as np
+    import pandas as pd
+    from types import SimpleNamespace
+    from sentinel_omega.infrastructure.pipeline.layer_runners import GeodynamicLayerRunner
+    omni = pd.DataFrame({"bz_gsm": [-2.0, np.nan, -4.0], "plasma_speed": [450.0, 460.0, 470.0]})
+    risk = GeodynamicLayerRunner._compute_precursor_risk(
+        SimpleNamespace(), {"omni_dataframe": omni}, {}, {})
+    assert risk.components["bz_nT"] == pytest.approx(-3.0)
+
+
+def test_launcher_guarda_bz_none_no_cero():
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from sentinel_omega.launcher import _log_cycle_summary
+    risk = compute_fantasma(bz=None, viento=400.0, sch_wpc=0.0)
+    status = SimpleNamespace(last_precursor_risk=risk, active_precursors=[],
+                             alerts_dispatched=0, uptime_s=1.0, last_muro=None)
+    repo = MagicMock()
+    try:
+        _log_cycle_summary(status, {}, repo, None, runner=None)
+    except Exception:
+        pass  # lo que viene después del guardado no importa aquí
+    assert repo.insert_precursor_cosmico.called
+    assert repo.insert_precursor_cosmico.call_args.kwargs["bz"] is None
+
+
+def test_guardado_con_bz_none_queda_null(tmp_path):
+    import sqlite3
+    from sentinel_omega.infrastructure.database.repository import SentinelRepository
+    db = tmp_path / "bz.db"
+    repo = SentinelRepository(db_path=str(db))
+    _init = getattr(repo, "init_schema", None) or getattr(repo, "initialize", None)
+    if callable(_init):
+        _init()
+    risk = compute_fantasma(bz=None, viento=400.0, sch_wpc=0.1)
+    rid = repo.insert_precursor_cosmico(
+        bz=risk.components["bz_nT"], viento=400.0,
+        fantasma=risk.fantasma, nivel_riesgo=risk.risk_level,
+    )
+    con = sqlite3.connect(db)
+    try:
+        val = con.execute(
+            "SELECT bz_nT FROM TBL_PRECURSORES_COSMICOS WHERE rowid = ?", (rid,)
+        ).fetchone()[0]
+    finally:
+        con.close()
+    assert val is None
+
+
+# ── omni: ffill(limit=1), sin arrastre de huecos reales (26-sep) ──────
+
+def test_alfa1_no_arrastra_huecos_de_viento():
+    import pandas as pd
+    from unittest.mock import patch
+    from sentinel_omega.infrastructure.pipeline.data_pipeline import GeodynamicPipeline
+    t = pd.date_range("2026-09-27 01:00", periods=6, freq="1min", tz="UTC")
+    mag = pd.DataFrame({"time_tag": t, "bz_gsm": [-1.0, -2.0, -3.0, -4.0, -5.0, -6.0]})
+    # viento: faltan 01:02, 01:03 y 01:04 (minutos sin SOLAR1 activa)
+    wind = pd.DataFrame({"time_tag": t[[0, 1, 5]],
+                         "proton_speed": [400.0, 410.0, 450.0],
+                         "proton_density": [3.0, 3.1, 3.5]})
+    mod = "sentinel_omega.infrastructure.pipeline.data_pipeline."
+    with patch(mod + "fetch_mag_field", return_value=mag), \
+         patch(mod + "fetch_solar_wind", return_value=wind), \
+         patch(mod + "fetch_proton_flux", return_value=None), \
+         patch(mod + "fetch_kp_index", return_value=None):
+        omni = GeodynamicPipeline().fetch_alfa1_data()["omni_dataframe"].set_index("time_tag")
+    v = omni["plasma_speed"]
+    assert v[t[2]] == 410.0                      # 1 minuto: alineación
+    assert pd.isna(v[t[3]]) and pd.isna(v[t[4]])  # hueco real: NaN, no 410
+    assert v[t[5]] == 450.0
+    assert omni["bz_gsm"].notna().all()
+    # los agregados ignoran el hueco en vez de contarlo como 410 repetido
+    from sentinel_omega.core.features_onnx import agregados_omni
+    cols = list(omni.columns)
+    ag = agregados_omni(cols, omni[cols].values)
+    assert ag["viento_avg"] == pytest.approx((400.0 + 410.0 + 410.0 + 450.0) / 4)
+
+
+# ── viento_km_s sin dato: NULL, nunca un 0 sintético (26-sep) ─────────
+# Si falla el feed de plasma, la columna plasma_speed no viene y el ciclo
+# guardaba viento_km_s = 0. Mismo trato que Bz.
+
+def test_viento_none_no_aporta_y_queda_none():
+    risk = compute_fantasma(bz=-2.0, viento=None, sch_wpc=0.1)
+    assert risk.components["wind_kms"] is None
+    assert risk.wind_contribution == 0.0
+    assert risk.fantasma == pytest.approx(4.0 + 0.1 * 1.5)
+
+
+def test_viento_nan_es_sin_dato():
+    risk = compute_fantasma(bz=-2.0, viento=float("nan"), sch_wpc=0.0)
+    assert risk.components["wind_kms"] is None
+    assert risk.wind_contribution == 0.0
+
+
+def test_reporte_con_viento_none_dice_sin_dato():
+    from sentinel_omega.core.precursor.risk_calculator import format_risk_report
+    texto = format_risk_report(compute_fantasma(bz=None, viento=None, sch_wpc=0.0))
+    assert "viento=sin dato" in texto and "Bz=sin dato" in texto
+
+
+def test_riesgo_desde_senales_sin_viento_es_none():
+    from sentinel_omega.core.precursor.risk_calculator import compute_risk_from_signals
+    risk = compute_risk_from_signals([{"bz_mean": -3.0}])
+    assert risk.components["wind_kms"] is None
+    assert risk.components["bz_nT"] == -3.0
+
+
+@pytest.mark.parametrize("columnas", [
+    {"bz_gsm": [-2.0, -4.0]},                                           # falla el plasma
+    {"bz_gsm": [-2.0, -4.0], "plasma_speed": [float("nan"), float("nan")]},
+])
+def test_runner_sin_plasma_speed_da_viento_none(columnas):
+    import pandas as pd
+    from types import SimpleNamespace
+    from sentinel_omega.infrastructure.pipeline.layer_runners import GeodynamicLayerRunner
+    risk = GeodynamicLayerRunner._compute_precursor_risk(
+        SimpleNamespace(), {"omni_dataframe": pd.DataFrame(columnas)}, {}, {})
+    assert risk.components["wind_kms"] is None
+    assert risk.components["bz_nT"] == pytest.approx(-3.0)
+
+
+def test_runner_viento_media_de_finitos():
+    import pandas as pd
+    from types import SimpleNamespace
+    from sentinel_omega.infrastructure.pipeline.layer_runners import GeodynamicLayerRunner
+    omni = pd.DataFrame({"bz_gsm": [-1.0, -1.0, -1.0], "plasma_speed": [400.0, float("nan"), 500.0]})
+    risk = GeodynamicLayerRunner._compute_precursor_risk(
+        SimpleNamespace(), {"omni_dataframe": omni}, {}, {})
+    assert risk.components["wind_kms"] == pytest.approx(450.0)
+
+
+def test_launcher_guarda_viento_none_no_cero():
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from sentinel_omega.launcher import _log_cycle_summary
+    risk = compute_fantasma(bz=-2.0, viento=None, sch_wpc=0.0)
+    status = SimpleNamespace(last_precursor_risk=risk, active_precursors=[],
+                             alerts_dispatched=0, uptime_s=1.0, last_muro=None)
+    repo = MagicMock()
+    try:
+        _log_cycle_summary(status, {}, repo, None, runner=None)
+    except Exception:
+        pass
+    assert repo.insert_precursor_cosmico.call_args.kwargs["viento"] is None
+    assert repo.insert_precursor_cosmico.call_args.kwargs["bz"] == -2.0
+
+
+def test_guardado_con_viento_none_queda_null(tmp_path):
+    import sqlite3
+    from sentinel_omega.infrastructure.database.repository import SentinelRepository
+    db = tmp_path / "viento.db"
+    repo = SentinelRepository(db_path=str(db))
+    _init = getattr(repo, "init_schema", None) or getattr(repo, "initialize", None)
+    if callable(_init):
+        _init()
+    risk = compute_fantasma(bz=None, viento=None, sch_wpc=0.1)
+    rid = repo.insert_precursor_cosmico(
+        bz=risk.components["bz_nT"], viento=risk.components["wind_kms"],
+        fantasma=risk.fantasma, nivel_riesgo=risk.risk_level,
+    )
+    con = sqlite3.connect(db)
+    try:
+        fila = con.execute(
+            "SELECT bz_nT, viento_km_s FROM TBL_PRECURSORES_COSMICOS WHERE rowid = ?", (rid,)
+        ).fetchone()
+    finally:
+        con.close()
+    assert fila == (None, None)
+
+
+def test_dashboard_waterfall_con_null_no_revienta():
+    """app.py: Bz y viento NULL no deben romper la descomposición."""
+    st = pytest.importorskip("streamlit")
+    pytest.importorskip("plotly")
+    from unittest.mock import MagicMock, patch
+    from sentinel_omega.infrastructure.dashboard import app
+    fila = {"timestamp": 1.0, "bz_nT": None, "viento_km_s": None, "schumann_hz": 7.83,
+            "schumann_activity": 10.0, "kp": 2.0, "lod_ms": None, "presion_hpa": 1013.0,
+            "fase_lunar": 0.5, "protones": 0.1, "fantasma": 0.15, "nivel_riesgo": "LOW"}
+    repo = MagicMock()
+    repo.fantasma_component_breakdown.return_value = [fila]
+    with patch.object(app, "st") as fake_st, patch.object(app, "go") as fake_go:
+        app._render_fantasma_waterfall(repo)
+    y = fake_go.Waterfall.call_args.kwargs["y"]
+    assert y[0] == 0.0 and y[1] == 0.0

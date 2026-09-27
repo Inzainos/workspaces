@@ -208,14 +208,18 @@ class GeodynamicLayerRunner:
         """Compute TITAN V32 fantasma from raw pipeline data."""
         import numpy as np
 
-        bz = 0.0
-        viento = 0.0
+        bz = None  # sin magnetómetro (columna ausente o toda NaN): NULL, no 0
+        viento = None  # sin plasma (columna ausente o toda NaN): NULL, no 0
         omni_df = alfa1_data.get("omni_dataframe")
         if omni_df is not None:
             if "bz_gsm" in omni_df.columns:
-                bz = float(np.nanmean(omni_df["bz_gsm"]))
+                serie_bz = np.asarray(omni_df["bz_gsm"], dtype=float)
+                serie_bz = serie_bz[np.isfinite(serie_bz)]
+                bz = float(serie_bz.mean()) if serie_bz.size else None
             if "plasma_speed" in omni_df.columns:
-                viento = float(np.nanmean(omni_df["plasma_speed"]))
+                serie_v = np.asarray(omni_df["plasma_speed"], dtype=float)
+                serie_v = serie_v[np.isfinite(serie_v)]
+                viento = float(serie_v.mean()) if serie_v.size else None
 
         sch_wpc = beta1_data.get("schumann_activity", 0.0) / 100.0
 
@@ -432,10 +436,14 @@ class GeodynamicLayerRunner:
             bz_gsm = 0.0
             solar_wind = 400.0
             if omni_df is not None:
+                # Último valor REAL de la ventana: la última fila puede ser NaN
+                # ahora que la tubería ya no rellena huecos sin límite.
                 if "bz_gsm" in omni_df.columns:
-                    bz_gsm = float(omni_df["bz_gsm"].iloc[-1]) if len(omni_df) > 0 else 0.0
+                    _bz = omni_df["bz_gsm"].dropna()
+                    bz_gsm = float(_bz.iloc[-1]) if len(_bz) > 0 else 0.0
                 if "plasma_speed" in omni_df.columns:
-                    solar_wind = float(omni_df["plasma_speed"].iloc[-1]) if len(omni_df) > 0 else 400.0
+                    _v = omni_df["plasma_speed"].dropna()
+                    solar_wind = float(_v.iloc[-1]) if len(_v) > 0 else 400.0
 
             schumann_resonance = (beta1_data or {}).get("schumann_mean", 7.83)
             vix = (delta_data or {}).get("vix", 20.0)

@@ -48,8 +48,8 @@ class SentinelRepository:
 
     def insert_precursor_cosmico(
         self,
-        bz: float = 0.0,
-        viento: float = 0.0,
+        bz: Optional[float] = None,
+        viento: Optional[float] = None,
         protones: float = 0.0,
         kp: float = 0.0,
         lod_ms: Optional[float] = None,
