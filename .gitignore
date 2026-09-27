@@ -42,3 +42,9 @@ sentinel_omega/data/cache/
 
 # respaldos locales de prod (~3 GB); se quedan en disco, nunca al repo
 sentinel_omega/data/backups/
+
+# Nunca en git (2026-09-27): el log rotado llevaba el token de
+# Telegram 195 veces y de ahí pasó a un repo público; egg-info es
+# salida de compilación; el WAL/SHM son estado vivo de SQLite.
+*.log.*
+*.egg-info/
