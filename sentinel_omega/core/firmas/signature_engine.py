@@ -161,7 +161,10 @@ def extraer_features_ventana(
     # Schumann per-window (node 0 = observation node feed)
     sch_rows = conn.execute(
         "SELECT schumann_hz FROM tbl_enjambre_telemetria "
-        "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?)",
+        "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?)"
+        # en_vivo=0 = valor congelado/arrastrado (Tomsk caído): no es medición.
+        + (" AND COALESCE(en_vivo,1)=1"
+           if _tiene_columna(conn, "tbl_enjambre_telemetria", "en_vivo") else ""),
         (ts_evento, ts_evento, f"-{VENTANA_HORAS} hours"),
     ).fetchall()
     sch = _stats([r[0] for r in sch_rows])

@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS tbl_enjambre_telemetria (
     timestamp_blk    TEXT NOT NULL,
     id_nodo         INTEGER NOT NULL,
     schumann_hz     REAL DEFAULT 7.83,
+    en_vivo         INTEGER DEFAULT 1,
     PRIMARY KEY (timestamp_blk, id_nodo)
 );
 
