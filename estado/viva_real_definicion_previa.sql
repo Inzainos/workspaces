@@ -1,0 +1,1 @@
+CREATE VIEW viva_real AS SELECT * FROM TBL_JUEZ_AUDITORIA WHERE fase = 'viva';
