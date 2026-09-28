@@ -1,9 +1,16 @@
 [Unit]
-Description=Sentinel Omega - Rutinas locales (reportes, Juez, correo)
+Description=Sentinel Omega - Rutinas locales (reportes, Juez, Telegram)
+# Unidad de USUARIO desde el 2026-09-28. Antes era de sistema y corría como
+# ROOT: dejaba archivos de root bajo el repo (2.915 contados el 27-sep) y, sobre
+# todo, competía por el candado de SQLite con el ciclo vivo. Medido esa noche:
+# corre cada 15 min y tarda ~5, así que se solapaba casi siempre, y el launcher
+# perdía SEIS escrituras por ciclo con «database is locked» --- todas fail-soft,
+# todas en silencio. La tabla horaria del Kp dejó de crecer y beta1 devolvió la
+# misma confianza doce ciclos seguidos.
 After=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=__REPO_DIR__
-EnvironmentFile=__REPO_DIR__/deploy/.env
-ExecStart=/bin/bash __REPO_DIR__/deploy/rutinas_locales.sh
+WorkingDirectory=%h/workspaces
+EnvironmentFile=%h/workspaces/deploy/.env
+ExecStart=/bin/bash %h/workspaces/deploy/rutinas_locales.sh

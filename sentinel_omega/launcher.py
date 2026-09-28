@@ -207,7 +207,26 @@ def _run_reportes(db_path: str) -> None:
 def run(args):
     global _shutdown_requested
 
-    if _check_already_running():
+    # ── Modo TAREA: corre su trabajo y sale. No compite con el ciclo vivo ────
+    #
+    # Medido el 2026-09-28: `sentinel-omega-mantenimiento.service` llevaba
+    # fallando SIEMPRE con «Sentinel Omega is already running» (exit 1), porque
+    # el guardián de instancia única se aplicaba también a los flags de tarea ---
+    # y el launcher está arriba por diseño, así que el barrido y la disciplina
+    # diarios no corrían NUNCA. Se había atribuido a un timer duplicado; la
+    # causa era ésta.
+    #
+    # El guardián existe para que no haya DOS ciclos de vigilancia, no para
+    # impedir un lote. Y el lote tampoco debe tocar el pid: `_write_pid()` lo
+    # pisaba con el suyo y `_clear_pid()` lo borraba al salir, dejando al
+    # launcher vivo sin archivo de pid --- ciegos `shutdown.py` y el watchdog.
+    # Por eso el modo tarea no escribe, no borra y no consulta el pid.
+    tarea_batch = bool(
+        (args.backcast or args.entrenar or args.disciplina
+         or args.barrido or args.reporte) and not args.once
+    )
+
+    if not tarea_batch and _check_already_running():
         logger.error("Sentinel Omega is already running. Use shutdown.py first.")
         sys.exit(1)
 
@@ -234,7 +253,10 @@ def run(args):
         config = load_config()
 
     _print_banner(config)
-    _write_pid()
+    if not tarea_batch:
+        _write_pid()
+    else:
+        logger.info("Modo tarea: no se toca el pid del ciclo vivo.")
 
     logger.info("Initializing database...")
     db_path = Path(__file__).parent / config.databases.geodynamic_db
@@ -290,13 +312,8 @@ def run(args):
     # invoca como pasos one-shot y el loop dejaba el job colgado indefinidamente
     # (la disciplina corría 3s y luego ciclaba 2h+ hasta cancelarse a mano).
     # Con --once se conserva el comportamiento de bootstrap: tareas + UN ciclo.
-    tarea_batch = (
-        args.backcast or args.entrenar or args.disciplina
-        or args.barrido or args.reporte
-    )
-    if tarea_batch and not args.once:
+    if tarea_batch:
         logger.info("Batch task(s) complete — exiting (no --once/continuous).")
-        _clear_pid()
         return
 
     # Los modos batch de mantenimiento/disciplina no entran al ciclo de

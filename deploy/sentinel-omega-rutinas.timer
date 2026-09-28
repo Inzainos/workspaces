@@ -8,4 +8,6 @@ AccuracySec=1min
 Persistent=true
 
 [Install]
-WantedBy=timers.target
+# default.target y no timers.target: un gestor de USUARIO no alcanza los
+# objetivos de sistema, y por eso las unidades vivían de enlaces hechos a mano.
+WantedBy=default.target
