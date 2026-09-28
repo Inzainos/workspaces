@@ -1,132 +1,264 @@
 import { useCallback, useMemo } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { TabIntro, Caption } from "@/components/TabIntro";
 import { LineSpark } from "@/components/charts/Sparkline";
-import { Kpi } from "@/components/Kpi";
-import { EmptyState } from "@/components/EmptyState";
-import { fmtNum } from "@/lib/utils";
+import { Panel, Metrica, Cifra, SinDatos, esAusente } from "@/components/ui/data";
 
+/**
+ * SEÑALES — superficie MONITOR.
+ *
+ * Telemetría cruda por familia. Dos correcciones de fondo respecto de la
+ * versión anterior:
+ *
+ *  - `Number(x ?? 0)` en las series. Ese patrón convertía «no tengo lectura»
+ *    en un 0 perfectamente dibujable: la línea de Schumann caía a cero y
+ *    parecía una medición real de 0 Hz. Es exactamente la regla dura 8 del
+ *    proyecto (desconfía del default benigno). Ahora los nulos se FILTRAN de
+ *    la serie y se dice cuántos faltaron.
+ *  - La biblioteca cimática mostraba 0 cuando la tabla no existe. Ausente y
+ *    vacía no son lo mismo y ya no se pintan igual.
+ */
 export function SenalesTab() {
   const sch = usePoll(useCallback(() => api.schumannVivo(120), []), 30000);
   const clima = usePoll(useCallback(() => api.climaEspacial(80), []), 30000);
   const delta = usePoll(useCallback(() => api.delta(80), []), 30000);
   const ci = usePoll(useCallback(() => api.cimatica(50), []), 40000);
   const ca = usePoll(useCallback(() => api.cimaticaAhora(), []), 40000);
+  const salud = usePoll(useCallback(() => api.healthApis(), []), 60000);
 
-  const schSpark = (sch.data?.items || []).map((r, i) => ({ i, hz: Number(r.schumann_hz ?? 0) }));
+  /** Serie sin inventar ceros: descarta nulos y reporta cuántos eran. */
+  const serie = (filas: Record<string, unknown>[] | undefined, campo: string) => {
+    const todas = filas || [];
+    const pts = todas
+      .map((r, i) => ({ i, v: r[campo] }))
+      .filter((p) => !esAusente(p.v))
+      .map((p) => ({ i: p.i, v: Number(p.v) }));
+    return { pts, faltantes: todas.length - pts.length, total: todas.length };
+  };
+
+  const schS = serie(sch.data?.items, "schumann_hz");
   const climaItems = clima.data?.items || [];
-  const bzSpark = climaItems.map((r, i) => ({ i, bz: Number(r.bz_promedio ?? 0) }));
-  const kpSpark = climaItems.map((r, i) => ({ i, kp: Number(r.kp_promedio ?? r.kp ?? 0) }));
-  const deltaSpark = (delta.data?.delta || []).map((r, i) => ({ i, score: Number(r.composite_score ?? 0) }));
+  const bzS = serie(climaItems, "bz_promedio");
+  const kpS = serie(climaItems, "kp_promedio");
+  const deltaS = serie(delta.data?.delta, "composite_score");
 
   const schLatest = sch.data?.latest as Record<string, unknown> | undefined;
+  const schEstado = String((salud.data?.beta1 as { status?: string } | undefined)?.status || "").toUpperCase();
+  const schCongelado = schEstado === "CONGELADO";
+  const schNota = (salud.data?.beta1 as { nota?: string } | undefined)?.nota;
+
   const caData = (ca.data || {}) as Record<string, unknown>;
+  const bibliotecaPresente = caData.biblioteca_presente === true;
+
   const topPatrones = useMemo(
     () =>
       [...((ci.data?.items || []) as Record<string, unknown>[])]
         .sort((a, b) => Number(b.frecuencia) - Number(a.frecuencia))
-        .slice(0, 5),
+        .slice(0, 6),
     [ci.data],
   );
   const maxFreq = Number(topPatrones[0]?.frecuencia ?? 1) || 1;
 
   return (
-    <div className="space-y-6">
-      <TabIntro title="Señales — la telemetría cruda que alimenta a los bots">
-        <p>
-          Todo lo que el sistema mide en vivo, por familia. Fuentes reales (NOAA, USGS, Tomsk, IERS, ESA, Yahoo Finance);
-          cuando una fuente cae, el valor queda <b>NULL</b> o se rellena con el último real (LOCF) — nunca se inventa.
-        </p>
-      </TabIntro>
+    <div className="space-y-5">
+      {/* ---------- Schumann ---------- */}
+      <Panel
+        titulo="Beta-1 · Resonancia Schumann"
+        meta="Tomsk · referencia 7.83 Hz"
+        acento={schCongelado ? "HIGH" : undefined}
+        nota={
+          schCongelado
+            ? "Esta fuente está sirviendo el mismo valor una y otra vez: la serie se refresca pero no mide. Mientras siga así, el precursor Schumann entra como NULL en el cálculo del Fantasma."
+            : "El latido de referencia: el resto de señales se correlaciona contra él. Excitación >15 % suma confianza; >30 % con espectro Kp plano dispara WATCH."
+        }
+      >
+        <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)]">
+          <div>
+            {schS.pts.length ? (
+              <LineSpark
+                data={schS.pts}
+                xKey="i"
+                yKey="v"
+                height={130}
+                color={schCongelado ? "var(--color-aviso)" : "var(--color-serie-1)"}
+                referencias={[{ valor: 7.83, color: "var(--color-faint)", etiqueta: "7.83 ref" }]}
+              />
+            ) : (
+              <SinDatos titulo="Sin serie Schumann viva" detalle="No hay lecturas válidas en la ventana." />
+            )}
+            {schCongelado && (
+              <p className="mt-2 text-meta leading-snug" style={{ color: "var(--color-aviso)" }}>
+                {schNota || "Serie plana: un solo valor repetido en toda la ventana."}
+              </p>
+            )}
+          </div>
+          <div className="space-y-3 lg:border-l lg:border-border lg:pl-5">
+            <Metrica
+              etiqueta="Frecuencia"
+              valor={<Cifra valor={schLatest?.schumann_hz} digits={2} />}
+              unidad="Hz"
+              nivel={schCongelado ? "HIGH" : undefined}
+              contexto={schCongelado ? "valor congelado, no medido" : "última lectura"}
+            />
+            <Metrica
+              etiqueta="Excitación"
+              jerarquia="compacta"
+              valor={<Cifra valor={schLatest?.schumann_activity} digits={0} />}
+              unidad="%"
+            />
+          </div>
+        </div>
+      </Panel>
 
-      {/* Schumann */}
-      <div className="rounded-lg border border-border bg-card p-5" style={{ borderColor: "rgba(94,106,210,0.25)" }}>
-        <div className="mb-3 flex items-baseline justify-between">
-          <div>
-            <span className="text-sm font-semibold">Beta-1 · Resonancia Schumann</span>{" "}
-            <span className="text-[11px] text-accent">♥ el latido — todo correlaciona contra él</span>
+      {/* ---------- Clima espacial + Delta ---------- */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Panel
+          titulo="Alfa · Clima espacial"
+          meta="NOAA SWPC"
+          nota="Bz negativo (hacia el sur) abre la magnetósfera; Kp mide la tormenta geomagnética resultante."
+        >
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div>
+              <div className="etiqueta">Bz (GSM)</div>
+              <div className="mt-1.5">
+                {bzS.pts.length ? (
+                  <LineSpark
+                    data={bzS.pts}
+                    xKey="i"
+                    yKey="v"
+                    height={78}
+                    color="var(--color-serie-2)"
+                    referencias={[{ valor: 0, color: "var(--color-border-strong)" }]}
+                  />
+                ) : (
+                  <p className="py-6 text-center text-meta text-faint">Sin lecturas</p>
+                )}
+              </div>
+              {bzS.faltantes > 0 && (
+                <p className="mt-1 text-micro text-faint">
+                  {bzS.faltantes} de {bzS.total} sin dato (no se dibujan como cero)
+                </p>
+              )}
+            </div>
+            <div>
+              <div className="etiqueta">Kp</div>
+              <div className="mt-1.5">
+                {kpS.pts.length ? (
+                  <LineSpark data={kpS.pts} xKey="i" yKey="v" height={78} color="var(--color-serie-3)" dominio={[0, 9]} />
+                ) : (
+                  <p className="py-6 text-center text-meta text-faint">Sin lecturas</p>
+                )}
+              </div>
+              {kpS.faltantes > 0 && (
+                <p className="mt-1 text-micro text-faint">
+                  {kpS.faltantes} de {kpS.total} sin dato
+                </p>
+              )}
+            </div>
           </div>
-          <span className="mono text-[11px] text-muted">fuente: Tomsk · ref 7.83 Hz</span>
-        </div>
-        <div className="grid items-center gap-5 md:grid-cols-[3fr_1fr]">
-          {schSpark.length ? <LineSpark data={schSpark} xKey="i" yKey="hz" height={90} color="#7c86dc" /> : <Caption>Sin serie Schumann viva.</Caption>}
-          <div>
-            <div className="mono text-2xl">{fmtNum(schLatest?.schumann_hz)} <span className="text-xs text-muted">Hz</span></div>
-            <div className="text-[11.5px] text-warning">excitación {fmtNum(schLatest?.schumann_activity, 0)}%</div>
+        </Panel>
+
+        <Panel
+          titulo="Delta · Humor de los mercados"
+          meta="BTC · VIX · tendencias"
+          nota="El componente financiero entra como una señal precursora más, no como consejo de inversión. ALERT cuando el combinado supera 0.6."
+        >
+          <div className="etiqueta">Cross-coupling (composite)</div>
+          <div className="mt-1.5">
+            {deltaS.pts.length ? (
+              <LineSpark
+                data={deltaS.pts}
+                xKey="i"
+                yKey="v"
+                height={130}
+                color="var(--color-serie-1)"
+                referencias={[{ valor: 0.6, color: "var(--color-aviso)", etiqueta: "0.6 alert" }]}
+              />
+            ) : (
+              <SinDatos titulo="Sin serie delta" />
+            )}
           </div>
-        </div>
-        <Caption>Excitación &gt;15% suma confianza; &gt;30% con espectro Kp plano dispara WATCH.</Caption>
+          {deltaS.faltantes > 0 && (
+            <p className="mt-1.5 text-micro text-faint">
+              {deltaS.faltantes} de {deltaS.total} ciclos sin composite calculado
+            </p>
+          )}
+        </Panel>
       </div>
 
-      {/* Space weather + delta */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="mb-3 text-sm font-semibold">Alfa · Clima espacial</div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <div className="mono text-[10px] uppercase text-muted">Bz (GSM)</div>
-              {bzSpark.length ? <LineSpark data={bzSpark} xKey="i" yKey="bz" height={52} color="#10b981" /> : null}
+      {/* ---------- Cimática ---------- */}
+      <Panel
+        titulo="Cimática — las formas del sistema"
+        meta="tbl_cimatica_patrones"
+        nota="Cada ciclo convierte el estado en una clave. Nueva → se guarda; repetida → +1 a su frecuencia. Si antecede a un evento real, se etiqueta con su clase. Un patrón frecuente no es un patrón predictivo: eso lo decide el Juez."
+      >
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Metrica
+                etiqueta="Patrones en DB"
+                valor={
+                  ci.data?.total != null ? (
+                    Number(ci.data.total).toLocaleString("es-MX")
+                  ) : (
+                    <span className="dato-ausente">—</span>
+                  )
+                }
+              />
+              <div>
+                <div className="etiqueta">Biblioteca</div>
+                {bibliotecaPresente ? (
+                  <div className="mono mt-1 text-[length:var(--text-metric)] font-semibold text-foreground">
+                    {Number(caData.biblioteca_n ?? 0).toLocaleString("es-MX")}
+                  </div>
+                ) : (
+                  <div className="mt-1.5 text-meta leading-snug" style={{ color: "var(--color-aviso)" }}>
+                    Tabla ausente en esta base — no es una biblioteca vacía.
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <div className="mono text-[10px] uppercase text-muted">Kp</div>
-              {kpSpark.length ? <LineSpark data={kpSpark} xKey="i" yKey="kp" height={52} color="#ffc107" /> : null}
+            <div className="border-t border-border pt-3">
+              <div className="etiqueta">Clave cimática actual</div>
+              <p className="mono mt-1.5 break-all text-micro leading-relaxed text-muted">
+                {String(caData.current_clave || "—")}
+              </p>
             </div>
           </div>
-          <Caption>Bz negativo (sur) abre la magnetósfera; Kp mide la tormenta geomagnética. Alfa-2 lo valida desde satélite.</Caption>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="mb-3 text-sm font-semibold">Delta · Humor financiero</div>
-          <div className="space-y-1.5">
-            <div className="mono text-[10px] uppercase text-muted">Cross-coupling (composite)</div>
-            {deltaSpark.length ? <LineSpark data={deltaSpark} xKey="i" yKey="score" height={70} color="#7c86dc" /> : <Caption>Sin serie delta.</Caption>}
-          </div>
-          <Caption>BTC, cripto, VIX y tendencias como una señal precursora más. ALERT si el combinado supera 0.6.</Caption>
-        </div>
-      </div>
 
-      {/* Cimática */}
-      <section className="space-y-2">
-        <h4 className="text-sm font-medium">Cimática — las formas del sistema</h4>
-        <Caption>
-          Cada ciclo toma una "foto" del estado y la convierte en un patrón. Nuevo → se guarda completo; repetido → +1 a su
-          frecuencia. Si antecede a un evento real, se etiqueta con su clase.
-        </Caption>
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="grid grid-cols-3 gap-3 lg:col-span-2">
-            <Kpi label="Patrones (DB)" value={ci.data?.total != null ? Number(ci.data.total).toLocaleString("es-MX") : "—"} hint="tbl_cimatica_patrones" />
-            <Kpi label="Biblioteca" value={String(caData.biblioteca_n ?? "—")} hint="figuras históricas" />
-            <Kpi label="Hits live" value={String((caData.library as Record<string, unknown> | undefined)?.n_hits ?? caData.hits ?? "—")} hint="similitud" />
-            <div className="col-span-3 rounded-lg border border-border bg-card p-4">
-              <div className="mb-2 text-[13px] font-semibold">Clave cimática actual</div>
-              <div className="mono break-all text-[11px] text-muted">{String(caData.current_clave || "—")}</div>
-            </div>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <div className="mb-2 flex items-baseline justify-between">
-              <span className="text-[13px] font-semibold">Patrones más vistos</span>
-              <span className="mono text-[10px] uppercase text-muted">frecuencia</span>
+          <div className="lg:border-l lg:border-border lg:pl-6">
+            <div className="flex items-baseline justify-between">
+              <span className="etiqueta">Patrones más vistos</span>
+              <span className="etiqueta">frecuencia</span>
             </div>
             {topPatrones.length ? (
-              <div className="space-y-2">
+              <ul className="mt-3 space-y-2.5">
                 {topPatrones.map((p, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_60px_36px] items-center gap-2">
-                    <span className="mono truncate text-[11px]">
+                  <li key={i} className="grid grid-cols-[minmax(0,1fr)_72px_46px] items-center gap-2.5">
+                    <span className="mono truncate text-micro text-body">
                       {String(p.id_nodo ? `n${p.id_nodo}` : "gen")} · {String(p.event_class || "—")}
                     </span>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-[#232427]">
-                      <div className="h-full bg-accent" style={{ width: `${(Number(p.frecuencia) / maxFreq) * 100}%` }} />
+                    <div className="h-1.5 overflow-hidden rounded-full bg-surface-sunken">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${(Number(p.frecuencia) / maxFreq) * 100}%`,
+                          background: "var(--color-serie-1)",
+                        }}
+                      />
                     </div>
-                    <span className="mono text-right text-[10.5px]">{String(p.frecuencia)}</span>
-                  </div>
+                    <span className="mono text-right text-micro tabular-nums text-body">
+                      {String(p.frecuencia)}
+                    </span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             ) : (
-              <Caption>Sin patrones cimáticos aún.</Caption>
+              <p className="mt-3 text-meta text-muted">Sin patrones cimáticos aún.</p>
             )}
           </div>
         </div>
-      </section>
+      </Panel>
     </div>
   );
 }

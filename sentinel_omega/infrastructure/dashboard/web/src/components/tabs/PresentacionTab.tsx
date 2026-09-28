@@ -1,174 +1,202 @@
 import { useCallback } from "react";
 import { api, type Overview } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { fmtNum } from "@/lib/utils";
+import { Cifra, Panel } from "@/components/ui/data";
 
 /**
- * Tab Presentación — qué es Sentinel Omega. Landing descriptiva (mayormente
- * estática) con unos pocos números en vivo del overview.
+ * PRESENTACIÓN — superficie DECIDE/LEARN.
+ *
+ * Es la única pestaña donde un hero es la composición correcta: aquí alguien
+ * llega sin contexto y hay que explicarle qué es esto antes de enseñarle un
+ * número.
+ *
+ * Tres cosas que se corrigieron respecto de la versión anterior:
+ *
+ *  - Se quitó el CENTER-STACK. Todo iba centrado —titular, párrafo, chips,
+ *    y luego cuatro cifras gigantes centradas— que es el patrón por defecto
+ *    de plantilla, no una decisión. Ahora el hero está alineado a la
+ *    izquierda sobre una rejilla asimétrica: el ojo entra por una esquina y
+ *    baja, en vez de rebotar por el eje central.
+ *  - Se quitaron los MONUMENT STATS. Cuatro números de 3xl en fila, todos del
+ *    mismo tamaño, no establecen jerarquía: establecen ruido. Ahora la cifra
+ *    que manda es la ganancia (la que de verdad dice si el sistema sirve) y
+ *    el resto la acompaña en escala menor.
+ *  - El degradado sobre el texto del titular se fue. Un gradiente de marca en
+ *    tipografía es el tell #1 de diseño generado; el énfasis ahora es
+ *    tipográfico y de color sólido.
+ *
+ * Regla de honestidad: si la API no da un número, va un guion. Nunca un
+ * literal escrito a mano (este archivo ya tuvo un "96%" hardcodeado que
+ * sobrevivió meses porque leía una clave que la API no devolvía).
  */
 export function PresentacionTab() {
   const ov = usePoll<Overview>(useCallback(() => api.overview(), []), 60000);
   const cyc = usePoll(useCallback(() => api.ciclos(1), []), 60000);
   const ci = usePoll(useCallback(() => api.cimatica(1), []), 60000);
-  const ac = usePoll(useCallback(() => api.aciertos(1), []), 60000);
+  const bots = usePoll(useCallback(() => api.bots(), []), 60000);
 
-  // Antes esto leía `tasa_acierto_global`, una clave que la API NO devuelve
-  // (se llama `asertividad`), así que la condición nunca se cumplía y el
-  // recuadro mostraba el literal "96%" como si fuera un dato vivo. Medido el
-  // 2026-09-25. Sin dato se muestra un guion: nunca un número inventado.
-  const asert = ac.data?.summary as Record<string, unknown> | undefined;
-  const asertPct =
-    asert && asert.asertividad != null
-      ? `${(Number(asert.asertividad) * 100).toFixed(1)}%`
-      : "—";
-  // La asertividad NO se enseña sola: cuenta como acierto cada silencio en el
-  // que no pasó nada, y la calma es el 98 % de las ventanas. Lo que dice si el
-  // sistema aporta algo es la ganancia sobre alertar a ciegas.
-  const ganancia =
-    asert && asert.ganancia_real != null
-      ? `${Number(asert.ganancia_real).toFixed(2)}×`
-      : "—";
-  // El del bot mudo también viene de la API: un literal aquí se quedaría viejo,
-  // que es exactamente el error que se está corrigiendo en este recuadro.
-  const mudo =
-    asert && asert.asertividad_bot_mudo != null
-      ? `un bot mudo saca ${(Number(asert.asertividad_bot_mudo) * 100).toFixed(1)}%`
-      : undefined;
-  const detectados =
-    asert && asert.eventos_detectados != null && asert.eventos_totales != null
-      ? `${asert.eventos_detectados} de ${asert.eventos_totales} eventos`
-      : undefined;
+  const b = bots.data as Record<string, unknown> | undefined;
+  const ganancia = b?.ganancia_real != null ? Number(b.ganancia_real) : null;
+  const asert = b?.asertividad_viva_global != null ? Number(b.asertividad_viva_global) : null;
+  const mudo = b?.asertividad_bot_mudo != null ? Number(b.asertividad_bot_mudo) : null;
+  const veredicto = b?.veredicto_ganancia ? String(b.veredicto_ganancia) : null;
+  const aporta = ganancia != null && ganancia > 1;
+
   const cicloId =
-    (cyc.data?.[0]?.id as number | undefined) ??
-    (ov.data?.ciclo?.id as number | undefined);
-  const patrones = ci.data?.total != null ? Number(ci.data.total).toLocaleString("es-MX") : "191 k";
+    (cyc.data?.[0]?.id as number | undefined) ?? (ov.data?.ciclo?.id as number | undefined);
+  const patrones = ci.data?.total != null ? Number(ci.data.total) : null;
 
   return (
-    <div className="space-y-6">
-      {/* Hero */}
-      <div className="relative overflow-hidden rounded-xl border border-border bg-card/40 px-6 py-14 text-center">
-        <div
-          className="pointer-events-none absolute left-1/2 top-[-120px] h-[400px] w-[700px] -translate-x-1/2"
-          style={{ background: "radial-gradient(ellipse at center, rgba(94,106,210,0.16), transparent 70%)" }}
-        />
-        <div className="relative mx-auto flex max-w-3xl flex-col items-center gap-5">
-          <span className="mono text-[11px] uppercase tracking-[0.09em] text-accent">
-            Fractal Core Research · sucesor de TITAN V32/V46/V53
-          </span>
-          <h1 className="text-5xl font-extrabold leading-[1.05] tracking-tight">
-            El planeta avisa{" "}
-            <span
-              style={{
-                background: "linear-gradient(120deg,#7c86dc,#a9b0ec)",
-                WebkitBackgroundClip: "text",
-                backgroundClip: "text",
-                color: "transparent",
-              }}
+    <div className="space-y-5">
+      {/* ---------- Hero: asimétrico, alineado a la izquierda ---------- */}
+      <section className="overflow-hidden rounded-lg border border-border bg-surface">
+        <div className="grid gap-px bg-border lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+          <div className="bg-surface px-7 py-10 lg:px-9 lg:py-12">
+            <span className="etiqueta">Fractal Core Research · sucesor de TITAN V32/V46/V53</span>
+            <h1
+              className="mt-4 max-w-[19ch] text-[2.6rem] font-bold leading-[1.08] tracking-tight text-foreground lg:text-[3.1rem]"
+              style={{ textWrap: "balance" }}
             >
-              antes
-            </span>{" "}
-            de un evento.
-            <br />
-            Sentinel Omega lo escucha.
-          </h1>
-          <p className="text-base leading-relaxed text-[#c7cbd1]" style={{ textWrap: "pretty" }}>
-            Una plataforma que vigila las señales físicas de la Tierra —campo magnético solar, resonancia Schumann,
-            sismos, gases volcánicos, hasta el humor de los mercados— y reconoce los <b className="text-foreground">precursores</b>:
-            las condiciones que en 32 años de historia han aparecido en los días previos a eventos naturales fuertes.
-          </p>
-          <div className="mt-1 flex flex-wrap justify-center gap-2.5">
-            {["32 años de memoria", "125 nodos globales", "8 agentes + Padre + Juez"].map((t) => (
-              <span key={t} className="mono rounded-lg border border-border px-3.5 py-2 text-xs text-[#c7cbd1]">
-                {t}
-              </span>
+              El planeta avisa antes de un evento.
+            </h1>
+            <p
+              className="mt-5 max-w-[58ch] text-[length:var(--text-read)] leading-relaxed text-body"
+              style={{ textWrap: "pretty" }}
+            >
+              Sentinel Omega vigila las señales físicas de la Tierra —campo magnético solar,
+              resonancia Schumann, sismos, desgasificación volcánica, hasta el humor de los
+              mercados— y reconoce <b className="text-foreground">precursores</b>: las condiciones
+              que en 32 años de registro aparecieron en los días previos a eventos naturales
+              fuertes.
+            </p>
+            <p className="mt-3 max-w-[58ch] text-meta leading-relaxed text-muted">
+              No anuncia epicentros ni fechas. Estima cuándo un estado se parece a los que
+              precedieron a algo, y sube la vigilancia.
+            </p>
+          </div>
+
+          {/* Columna derecha: datos de escala, no adornos */}
+          <div className="flex flex-col justify-center gap-5 bg-surface px-7 py-10 lg:px-8">
+            {[
+              ["Memoria", "32 años", "1994 → hoy, resolución horaria"],
+              ["Topología", "125 nodos", "75 reales + 50 Ghost (UVG)"],
+              ["Consejo", "8 + 2", "bots votantes, Padre y Juez"],
+            ].map(([k, v, sub]) => (
+              <div key={k} className="border-l-2 border-border pl-3.5">
+                <div className="etiqueta">{k}</div>
+                <div className="mono mt-0.5 text-[length:var(--text-read)] font-semibold text-foreground">
+                  {v}
+                </div>
+                <div className="mt-0.5 text-meta text-muted">{sub}</div>
+              </div>
             ))}
           </div>
         </div>
+      </section>
+
+      {/* ---------- Qué sí / qué no ---------- */}
+      <div className="grid gap-5 md:grid-cols-2">
+        <Panel titulo="Qué sí hace">
+          <ul className="space-y-2.5 text-body leading-relaxed text-body">
+            <li>
+              Reconoce cuando el estado físico del presente <b className="text-foreground">se parece</b> a
+              los días previos a eventos pasados.
+            </li>
+            <li>Estima una <b className="text-foreground">ventana temporal</b> — cuándo podría ocurrir.</li>
+            <li>
+              Aprende de cada acierto y cada error: el Juez audita contra el catálogo real del USGS y
+              castiga a los bots que fallan.
+            </li>
+          </ul>
+        </Panel>
+        <Panel titulo="Qué no hace">
+          <ul className="space-y-2.5 text-body leading-relaxed text-body">
+            <li>No es un oráculo: no anuncia epicentro, magnitud ni hora con certeza.</li>
+            <li>
+              No inventa datos. Si una fuente cae, el valor es <span className="mono">NULL</span> — nunca
+              un número plausible de relleno.
+            </li>
+            <li>No es consejo de inversión, aunque lea los mercados como una señal más.</li>
+          </ul>
+        </Panel>
       </div>
 
-      {/* Qué sí / qué no */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="mb-2 flex items-center gap-2">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-            <span className="text-[15px] font-semibold">Qué sí hace</span>
-          </div>
-          <p className="text-sm leading-relaxed text-muted">
-            Reconoce cuando el estado físico del presente <b className="text-[#c7cbd1]">se parece</b> a los días previos a
-            eventos pasados, estima <b className="text-[#c7cbd1]">cuándo</b> podría ocurrir (ventana temporal) y eleva la
-            vigilancia. Aprende de cada acierto y error.
-          </p>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="mb-2 flex items-center gap-2">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff9100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
-            <span className="text-[15px] font-semibold">Qué no hace</span>
-          </div>
-          <p className="text-sm leading-relaxed text-muted">
-            No es un oráculo ni anuncia epicentros con certeza. No inventa datos: si una fuente cae, el valor es NULL.
-            No es un consejo de inversión aunque lea los mercados como una señal más.
-          </p>
-        </div>
-      </div>
-
-      {/* Cómo funciona */}
-      <div className="rounded-lg border border-border bg-card p-6">
-        <div className="mb-4 text-[15px] font-semibold">Cómo funciona — en cuatro pasos</div>
-        <div className="grid gap-4 md:grid-cols-4">
+      {/* ---------- Cómo funciona ---------- */}
+      <Panel titulo="Cómo funciona" meta="cuatro pasos por ciclo">
+        <ol className="grid gap-x-6 gap-y-5 md:grid-cols-2 xl:grid-cols-4">
           {[
-            ["01 · Escucha", "Telemetría real", "8 agentes leen NOAA, USGS, ESA, Tomsk, mercados — cada ciclo, cada nodo."],
-            ["02 · Reconoce", "Firmas y precursores", "Compara contra la memoria de 32 años; 15 precursores y 5 muros vigilan la coincidencia."],
-            ["03 · Consensúa", "El Padre decide", "Cruza familias y pesa credibilidad; estima la ventana temporal (cuánto falta)."],
-            ["04 · Aprende", "El Juez audita", "Compara con la realidad (USGS) y disciplina a los bots — omitir pesa 10× más que fallar."],
-          ].map(([step, title, body]) => (
-            <div key={step} className="flex flex-col gap-1.5">
-              <span className="mono text-[11px] text-accent">{step}</span>
-              <span className="text-[13px] font-semibold">{title}</span>
-              <span className="text-xs leading-relaxed text-muted">{body}</span>
-            </div>
+            ["01", "Escucha", "8 agentes leen NOAA, USGS, ESA, Tomsk y mercados en cada ciclo, nodo por nodo."],
+            ["02", "Reconoce", "Compara contra la memoria de 32 años: 15 tipos de precursor y 5 muros vigilan la coincidencia."],
+            ["03", "Consensúa", "El Padre cruza familias, pesa credibilidad por mérito y estima cuánto falta."],
+            ["04", "Aprende", "El Juez compara con la realidad y disciplina: omitir un evento pesa 10× más que una falsa alarma."],
+          ].map(([num, titulo, cuerpo]) => (
+            <li key={num} className="border-t border-border pt-3">
+              <div className="flex items-baseline gap-2">
+                <span className="mono text-micro font-semibold" style={{ color: "var(--color-accent)" }}>
+                  {num}
+                </span>
+                <span className="text-body font-semibold text-foreground">{titulo}</span>
+              </div>
+              <p className="mt-1.5 text-meta leading-relaxed text-muted" style={{ textWrap: "pretty" }}>
+                {cuerpo}
+              </p>
+            </li>
           ))}
+        </ol>
+      </Panel>
+
+      {/* ---------- Estado real: una cifra manda ---------- */}
+      <Panel
+        titulo="Dónde está hoy"
+        meta="medido, no prometido"
+        nota="Estos números salen de la auditoría del Juez sobre la fase viva. Se publican tal cual, incluso cuando no favorecen al sistema: un tablero de precursores que sólo enseña sus aciertos no sirve para decidir nada."
+      >
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
+          <div>
+            <div className="etiqueta">Ganancia sobre alertar a ciegas</div>
+            <div
+              className="mt-1.5 text-[length:var(--text-hero-num)] font-bold leading-none tracking-tight tnum"
+              style={{ color: aporta ? "var(--color-calma)" : "var(--color-aviso)" }}
+            >
+              {ganancia != null ? `${ganancia.toFixed(2)}×` : <span className="dato-ausente">—</span>}
+            </div>
+            <p
+              className="mt-2.5 max-w-[42ch] text-meta leading-relaxed"
+              style={{ color: aporta ? "var(--color-muted)" : "var(--color-aviso)" }}
+            >
+              {veredicto ??
+                "Compara la precisión de la alarma contra la tasa base. 1× significa que alertar siempre habría rendido igual."}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 self-center border-l border-border pl-6">
+            <div>
+              <div className="etiqueta">Asertividad viva</div>
+              <div className="mono mt-1 text-[length:var(--text-metric)] font-semibold text-foreground">
+                {asert != null ? `${(asert * 100).toFixed(1)}%` : <span className="dato-ausente">—</span>}
+              </div>
+              <div className="mt-0.5 text-micro leading-snug text-faint">
+                {mudo != null
+                  ? `un bot mudo saca ${(mudo * 100).toFixed(1)}%`
+                  : "cuenta los silencios en calma"}
+              </div>
+            </div>
+            <div>
+              <div className="etiqueta">Ciclos corridos</div>
+              <div className="mono mt-1 text-[length:var(--text-metric)] font-semibold text-foreground">
+                {cicloId != null ? Number(cicloId).toLocaleString("es-MX") : <span className="dato-ausente">—</span>}
+              </div>
+              <div className="mt-0.5 text-micro text-faint">desde el arranque</div>
+            </div>
+            <div className="col-span-2 border-t border-border pt-3">
+              <div className="etiqueta">Patrones cimáticos aprendidos</div>
+              <div className="mono mt-1 text-[length:var(--text-read)] font-semibold text-foreground">
+                <Cifra valor={patrones} digits={0} />
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-
-      {/* Números */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <StatBig
-          value={ganancia}
-          label="ganancia sobre alertar a ciegas · 1× = no aporta"
-          sub={detectados}
-          accent="#ff9100"
-        />
-        <StatBig
-          value={asertPct}
-          label="asertividad viva (cuenta los silencios)"
-          sub={mudo}
-        />
-        <StatBig value={cicloId != null ? Number(cicloId).toLocaleString("es-MX") : "—"} label="ciclos corridos" />
-        <StatBig value={patrones} label="patrones cimáticos aprendidos" />
-      </div>
-    </div>
-  );
-}
-
-function StatBig({
-  value,
-  label,
-  sub,
-  accent,
-}: {
-  value: string;
-  label: string;
-  sub?: string;
-  accent?: string;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-5 text-center">
-      <div className="text-3xl font-bold tracking-tight" style={accent ? { color: accent } : undefined}>
-        {value}
-      </div>
-      <div className="mt-1 text-xs text-muted">{label}</div>
-      {sub ? <div className="mt-0.5 text-[11px] text-muted/70">{sub}</div> : null}
+      </Panel>
     </div>
   );
 }

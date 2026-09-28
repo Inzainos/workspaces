@@ -1,6 +1,10 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+/**
+ * Tarjeta base. Se mantiene por compatibilidad con los tabs que aún no migran
+ * a `Panel` (components/ui/data.tsx). Ajustada a los tokens nuevos.
+ */
 export function Card({
   className,
   ...props
@@ -8,7 +12,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-lg border border-border bg-card/80 text-card-foreground shadow-sm",
+        "rounded-lg border border-border bg-surface text-foreground",
         className,
       )}
       {...props}
@@ -27,12 +31,7 @@ export function CardTitle({
   className,
   ...props
 }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return (
-    <h3
-      className={cn("text-sm font-medium tracking-tight text-muted", className)}
-      {...props}
-    />
-  );
+  return <h3 className={cn("etiqueta", className)} {...props} />;
 }
 
 export function CardContent({

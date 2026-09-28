@@ -138,6 +138,7 @@ class ReadOnlyRepository(SentinelRepository):
                    FROM TBL_JUEZ_AUDITORIA
                    WHERE resultado IN ('ACIERTO','FALLO','FALSO_POSITIVO')
                      AND fase = 'viva'
+                     AND COALESCE(en_vivo, 1) = 1
                    ORDER BY COALESCE(resuelto_at, created_at) DESC
                    LIMIT ?""",
                 (limit,),
@@ -148,6 +149,11 @@ class ReadOnlyRepository(SentinelRepository):
         # operación real: medido el 2026-09-25 daba 1.002.747 aciertos y una
         # asertividad del 99,6 %, mientras el tablero lo rotulaba «fase viva».
         # La vara canónica del sistema es la vista viva_real.
+        #
+        # `COALESCE(en_vivo,1)=1` tampoco lo es: el 2026-09-27 hubo DOS Sentinel
+        # escribiendo a la vez (usuario + root) y se marcaron 603 veredictos
+        # duplicados con `en_vivo=0`. La vista `viva_real` sólo filtra por fase,
+        # así que sin esta cláusula esos 603 vuelven a entrar en la cuenta.
         counts = {
             r["resultado"]: r["n"]
             for r in self._ro_execute(
@@ -155,6 +161,7 @@ class ReadOnlyRepository(SentinelRepository):
                    FROM TBL_JUEZ_AUDITORIA
                    WHERE resultado IN ('ACIERTO','FALLO','FALSO_POSITIVO')
                      AND fase = 'viva'
+                     AND COALESCE(en_vivo, 1) = 1
                    GROUP BY resultado"""
             ).fetchall()
         }
@@ -168,7 +175,8 @@ class ReadOnlyRepository(SentinelRepository):
             (r["verdad"] or "", r["resultado"] or "")
             for r in self._ro_execute(
                 "SELECT verdad, resultado FROM TBL_JUEZ_AUDITORIA "
-                "WHERE fase = 'viva' AND resultado != 'PENDIENTE' AND verdad != ''"
+                "WHERE fase = 'viva' AND COALESCE(en_vivo, 1) = 1 "
+                "AND resultado != 'PENDIENTE' AND verdad != ''"
             ).fetchall()
         ]
         m = evaluar_veredictos(filas)
@@ -606,15 +614,38 @@ def bots() -> Dict[str, Any]:
     # se mantiene para no romper lo que ya lo dibuja, pero al lado va la
     # ganancia honesta, que es la que dice si el sistema aporta algo.
     molchan = None
+    falsos_positivos_total = None
+    veredictos_sistema = None
     if _table_exists("TBL_JUEZ_AUDITORIA"):
         filas = [
             (r.get("verdad") or "", r.get("resultado") or "")
             for r in _rows(
                 "SELECT verdad, resultado FROM viva_real "
-                "WHERE resultado != 'PENDIENTE' AND verdad != ''"
+                "WHERE COALESCE(en_vivo, 1) = 1 "
+                "AND resultado != 'PENDIENTE' AND verdad != ''"
             )
         ]
         molchan = evaluar_veredictos(filas)
+        # Los falsos positivos se exponen explícitamente porque la asertividad
+        # los deja FUERA del denominador. Sin este número el tablero no puede
+        # dibujar la proporción real de veredictos, y 1.651 falsas alarmas
+        # desaparecen detrás de un 98,6 % que suena impecable.
+        conteo = {
+            str(r["resultado"]): int(r["n"] or 0)
+            for r in _rows(
+                "SELECT resultado, COUNT(*) AS n FROM viva_real "
+                "WHERE COALESCE(en_vivo, 1) = 1 "
+                "AND resultado IN ('ACIERTO','FALLO','FALSO_POSITIVO') "
+                "GROUP BY resultado"
+            )
+        }
+        veredictos_sistema = {
+            "aciertos": conteo.get("ACIERTO", 0),
+            "falsos_positivos": conteo.get("FALSO_POSITIVO", 0),
+            "fallos": conteo.get("FALLO", 0),
+            "fuente": "viva_real WHERE COALESCE(en_vivo,1)=1",
+        }
+        falsos_positivos_total = conteo.get("FALSO_POSITIVO", 0)
 
     return _jsonable(
         {
@@ -632,6 +663,19 @@ def bots() -> Dict[str, Any]:
             ),
             "aciertos_total": sum_a,
             "fallos_total": sum_f,
+            "totales_son_por_bot": True,
+            "totales_nota": (
+                "aciertos_total/fallos_total son la SUMA POR BOT de TBL_PESOS_BOTS: "
+                "cada ventana se cuenta una vez por cada bot que opinó, así que no "
+                "son comparables con los conteos de viva_real. Para la proporción "
+                "real de veredictos del sistema usar veredictos_sistema."
+            ),
+            # Los tres del MISMO universo (viva_real, en_vivo=1), que es lo único
+            # con lo que se puede dibujar una proporción honesta. Mezclar la suma
+            # por bot con los falsos positivos del sistema daba una barra sin
+            # sentido: 138.068 contra 1.651 son escalas distintas.
+            "veredictos_sistema": veredictos_sistema,
+            "falsos_positivos_total": falsos_positivos_total,
             # Molchan honesto: de las ventanas en que el sistema SE MOJA, qué
             # fracción tenía evento, contra la tasa base. 1× = no aporta nada.
             "ganancia_real": molchan.ganancia if molchan else None,
@@ -675,7 +719,8 @@ def aprendizaje() -> Dict[str, Any]:
                   SUM(CASE WHEN resultado IN ('FALLO','FALSO_POSITIVO') THEN 1 ELSE 0 END) AS no_aciertos,
                   COUNT(*) AS n
            FROM TBL_JUEZ_AUDITORIA
-           WHERE fase='viva' AND resultado IN ('ACIERTO','FALLO','FALSO_POSITIVO')
+           WHERE fase='viva' AND COALESCE(en_vivo, 1) = 1
+             AND resultado IN ('ACIERTO','FALLO','FALSO_POSITIVO')
            GROUP BY bot_name, dia
            ORDER BY dia, bot_name"""
     )
@@ -1123,14 +1168,19 @@ def cimatica_ahora() -> Dict[str, Any]:
                    FROM tbl_cimatica_patrones ORDER BY ultima_vez DESC LIMIT 1"""
             ).fetchone()
 
-        n_lib = 0
+        # `biblioteca_n` distingue AUSENTE de VACÍA. Antes ambos casos daban 0 y
+        # el tablero pintaba «BIBLIOTECA 0» junto a «PATRONES 296.818», que se
+        # lee como una biblioteca vaciada cuando en realidad la tabla nunca se
+        # creó en esta DB. Regla dura 8: faltante = NULL, no un cero plausible.
+        n_lib: Optional[int] = None
         by_ec = []
         if lookup_available and ensure_biblioteca is not None:
             try:
                 ensure_biblioteca(con)
             except Exception:
                 pass
-        if _table_exists("tbl_cimatica_biblioteca"):
+        biblioteca_presente = _table_exists("tbl_cimatica_biblioteca")
+        if biblioteca_presente:
             n_lib = int(con.execute("SELECT COUNT(*) FROM tbl_cimatica_biblioteca").fetchone()[0] or 0)
             by_ec = _rows(
                 "SELECT event_class, COUNT(*) n, SUM(COALESCE(n_eventos,0)) eventos "
@@ -1184,6 +1234,7 @@ def cimatica_ahora() -> Dict[str, Any]:
             "present": True,
             "live_train": False,
             "biblioteca_n": n_lib,
+            "biblioteca_presente": biblioteca_presente,
             "patrones_n": n_pat,
             "current_figura": figura,
             "current_clave": current_clave,
@@ -1500,53 +1551,101 @@ def clima_espacial(limit: int = Query(80, ge=1, le=400)) -> Dict[str, Any]:
 
 @app.get("/api/health/apis")
 def api_health() -> Dict[str, Any]:
-    """Devuelve el estado de las APIs revisando el LOCF cache y las tablas."""
+    """Estado de las fuentes: LOCF cache + tablas vivas.
+
+    Reglas que este endpoint aprendió a golpes:
+
+    - `tbl_locf_cache.updated_at` es REAL (epoch), no TEXT. El `strptime` que
+      había aquí lanzaba TypeError para las CINCO fuentes y un `except: pass`
+      se las tragaba: el strip del dashboard mostraba solo `usgs` y `beta1`
+      (las dos ramas que no pasan por el cache) y nadie veía que faltaban
+      alfa1/alfa2/beta2/delta. Regla dura 10: un descarte silencioso esconde
+      el fallo indefinidamente. Ahora `_edad_horas` acepta ambos tipos y lo
+      que no se pueda leer sale como `DESCONOCIDO`, nunca omitido.
+    - Frescura no es lo mismo que validez. Tomsk sirvió una imagen estática
+      durante días: el registro se reescribía cada hora (parecía LIVE) con el
+      MISMO valor. Por eso beta1 se marca `CONGELADO` cuando la serie no
+      cambia en toda la ventana. Ver CHANGELOG 2026-09-27 (Schumann WPC).
+    """
     import time
     from datetime import datetime, timezone
-    
-    health = {}
+
+    health: Dict[str, Any] = {}
     now = time.time()
-    
-    # LOCF status
+
+    def _edad_horas(valor: Any) -> Optional[float]:
+        """Epoch REAL o texto 'YYYY-MM-DD HH:MM:SS' → horas de antigüedad."""
+        if valor is None:
+            return None
+        if isinstance(valor, (int, float)):
+            return (now - float(valor)) / 3600.0
+        try:
+            dt = datetime.strptime(str(valor), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            return (now - dt.timestamp()) / 3600.0
+        except (TypeError, ValueError):
+            return None
+
+    # --- LOCF cache: alfa1/alfa2/beta1/beta2/delta ---
     if _table_exists("tbl_locf_cache"):
-        locf_rows = _rows("SELECT source_key, updated_at FROM tbl_locf_cache")
-        for r in locf_rows:
-            try:
-                dt = datetime.strptime(r['updated_at'], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-                age_h = (now - dt.timestamp()) / 3600
-                health[r['source_key']] = {
-                    "status": "STALE" if age_h > 24 else "LOCF_ACTIVE",
-                    "age_h": round(age_h, 1),
-                    "updated_at": r['updated_at']
+        for r in _rows("SELECT source_key, updated_at FROM tbl_locf_cache"):
+            clave = str(r["source_key"])
+            edad = _edad_horas(r["updated_at"])
+            if edad is None:
+                # Explícito, no omitido: que se vea que no se pudo leer.
+                health[clave] = {
+                    "status": "DESCONOCIDO",
+                    "age_h": None,
+                    "nota": f"updated_at ilegible (tipo {type(r['updated_at']).__name__})",
                 }
-            except Exception:
-                pass
-                
-    # Direct DB status for USGS
+                continue
+            health[clave] = {
+                "status": "STALE" if edad > 24 else "LOCF_ACTIVE",
+                "age_h": round(edad, 1),
+                "last_data_ts": now - edad * 3600.0,
+            }
+
+    # --- USGS directo ---
     if _table_exists("TBL_HISTORICO_SISMICO"):
         usgs_ts = _scalar("SELECT MAX(timestamp) FROM TBL_HISTORICO_SISMICO")
-        if usgs_ts:
-            age_h = (now - usgs_ts) / 3600
+        edad = _edad_horas(usgs_ts)
+        if edad is not None:
             health["usgs"] = {
-                "status": "LIVE" if age_h < 24 else "STALE",
-                "age_h": round(age_h, 1),
-                "last_data_ts": usgs_ts
+                "status": "LIVE" if edad < 24 else "STALE",
+                "age_h": round(edad, 1),
+                "last_data_ts": usgs_ts,
             }
-            
-    # Direct DB status for Schumann vivo
+
+    # --- Schumann vivo: frescura Y variación ---
     if _table_exists("tbl_schumann_vivo"):
-        sch_ts = _scalar("SELECT MAX(creada_at) FROM tbl_schumann_vivo")
-        if sch_ts:
-            try:
-                dt = datetime.strptime(sch_ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-                age_h = (now - dt.timestamp()) / 3600
-                health["beta1"] = {
-                    "status": "LIVE" if age_h < 6 else "STALE",
-                    "age_h": round(age_h, 1),
-                    "last_data_ts": dt.timestamp()
-                }
-            except Exception:
-                pass
+        sch = _rows(
+            "SELECT schumann_hz, schumann_activity, creada_at "
+            "FROM tbl_schumann_vivo ORDER BY timestamp_blk DESC LIMIT 48"
+        )
+        if sch:
+            edad = _edad_horas(sch[0]["creada_at"])
+            distintos_hz = len({r["schumann_hz"] for r in sch if r["schumann_hz"] is not None})
+            distintos_act = len({r["schumann_activity"] for r in sch if r["schumann_activity"] is not None})
+            congelado = len(sch) >= 3 and distintos_hz <= 1 and distintos_act <= 1
+            if congelado:
+                estado = "CONGELADO"
+                nota = (
+                    f"{len(sch)} lecturas con un solo valor "
+                    f"({sch[0]['schumann_hz']} Hz / {sch[0]['schumann_activity']}). "
+                    "La fuente reescribe el mismo dato: se refresca pero no mide."
+                )
+            elif edad is None:
+                estado, nota = "DESCONOCIDO", "creada_at ilegible"
+            elif edad < 6:
+                estado, nota = "LIVE", None
+            else:
+                estado, nota = "STALE", None
+            health["beta1"] = {
+                "status": estado,
+                "age_h": round(edad, 1) if edad is not None else None,
+                "valores_distintos": distintos_hz,
+                "muestras": len(sch),
+                **({"nota": nota} if nota else {}),
+            }
 
     return _jsonable(health)
 

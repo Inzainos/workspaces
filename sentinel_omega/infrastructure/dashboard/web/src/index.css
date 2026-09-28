@@ -1,21 +1,91 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   SENTINEL OMEGA — sistema de diseño del tablero
+   ----------------------------------------------------------------------------
+   Tres reglas que mandan sobre el gusto:
+
+   1. EL COLOR SATURADO SIGNIFICA RIESGO. Nada más. Si algo es naranja aquí,
+      es porque el sistema está inquieto — no porque quedaba bonito. El cromo
+      del tablero (bordes, fondos, ejes, etiquetas) vive en la rampa neutra
+      fría. Esto es lo que permite ver un CRITICAL de reojo desde la puerta.
+   2. NÚMERO COMPARABLE = CIFRA TABULAR. Una columna de métricas que baila
+      horizontalmente no se puede leer en diagonal, y este tablero se lee en
+      diagonal. `--font-mono` y `.tnum` existen para eso.
+   3. LO QUE NO SE MIDIÓ SE VE DISTINTO A LO QUE MIDIÓ CERO. `.dato-ausente`
+      pinta el guion de "no hay lectura" en un gris que NO es el del texto
+      normal. Regla dura 8 del proyecto, llevada al pixel.
+
+   La rampa es oklch: al interpolar entre pasos no se ensucia (el HSL vira a
+   gris lodo en los medios), y los cuatro colores de riesgo tienen la MISMA
+   luminancia percibida, así que ninguno grita más fuerte que otro por accidente.
+   ========================================================================== */
+
 @theme {
-  --color-background: #08090a;
-  --color-foreground: #f7f8f8;
-  --color-card: #191a1b;
-  --color-card-foreground: #f7f8f8;
-  --color-muted: #8a8f98;
-  --color-muted-foreground: #8a8f98;
-  --color-border: rgba(255, 255, 255, 0.08);
-  --color-accent: #5e6ad2;
-  --color-accent-foreground: #f7f8f8;
-  --color-panel: #0f1011;
-  --color-success: #10b981;
-  --color-warning: #ffc107;
-  --color-danger: #ff1744;
-  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  /* ---- Neutros fríos: el instrumento, nunca el dato -------------------- */
+  --color-base-900: oklch(0.155 0.008 265);   /* fondo app */
+  --color-base-850: oklch(0.185 0.009 265);   /* panel hundido */
+  --color-base-800: oklch(0.213 0.010 265);   /* tarjeta */
+  --color-base-750: oklch(0.248 0.011 265);   /* tarjeta elevada */
+  --color-base-700: oklch(0.300 0.012 265);   /* borde fuerte */
+  --color-base-600: oklch(0.400 0.013 265);   /* borde sutil / eje */
+  --color-base-500: oklch(0.520 0.014 265);   /* texto terciario */
+  --color-base-400: oklch(0.645 0.015 265);   /* texto secundario */
+  --color-base-300: oklch(0.760 0.013 265);   /* texto cuerpo */
+  --color-base-100: oklch(0.945 0.006 265);   /* texto principal */
+
+  /* Alias semánticos (lo que se escribe en el JSX) */
+  --color-background: var(--color-base-900);
+  --color-surface: var(--color-base-800);
+  --color-surface-sunken: var(--color-base-850);
+  --color-surface-raised: var(--color-base-750);
+  --color-foreground: var(--color-base-100);
+  --color-body: var(--color-base-300);
+  --color-muted: var(--color-base-400);
+  --color-faint: var(--color-base-500);
+  --color-border: oklch(0.300 0.012 265 / 0.55);
+  --color-border-strong: oklch(0.400 0.013 265 / 0.75);
+
+  /* ---- Riesgo: la ÚNICA familia saturada ------------------------------ */
+  /* Misma L (~0.72): ninguno domina por brillo, solo por matiz. */
+  --color-calma: oklch(0.72 0.145 165);       /* LOW       verde-teal */
+  --color-atencion: oklch(0.72 0.150 95);     /* MODERATE  ámbar */
+  --color-aviso: oklch(0.72 0.165 55);        /* HIGH      naranja */
+  --color-critico: oklch(0.68 0.215 25);      /* CRITICAL  rojo */
+
+  /* Fondos/bordes de riesgo, derivados — no se inventan hex sueltos. */
+  --color-calma-dim: oklch(0.72 0.145 165 / 0.14);
+  --color-atencion-dim: oklch(0.72 0.150 95 / 0.14);
+  --color-aviso-dim: oklch(0.72 0.165 55 / 0.14);
+  --color-critico-dim: oklch(0.68 0.215 25 / 0.16);
+
+  /* ---- Acento de INTERFAZ (no de dato) -------------------------------- */
+  /* Un solo azul frío, y solo para: foco, tab activo, enlace, selección.
+     Nunca para pintar una métrica: si un número es azul, no significa nada. */
+  --color-accent: oklch(0.70 0.115 235);
+  --color-accent-dim: oklch(0.70 0.115 235 / 0.14);
+
+  /* Series de gráfica: neutras y desaturadas a propósito, para que una
+     línea de datos JAMÁS se confunda con un estado de riesgo. */
+  --color-serie-1: oklch(0.70 0.075 235);
+  --color-serie-2: oklch(0.66 0.060 195);
+  --color-serie-3: oklch(0.62 0.050 280);
+  --color-serie-4: oklch(0.58 0.040 215);
+
+  /* ---- Tipografía ----------------------------------------------------- */
+  /* IBM Plex: dibujada para instrumentación y lectura de datos densa. No es
+     Inter-por-defecto; se eligió por el 0 rebanado y el 1 con base, que a
+     9-11px distinguen un 0.01 de un 0.07 sin tener que acercarse. */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Escala: saltos grandes donde hay jerarquía real, pegados donde no. */
+  --text-micro: 0.6875rem;   /* 11px — etiquetas de eje, unidades */
+  --text-meta: 0.75rem;      /* 12px — metadatos, captions */
+  --text-body: 0.8125rem;    /* 13px — cuerpo denso de tablero */
+  --text-read: 0.9375rem;    /* 15px — prosa explicativa */
+  --text-metric: 1.75rem;    /* 28px — métrica de tarjeta */
+  --text-hero-num: 3.25rem;  /* 52px — la cifra que manda en la vista */
 }
 
 * {
@@ -31,11 +101,99 @@ body,
 body {
   margin: 0;
   background: var(--color-background);
-  color: var(--color-foreground);
+  color: var(--color-body);
   font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Rejilla técnica tenue: da profundidad sin recurrir a un degradado. */
+  background-image:
+    linear-gradient(oklch(0.400 0.013 265 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.400 0.013 265 / 0.035) 1px, transparent 1px);
+  background-size: 64px 64px;
+  background-attachment: fixed;
+}
+
+/* ---- Utilidades de dato ------------------------------------------------ */
+
+/* Cifras que se comparan en columna. Sin esto, un 1 ocupa menos que un 8 y
+   la columna baila. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
 .mono {
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* "No hay lectura" ≠ "midió cero". Que se distinga a simple vista. */
+.dato-ausente {
+  color: var(--color-base-600);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Etiqueta de sección: versalita técnica. */
+.etiqueta {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+/* ---- Accesibilidad ----------------------------------------------------- */
+
+:where(button, a, [role="tab"], [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Objetivos táctiles en móvil: 44px mínimo. */
+@media (pointer: coarse) {
+  :where(button, a, [role="tab"]) {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .pulso-vivo {
+    animation: none !important;
+  }
+}
+
+/* Latido del indicador "en vivo". Discreto: 2s, opacidad, sin escala. */
+@keyframes pulso {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.pulso-vivo {
+  animation: pulso 2s ease-in-out infinite;
+}
+
+/* Barra de scroll acorde al instrumento. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-base-850);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-base-700);
+  border-radius: 5px;
+  border: 2px solid var(--color-base-850);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-base-600);
 }

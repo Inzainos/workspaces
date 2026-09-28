@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 
+/**
+ * Consulta al Concilio (modelos locales con lectura de la DB).
+ *
+ * Sin marco propio: vive dentro de un `Panel`, y anidar dos bordes crea la
+ * caja-dentro-de-caja que enturbia la jerarquía del tablero.
+ */
 export function AskBox() {
   const [q, setQ] = useState("");
   const [answer, setAnswer] = useState<string>("");
@@ -23,29 +29,37 @@ export function AskBox() {
   }
 
   return (
-    <section className="rounded-lg border border-border bg-card/40 p-3 space-y-2">
-      <div className="text-sm font-medium">Preguntar al resumen operativo</div>
+    <div className="space-y-2.5">
       <div className="flex gap-2">
         <input
-          className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm"
+          className="flex-1 rounded-md border border-border bg-[color:var(--color-base-900)] px-3 py-2 text-body text-foreground placeholder:text-faint"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Ej: ¿cómo va Fantasma hoy?"
+          placeholder="¿Cómo va el Fantasma hoy?"
+          aria-label="Pregunta al Concilio"
           onKeyDown={(e) => {
             if (e.key === "Enter") void ask();
           }}
         />
         <button
           type="button"
-          className="rounded-md border border-border px-3 py-2 text-sm hover:bg-card"
+          className="shrink-0 rounded-md border border-border px-3.5 py-2 text-body font-medium text-body transition-colors hover:bg-surface-raised disabled:opacity-50"
           onClick={() => void ask()}
           disabled={loading}
         >
           {loading ? "Consultando…" : "Preguntar"}
         </button>
       </div>
-      {error ? <div className="text-xs text-warning">{error}</div> : null}
-      {answer ? <div className="text-sm text-foreground whitespace-pre-wrap">{answer}</div> : null}
-    </section>
+      {error ? (
+        <p className="text-meta" style={{ color: "var(--color-aviso)" }}>
+          {error}
+        </p>
+      ) : null}
+      {answer ? (
+        <div className="rounded-md border border-border bg-surface-sunken/60 px-3 py-2.5 text-body leading-relaxed text-body whitespace-pre-wrap">
+          {answer}
+        </div>
+      ) : null}
+    </div>
   );
 }

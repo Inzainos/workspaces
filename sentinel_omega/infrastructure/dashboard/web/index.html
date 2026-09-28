@@ -3,12 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sentinel Omega — Command Dashboard</title>
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Sentinel Omega — tablero de lectura de precursores de eventos naturales. Datos reales, sin relleno."
+    />
+    <title>Sentinel Omega — Tablero de precursores</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <!-- IBM Plex: elegida por legibilidad numérica densa (0 rebanado, 1 con
+         base). Si no hay red, el fallback de index.css mantiene el tablero
+         legible: ninguna métrica depende de que la fuente cargue. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
   </head>
-  <body class="bg-background text-foreground">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

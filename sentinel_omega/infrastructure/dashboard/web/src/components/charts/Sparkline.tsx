@@ -1,16 +1,41 @@
+/**
+ * Gráficas SVG sin dependencias.
+ *
+ * Criterio: una gráfica de tablero sin eje Y es un adorno. Antes estas
+ * primitivas dibujaban la forma pero no la escala, así que una línea de
+ * Fantasma plana en 8.1 y otra plana en 40 se veían idénticas. Ahora todas
+ * rotulan mínimo/máximo y, donde importa, la referencia.
+ *
+ * Las series usan los tokens `--color-serie-*` (azules/teales desaturados) y
+ * NUNCA los de riesgo: si una línea sale naranja, es que el dato está en zona
+ * de aviso, no que tocaba ese color en la paleta.
+ */
 interface DataPoint {
-  // La API devuelve Record<string, unknown>; los charts coercionan con Number()/String().
   [key: string]: unknown;
 }
 
-/** Paleta consistente (theme-friendly). Se usa cuando el dato no trae color. */
-const PALETTE = [
-  "#5e6ad2", "#10b981", "#ffc107", "#ff9100", "#ff1744",
-  "#3b82f6", "#8b5cf6", "#14b8a6", "#ec4899", "#f59e0b",
+const SERIES = [
+  "var(--color-serie-1)",
+  "var(--color-serie-2)",
+  "var(--color-serie-3)",
+  "var(--color-serie-4)",
 ];
 
-// Ancho del sistema de coordenadas interno; el viewBox lo reescala al 100%.
 const VBW = 640;
+
+function fmtEje(v: number): string {
+  const a = Math.abs(v);
+  if (a >= 1000) return `${(v / 1000).toFixed(1)}k`;
+  if (a >= 100) return v.toFixed(0);
+  if (a >= 10) return v.toFixed(1);
+  if (a >= 1) return v.toFixed(2);
+  if (a === 0) return "0";
+  return v.toFixed(3);
+}
+
+/* ========================================================================== */
+/* Barras                                                                     */
+/* ========================================================================== */
 
 interface BarSeries {
   key: string;
@@ -20,61 +45,100 @@ interface BarSeries {
 interface SimpleBarsProps {
   data: DataPoint[];
   xKey: string;
-  /** Serie única (compat). Ignorado si se pasa `bars`. */
   yKey?: string;
   color?: string;
-  /** Multi-serie: barras agrupadas por categoría. */
   bars?: BarSeries[];
   height?: number;
+  /** Rotula el eje X con el valor de `xKey` (útil en pocas categorías). */
+  mostrarX?: boolean;
 }
 
-/**
- * Barras agrupadas. Acepta `bars` (multi-serie) o `yKey` (serie única).
- * Coordenadas internas reescaladas al 100% del contenedor vía viewBox.
- */
-export function SimpleBars({ data, xKey: _xKey, yKey, color = "#5e6ad2", bars, height = 150 }: SimpleBarsProps) {
-  if (!data.length) return <div className="py-8 text-center text-xs text-muted">Sin datos</div>;
+export function SimpleBars({
+  data,
+  xKey,
+  yKey,
+  color,
+  bars,
+  height = 150,
+  mostrarX = false,
+}: SimpleBarsProps) {
+  if (!data.length) return <VacioChart />;
   const series: Required<BarSeries>[] = (
-    bars && bars.length ? bars : yKey ? [{ key: yKey, color, name: yKey }] : []
-  ).map((s, i) => ({ key: s.key, color: s.color || PALETTE[i % PALETTE.length], name: s.name || s.key }));
-  if (!series.length) return <div className="py-8 text-center text-xs text-muted">Sin series</div>;
+    bars && bars.length ? bars : yKey ? [{ key: yKey, color: color || SERIES[0], name: yKey }] : []
+  ).map((s, i) => ({ key: s.key, color: s.color || SERIES[i % SERIES.length], name: s.name || s.key }));
+  if (!series.length) return <VacioChart texto="Sin series" />;
 
   const allVals = data.flatMap((d) => series.map((s) => Number(d[s.key]))).filter((v) => Number.isFinite(v));
-  if (!allVals.length) return <div className="py-8 text-center text-xs text-muted">Sin datos numéricos</div>;
+  if (!allVals.length) return <VacioChart texto="Sin datos numéricos" />;
   const max = Math.max(...allVals, 0);
 
-  const marginL = 24, marginR = 8, marginB = 10, marginT = 10;
-  const plotW = VBW - marginL - marginR;
-  const plotH = height - marginB - marginT;
+  const mL = 38, mR = 8, mB = mostrarX ? 20 : 10, mT = 8;
+  const plotW = VBW - mL - mR;
+  const plotH = height - mB - mT;
   const groupW = plotW / data.length;
-  const barW = Math.max(2, (groupW * 0.8) / series.length);
+  const barW = Math.max(2, (groupW * 0.78) / series.length);
   const multi = series.length > 1;
 
   return (
-    <div className="space-y-1">
-      <svg
-        width="100%"
-        height={height}
-        viewBox={`0 0 ${VBW} ${height}`}
-        preserveAspectRatio="none"
-        className="w-full"
-        role="img"
-      >
+    <div className="space-y-1.5">
+      <svg width="100%" height={height} viewBox={`0 0 ${VBW} ${height}`} preserveAspectRatio="none" role="img">
+        {/* Rejilla + eje Y */}
+        {[0, 0.5, 1].map((f) => {
+          const y = mT + plotH * (1 - f);
+          return (
+            <g key={f}>
+              <line x1={mL} y1={y} x2={VBW - mR} y2={y} stroke="var(--color-border)" strokeWidth={1} />
+              <text
+                x={mL - 5}
+                y={y + 3}
+                textAnchor="end"
+                fill="var(--color-faint)"
+                style={{ fontSize: 9, fontFamily: "var(--font-mono)" }}
+              >
+                {fmtEje(max * f)}
+              </text>
+            </g>
+          );
+        })}
         {data.map((d, i) =>
           series.map((s, j) => {
             const v = Number(d[s.key]);
             const h = max > 0 && Number.isFinite(v) ? (v / max) * plotH : 0;
-            const x = marginL + i * groupW + groupW * 0.1 + j * barW;
-            const y = height - marginB - h;
-            return <rect key={`${i}-${j}`} x={x} y={y} width={barW} height={h} fill={s.color} rx={2} />;
+            const x = mL + i * groupW + groupW * 0.11 + j * barW;
+            return (
+              <rect
+                key={`${i}-${j}`}
+                x={x}
+                y={mT + plotH - h}
+                width={barW}
+                height={h}
+                fill={s.color}
+                rx={1.5}
+              >
+                <title>{`${String(d[xKey] ?? i)} · ${s.name}: ${Number.isFinite(v) ? v : "—"}`}</title>
+              </rect>
+            );
           }),
         )}
+        {mostrarX &&
+          data.map((d, i) => (
+            <text
+              key={`x${i}`}
+              x={mL + i * groupW + groupW / 2}
+              y={height - 6}
+              textAnchor="middle"
+              fill="var(--color-faint)"
+              style={{ fontSize: 9, fontFamily: "var(--font-mono)" }}
+            >
+              {String(d[xKey] ?? "").slice(0, 8)}
+            </text>
+          ))}
       </svg>
       {multi ? (
-        <ul className="flex flex-wrap gap-3 text-xs">
+        <ul className="flex flex-wrap gap-3 text-meta">
           {series.map((s) => (
             <li key={s.key} className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} />
+              <span className="inline-block h-2 w-2 rounded-sm" style={{ background: s.color }} />
               <span className="text-muted">{s.name}</span>
             </li>
           ))}
@@ -84,58 +148,153 @@ export function SimpleBars({ data, xKey: _xKey, yKey, color = "#5e6ad2", bars, h
   );
 }
 
+/* ========================================================================== */
+/* Línea                                                                      */
+/* ========================================================================== */
+
 interface LineSparkProps {
   data: DataPoint[];
   xKey: string;
   yKey: string;
   color?: string;
   height?: number;
+  /** Líneas horizontales de referencia (umbrales). */
+  referencias?: { valor: number; color?: string; etiqueta?: string }[];
+  /** Fuerza el dominio Y (si no, se ajusta a los datos). */
+  dominio?: [number, number];
+  /** Área bajo la curva. */
+  area?: boolean;
 }
 
-export function LineSpark({ data, xKey: _xKey, yKey, color = "#ec4899", height = 150 }: LineSparkProps) {
-  if (!data.length) return <div className="py-8 text-center text-xs text-muted">Sin datos</div>;
+export function LineSpark({
+  data,
+  xKey: _xKey,
+  yKey,
+  color = SERIES[0],
+  height = 150,
+  referencias = [],
+  dominio,
+  area = true,
+}: LineSparkProps) {
+  if (!data.length) return <VacioChart />;
   const values = data.map((d) => Number(d[yKey]));
   const finite = values.filter((v) => Number.isFinite(v));
-  if (!finite.length) return <div className="py-8 text-center text-xs text-muted">Sin datos numéricos</div>;
-  const max = Math.max(...finite);
-  const min = Math.min(...finite);
+  if (!finite.length) return <VacioChart texto="Sin datos numéricos" />;
+
+  const refVals = referencias.map((r) => r.valor);
+  let min = dominio ? dominio[0] : Math.min(...finite, ...refVals);
+  let max = dominio ? dominio[1] : Math.max(...finite, ...refVals);
+
+  // Serie constante: sin esto el dominio colapsa y la línea se dibuja pegada a
+  // un borde con un eje que repite el mismo número tres veces (el caso real:
+  // Schumann congelado en 8.26 rotulaba "8.0 / 8.0 / 7.0"). Se abre una
+  // ventana simétrica alrededor del valor para que se lea como lo que es: una
+  // recta.
+  const serieConstante = Math.abs(max - min) < 1e-9;
+  if (!dominio && serieConstante) {
+    const centro = max;
+    const margen = Math.abs(centro) * 0.02 || 0.5;
+    min = centro - margen;
+    max = centro + margen;
+  } else if (!dominio) {
+    const pad = (max - min) * 0.12 || Math.abs(max) * 0.12 || 1;
+    min -= pad;
+    max += pad;
+  }
   const range = max - min || 1;
-  const stepX = (VBW - 40) / Math.max(1, data.length - 1);
-  const points = data
-    .map((d, i) => {
-      const v = Number(d[yKey]);
-      if (!Number.isFinite(v)) return null;
-      const x = i * stepX + 20;
-      const y = height - 10 - ((v - min) / range) * (height - 20);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .filter(Boolean)
-    .join(" ");
+
+  const mL = 38, mR = 8, mB = 12, mT = 8;
+  const plotW = VBW - mL - mR;
+  const plotH = height - mB - mT;
+  const stepX = plotW / Math.max(1, data.length - 1);
+  const yDe = (v: number) => mT + plotH - ((v - min) / range) * plotH;
+
+  const pts: string[] = [];
+  data.forEach((d, i) => {
+    const v = Number(d[yKey]);
+    if (!Number.isFinite(v)) return;
+    pts.push(`${(mL + i * stepX).toFixed(1)},${yDe(v).toFixed(1)}`);
+  });
+  const linea = pts.join(" ");
+  const areaPath =
+    area && pts.length > 1
+      ? `M ${pts[0]} L ${pts.slice(1).join(" L ")} L ${mL + (data.length - 1) * stepX},${mT + plotH} L ${mL},${mT + plotH} Z`
+      : null;
+
+  const gid = `grad-${yKey.replace(/\W/g, "")}`;
+
   return (
-    <svg
-      width="100%"
-      height={height}
-      viewBox={`0 0 ${VBW} ${height}`}
-      preserveAspectRatio="none"
-      className="w-full"
-      role="img"
-    >
-      <polyline fill="none" stroke={color} strokeWidth={2} points={points} vectorEffect="non-scaling-stroke" />
+    <svg width="100%" height={height} viewBox={`0 0 ${VBW} ${height}`} preserveAspectRatio="none" role="img">
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {[0, 0.5, 1].map((f) => {
+        const y = mT + plotH * (1 - f);
+        return (
+          <g key={f}>
+            <line x1={mL} y1={y} x2={VBW - mR} y2={y} stroke="var(--color-border)" strokeWidth={1} />
+            <text
+              x={mL - 5}
+              y={y + 3}
+              textAnchor="end"
+              fill="var(--color-faint)"
+              style={{ fontSize: 9, fontFamily: "var(--font-mono)" }}
+            >
+              {fmtEje(min + range * f)}
+            </text>
+          </g>
+        );
+      })}
+      {referencias.map((r, i) => (
+        <g key={i}>
+          <line
+            x1={mL}
+            y1={yDe(r.valor)}
+            x2={VBW - mR}
+            y2={yDe(r.valor)}
+            stroke={r.color || "var(--color-aviso)"}
+            strokeWidth={1}
+            strokeDasharray="4 3"
+            opacity={0.7}
+          />
+          {r.etiqueta ? (
+            <text
+              x={VBW - mR - 2}
+              y={yDe(r.valor) - 3}
+              textAnchor="end"
+              fill={r.color || "var(--color-aviso)"}
+              style={{ fontSize: 9, fontFamily: "var(--font-mono)" }}
+            >
+              {r.etiqueta}
+            </text>
+          ) : null}
+        </g>
+      ))}
+      {areaPath ? <path d={areaPath} fill={`url(#${gid})`} /> : null}
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth={1.75}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        points={linea}
+        vectorEffect="non-scaling-stroke"
+      />
     </svg>
   );
 }
+
+/* ========================================================================== */
+/* Donut                                                                      */
+/* ========================================================================== */
 
 interface PieDatum {
   name: string;
   value: number;
   color?: string;
-}
-interface SimplePieProps {
-  data: PieDatum[];
-  height?: number;
-  /** Máximo lado del donut en px (acota gráficas grandes). */
-  maxSize?: number;
-  legend?: boolean;
 }
 
 function donutSegment(cx: number, cy: number, R: number, r: number, a0: number, a1: number): string {
@@ -147,25 +306,29 @@ function donutSegment(cx: number, cy: number, R: number, r: number, a0: number, 
   return `M ${x0o} ${y0o} A ${R} ${R} 0 ${large} 1 ${x1o} ${y1o} L ${x1i} ${y1i} A ${r} ${r} 0 ${large} 0 ${x0i} ${y0i} Z`;
 }
 
-/**
- * Donut robusto: color opcional (cae a paleta), maneja el caso de una sola
- * porción (círculo completo) y trae leyenda. Acotado por `maxSize`.
- */
-export function SimplePie({ data, height = 150, maxSize = 180, legend = true }: SimplePieProps) {
+interface SimplePieProps {
+  data: PieDatum[];
+  height?: number;
+  maxSize?: number;
+  legend?: boolean;
+  /** Texto al centro del donut (total, etiqueta). */
+  centro?: { valor: string; etiqueta?: string };
+}
+
+export function SimplePie({ data, height = 150, maxSize = 168, legend = true, centro }: SimplePieProps) {
   const clean = (data || []).filter((d) => Number.isFinite(Number(d.value)) && Number(d.value) > 0);
-  if (!clean.length) return <div className="py-8 text-center text-xs text-muted">Sin datos</div>;
+  if (!clean.length) return <VacioChart />;
   const size = Math.min(height, maxSize);
   const total = clean.reduce((a, d) => a + Number(d.value), 0);
   const cx = size / 2, cy = size / 2;
-  const R = size / 2 - 6;
-  const r = R * 0.58; // agujero del donut
-  const colored = clean.map((d, i) => ({ ...d, _color: d.color || PALETTE[i % PALETTE.length] }));
+  const R = size / 2 - 4;
+  const r = R * 0.64;
+  const colored = clean.map((d, i) => ({ ...d, _color: d.color || SERIES[i % SERIES.length] }));
 
   let start = -Math.PI / 2;
   const paths = colored.map((d, i) => {
     const frac = Number(d.value) / total;
-    let a1 = start + frac * 2 * Math.PI;
-    // Círculo completo (una sola porción): partir en dos mitades para que el arco dibuje.
+    const a1 = start + frac * 2 * Math.PI;
     if (colored.length === 1 || frac >= 0.9999) {
       const mid = start + Math.PI;
       const p = (
@@ -177,27 +340,45 @@ export function SimplePie({ data, height = 150, maxSize = 180, legend = true }: 
       start = a1;
       return p;
     }
-    const p = <path key={i} d={donutSegment(cx, cy, R, r, start, a1)} fill={d._color} />;
+    const p = (
+      <path key={i} d={donutSegment(cx, cy, R, r, start, a1)} fill={d._color}>
+        <title>{`${d.name}: ${Number(d.value).toLocaleString("es-MX")} (${(frac * 100).toFixed(1)}%)`}</title>
+      </path>
+    );
     start = a1;
     return p;
   });
 
   return (
     <div className="flex flex-wrap items-center gap-4">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" className="shrink-0">
-        {paths}
-      </svg>
+      <div className="relative shrink-0" style={{ width: size, height: size }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img">
+          {paths}
+        </svg>
+        {centro ? (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+            <span className="mono text-[15px] font-semibold text-foreground">{centro.valor}</span>
+            {centro.etiqueta ? <span className="text-micro text-faint">{centro.etiqueta}</span> : null}
+          </div>
+        ) : null}
+      </div>
       {legend ? (
-        <ul className="min-w-[8rem] space-y-1 text-xs">
+        <ul className="min-w-[8rem] flex-1 space-y-1 text-meta">
           {colored.map((d, i) => (
             <li key={i} className="flex items-center gap-2">
-              <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: d._color }} />
+              <span className="inline-block h-2 w-2 shrink-0 rounded-sm" style={{ background: d._color }} />
               <span className="truncate text-muted">{String(d.name)}</span>
-              <span className="mono ml-auto">{((Number(d.value) / total) * 100).toFixed(0)}%</span>
+              <span className="mono ml-auto tabular-nums text-body">
+                {((Number(d.value) / total) * 100).toFixed(0)}%
+              </span>
             </li>
           ))}
         </ul>
       ) : null}
     </div>
   );
+}
+
+function VacioChart({ texto = "Sin datos" }: { texto?: string }) {
+  return <div className="py-8 text-center text-meta text-faint">{texto}</div>;
 }

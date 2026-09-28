@@ -54,10 +54,17 @@ export type Overview = {
 };
 
 export type ApiHealthEntry = {
-  status: string;          // LIVE | STALE | LOCF_ACTIVE
-  age_h: number;
+  /** LIVE | STALE | LOCF_ACTIVE | CONGELADO | DESCONOCIDO.
+   *  CONGELADO = la fuente se refresca pero repite el mismo valor (Tomsk
+   *  sirviendo una imagen estática). Frescura no es validez. */
+  status: string;
+  age_h: number | null;
   last_data_ts?: number;
   updated_at?: string;
+  /** Solo en fuentes con serie: cuántos valores distintos en la ventana. */
+  valores_distintos?: number;
+  muestras?: number;
+  nota?: string;
 };
 export type ApiHealth = Record<string, ApiHealthEntry>;
 

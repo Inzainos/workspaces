@@ -1,8 +1,18 @@
 import { useCallback } from "react";
 import { api, type Health, type ApiHealth } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { fmtTs } from "@/lib/utils";
+import { ChipFuente } from "@/components/ui/data";
 
+/**
+ * Barra de salud del encabezado.
+ *
+ * Dos cosas que este componente NO debe volver a hacer:
+ *  - pintar OK en verde porque el archivo de la DB existe (el sistema estuvo
+ *    90 h parado con el semáforo en verde);
+ *  - mostrar solo las fuentes que el backend consiguió parsear. Hasta el
+ *    2026-09-28 el endpoint se tragaba cinco de seis por un `except: pass`, y
+ *    aquí se veían dos chips como si ese fuera el total.
+ */
 export function HealthStrip() {
   const fetcher = useCallback(() => api.health(), []);
   const { data, loading, error } = usePoll<Health>(fetcher, 20000);
@@ -10,66 +20,72 @@ export function HealthStrip() {
   const { data: fuentes } = usePoll<ApiHealth>(fuentesFetcher, 60000);
 
   if (loading && !data) {
-    return <div className="rounded-lg border border-border bg-card/40 px-3 py-2 text-xs text-muted">Cargando salud del sistema…</div>;
+    return <div className="text-meta text-muted">Cargando salud…</div>;
   }
-
   if (error) {
-    return <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">Health error: {error}</div>;
+    return (
+      <div
+        className="rounded border px-2.5 py-1.5 text-meta"
+        style={{
+          borderColor: "color-mix(in oklch, var(--color-critico) 45%, transparent)",
+          background: "var(--color-critico-dim)",
+          color: "var(--color-critico)",
+        }}
+      >
+        Health: {error}
+      </div>
+    );
   }
 
-  // El estado viene de /api/health, que ya distingue "sin ciclos recientes"
-  // de "base rota". Antes bastaba con que el archivo de la DB existiera para
-  // pintar OK en verde, y el sistema llevaba 90 h parado.
   const estado = String(data?.status ?? "");
   const ok = estado === "ok" && data?.db_exists;
   const parado = estado === "stale";
-  const etiqueta = ok ? "● OK" : parado ? "● SIN CICLOS" : "● DEGRADED";
-  const color = ok ? "text-success" : parado ? "text-warning" : "text-danger";
+  const color = ok ? "var(--color-calma)" : parado ? "var(--color-aviso)" : "var(--color-critico)";
+  const etiqueta = ok ? "EN VIVO" : parado ? "SIN CICLOS" : "DEGRADADO";
   const antig = data?.antiguedad_h;
+
+  const entradas = Object.entries(fuentes || {});
+  const congeladas = entradas.filter(([, f]) => String(f?.status).toUpperCase() === "CONGELADO");
+
   return (
-    <div className="rounded-lg border border-border bg-card/40 px-3 py-2 text-xs">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className={color}>{etiqueta}</span>
-        <span className="mono text-muted">ciclos: {String(data?.ciclos ?? "—")}</span>
-        <span className="mono text-muted">último ciclo: {fmtTs(data?.last_cycle_ts ?? null)}</span>
+    <div className="flex flex-col items-end gap-1.5">
+      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+        <span className="flex items-center gap-1.5 text-meta font-semibold" style={{ color }}>
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${ok ? "pulso-vivo" : ""}`}
+            style={{ background: color }}
+          />
+          {etiqueta}
+        </span>
+        <span className="mono text-meta text-muted">
+          ciclo <span className="text-body">{data?.ciclos?.toLocaleString("es-MX") ?? "—"}</span>
+        </span>
         {antig != null && (
-          <span className={parado ? "mono text-warning" : "mono text-muted"}>
-            hace {antig} h
+          <span className="mono text-meta" style={{ color: parado ? "var(--color-aviso)" : "var(--color-faint)" }}>
+            hace {antig < 1 ? `${Math.round(antig * 60)} min` : `${antig} h`}
           </span>
         )}
-        <span className="mono text-muted">db: {data?.db_exists ? "presente" : "faltante"}</span>
       </div>
-      {fuentes && Object.keys(fuentes).length > 0 && (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-white/5 pt-2">
-          <span className="mono text-[10px] uppercase text-muted">fuentes</span>
-          {Object.entries(fuentes).map(([nombre, f]) => {
-            const estado = String(f?.status || "").toUpperCase();
-            const color =
-              estado === "LIVE"
-                ? "border-success/40 bg-success/10 text-success"
-                : estado === "LOCF_ACTIVE"
-                  ? "border-warning/40 bg-warning/10 text-warning"
-                  : estado === "STALE"
-                    ? "border-danger/40 bg-danger/10 text-danger"
-                    : "border-border bg-card/40 text-muted";
-            const horas = Number(f?.age_h);
-            const edad = Number.isFinite(horas)
-              ? horas < 1
-                ? `${Math.round(horas * 60)}m`
-                : horas < 48
-                  ? `${horas.toFixed(1)}h`
-                  : `${Math.round(horas / 24)}d`
-              : "—";
-            return (
-              <span
-                key={nombre}
-                title={`${nombre}: ${estado} · hace ${edad}`}
-                className={`mono rounded border px-1.5 py-0.5 text-[10.5px] ${color}`}
-              >
-                {nombre} · {edad}
-              </span>
-            );
-          })}
+
+      {entradas.length > 0 && (
+        <div className="flex flex-wrap items-center justify-end gap-1">
+          {entradas.map(([nombre, f]) => (
+            <ChipFuente
+              key={nombre}
+              nombre={nombre}
+              estado={String(f?.status || "")}
+              edadH={f?.age_h ?? null}
+              nota={(f as { nota?: string })?.nota}
+            />
+          ))}
+        </div>
+      )}
+
+      {congeladas.length > 0 && (
+        <div className="max-w-md text-right text-micro leading-snug" style={{ color: "var(--color-aviso)" }}>
+          {congeladas.length === 1
+            ? `${congeladas[0][0]} se refresca pero repite el mismo valor: la fuente no está midiendo.`
+            : `${congeladas.length} fuentes repiten valor: se refrescan pero no miden.`}
         </div>
       )}
     </div>
