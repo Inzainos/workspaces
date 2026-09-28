@@ -151,11 +151,25 @@ python deploy/verificacion_juez.py
 python deploy/generar_reporte.py
 python deploy/reporte_ejecutivo.py                 # plantilla ejecutiva (cada 6h)
 python deploy/reporte_periodico.py --comparativo   # hoy vs ayer (o --semanal / --mensual)
-python deploy/enviar_correos.py                    # despacho del outbox de correo
+python deploy/enviar_correos.py                    # despacha por TELEGRAM pese al nombre (el correo se retiró el 2026-09-15)
 
-# Dashboard
-streamlit run sentinel_omega/infrastructure/dashboard/app.py
+# Dashboard React (el que se trabaja) — la API primero, el front después
+python -m uvicorn sentinel_omega.infrastructure.dashboard.api:app --host 127.0.0.1 --port 8787
+cd sentinel_omega/infrastructure/dashboard/web && npm run dev   # :5173
+
+# Dashboard Streamlit (legacy, 11 pestañas, no se amplía)
+streamlit run sentinel_omega/infrastructure/dashboard/app.py --server.port 8510
 ```
+
+**Antes de tocar el dashboard React lee
+`sentinel_omega/infrastructure/dashboard/README.md`.** Tiene el sistema de
+diseño (color saturado = riesgo y nada más), la superficie asignada a cada
+pestaña y los pozos de dato verificados contra producción: que
+`tbl_locf_cache.updated_at` es epoch REAL —un `strptime` directo dentro de un
+`except: pass` se tragaba 5 de 6 fuentes sin que se notara—, que `viva_real` NO
+filtra `en_vivo` (arrastra 603 veredictos duplicados sin
+`COALESCE(en_vivo,1)=1`), y que `aciertos_total` es suma por bot, no comparable
+con los conteos del sistema.
 
 ## Git y PRs
 

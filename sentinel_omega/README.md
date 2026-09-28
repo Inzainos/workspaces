@@ -328,9 +328,46 @@ En operación, cada ciclo compara el estado vivo contra las firmas consolidadas 
 
 ---
 
-## Dashboard — React (v2.5.4, puerto 5173→8787) + Streamlit legacy (11 pestañas, puerto 8510)
+## Dashboard — React (v3, puerto 5173→8787) + Streamlit legacy (11 pestañas, puerto 8510)
 
-**v2.5.4 — Dashboard React** (6 tabs: Principal/Telemetría/Consenso/Análisis/Agentes/Sistema, React+shadcn, API FastAPI ) + **Streamlit legacy** (11 pestañas, ) con datos en tiempo real:
+**v3 (2026-09-28) — 7 pestañas**, React 19 + Vite 6 + Tailwind 4 contra la API
+FastAPI del puerto 8787. El sistema de diseño y los contratos de dato están en
+**`sentinel_omega/infrastructure/dashboard/README.md`** — leerlo antes de tocar
+un tab.
+
+Cada pestaña se diseñó contra una **superficie**, y eso manda sobre la
+composición:
+
+| Tab | Superficie | Contenido |
+|-----|-----------|-----------|
+| Presentación | Decide/Learn | qué es el sistema, dónde está hoy (ganancia real, no folleto) |
+| Principal | Monitor | franja de estado (Fantasma sobre su escala, Muro 5 segmentos, telemetría) + panel de honestidad + mapa, cimática, alertas |
+| Predicciones | Monitor | ventana temporal, Muro de los 5, scanner de 15 precursores, anticipación |
+| Mapas | Explore | malla UVG-125 en 2D y globo 3D, tensión por nodo |
+| Señales | Monitor | Schumann, clima espacial, delta financiero, cimática |
+| Modelos | Compare | los 9 bots lado a lado: mérito, pesos, sesgo, curvas, veredictos |
+| Reportes | Explore | cadencia, canal de entrega, archivos publicados, Roy Vigilante |
+
+**Tres reglas del tablero:**
+
+1. **El color saturado significa riesgo, nada más.** La rampa de riesgo (oklch,
+   luminancia pareja) es la única familia saturada; las series de gráfica van en
+   azules/teales desaturados para que una línea de datos no se confunda con un
+   estado de alarma.
+2. **Lo que no se midió se ve distinto de lo que midió cero.** `<Cifra>` pinta
+   el guion de "sin lectura" en un gris propio. Regla dura 8 llevada al pixel.
+3. **La asertividad nunca se muestra sola.** Va junto a la ganancia de Molchan
+   y a la proporción real de veredictos (aciertos / falsas alarmas / omisiones),
+   porque 97,7 % con ganancia 0,84× significa "acierta porque casi siempre está
+   en calma".
+
+**Streamlit legacy** (11 pestañas, puerto 8510) se conserva para las vistas
+históricas pero no se amplía.
+
+### Streamlit legacy — 11 pestañas (puerto 8510)
+
+Se conserva porque tiene vistas históricas que aún no se migraron. **No recibe
+funcionalidad nueva**; lo que se trabaja es el React de arriba.
 
 | Tab | Nombre          | Visualizaciones                                                                                      |
 |-----|-----------------|------------------------------------------------------------------------------------------------------|

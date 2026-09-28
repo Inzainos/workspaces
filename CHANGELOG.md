@@ -1,5 +1,112 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-09-28 - Dashboard v3: rediseño + seis datos que mentían
+
+Sin commit, sin push. Trabajo sobre el dashboard React (`:5173` → API `:8787`).
+Verificado de punta a punta contra la DB de producción en modo lectura y en
+navegador real (Comet vía CDP): 7/7 pestañas, consola sin errores, sin overflow
+horizontal en 1920/1280/768/390.
+
+### Fixed — datos incorrectos que el tablero presentaba como buenos
+
+Seis hallazgos. Los cuatro primeros son la misma familia: **el default benigno
+convirtiendo "no tengo el dato" en un número plausible** (regla dura 8).
+
+- **`/api/health/apis` descartaba 5 de 6 fuentes en silencio.**
+  `tbl_locf_cache.updated_at` es `REAL` (epoch), pero el endpoint le aplicaba
+  `strptime` (espera `str`) dentro de un `try/except: pass`. Resultado:
+  `TypeError` para alfa1/alfa2/beta1/beta2/delta y el strip del encabezado
+  mostraba **dos** chips (usgs, beta1) como si ése fuera el inventario
+  completo. Nuevo helper `_edad_horas` acepta epoch y texto; lo ilegible sale
+  como `DESCONOCIDO`, nunca omitido. Verificado: de 2 chips a 6.
+- **Schumann congelado se reportaba `LIVE`.** `tbl_schumann_vivo` tiene **25
+  filas con un solo valor distinto** (8.26 Hz / 21.46) desde el 25-sep: Tomsk
+  sirve una imagen estática y el registro se reescribe cada hora, así que por
+  frescura parecía vivo. Nuevo estado **`CONGELADO`** cuando la serie no varía
+  en la ventana, con la nota explicando que la fuente "se refresca pero no
+  mide". Frescura ≠ validez.
+- **`viva_real` contaminada con 603 veredictos duplicados.** La vista sólo
+  filtra `fase='viva'`; no excluye los `en_vivo=0` marcados el 27-sep (los dos
+  Sentinel escribiendo a la vez). Añadido `COALESCE(en_vivo,1)=1` a las **5**
+  consultas de asertividad (`aciertos`, `counts`, Molchan de `/api/aciertos` y
+  `/api/bots`, y las series diarias de `/api/aprendizaje`).
+- **`biblioteca_n: 0` con la tabla ausente.** Ausente y vacía se veían igual:
+  el tablero pintaba «BIBLIOTECA 0» junto a «PATRONES 296.818», que se lee como
+  una biblioteca vaciada. Ahora `biblioteca_n` es `None` y va acompañado de
+  `biblioteca_presente`; el front dice "tabla ausente, no es una biblioteca
+  vacía".
+- **Barra de veredictos mezclaba dos universos.** `aciertos_total` (138.068) es
+  la suma **por bot** de `TBL_PESOS_BOTS` —cada ventana contada una vez por
+  cada bot que opinó— mientras que los falsos positivos (1.651) son del
+  sistema. Dibujar la proporción con ambos daba **0 % de falsas alarmas**.
+  Nuevo `veredictos_sistema` con los tres del mismo universo (`viva_real`,
+  `en_vivo=1`): 21.400 / 1.651 / 313, que coincide exactamente con la DB.
+- **El tab Reportes pintaba el correo en verde y "activo".** Es falso desde el
+  2026-09-15: `correo.py` se borró, las SMTP están comentadas y **cero código
+  lee `tbl_correo_salida`** (verificado por grep). `enviar_correos.py` despacha
+  por Telegram pese al nombre. Ahora aparece tachado como "retirado" con la
+  explicación. Un canal muerto en verde es peor que no mencionarlo.
+
+### Changed — rediseño del tablero
+
+Sistema nuevo en `web/src/index.css` + `web/src/components/ui/data.tsx`.
+Documentado en `infrastructure/dashboard/README.md`.
+
+- **El color saturado significa riesgo, y nada más.** Rampa de riesgo en oklch
+  con luminancia pareja (~0.72 L) para que ninguno grite más por accidente; el
+  cromo en neutros fríos; las series de gráfica en azules/teales desaturados
+  para que una línea de datos no se confunda con un estado. El indigo genérico
+  deja de ser decoración y queda sólo como acento de interfaz (foco, tab
+  activo).
+- **Superficie antes que composición.** Cada pestaña se diseñó contra una:
+  Principal/Predicciones/Señales = **Monitor**, Modelos = **Compare**,
+  Mapas/Reportes = **Explore**, Presentación = **Decide/Learn** (la única donde
+  un hero es correcto). Principal pierde el hero y la rejilla de 7 KPIs
+  equivalentes; gana una franja de estado (Fantasma sobre su escala real con
+  los umbrales dibujados, Muro como 5 segmentos, telemetría) que se lee de
+  reojo.
+- **La asertividad ya no se puede leer sola.** Va en el mismo panel que la
+  ganancia de Molchan y la barra de veredictos, con una nota que explica la
+  contradicción aparente: 97,7 % junto a 0,84× significa "acierta casi siempre
+  porque casi siempre está en calma, y sus alarmas todavía no superan a alertar
+  a ciegas".
+- **Gráficas con escala.** `LineSpark`/`SimpleBars` ahora rotulan eje Y,
+  aceptan líneas de referencia (15/30 del Fantasma, 7.83 Hz de Schumann, 0.6 de
+  delta) y manejan el caso de serie constante — antes el Schumann plano rotulaba
+  "8.0 / 8.0 / 7.0" por colapso del dominio.
+- **Tipografía elegida, no heredada.** IBM Plex Sans/Mono por su `0` rebanado y
+  `1` con base: a 11px distinguen un `0.01` de un `0.07`. Cifras comparables en
+  `tabular-nums`; `DataTable` alinea a la derecha las columnas numéricas.
+- Primitivas nuevas: `Panel`, `Metrica`, `Cifra`, `EscalaRiesgo`,
+  `SegmentosMuro`, `BarraVeredictos`, `ChipFuente`, `SinDatos`, `BannerError`.
+  `<Cifra>` distingue sola "sin lectura" de "midió cero" con `.dato-ausente`.
+- `MapasTab`: `Number(sat ?? 0)` marcaba como 0.00 los nodos **sin medición**,
+  indistinguibles de los medidos en reposo. Ahora se separan (88 de 125 estaban
+  en cero) y los no medidos quedan fuera del ranking.
+- `SenalesTab`: las series filtran nulos en vez de dibujarlos como cero, y
+  reportan cuántas lecturas faltaron.
+- Accesibilidad: skip-link, `:focus-visible` real, 44px de objetivo táctil en
+  punteros gruesos, `prefers-reduced-motion` respetado.
+
+### Verified
+
+- `npx tsc -b` limpio · `npm run build` 67 módulos, 333 KB / 102 KB gzip.
+- Navegador real (Comet/CDP, 1600×1000): 7/7 pestañas renderizan, **0 errores
+  de consola**, sin `NaN`/`undefined`/`Infinity` en el texto de ningún panel.
+- Responsive sin overflow horizontal: 1920×1080, 1280×800, 768×1024, 390×844.
+- `/api/health/apis` → 6 fuentes (antes 2), `beta1: CONGELADO` con nota.
+- `/api/bots` → `veredictos_sistema` = 21.400 / 1.651 / 313, contrastado contra
+  `SELECT resultado, COUNT(*) FROM viva_real WHERE COALESCE(en_vivo,1)=1`.
+- `PRAGMA integrity_check` = `ok`; `TBL_CICLOS` = 3.660 al inicio de la sesión.
+
+### Pendiente
+
+- La DB no tiene tabla de métricas ONNX; el tab lo dice en vez de inventar
+  curvas.
+- `tbl_schumann_vivo` seguirá `CONGELADO` hasta que se arregle la ingesta de
+  Tomsk. El tablero ya lo avisa; el dato sigue entrando como NULL al Fantasma.
+
+
 ## [Unreleased] - 2026-09-27 - Una sola instancia (usuario), Schumann WPC, ONNX solo en_vivo, túnel cerrado
 
 Sin commit, sin push. Detalle: `estado/BITACORA_2026-09-26.md`, `estado/OPERACIONES_2026-09-27.md` (C),
@@ -258,7 +365,8 @@ Pipeline completado: delta_enriched integrado de punta a punta + rebuild_complet
 
 ## [Unreleased] — 2026-09-15 (Persistencia y Resiliencia)
 
-- **LOCF (Last Observation Carried Forward) Persistente**: Se migró el cache en memoria a la tabla 	bl_locf_cache de SQLite en data_pipeline.py y epository.py garantizando la continuidad de los precursores en caso de caída de las APIs de origen o reinicio del sistema.
+- **LOCF (Last Observation Carried Forward) Persistente**: Se migró el cache en memoria a la tabla 	bl_locf_cache de SQLite en data_pipeline.py y 
+epository.py garantizando la continuidad de los precursores en caso de caída de las APIs de origen o reinicio del sistema.
 - **Refetch Automático Diario**: Implementado check_and_refetch_stale_apis en mantenimiento.py para correr de manera automática los scripts de backfill (sismos_refetch_recent.py y clima_gapfill_2026.py) si detectan un lag mayor a 7 días.
 - **Salud de APIs (Endpoint /api/health/apis)**: Dashboard enriquecido con una ruta para observar en tiempo real la latencia y el estado (*LIVE*, *LOCF_ACTIVE*, *STALE*) de todas las integraciones subyacentes.
 - **Backfill Manual Ejecutado**: Recuperados 2,203 sismos de USGS correspondientes a los últimos 30 días para sincronizar TBL_HISTORICO_SISMICO con la operación en tiempo real.

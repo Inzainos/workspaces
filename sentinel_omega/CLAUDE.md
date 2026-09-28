@@ -73,9 +73,46 @@ If Schumann is perturbed alongside any other signal = precursor detected.
 
 ## Dashboard (React Vite + FastAPI 8787)
 
-- Dev:  Vite 6.4.3,  (.env local),  (WSL→Windows), proxy /api→8787. Build:  63 módulos 282KB/85KB gzip → dist/.
-- API:  (946L) + 13 compat aliases sin /api (/health,/kpis,/telemetry/*,/consenso/*,/analysis/*,/agents/*,/system/*) — resuelven TBL_* reales + fallback. CORS para 5173/5174/4173.  envuelve  → {version, db:{connected,path}, agents}.
-- Troubleshooting: ERR_CONNECTION_REFUSED en 5173 = host 127.0.0.1 en WSL; fix host 0.0.0.0. DB desconectada falso = health sin wrapper db.connected; fix health_alias. Launcher UnboundLocalError FormattedMessage = import mal scope; fix _FM2.
+- Dev: Vite 6.4.3, proxy `/api`→8787. Build: 67 módulos, 333KB/102KB gzip → `dist/`.
+- API: `infrastructure/dashboard/api.py` + 13 compat aliases sin `/api`
+  (`/health`, `/kpis`, `/telemetry/*`, `/consenso/*`, `/analysis/*`, `/agents/*`,
+  `/system/*`). CORS para 5173/5174/4173.
+- **Diseño y contratos de dato: `infrastructure/dashboard/README.md`.** Léelo
+  antes de tocar un tab: tiene el sistema de color (saturado = riesgo, y nada
+  más), las superficies por pestaña y los pozos conocidos.
+
+### Reglas de dato del tablero (v3, 2026-09-28)
+
+Cuatro trampas verificadas contra la DB de producción. Las cuatro son la misma
+familia: un default benigno haciendo pasar «no hay dato» por un número.
+
+1. **`tbl_locf_cache.updated_at` es REAL (epoch), no TEXT.** Un `strptime`
+   directo lanza `TypeError`; con un `except: pass` alrededor se tragaba **5 de
+   6 fuentes** y el strip de salud mostraba dos chips como si fueran todas.
+   Usar el helper `_edad_horas`, que acepta epoch y texto.
+2. **Frescura ≠ validez.** Tomsk reescribe el mismo valor cada hora (25 filas,
+   1 valor distinto): por antigüedad parece `LIVE`. El estado `CONGELADO`
+   existe para eso. Al añadir una fuente con serie, comprobar variación, no
+   sólo `MAX(timestamp)`.
+3. **`viva_real` NO filtra `en_vivo`.** La vista es sólo `fase='viva'`, así que
+   arrastra los 603 veredictos duplicados del 27-sep. Toda métrica de
+   asertividad necesita además `COALESCE(en_vivo,1)=1`.
+4. **`aciertos_total` de `/api/bots` es suma POR BOT** (138.068: cada ventana
+   contada una vez por cada bot que opinó). No es comparable con los conteos de
+   `viva_real` (21.400/1.651/313). Para proporciones usar `veredictos_sistema`.
+
+La **asertividad nunca se muestra sola**: cuenta como acierto cada silencio en
+calma y excluye los falsos positivos del denominador. Va siempre junto a
+`ganancia_real` (Molchan). Hoy: 97,7 % con ganancia 0,84× — el sistema acierta
+porque casi siempre está en calma, y sus alarmas aún no superan a alertar a
+ciegas. El tablero debe hacer esa contradicción imposible de ignorar.
+
+- Troubleshooting: `ERR_CONNECTION_REFUSED` en 5173 = host 127.0.0.1 en WSL; fix
+  host 0.0.0.0. DB desconectada falso = health sin wrapper `db.connected`; fix
+  `health_alias`. Launcher `UnboundLocalError FormattedMessage` = import mal
+  scope; fix `_FM2`. **Radix Tabs ignora `.click()` sintético** (escucha pointer
+  events): para automatizar hay que despachar `Input.dispatchMouseEvent` por
+  CDP, o parecerá que todas las pestañas muestran el mismo contenido.
 
 ## Running tests
 
