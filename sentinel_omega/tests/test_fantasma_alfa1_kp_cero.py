@@ -61,33 +61,53 @@ def test_con_el_kp_real_el_modelo_no_alarma(modelo):
         "del ciclo 14419 dice que no")
 
 
-def test_con_el_kp_ausente_el_modelo_inventa_un_watch(modelo):
-    """La prueba del fantasma: quitar el rasgo cambia la respuesta a una alarma.
-    No es que el modelo mida algo distinto --- es que lee la ausencia como una
-    medición.
+def test_con_el_kp_ausente_el_modelo_YA_NO_inventa_un_watch(modelo):
+    """El fantasma MURIÓ con el rebuild y el reentreno del 2026-09-27.
 
-    Se afirma la FORMA, no el número. La primera versión de esta prueba fijaba
-    `conf == 0.717`, el valor exacto del modelo del 2026-09-27 03:01; dos
-    reentrenamientos lo movieron a 0,726 y la prueba se puso roja sin que el
-    comportamiento cambiara. Un `.onnx` se regenera cada semana: clavarle una
-    constante es fijar un artefacto, no un invariante.
+    Esta prueba nació fijando el defecto --- con el Kp ausente el modelo de alfa1
+    respondía `WATCH` 0,7165, y su propio texto decía: «si ya no alarma, esta
+    prueba sobra: bórrala con una medición que lo respalde, no la relajes». La
+    medición llegó, así que en vez de borrarla se le da la vuelta: ahora fija que
+    la ausencia **no** alarma, que es el invariante que hay que proteger.
+
+    La causa era la fuga de etiqueta por procedencia: `kp_mean` estaba en el
+    vector de alfa1 y no en sus firmas, así que valía 0 en las 1.632 firmas ---
+    toda la mitad etiquetada como alarma --- y el modelo aprendió que el cero ERA
+    la etiqueta. Cerrada metiéndolo en `BOT_FEATURES` y regenerando las firmas
+    (`tests/test_fuga_de_procedencia.py`).
+
+    Medido tras el reentreno, sobre el vector vivo real:
+
+        con el Kp ausente   NO_SIGNAL 0,2932    (antes WATCH 0,7165)
+        con el Kp real      NO_SIGNAL 0,2755
+
+    Si esto se pone rojo, el fantasma volvió --- y lo más probable es que alguien
+    haya añadido un rasgo al vector sin añadirlo a `BOT_FEATURES`.
     """
     sin_kp = {k: v for k, v in _CICLO.items() if not k.startswith("kp")}
     nombre, conf = _pred(modelo, sin_kp)
-    assert nombre in ("WATCH", "ALERT"), (
-        f"el fantasma cambió de forma: con el Kp ausente sale {nombre} "
-        f"{conf:.3f}. Si ya no alarma, esta prueba sobra --- bórrala con una "
-        "medición que lo respalde, no la relajes")
-    assert conf > 0.6, f"la alarma fantasma bajó a {conf:.3f}"
+    assert nombre not in ("WATCH", "ALERT"), (
+        f"el fantasma VOLVIÓ: con el Kp ausente sale {nombre} {conf:.3f}. "
+        "Revisa si un rasgo entró a FEATURE_ORDER sin entrar a BOT_FEATURES, y "
+        "si las firmas se regeneraron después")
 
 
-def test_el_fantasma_es_mas_confiado_que_la_medicion(modelo):
-    """Lo que lo hacía dañino: la respuesta al dato ausente pesa MÁS que la
-    respuesta al dato real, así que ganaba el consenso."""
+def test_la_asimetria_del_fantasma_desaparecio(modelo):
+    """Lo que hacía dañino al fantasma era la ASIMETRÍA: la respuesta al dato
+    ausente pesaba más del doble que la respuesta al dato real, así que ganaba el
+    consenso. Medido antes: 0,7165 contra 0,3114 (2,3x). Después: 0,2932 contra
+    0,2755 (1,06x).
+
+    No se exige que la ausencia pese MENOS --- un modelo puede ser algo más o
+    menos confiado sin que eso sea un defecto. Se exige que no vuelva a pesar el
+    doble, que es lo que le daba el voto.
+    """
     _, conf_real = _pred(modelo, _CICLO)
     sin_kp = {k: v for k, v in _CICLO.items() if not k.startswith("kp")}
     _, conf_fantasma = _pred(modelo, sin_kp)
-    assert conf_fantasma > conf_real * 2
+    assert conf_fantasma <= conf_real * 2, (
+        f"la ausencia volvió a pesar más del doble que la medición "
+        f"({conf_fantasma:.3f} contra {conf_real:.3f})")
 
 
 def test_el_ciclo_canonico_si_trae_el_kp():
