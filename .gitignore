@@ -22,6 +22,10 @@ __pycache__/
 .venv/
 estado/historial/
 estado/graficas/
+# Reportes generados: el de cada corte se archiva en estado/historial/ (ignorado).
+# Volvieron a entrar en a0b82e1 y ensuciaban el diff de cada ciclo; los archivos
+# se quedan en disco, solo salen del índice (2026-09-28).
+estado/REPORTE*.md
 # árbol anidado duplicado (snapshot viejo del 4-sep, pendiente de borrar)
 sentinel_omega/sentinel_omega/
 *.db-wal
