@@ -1,3 +1,102 @@
+## 2026-09-28 (madrugada) — Pendientes cerrados: el tapón por una bandera, el bot mal nombrado y 959 filas de relleno
+
+Los créditos de la pandilla se agotaron (vuelven en siete días) y el operador pidió
+no dejar nada abierto. De su orden de seis pasos, 1-3 quedaron verificados en la
+bitácora §22.4; esto es el resto.
+
+### Changed — `infrastructure/pipeline/layer_runners.py`: el tapón sale, la bandera entra
+
+`RASGOS_CON_FUGA` queda **vacío**, con el mecanismo conservado. Su condición de
+retirada («hasta que `P(alarma|rasgo=0)` colapse») se cumplió y está medida.
+
+Y al medir beta2 --- que no se había medido --- salió otro defecto, **de otra
+familia**:
+
+    beta2 con marea real (lo que da el ciclo)   NO_SIGNAL 0,3500
+    beta2 sin marea                            WATCH     0,7126
+
+No es fuga de procedencia: tras el rebuild la marea está en el 100 % de las DOS
+mitades, así que el modelo **nunca vio un cero** y extrapola. Es una región de
+entrada nunca medida. Callarlo siempre era perder su voto sin ganar nada.
+
+`RASGOS_REQUERIDOS` --- rasgos cuyo CERO no puede ser una medición. Si uno falta,
+ausente, no finito o cero, al modelo **no se le pregunta** y `onnx_callado` guarda
+`falta:<rasgo>`, distinto del `fuga:<rasgo>` de Agente-C. Lleva
+`beta2: ["marea_total"]` de canario: las ocho se calculan juntas por efemérides, solo
+pueden faltar si `ephem` no está, y cero es imposible por física.
+
+Es la «bandera de rasgo presente» que llevaba días propuesta, **en la puerta de la
+inferencia** y no dentro del vector: `vector_para` pone 0,0 en lo que falta y para un
+modelo 0,0 es un valor medido (regla dura 7), así que una bandera dentro del vector
+solo movería el problema de columna.
+
+### Fixed — dos fugas de token en el log, no una
+
+La pandilla tenía apuntado `consenso_vigilante.py:895`. Barriendo todo el camino de
+Telegram apareció `alert_service.py:362` con el mismo patrón: `logger.error(f"...:
+{e}")` sobre una excepción de `requests`, que trae la URL, y la URL de la API lleva
+el token DENTRO. Las dos usan ya `sin_token()`. Las de `charts.py` no entran --- son
+fallos de matplotlib, ahí no hay URL. `test_token_no_se_filtra.py` cubre los cinco
+sitios.
+
+### Fixed — el bot es `@SismoBio_Bot`, y estaba mal en tres documentos
+
+Lo escribí como `@IngZainos_bot` en `AGENTS.md`, `sentinel_omega/CLAUDE.md` y el
+`AGENTS.md` del home. `@IngZainos_bot` es el bot **propio del watchdog**; lo dice el
+`AGENTS.md` del home en su sección, «no el del Concilio (@SismoBio_Bot)».
+
+Verificado contra la fuente autorizada sin exponer el token: `getMe` → `ok: True`,
+`username: SismoBio_Bot`, id 8460857489. Es la Regla 0 aplicada a un documento: lo
+escribí apoyado en otro documento en vez de preguntarle al sistema.
+
+### Changed — el relleno de Schumann, marcado `en_vivo=0`
+
+- `tbl_schumann_vivo`: 2 filas (rowid 534, 541), las únicas con `en_vivo=1`, 8.26 Hz
+  / 21.46 % y `atraso_horas=0.0` --- fingiendo frescura. Respaldo
+  `tbl_schumann_vivo_pre_marcado_20260928`.
+- `TBL_PRECURSORES_COSMICOS`: **957 filas** (797 con 8.26/21.46 y 160 con
+  25.0/21.46, que es el mismo conteo de píxeles en la escala vieja:
+  `7,83 + 21,46 × 0,8 = 24,99`). Respaldo `tbl_prec_pre_marcado_schumann_20260928`.
+
+El criterio no fue el valor sino la **fórmula** (`hz == 7,83 + act × escala`), y se
+midió que **0 filas con `act=21,46` quedan fuera de él**: no se barrió ninguna
+lectura real. El rango se cerró solo, la última es la id 12357 --- la corrección de
+Schumann entró en el reinicio y desde entonces se escribe NULL.
+
+### Removed — `launcher_fixed.py` (904 líneas)
+
+Nada de producción lo importaba: su único lector era una prueba que existía para
+mantenerlo honesto. Retirados los dos. Tener dos launchers EN EL CÓDIGO es el mismo
+riesgo que tener dos corriendo, y eso costó el día entero. Las auditorías de
+`docs/audits/` lo siguen mencionando y ahí se quedan: son registros de lo que había.
+
+### Fixed — systemd
+
+- `sentinel-omega-scheduler.service` estaba **`enabled` a nivel de usuario**: un
+  segundo launcher armado, el mismo que el CHANGELOG del 2026-09-13 documenta como
+  deshabilitado a propósito. `systemctl --user disable`.
+- Corrección a lo reportado: los enlaces de `multi-user.target.wants` **no estaban
+  rotos**, los cinco resolvían. El problema era el objetivo --- un gestor de USUARIO
+  no alcanza `multi-user.target` ---, así que las unidades vivían de enlaces hechos a
+  mano. `deploy/install.sh --no-start` lo corrigió sin tirar nada.
+
+### Descubierto al verificar
+
+`onnx: False` significa «el modelo no opinó» y mezcla **tres** casos: no hay modelo,
+se abstuvo (`predict_signal` devuelve None cuando el nombre es `NO_SIGNAL`), o lo
+callamos. La clave `onnx_callado` distingue el tercero; los dos primeros siguen
+indistinguibles en la auditoría. Anotado, no arreglado.
+
+### Pendiente con FECHA
+
+**Antes del 4 de octubre, 03:07**: instalar con sudo `sentinel-omega-mantenimiento` y
+`-onnx-retrain` desde `~/.cache/sentinel-omega/system-units/` (las dejó ahí
+`install.sh`). La versión viva de `onnx-retrain` intenta reiniciar la unidad de
+sistema **enmascarada** y falla sin avisar, así que el reentreno semanal no
+ocurriría. El timer de mantenimiento sigue parado: sin él no hay barrido diario.
+
+---
+
 ## 2026-09-27 (noche) — La fuga de procedencia, cerrada en el código; y el Kp que medía 24 minutos
 
 Reparto acordado con la pandilla del Capitán en `CANAL_CLAUDE.md`: a Agente-C

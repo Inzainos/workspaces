@@ -282,9 +282,10 @@ sentinel_omega/
 ## Environment variables
 
 ```
-TELEGRAM_BOT_TOKEN    — Canal ÚNICO de alertas. COMPARTIDO con
-                        ~/consensus-expert-agent (bot @IngZainos_bot, que vive
-                        allá): rotarlo desde aquí rompe el otro proyecto.
+TELEGRAM_BOT_TOKEN    — Canal ÚNICO de alertas. Bot @SismoBio_Bot (verificado
+                        contra getMe el 2026-09-27), COMPARTIDO con
+                        ~/consensus-expert-agent: rotarlo desde aquí rompe el
+                        otro proyecto. @IngZainos_bot es el del watchdog, otro.
 TELEGRAM_CHAT_ID      — Chat destino
 OPENWEATHERMAP_KEY    — Atmospheric data
 BITSO_API_KEY         — Bitso exchange

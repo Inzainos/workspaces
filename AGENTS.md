@@ -184,8 +184,11 @@ leas — si vuelve el correo, se decide entonces. Su DDL está en la bitácora. 
 «canal: correo, Telegram en pausa», está desactualizada — corregido el 2026-09-27
 contra el código, no contra la fecha del documento.
 
-**El bot NO es de este repo.** `@IngZainos_bot` lo maneja **Consensus Expert
-Agent** (`~/consensus-expert-agent`) y es compartido. Consecuencias que importan:
+**El bot NO es de este repo.** Es **`@SismoBio_Bot`** (verificado el 2026-09-27
+contra `getMe`, id 8460857489), lo maneja **Consensus Expert Agent**
+(`~/consensus-expert-agent`) y es compartido. Ojo: `@IngZainos_bot` es el bot
+**propio del watchdog** (`/watchdog`), canal distinto a propósito --- no lo
+confundas, como se confundió en este archivo el 2026-09-27. Consecuencias que importan:
 
 - Sentinel es **solo saliente** — `sendMessage`/`sendPhoto`/`sendDocument`, sin
   `getUpdates` ni webhook, así que no compite con el poller de allá.

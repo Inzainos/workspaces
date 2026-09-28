@@ -359,7 +359,8 @@ class AlertService:
                 results["telegram"] = bool(routed.get("sent") or routed.get("action") == "buffered")
                 results["telegram_action"] = routed.get("action")  # type: ignore[assignment]
             except Exception as e:
-                logger.error(f"Telegram vigilante dispatch failed: {e}")
+                from sentinel_omega.infrastructure.api.telegram import sin_token
+                logger.error("Telegram vigilante dispatch failed: %s", sin_token(e))
                 results["telegram"] = False
         return results
     def flush_digest(self, snapshot: Optional[Dict]=None) -> bool:

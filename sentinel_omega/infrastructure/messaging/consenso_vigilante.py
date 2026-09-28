@@ -892,7 +892,11 @@ class ConsensoVigilante:
                 self._immediate_last[alert_type] = self._now()
             return ok
         except Exception as exc:
-            logger.error("CONSENSO telegram failed: %s", exc)
+            # `sin_token`: la excepción de `requests` trae la URL, y la URL de la
+            # API de Telegram lleva el token DENTRO (/bot<token>/sendMessage).
+            # Rotar el token no arregla esto --- el siguiente fallo filtra el nuevo.
+            from sentinel_omega.infrastructure.api.telegram import sin_token
+            logger.error("CONSENSO telegram failed: %s", sin_token(exc))
             return False
 
 

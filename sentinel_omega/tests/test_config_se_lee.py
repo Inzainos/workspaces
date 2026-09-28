@@ -49,11 +49,14 @@ def test_el_lanzador_del_servicio_usa_load_config():
     assert "config = SentinelOmegaConfig()" not in fuente
 
 
-def test_el_lanzador_hermano_tambien():
-    from sentinel_omega import launcher_fixed
-    fuente = inspect.getsource(launcher_fixed)
-    assert "config = load_config()" in fuente
-    assert "config = SentinelOmegaConfig()" not in fuente
+# `test_el_lanzador_hermano_tambien` se retiró el 2026-09-28 junto con
+# `sentinel_omega/launcher_fixed.py` (904 líneas). Nada de producción lo
+# importaba: esta prueba era su único lector, y existía solo para mantener
+# honesto un archivo muerto. Tener dos launchers EN EL CÓDIGO es el mismo riesgo
+# que tener dos corriendo, que es lo que el 2026-09-27 costó un día entero de
+# diagnóstico (dos `sentinel-omega.service` escribiendo la misma base). Las
+# auditorías de `docs/audits/` lo siguen mencionando, y ahí se queda: son
+# registros de lo que había, no se reescriben.
 
 
 def test_el_peso_por_merito_llega_hasta_cargar_pesos():

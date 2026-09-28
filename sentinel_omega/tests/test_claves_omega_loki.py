@@ -69,9 +69,19 @@ MAREAS = ["marea_total", "marea_luna", "marea_sol", "marea_sicigia",
           "marea_dist_luna", "marea_rango_24h", "marea_max_24h", "marea_deriv"]
 
 
-def test_la_tabla_de_fugas_es_la_medida():
-    assert RASGOS_CON_FUGA == {"alfa1": ["kp_mean"], "loki": ["kp_mean"],
-                               "omega": ["kp_mean"], "beta2": MAREAS}
+def test_la_tabla_de_fugas_esta_VACIA_y_el_mecanismo_sigue():
+    """El tapón cumplió y se retiró el 2026-09-27 23:25, con la medición que lo
+    respalda: tras el rebuild y el reentreno, `P(alarma|rasgo=0)` cayó del
+    96,7-100 % a 0,0-4,0 %, y los modelos de alfa1, omega y loki ya responden
+    `NO_SIGNAL`/`NEUTRAL` ante un Kp casi nulo (antes `WATCH` 0,61-0,82).
+
+    La tabla se queda VACÍA, no borrada: si aparece otra fuga se apunta aquí con
+    su medición y el modelo se calla sin tocar más código.
+    """
+    assert RASGOS_CON_FUGA == {}, (
+        f"hay un tapón activo sin retirar: {RASGOS_CON_FUGA}")
+    from sentinel_omega.infrastructure.pipeline import layer_runners
+    assert hasattr(layer_runners, "ETIQUETA_FUGA"), "se perdió el mecanismo"
 
 
 def test_las_mareas_de_beta2_son_las_del_vector_y_las_de_la_fuga_medida():
@@ -80,16 +90,26 @@ def test_las_mareas_de_beta2_son_las_del_vector_y_las_de_la_fuga_medida():
     orden = FEATURE_ORDER["beta2"][:BOT_DIMS["beta2"]]
     en_vector = [k for i, k in enumerate(orden)
                  if k.startswith("marea") and k not in orden[:i]]
-    assert RASGOS_CON_FUGA["beta2"] == en_vector
+    assert en_vector == MAREAS
     from sentinel_omega.tests.test_fuga_de_procedencia import (
         FUGAS_MEDIDAS_2026_09_27,
     )
-    assert set(RASGOS_CON_FUGA["beta2"]) == set(FUGAS_MEDIDAS_2026_09_27["beta2"])
+    assert set(MAREAS) == set(FUGAS_MEDIDAS_2026_09_27["beta2"])
+    # Y el rasgo requerido de beta2 tiene que ser uno de los ocho: si se pone
+    # otro nombre, el chequeo no protege nada.
+    from sentinel_omega.infrastructure.pipeline.layer_runners import (
+        RASGOS_REQUERIDOS,
+    )
+    assert set(RASGOS_REQUERIDOS["beta2"]) <= set(MAREAS)
 
 
-def test_beta2_con_marea_real_no_deja_hablar_al_modelo(monkeypatch):
-    """Ciclo real con las 8 mareas presentes: el modelo de beta2 se calla,
-    con los modelos REALES, y la regla conserva señal y texto."""
+def test_beta2_con_marea_real_SI_deja_hablar_al_modelo(monkeypatch):
+    """Ciclo real con las 8 mareas presentes: el modelo de beta2 **habla**.
+
+    Era lo contrario mientras el tapón estaba puesto. Medido tras el reentreno,
+    con los modelos reales: con la marea real da `NO_SIGNAL` 0,3500, así que
+    callarlo era perder su voto sin ganar nada.
+    """
     ciclo = dict(CICLO_REAL, marea_total=1.6245, marea_luna=1.1851,
                  marea_sol=0.5018, marea_sicigia=0.8261, marea_dist_luna=0.9752,
                  marea_rango_24h=0.0262, marea_max_24h=1.6507,
@@ -98,29 +118,55 @@ def test_beta2_con_marea_real_no_deja_hablar_al_modelo(monkeypatch):
     runner = _runner(monkeypatch, ciclo)
     sig = _senal("beta2", SignalType.WATCH, 0.6, "regla beta2")
     GeodynamicLayerRunner._aplicar_modelos(runner, [sig])
+    # Que SE LE PREGUNTE se observa por la ausencia de `onnx_callado`, no por
+    # `onnx`: `predict_signal` devuelve None cuando el modelo dice NO_SIGNAL, así
+    # que `onnx: False` significa «el modelo no opinó» y mezcla tres casos --- no
+    # hay modelo, se abstuvo, o lo callamos. `onnx_callado` distingue el tercero.
+    assert "onnx_callado" not in sig.data, "a beta2 lo callaron con la marea real"
+    # Y si opinó, no puede haber alarmado: con la marea real da NO_SIGNAL 0,3500.
+    if sig.data.get("onnx"):
+        assert sig.data["onnx_senal"] not in ("WATCH", "ALERT")
+
+
+def test_beta2_SIN_marea_se_calla(monkeypatch):
+    """El otro lado, y por qué el chequeo existe: sin marea el modelo de beta2
+    responde `WATCH` 0,7126 con los modelos reales --- un cero que nunca vio en
+    el entrenamiento, porque tras el rebuild la marea está en el 100 % de las
+    DOS mitades. No es fuga de procedencia: es una región de entrada **nunca
+    medida**. Solo puede faltar si `ephem` no está instalado.
+    """
+    runner = _runner(monkeypatch, dict(CICLO_REAL))   # CICLO_REAL no trae marea
+    sig = _senal("beta2", SignalType.WATCH, 0.6, "regla beta2")
+    GeodynamicLayerRunner._aplicar_modelos(runner, [sig])
     assert sig.signal_type is SignalType.WATCH and sig.confidence == 0.6
     assert sig.reasoning == "regla beta2"
     assert sig.data["onnx"] is False
-    assert sig.data["onnx_callado"] == "fuga:marea"
+    assert sig.data["onnx_callado"] == "falta:marea_total"
     assert "gano" not in sig.data and "onnx_senal" not in sig.data
 
 
 def test_kp_mean_030_no_produce_watch_del_modelo(monkeypatch):
-    """Con los modelos REALES (sin simularlos) y el ciclo real."""
+    """Con los modelos REALES (sin simularlos) y el ciclo real.
+
+    Esta prueba pasaba porque el tapón callaba al modelo. Ahora se le PREGUNTA y
+    tiene que abstenerse por mérito propio: es el guardián de que la fuga no
+    vuelva. Medido: alfa1 `NO_SIGNAL` 0,2932, omega `NEUTRAL` 0,4034, loki
+    `NEUTRAL` 0,3555 --- antes `WATCH` 0,68 / 0,61 / 0,82.
+    """
     runner = _runner(monkeypatch, CICLO_REAL)
     sigs = {b: _senal(b, texto=f"regla {b}") for b in ("alfa1", "loki", "omega")}
     GeodynamicLayerRunner._aplicar_modelos(runner, list(sigs.values()))
     for bot, sig in sigs.items():
-        assert sig.signal_type is SignalType.NEUTRAL, f"{bot}: el modelo habló"
-        assert sig.confidence == 0.3
-        assert sig.reasoning == f"regla {bot}", "se reescribió el texto de la regla"
-        assert sig.data["onnx"] is False
-        assert sig.data["onnx_callado"] == "fuga:kp_mean"
-        assert "onnx_senal" not in sig.data
-        assert "gano" not in sig.data, "no hubo empate que resolver"
+        assert "onnx_callado" not in sig.data, f"{bot}: sigue callado por tapón"
+        assert sig.data["onnx_senal" if sig.data.get("onnx") else "onnx"] not in (
+            "WATCH", "ALERT"), (
+            f"{bot}: el modelo volvió a alarmar con kp_mean bajo "
+            f"({sig.data.get('onnx_senal')} {sig.data.get('onnx_conf')}) --- "
+            "la fuga de procedencia regresó")
+        assert sig.signal_type is not SignalType.ALERT
 
 
-def test_al_bot_callado_ni_se_le_pregunta(monkeypatch):
+def test_al_bot_con_un_rasgo_requerido_ausente_ni_se_le_pregunta(monkeypatch):
     runner = _runner(monkeypatch, CICLO_REAL)
     preguntados = []
     monkeypatch.setattr(
@@ -129,8 +175,10 @@ def test_al_bot_callado_ni_se_le_pregunta(monkeypatch):
         (SignalType.WATCH, 0.99, "WATCH"))
     sigs = [_senal(b) for b in ("alfa1", "loki", "omega", "beta2", "beta1")]
     GeodynamicLayerRunner._aplicar_modelos(runner, sigs)
-    assert preguntados == ["beta1"], preguntados
-    # el bot sin fuga sigue con la lógica del empate intacta
+    # Sin tapón se les pregunta a todos MENOS a beta2: `CICLO_REAL` no trae
+    # marea, y su cero no es una medición (ver test_beta2_SIN_marea_se_calla).
+    assert preguntados == ["alfa1", "loki", "omega", "beta1"], preguntados
+    # el bot sin rasgos requeridos sigue con la lógica del empate intacta
     beta1 = sigs[-1]
     assert beta1.data["gano"] == "modelo"
     assert "onnx_callado" not in beta1.data
@@ -332,18 +380,19 @@ def _registrar(sigs):
     return {f["bot_name"]: f["detalles"] for f in juez.filas}
 
 
-def test_la_marca_de_fuga_llega_a_detalles_json(monkeypatch):
-    """Camino real: el runner calla a alfa1 por kp_mean y el registrador lo
-    guarda en el `detalles` que acaba en detalles_json."""
+def test_la_marca_de_callado_llega_a_detalles_json(monkeypatch):
+    """Camino real: el runner calla a beta2 por falta de marea y el registrador
+    lo guarda en el `detalles` que acaba en detalles_json. Con el tapón retirado
+    ya no hay caso `fuga:`; queda `falta:`, que es el que puede ocurrir hoy."""
     runner = _runner(monkeypatch, CICLO_REAL)
-    sig = _senal("alfa1", texto="regla alfa1")
+    sig = _senal("beta2", texto="regla beta2")
     GeodynamicLayerRunner._aplicar_modelos(runner, [sig])
-    assert sig.data["onnx_callado"] == "fuga:kp_mean"
-    det = _registrar([sig])["alfa1"]
-    assert det["onnx_callado"] == "fuga:kp_mean"
+    assert sig.data["onnx_callado"] == "falta:marea_total"
+    det = _registrar([sig])["beta2"]
+    assert det["onnx_callado"] == "falta:marea_total"
     assert det["onnx"] is False
     import json
-    assert json.loads(json.dumps(det))["onnx_callado"] == "fuga:kp_mean"
+    assert json.loads(json.dumps(det))["onnx_callado"] == "falta:marea_total"
 
 
 def test_sin_marca_no_se_inventa_la_clave():

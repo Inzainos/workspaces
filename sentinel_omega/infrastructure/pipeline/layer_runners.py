@@ -64,22 +64,61 @@ logger = logging.getLogger(__name__)
 # Mientras no se reentrene con máscara de presencia, el modelo de estos bots
 # NO habla: manda la regla, y el registro dice por qué calló.
 RASGOS_CON_FUGA: Dict[str, List[str]] = {
-    "alfa1": ["kp_mean"],
-    "loki": ["kp_mean"],
-    "omega": ["kp_mean"],
-    # beta2: la misma fuga, medida por el revisor G el 2026-09-27
-    # (tests/test_fuga_de_procedencia.py). Las 8 variables de marea entraron al
-    # vector el 2026-09-26 y NO existen en ninguna firma histórica: en el
-    # entrenamiento, marea = 0 es «firma de evento». P(alarma | marea = 0) =
-    # 99,8 % contra ~1,4 % cuando viene. En vivo la marea viene SIEMPRE (se
-    # calcula por efemérides), así que el modelo responde a la procedencia de
-    # la fila, no a la marea. Nombres exactos de FEATURE_ORDER["beta2"].
-    "beta2": ["marea_total", "marea_luna", "marea_sol", "marea_sicigia",
-              "marea_dist_luna", "marea_rango_24h", "marea_max_24h",
-              "marea_deriv"],
+    # VACÍO desde el 2026-09-27 23:25, y el mecanismo se conserva a propósito.
+    #
+    # Era el tapón de Agente-C mientras la fuga de etiqueta por procedencia
+    # estaba viva: alfa1, loki y omega leían `kp_mean`=0 como «firma de evento»
+    # (P(alarma|kp=0) = 96,7-100 %), así que al modelo ni se le preguntaba. Su
+    # condición de retirada --- «hasta que P(alarma|rasgo=0) colapse» --- se
+    # cumplió con el rebuild y el reentreno, y está medida:
+    #
+    #     bot     con kp≈0                          con kp real 336 h
+    #     alfa1   NO_SIGNAL 0,2932 (era WATCH 0,68)   NO_SIGNAL 0,2755
+    #     omega   NEUTRAL   0,4034 (era WATCH 0,61)   NEUTRAL   0,6623
+    #     loki    NEUTRAL   0,3555 (era WATCH 0,82)   NEUTRAL   0,3577
+    #
+    # Se deja la tabla, no el nombre muerto: si aparece otra fuga, aquí se
+    # apunta con su medición y el modelo se calla sin tocar más código.
 }
 
-# Etiqueta corta para `onnx_callado` cuando la fuga es un grupo de rasgos.
+# Rasgos cuyo CERO no puede ser una medición. Si uno falta --- ausente, no
+# finito, o cero --- al modelo no se le pregunta y manda la regla.
+#
+# Es la «bandera de rasgo presente» que llevaba días propuesta, puesta en la
+# puerta de la inferencia en vez de dentro del vector. Razón: `vector_para` pone
+# 0,0 en lo que falta, y para un modelo 0,0 es un valor medido (regla dura 7).
+#
+# `beta2` con la marea, medido el 2026-09-27 tras el reentreno:
+#
+#     con marea real (lo que da el ciclo)   NO_SIGNAL 0,3500
+#     sin marea                            WATCH     0,7126   <-- fantasma
+#
+# Y no es fuga de procedencia: tras el rebuild la marea está en el 100 % de las
+# DOS mitades, así que el modelo nunca vio un cero y extrapola cualquier cosa.
+# Es una región de entrada **nunca medida**, que es un defecto distinto y se
+# tapa distinto. `marea_total` sirve de canario: las ocho se calculan juntas por
+# efemérides, así que si falta una faltan todas --- y solo pueden faltar si
+# `ephem` no está instalado. Cero es imposible por física: la Luna siempre tira.
+RASGOS_REQUERIDOS: Dict[str, List[str]] = {
+    "beta2": ["marea_total"],
+}
+
+
+def _rasgo_requerido_ausente(bot: str, rasgos) -> Optional[str]:
+    """El primer rasgo requerido que falta, o None si están todos."""
+    for clave in RASGOS_REQUERIDOS.get(bot, ()):
+        v = rasgos.get(clave) if hasattr(rasgos, "get") else None
+        if v is None:
+            return clave
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return clave
+        if not math.isfinite(f) or f == 0.0:
+            return clave
+    return None
+
+
 ETIQUETA_FUGA: Dict[str, str] = {"beta2": "marea"}
 
 
@@ -355,15 +394,18 @@ class GeodynamicLayerRunner:
             if not bot:
                 continue
             fuga = RASGOS_CON_FUGA.get(bot)
-            if fuga:
+            falta = _rasgo_requerido_ausente(bot, rasgos)
+            if fuga or falta:
                 # Modelo callado (ver RASGOS_CON_FUGA): ni se le pregunta. La
                 # regla conserva señal, confianza y texto; no hay empate que
                 # resolver, así que tampoco se escribe `gano`.
                 datos = getattr(sig, "data", None)
                 if isinstance(datos, dict):
                     datos["onnx"] = False
-                    datos["onnx_callado"] = "fuga:" + ETIQUETA_FUGA.get(bot, fuga[0])
-                logger.debug("%s: modelo callado por fuga de %s", bot, fuga)
+                    datos["onnx_callado"] = (
+                        "fuga:" + ETIQUETA_FUGA.get(bot, fuga[0]) if fuga
+                        else "falta:" + falta)
+                logger.debug("%s: modelo callado (fuga=%s, falta=%s)", bot, fuga, falta)
                 continue
             try:
                 salida = senal_desde_rasgos(

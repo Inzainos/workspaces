@@ -71,3 +71,21 @@ def test_ningun_archivo_del_arbol_trae_un_token():
         except OSError:
             continue
     assert sospechosos == [], sospechosos
+
+
+def test_los_dos_sitios_de_messaging_tampoco():
+    """El 2026-09-27 se encontraron DOS más fuera de `api/telegram.py`, en el
+    camino de Telegram: `consenso_vigilante` (que la pandilla tenía en su lista de
+    pendientes) y `alert_service`, que nadie había visto.
+
+    Los de `charts.py` NO entran: son fallos de matplotlib, ahí no hay URL.
+    """
+    import inspect
+
+    from sentinel_omega.infrastructure.messaging import alert_service, consenso_vigilante
+
+    for mod, marca in ((consenso_vigilante, "CONSENSO telegram failed"),
+                       (alert_service, "Telegram vigilante dispatch failed")):
+        fuente = inspect.getsource(mod)
+        assert f'f"{marca}: {{e}}"' not in fuente, f"{marca} volvió a la excepción cruda"
+        assert "sin_token(" in fuente, f"{mod.__name__} no enmascara el token"
