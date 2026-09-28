@@ -34,6 +34,22 @@ from sentinel_omega.core.firmas.signature_engine import (
 )
 from sentinel_omega.core.juez.juez import Juez
 
+# Espera por el candado de SQLite en los trabajos por LOTES.
+#
+# El defecto de SQLite son 5 s, y no alcanzan: un lote comparte la base con el
+# launcher vivo, que cicla cada ~5 min y escribe bastante en cada ciclo.
+# `sentinel-omega-mantenimiento.service` falló el 2026-09-27 a las 00:00:36 con
+# el launcher corriendo, y las MISMAS funciones corren sin un error contra una
+# copia sin contención --- así que el código está bien y el fallo fue del
+# entorno. Que fuera el candado es lo más probable pero **no está probado**: el
+# journal de systemd no es legible por el usuario del repo.
+#
+# Se arregla de todas formas porque es un defecto por sí solo: 5 s de
+# presupuesto para un lote nocturno que compite con un escritor vivo es
+# insuficiente en cualquier caso. Un lote puede esperar; fallar no le sirve a
+# nadie.
+ESPERA_CANDADO_S = 120
+
 logger = logging.getLogger(__name__)
 
 # Los bots OBSERVAN todas las magnitudes (hasta el mínimo movimiento es un
@@ -350,7 +366,7 @@ def entrenar_reconocimiento(
     bots: restrict registration to these bots (e.g. ["beta2", "delta"] for
     an incremental training pass without inflating other bots' recurrence).
     """
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     memoria = FirmaMemoria(conn)
     juez = Juez(conn)
     bots_activos = {
@@ -482,7 +498,7 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
     The adjusted weights persist in TBL_PESOS_BOTS and the Padre uses them
     to weigh each bot's vote in live consensus.
     """
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     memoria = FirmaMemoria(conn)
     juez = Juez(conn)
 
@@ -647,7 +663,7 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
 
 def ultimo_bloque_aprendido(db_path: str) -> Optional[str]:
     """El bloque más reciente que YA produjo firma. None si no hay ninguno."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     try:
         fila = conn.execute("SELECT MAX(ts_evento) FROM tbl_firma_eventos").fetchone()
         return fila[0] if fila else None
@@ -870,7 +886,7 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
     from datetime import datetime as _dt, timedelta as _td
     from sentinel_omega.core.firmas.signature_engine import similitud
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_lag_anticipacion ("
         "event_class TEXT PRIMARY KEY, lag_promedio_h REAL, lag_max_h REAL, "
@@ -964,7 +980,7 @@ def analizar_factores_lag(db_path: str) -> Dict:
     earlier — persisted to tbl_factores_lag for the report and, in time,
     for predicting a match's expected delay from its own features.
     """
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_factores_lag ("
         "feature TEXT PRIMARY KEY, media_rapidas REAL, media_lentas REAL, "
@@ -1053,7 +1069,7 @@ def entrenar_reconocimiento_no_sismico(
     atmospheric (Beta-2) patterns that precede these events too, enabling
     the correlation heatmap to reveal cross-domain relationships.
     """
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
 
     # Derive if table is absent or empty
     n_previos = 0
@@ -1135,7 +1151,7 @@ def calcular_correlaciones_evento(db_path: str) -> Dict:
     the report generator to render the correlation heatmap. Re-running is safe
     (INSERT OR REPLACE).
     """
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_patrones_correlacion "
         "(event_class TEXT NOT NULL, feature TEXT NOT NULL, "
@@ -1263,7 +1279,7 @@ def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
 
     import time as _time
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     juez = Juez(conn)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_firmas_menores ("

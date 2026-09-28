@@ -22,6 +22,22 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Dict
 
+# Espera por el candado de SQLite en los trabajos por LOTES.
+#
+# El defecto de SQLite son 5 s, y no alcanzan: un lote comparte la base con el
+# launcher vivo, que cicla cada ~5 min y escribe bastante en cada ciclo.
+# `sentinel-omega-mantenimiento.service` falló el 2026-09-27 a las 00:00:36 con
+# el launcher corriendo, y las MISMAS funciones corren sin un error contra una
+# copia sin contención --- así que el código está bien y el fallo fue del
+# entorno. Que fuera el candado es lo más probable pero **no está probado**: el
+# journal de systemd no es legible por el usuario del repo.
+#
+# Se arregla de todas formas porque es un defecto por sí solo: 5 s de
+# presupuesto para un lote nocturno que compite con un escritor vivo es
+# insuficiente en cualquier caso. Un lote puede esperar; fallar no le sirve a
+# nadie.
+ESPERA_CANDADO_S = 120
+
 logger = logging.getLogger(__name__)
 
 DIAS_RETENCION_FULL = 7  # días recientes que se conservan a resolución de ciclo
@@ -32,7 +48,7 @@ def _dia_utc(ts: float) -> str:
 
 
 def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_resumen_diario ("
         "dia TEXT PRIMARY KEY, n_ciclos INTEGER, fantasma_max REAL, "
@@ -128,7 +144,7 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
     # que tras su gracia nunca se asoció a un evento es ruido → se elimina.
     try:
         from sentinel_omega.core.firmas.cimatica import poda_cimatica
-        conn_poda = sqlite3.connect(db_path)
+        conn_poda = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
         stats["cimatica_podados"] = poda_cimatica(conn_poda)
         conn_poda.close()
     except Exception as e:
@@ -162,7 +178,7 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
         # despacio no se nota.
         try:
             from sentinel_omega.core.juez.pesos import guardar_competencia
-            _c = sqlite3.connect(db_path)
+            _c = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
             stats["competencia_guardada"] = guardar_competencia(_c)
             _c.close()
         except Exception as e:  # noqa: BLE001 — el barrido sigue sin esto
@@ -224,7 +240,7 @@ def construir_correlaciones_padre(db_path: str, min_n: int = CORRELACION_MIN_N) 
     """
     import json as _json
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_correlaciones_padre ("
         "patron TEXT, event_class TEXT, n INTEGER, fuerza REAL, "
@@ -311,7 +327,7 @@ def construir_correlaciones_omega(db_path: str, min_n: int = CORRELACION_OMEGA_M
     """
     import json as _json
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_correlaciones_omega ("
         "patron TEXT, event_class TEXT, n INTEGER, fuerza REAL, "
@@ -369,7 +385,7 @@ def evaluar_sesgo_aprendizaje(
     from sentinel_omega.infrastructure.pipeline.entrenamiento import BOT_FEATURES
     from sentinel_omega.core.juez.pesos import castigar
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_sesgo_aprendizaje ("
         "bot TEXT PRIMARY KEY, n INTEGER, recon_insample REAL, recon_causal REAL, "
@@ -586,7 +602,7 @@ def analizar_orden_precursores(db_path: str, muestra: int = ORDEN_MUESTRA) -> Di
     tbl_orden_precursores: (orden, event_class) -> n  (contar, no anotar)
     tbl_orden_veredictos:  conjunto -> ¿el orden importa o es indiferente?
     """
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_orden_precursores ("
         "orden TEXT, event_class TEXT, n INTEGER, "
@@ -742,7 +758,7 @@ def analizar_secuencia_nodos(db_path: str, muestra: int = SEC_NODOS_MUESTRA) -> 
     tbl_secuencia_nodos:    (secuencia, event_class) -> frecuencia  (contar)
     tbl_secuencia_veredictos: secuencia -> alcance + interpretación
     """
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_secuencia_nodos ("
         "secuencia TEXT, event_class TEXT, frecuencia INTEGER, "
@@ -923,7 +939,7 @@ def promover_eventos_vivos(db_path: str, dry_run: bool = False) -> Dict:
     from sentinel_omega.core.shared.geometria_uvg import nodo_mas_cercano
 
     stats = {"eventos_nuevos": 0, "bloques_refrescados": 0, "omitidos": 0}
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     try:
         for tabla in ("TBL_HISTORICO_SISMICO", "tbl_eventos_sismicos_fuente",
                       "tbl_historico_sismico_raw"):
@@ -1035,7 +1051,7 @@ def volcar_telemetria_viva(
     from datetime import datetime, timedelta, timezone
     import json
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     conn.execute("PRAGMA journal_mode=WAL")
     _ensure_hist_tables(conn)
 
@@ -1188,7 +1204,7 @@ def volcar_telemetria_viva(
                 # temporales vacías --- el barrido diario se prueba en
                 # test_firmas.py y arrastraba la cascada consigo.
                 try:
-                    _c = sqlite3.connect(db_path)
+                    _c = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
                     _hay = _c.execute(
                         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE "
                         "type='table' AND name='tbl_eventos_sismicos_fuente')"
@@ -1220,7 +1236,7 @@ def volcar_telemetria_viva(
                 stats["cascada_ok"] = 1 if rc == 0 else 0
                 logger.info(f"Cascada topología tras volcado: rc={rc}")
                 # actualizar log
-                conn = sqlite3.connect(db_path)
+                conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
                 conn.execute(
                     "UPDATE tbl_volcado_vivo_log SET cascada_ok=? "
                     "WHERE id = (SELECT MAX(id) FROM tbl_volcado_vivo_log)",

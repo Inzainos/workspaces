@@ -675,18 +675,48 @@ class FirmaMemoria:
         self,
         features: Dict[str, float],
         umbral: float = SIMILARITY_ALERT,
+        bot: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Compare the live state against consolidated firmas.
 
         Returns matches sorted by similarity — "the current state looks
         similar (0.87) to the signature that preceded SISMO_M7 at node 45".
+
+        `bot` limita la comparación a las firmas DE ESE BOT. Añadido el
+        2026-09-27: cada bot ya tiene sus propias firmas en `TBL_FIRMAS`
+        --- alfa1 1.632, beta1 993, loki 858, padre 14.289 (el conjunto, con
+        `BOT_FEATURES["padre"] = None`) --- y su propio modelo ONNX, pero esta
+        comparación recorría las 12.872 consolidadas de los nueve contra un
+        único diccionario global. Sin el filtro, un bot no puede preguntarle
+        nada a su propia memoria.
+
+        `bot_name` viaja en el resultado, que es lo que faltaba para que un
+        emparejamiento sea ATRIBUIBLE. Sin él:
+
+          * el `firma_matches` que guarda el Juez no dice de quién era la
+            firma, así que el doble de `SEVERIDAD_FALLO_FIRMA_CONOCIDA` solo
+            puede aplicarse al padre --- en el entrenamiento sí llega a cada
+            bot, vía `firma_conocida=es_exigible`;
+          * y un fallo no se puede asignar a su responsable.
+
+        Medido ese día sobre los 35 FALLO que registran emparejamientos: los
+        35 tenían firmas, el primero con **similitud 1,0** en una consolidada
+        de recurrencia 71 y clase SISMO_M5. El estado se reconoció perfecto y
+        el veredicto fue `neutral`.
+
+        El defecto vecino NO se toca aquí, y conviene saberlo: esta función se
+        llama desde `_auditar_ciclo`, o sea DESPUÉS de que el consenso decidió.
+        Con `bot` y `bot_name` ya se puede medir cuántos ciclos traen
+        emparejamiento propio por bot; dejar que influya en la decisión es otro
+        cambio, y ese sí mueve veredictos.
         """
         matches = []
-        for firma in self.consolidadas():
+        for firma in self.consolidadas(bot_name=bot):
             sim = similitud(features, firma["features"])
             if sim >= umbral:
                 matches.append({
                     "firma_id": firma["firma_id"],
+                    "bot_name": firma["bot_name"],
                     "event_class": firma["event_class"],
                     "id_nodo": firma["id_nodo"],
                     "similitud": round(sim, 3),

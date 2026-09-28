@@ -34,13 +34,21 @@ LOGFILE = Path(__file__).parent / "data" / "sentinel_omega.log"
 # data/ está en .gitignore: en un checkout limpio (GitHub Actions) no existe
 LOGFILE.parent.mkdir(parents=True, exist_ok=True)
 
+# Mismo degradado suave que `launcher.py`: el handler de archivo se construye AL
+# IMPORTAR, así que un log no escribible hacía estallar el import. Medido el
+# 2026-09-27: el servicio corre como root y al ROTAR el log dejó el archivo
+# inaccesible para el dueño del repo, y este módulo --- que solo sigue vivo por
+# `test_el_lanzador_hermano_tambien` --- tumbó la suite entera.
+_handlers = [logging.StreamHandler(sys.stdout)]
+try:
+    _handlers.append(logging.FileHandler(LOGFILE, mode="a"))
+except OSError:      # permisos, disco lleno, ruta inaccesible
+    pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [LAUNCHER] %(levelname)s %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOGFILE, mode="a"),
-    ],
+    handlers=_handlers,
 )
 logger = logging.getLogger(__name__)
 

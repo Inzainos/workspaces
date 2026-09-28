@@ -38,21 +38,47 @@ LOGFILE.parent.mkdir(parents=True, exist_ok=True)
 _LOG_MAX_BYTES = int(os.environ.get("SENTINEL_LOG_MAX_BYTES", str(50 * 1024 * 1024)))
 _LOG_BACKUP_COUNT = int(os.environ.get("SENTINEL_LOG_BACKUP_COUNT", "5"))
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [LAUNCHER] %(levelname)s %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
+# El handler de archivo se construye AL IMPORTAR, así que si el log no es
+# escribible el `import launcher` reventaba con PermissionError --- y con él
+# cualquier prueba, herramienta o invocación manual que importe este módulo.
+#
+# Medido el 2026-09-27: el servicio corre como root (`User=` vacío en una unidad
+# de sistema), y cuando el log ROTÓ, root creó el archivo nuevo. Desde ese
+# instante el usuario del repo no podía escribirlo, y tres pruebas que habían
+# pasado una hora antes empezaron a fallar sin que el código cambiara. Se repite
+# en cada rotación mientras el servicio sea root.
+#
+# Abrir un archivo por el mero hecho de importar un módulo es el defecto de
+# fondo, y se arregla donde está: si el archivo no se puede abrir se sigue con
+# stdout --- que es lo que systemd captura en el journal (`StandardOutput=journal`)
+# --- y se avisa. Es la misma disciplina fail-soft del resto del pipeline: un
+# log que no se puede escribir no es motivo para que el sistema no arranque.
+_handlers = [logging.StreamHandler(sys.stdout)]
+_aviso_log = None
+try:
+    _handlers.append(
         RotatingFileHandler(
             LOGFILE,
             mode="a",
             maxBytes=_LOG_MAX_BYTES,
             backupCount=_LOG_BACKUP_COUNT,
             encoding="utf-8",
-        ),
-    ],
+        )
+    )
+except OSError as _e:      # permisos, disco lleno, ruta inaccesible
+    _aviso_log = (
+        f"No se pudo abrir {LOGFILE} ({_e}); se registra solo en stdout. "
+        "Si el servicio corre como root y tú no, es el dueño del archivo."
+    )
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [LAUNCHER] %(levelname)s %(message)s",
+    handlers=_handlers,
 )
 logger = logging.getLogger(__name__)
+if _aviso_log:
+    logger.warning(_aviso_log)
 logger.info(
     "Log rotation enabled (maxBytes=%s, backupCount=%s)",
     _LOG_MAX_BYTES,
