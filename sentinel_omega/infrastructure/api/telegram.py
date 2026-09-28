@@ -92,10 +92,46 @@ def sin_token(texto: object) -> str:
     #     dos puntos, pero no está garantizado, y un patrón clavado en 35 falla
     #     EN SILENCIO con uno de 36. Enmascarar de más es inofensivo; de menos,
     #     es una fuga
-    return re.sub(
+    texto = re.sub(
         r"(?<![0-9])[0-9]{8,10}:[A-Za-z0-9_-]{30,}",
         "<TOKEN>", str(texto),
     )
+    # Segunda red: el tramo `/bot<lo-que-sea>:<lo-que-sea>/` de la URL de la
+    # API se redacta aunque el token no tenga la forma canónica (uno truncado,
+    # uno de pruebas), para que la URL de la petición nunca salga con token.
+    return re.sub(r"/bot[^/\s]*:[^/\s]*/", "/bot<TOKEN>/", texto)
+
+
+def _registrar_si_no_ok(resp: object, operacion: str) -> None:
+    """Registra (logger.error) una respuesta de Telegram que no fue OK.
+
+    Antes un 401 (token revocado) o un 200 con `{"ok": false}` pasaban en
+    silencio o sin la `description` de Telegram. Aquí se registra el código
+    HTTP, el `error_code` y la `description` --- pasados por `sin_token` ---
+    y NUNCA la URL ni el token. No cambia qué devuelve el llamador.
+    """
+    status = getattr(resp, "status_code", None)
+    if not isinstance(status, int):
+        return  # doble de prueba sin status real: nada que decir
+    ok = None
+    error_code = None
+    descripcion = None
+    try:
+        cuerpo = resp.json()
+        if isinstance(cuerpo, dict):
+            ok = cuerpo.get("ok")
+            error_code = cuerpo.get("error_code")
+            descripcion = cuerpo.get("description")
+    except Exception:
+        pass
+    if status != 200 or ok is False:
+        logger.error(
+            "Telegram %s no OK: status=%s ok=%s error_code=%s description=%s",
+            operacion, status, ok, error_code,
+            sin_token(descripcion) if descripcion is not None else "-",
+        )
+
+
 TIMEOUT = 10
 
 # Umbrales estilo Centinela V2 (fantasma 0–10 o 0–1 se normaliza)
@@ -174,6 +210,7 @@ def send_alert(message: str, parse_mode: str = "HTML", reply_markup: Optional[di
         payload["reply_markup"] = reply_markup
     try:
         resp = get_session().post(url, json=payload, timeout=TIMEOUT)
+        _registrar_si_no_ok(resp, "sendMessage")
         resp.raise_for_status()
         logger.info("Telegram alert sent successfully")
         return True
@@ -215,6 +252,7 @@ def send_photo(photo_path: str, caption: str = "", parse_mode: str = "HTML") -> 
             files = {"photo": f}
             data = {"chat_id": chat_id, "caption": caption, "parse_mode": parse_mode}
             resp = get_session().post(url, data=data, files=files, timeout=TIMEOUT + 10)
+            _registrar_si_no_ok(resp, "sendPhoto")
             resp.raise_for_status()
             logger.info(f"Telegram photo sent: {photo_path}")
             return True
@@ -234,6 +272,7 @@ def send_document(doc_path: str, caption: str = "") -> bool:
             files = {"document": f}
             data = {"chat_id": chat_id, "caption": caption[:1000] if caption else ""}
             resp = get_session().post(url, data=data, files=files, timeout=TIMEOUT + 10)
+            _registrar_si_no_ok(resp, "sendDocument")
             resp.raise_for_status()
             logger.info(f"Telegram document sent: {doc_path}")
             return True

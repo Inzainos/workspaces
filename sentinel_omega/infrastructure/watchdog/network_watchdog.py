@@ -5,9 +5,10 @@ Levanta el sistema si ve desconexiones o fallos de red/servicio.
 
 - Chequea conectividad cada 60s (ping 8.8.8.8 + 1.1.1.1 + http google)
 - Chequea health del agente (ollama + DB) via agent_bridge si existe
-- Si falla N veces seguidas => intenta systemctl restart sentinel-omega + dashboard + watchdog alert
+- Si falla N veces seguidas => intenta `systemctl --user restart sentinel-omega` + watchdog alert
 - Notifica via AlertService (Telegram/Correo/Log) cuando vuelve
-- Corre como servicio systemd sentinel-omega-watchdog.service (Restart=always)
+- Corre como unit de USUARIO systemd sentinel-omega-watchdog.service (Restart=always);
+  todas las llamadas usan `systemctl --user` (las units de sistema estan enmascaradas)
 
 No requiere credenciales para chequear; si hay Telegram, notifica.
 """
@@ -22,6 +23,32 @@ CHECK_INTERVAL_S = int(os.environ.get('WATCHDOG_INTERVAL_S', '60'))
 FAIL_THRESHOLD = int(os.environ.get('WATCHDOG_FAIL_THRESHOLD', '3'))
 PING_HOSTS = ['8.8.8.8','1.1.1.1']
 HTTP_HOSTS = ['https://www.google.com','https://api.nasa.gov']
+
+# Sentinel corre como units de USUARIO: siempre `systemctl --user`.
+SYSTEMCTL = ['systemctl', '--user']
+# Units (manager de usuario) a asegurar cuando vuelve la red. El dashboard
+# Streamlit en vivo es unit de SISTEMA y no se puede reiniciar sin root, por eso
+# no va por defecto; se pueden agregar units de usuario separadas por coma.
+RESTORE_UNITS = [u.strip() for u in os.environ.get('WATCHDOG_RESTORE_UNITS', 'sentinel-omega').split(',') if u.strip()]
+
+
+def _user_systemd_env() -> dict:
+    """Entorno para `systemctl --user` aun desde cron/ssh sin sesion.
+
+    Devuelve una COPIA de os.environ (no muta el entorno global) con
+    XDG_RUNTIME_DIR=/run/user/<uid> y el bus de usuario si faltan.
+    """
+    env = dict(os.environ)
+    if not env.get('XDG_RUNTIME_DIR'):
+        env['XDG_RUNTIME_DIR'] = f'/run/user/{os.getuid()}'
+    if not env.get('DBUS_SESSION_BUS_ADDRESS'):
+        env['DBUS_SESSION_BUS_ADDRESS'] = f"unix:path={env['XDG_RUNTIME_DIR']}/bus"
+    return env
+
+
+def _systemctl(*args: str, timeout: int) -> subprocess.CompletedProcess:
+    return subprocess.run([*SYSTEMCTL, *args], capture_output=True, text=True,
+                          timeout=timeout, env=_user_systemd_env())
 
 def has_network() -> bool:
     # 1) DNS + TCP check (sin depender de ping binario)
@@ -48,7 +75,7 @@ def has_network() -> bool:
 
 def service_active(name: str) -> bool:
     try:
-        r = subprocess.run(['systemctl','is-active',name], capture_output=True, text=True, timeout=5)
+        r = _systemctl('is-active', name, timeout=5)
         return r.stdout.strip() == 'active'
     except Exception:
         return False
@@ -57,7 +84,9 @@ def try_restart(services):
     for svc in services:
         try:
             logger.warning(f'Restart {svc}')
-            subprocess.run(['systemctl','restart',svc], timeout=30)
+            r = _systemctl('restart', svc, timeout=30)
+            if r.returncode != 0:
+                logger.error(f'restart {svc} rc={r.returncode}: {(r.stderr or "").strip()}')
         except Exception as e:
             logger.error(f'restart {svc} fail: {e}')
 
@@ -92,7 +121,7 @@ def main():
             if was_down:
                 notify('[SENTINEL] Red restaurada', f'Red OK tras {fails} fallos. {datetime.now(timezone.utc).isoformat()}')
                 # asegurar servicios arriba
-                for svc in ['sentinel-omega','sentinel-omega-dashboard']:
+                for svc in RESTORE_UNITS:
                     if not service_active(svc):
                         try_restart([svc])
             fails = 0

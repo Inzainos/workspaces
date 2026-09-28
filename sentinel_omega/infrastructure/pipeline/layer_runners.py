@@ -11,12 +11,15 @@ Hierarchical validation:
 """
 
 import logging
+import math
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
 
-from sentinel_omega.core.shared.agent_base import AgentSignal, ConsensusResult, SignalType
+from sentinel_omega.core.shared.agent_base import (
+    AgentSignal, ConsensusResult, SignalType, valor_medido,
+)
 from sentinel_omega.core.precursor.risk_calculator import (
     PrecursorRisk,
     compute_fantasma,
@@ -39,6 +42,52 @@ from sentinel_omega.layers.geodynamic.loki.agent import LokiAgent
 from sentinel_omega.infrastructure.pipeline.data_pipeline import GeodynamicPipeline
 
 logger = logging.getLogger(__name__)
+
+
+# ─── Modelos callados por FUGA de presencia ──────────────────────────────────
+#
+# Medido el 2026-09-27 (diagnóstico omega_diag): desde las 13:59 CST alfa1,
+# loki y omega dijeron WATCH en 44 de 44 ciclos, con la regla en neutral. La
+# causa no es el vector sino lo que el modelo aprendió de `kp_mean`:
+#
+#   * en las FIRMAS (etiquetas de evento) `kp_mean` vale 0 en el 100 % ---
+#     nunca se midió ahí, así que el 0 es «ausente»;
+#   * en el feedback del Juez, cuando SÍ viene (> 0,2), está etiquetado
+#     NEUTRAL en el 100 % (594/594 filas de omega).
+#
+# El bosque aprendió «kp_mean ≈ 0 ⇒ firma de evento ⇒ WATCH»: la PRESENCIA del
+# dato funciona como etiqueta. Y el ciclo vivo calcula `kp_mean` como la media
+# del Kp entero de 1 minuto, que en calma baja de 0,31 --- a las 13:59 cruzó
+# ese umbral y los tres bots saltaron a la vez. Con `kp_mean` en cualquier
+# valor de 0,33 a 2,0 el mismo modelo da NO_SIGNAL/NEUTRAL.
+#
+# Mientras no se reentrene con máscara de presencia, el modelo de estos bots
+# NO habla: manda la regla, y el registro dice por qué calló.
+RASGOS_CON_FUGA: Dict[str, List[str]] = {
+    "alfa1": ["kp_mean"],
+    "loki": ["kp_mean"],
+    "omega": ["kp_mean"],
+    # beta2: la misma fuga, medida por el revisor G el 2026-09-27
+    # (tests/test_fuga_de_procedencia.py). Las 8 variables de marea entraron al
+    # vector el 2026-09-26 y NO existen en ninguna firma histórica: en el
+    # entrenamiento, marea = 0 es «firma de evento». P(alarma | marea = 0) =
+    # 99,8 % contra ~1,4 % cuando viene. En vivo la marea viene SIEMPRE (se
+    # calcula por efemérides), así que el modelo responde a la procedencia de
+    # la fila, no a la marea. Nombres exactos de FEATURE_ORDER["beta2"].
+    "beta2": ["marea_total", "marea_luna", "marea_sol", "marea_sicigia",
+              "marea_dist_luna", "marea_rango_24h", "marea_max_24h",
+              "marea_deriv"],
+}
+
+# Etiqueta corta para `onnx_callado` cuando la fuga es un grupo de rasgos.
+ETIQUETA_FUGA: Dict[str, str] = {"beta2": "marea"}
+
+
+def _es_finito_o_no_numerico(v) -> bool:
+    """Descarta NaN/inf numéricos; lo no numérico pasa tal cual."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return True
+    return math.isfinite(float(v))
 
 
 class GeodynamicLayerRunner:
@@ -305,6 +354,17 @@ class GeodynamicLayerRunner:
             bot = str(getattr(sig, "agent_name", "") or "").lower()
             if not bot:
                 continue
+            fuga = RASGOS_CON_FUGA.get(bot)
+            if fuga:
+                # Modelo callado (ver RASGOS_CON_FUGA): ni se le pregunta. La
+                # regla conserva señal, confianza y texto; no hay empate que
+                # resolver, así que tampoco se escribe `gano`.
+                datos = getattr(sig, "data", None)
+                if isinstance(datos, dict):
+                    datos["onnx"] = False
+                    datos["onnx_callado"] = "fuga:" + ETIQUETA_FUGA.get(bot, fuga[0])
+                logger.debug("%s: modelo callado por fuga de %s", bot, fuga)
+                continue
             try:
                 salida = senal_desde_rasgos(
                     bot, rasgos, permitir_alerta=bot not in SIN_ALERTA)
@@ -402,10 +462,72 @@ class GeodynamicLayerRunner:
         except Exception as e:  # noqa: BLE001 — sin conexión, esos rasgos faltan
             logger.debug("rasgos de tabla no disponibles: %s", e)
         try:
-            return _build_live_features(self, conn) or {}
+            rasgos = _build_live_features(self, conn) or {}
         finally:
             if conn is not None:
                 conn.close()
+        # Un NaN no es un rasgo medido. `_build_live_features` deja pasar los
+        # acoplamientos de delta como NaN (`delta_cross_coupling`,
+        # `delta_schumann_coupling`: 44/44 ciclos el 2026-09-27); aquí se
+        # quitan para que ningún consumidor del runner los lea como dato.
+        return {k: v for k, v in rasgos.items() if _es_finito_o_no_numerico(v)}
+
+    def _datos_omega(self, alfa1_data: Optional[Dict],
+                     beta1_data: Optional[Dict]) -> Dict:
+        """Lo que ve omega: la telemetría cruda de alfa1 MÁS los rasgos
+        canónicos del ciclo (`bz_mean`, `kp_max`, `viento_avg`, `fase_lunar`,
+        `es_sicigia`, `schumann_*`…), los mismos que usa `_aplicar_modelos` y
+        que guarda el Juez.
+
+        Hasta el 2026-09-27 omega recibía solo `alfa1_data` --- un DataFrame y
+        ningún escalar --- y escribía «Bz=sin dato; Kp=sin dato» con el ciclo
+        trayendo Bz −0,93 y Kp 1. Tampoco se piden ya `schumann_mean` ni
+        `schumann_std` a beta1: beta1 nunca los produce (esos dos vienen, si
+        hay lectura, en los rasgos del ciclo).
+        """
+        omega_data = dict(alfa1_data or {})
+        try:
+            omega_data.update(self._rasgos_del_ciclo())
+        except Exception as e:  # noqa: BLE001 — omega sigue con lo crudo
+            logger.debug("omega sin rasgos del ciclo: %s", e)
+        omega_data["schumann_hz"] = valor_medido(
+            beta1_data or {}, "schumann_frequency", "schumann_hz")
+        return omega_data
+
+    @staticmethod
+    def _datos_loki(alfa1_data: Optional[Dict], beta1_data: Optional[Dict],
+                    delta_data: Optional[Dict]) -> Dict:
+        """Entradas de Loki con los nombres que Loki lee, y None donde no hay
+        lectura.
+
+        Antes: Bz 0.0 si faltaba, viento 400, Schumann 7,83 (de una clave
+        `schumann_mean` que beta1 nunca produce, así que era SIEMPRE 7,83), VIX
+        20 y LOD 0.0. Valores inventados que la regla trataba como medidos.
+        """
+        import numpy as np
+
+        def _ultimo_real(df, col):
+            if df is None or col not in getattr(df, "columns", []):
+                return None
+            serie = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float)
+            serie = serie[np.isfinite(serie)]
+            return float(serie[-1]) if serie.size else None
+
+        omni = (alfa1_data or {}).get("omni_dataframe")
+        lod_ms = None
+        serie_lod = (beta1_data or {}).get("lod_ms")
+        if serie_lod is not None and len(serie_lod) > 0:
+            v = np.asarray(serie_lod, dtype=float)
+            v = v[np.isfinite(v)]
+            lod_ms = float(v[-1]) if v.size else None
+        return {
+            "bz_gsm": _ultimo_real(omni, "bz_gsm"),
+            "solar_wind": _ultimo_real(omni, "plasma_speed"),
+            # La potencia de Schumann (% de actividad), solo si hubo lectura.
+            "schumann_activity": valor_medido(beta1_data or {}, "schumann_activity"),
+            "vix": valor_medido(delta_data or {}, "vix"),
+            "lod_ms": lod_ms,
+        }
 
     def run(self, financial_data: Optional[Dict] = None) -> ConsensusResult:
         logger.info("=== Sentinel Omega Cycle ===")
@@ -475,13 +597,7 @@ class GeodynamicLayerRunner:
                 (s for s in signals if getattr(s, "agent_name", "") == "beta1"),
                 None,
             )
-            omega_data = dict(alfa1_data or {})
-            omega_data.update({
-                "schumann_hz": (beta1_data or {}).get("schumann_frequency")
-                or (beta1_data or {}).get("schumann_hz"),
-                "schumann_mean": (beta1_data or {}).get("schumann_mean"),
-                "schumann_std": (beta1_data or {}).get("schumann_std"),
-            })
+            omega_data = self._datos_omega(alfa1_data, beta1_data)
             self.omega.ingest(omega_data)
             self.omega.set_beta_context(beta1_sig)
             signals.append(self.omega.analyze())
@@ -490,34 +606,9 @@ class GeodynamicLayerRunner:
 
         # Loki (Act 3): Unified Field - Fractal-Bayesian collapse
         try:
-            # Extract data needed by Loki
-            omni_df = alfa1_data.get("omni_dataframe")
-            bz_gsm = 0.0
-            solar_wind = 400.0
-            if omni_df is not None:
-                # Último valor REAL de la ventana: la última fila puede ser NaN
-                # ahora que la tubería ya no rellena huecos sin límite.
-                if "bz_gsm" in omni_df.columns:
-                    _bz = omni_df["bz_gsm"].dropna()
-                    bz_gsm = float(_bz.iloc[-1]) if len(_bz) > 0 else 0.0
-                if "plasma_speed" in omni_df.columns:
-                    _v = omni_df["plasma_speed"].dropna()
-                    solar_wind = float(_v.iloc[-1]) if len(_v) > 0 else 400.0
-
-            schumann_resonance = (beta1_data or {}).get("schumann_mean", 7.83)
-            vix = (delta_data or {}).get("vix", 20.0)
-            lod_ms = 0.0
-            lod_series = beta1_data.get("lod_ms")
-            if lod_series is not None and len(lod_series) > 0:
-                lod_ms = float(lod_series[-1])
-
-            loki_data = {
-                "bz_gsm": bz_gsm,
-                "solar_wind": solar_wind,
-                "schumann_resonance": schumann_resonance,
-                "vix": vix,
-                "lod_ms": lod_ms,
-            }
+            # Sin valores por defecto: lo que falta llega como None y Loki
+            # emite NO_SIGNAL si le faltan sus entradas clave.
+            loki_data = self._datos_loki(alfa1_data, beta1_data, delta_data)
             self.loki.ingest(loki_data)
             signals.append(self.loki.analyze())
             logger.info(f"Loki signal: {signals[-1].signal_type.value} (conf={signals[-1].confidence:.2f})")

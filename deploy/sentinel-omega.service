@@ -1,18 +1,21 @@
+# Unit de USUARIO systemd -> ~/.config/systemd/user/sentinel-omega.service
+# Instalar con: bash deploy/install.sh  (sin sudo)
+# NO copiar a /etc/systemd/system: la unit de sistema homonima debe seguir
+# ENMASCARADA (-> /dev/null) para no tener dos launchers peleando.
+# %h = $HOME del usuario (en vivo: /home/deamon); el repo vive en %h/workspaces.
 [Unit]
 Description=Sentinel Omega - Precursor Detection Platform (Fractal Core)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=__REPO_DIR__
-EnvironmentFile=__REPO_DIR__/deploy/.env
-ExecStartPre=/bin/rm -f __REPO_DIR__/sentinel_omega/data/sentinel_omega.pid
-ExecStart=__REPO_DIR__/.venv/bin/python sentinel_omega/launcher.py
-Restart=always
-RestartSec=10
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
+[Service]
+Type=simple
+WorkingDirectory=%h/workspaces
+EnvironmentFile=%h/workspaces/deploy/.env
+ExecStartPre=/bin/rm -f %h/workspaces/sentinel_omega/data/sentinel_omega.pid
+ExecStart=%h/workspaces/.venv/bin/python sentinel_omega/launcher.py
+Restart=always
+RestartSec=10
+
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

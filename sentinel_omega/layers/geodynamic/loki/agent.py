@@ -8,7 +8,9 @@ Base Node: Tlaxcala, Mexico (19.318°N, -98.237°W)
 
 import numpy as np
 from typing import Any, Dict, Optional, List
-from sentinel_omega.core.shared.agent_base import BaseAgent, AgentSignal, SignalType
+from sentinel_omega.core.shared.agent_base import (
+    BaseAgent, AgentSignal, SignalType, valor_medido,
+)
 
 class LokiAgent(BaseAgent):
     PHI = (1 + 5**0.5) / 2  # Golden Ratio φ = 1.618...
@@ -25,18 +27,46 @@ class LokiAgent(BaseAgent):
         self._fractal_dimension: float = 0.0
         self._bayesian_prior: float = 0.5
         self._bayesian_posterior: float = 0.5
+        self._medido: Dict[str, Optional[float]] = {}
+        self._faltan: List[str] = []
         self.logger.info("Loki Agent (Fractal-Bayesian) initialized at Tlaxcala Node")
+
+    # ─── Qué lee Loki y con qué nombre llega ──────────────────────────────
+    #
+    # Medido el 2026-09-27: el runner mandaba `bz_gsm`, `schumann_resonance` y
+    # `lod_ms`, y aquí se leía `bz`, `schumann_activity` y `lod` con respaldo
+    # 0.0 --- así que Bz, Schumann y LOD valían CERO en todos los ciclos, y el
+    # VIX, cuando faltaba, un 20 inventado. La regla decidía sobre un vector
+    # fabricado y lo presentaba como medición.
+    #
+    # Ahora cada magnitud se busca por su nombre canónico y sus alias con
+    # `valor_medido` (None, NaN y lo no numérico son ausencia), SIN respaldo.
+    # Lo que falta queda en `self._faltan`; si falta una entrada CLAVE, Loki
+    # emite NO_SIGNAL en vez de colapsar sobre ceros.
+    #
+    # `_data_vector` conserva 0.0 en las posiciones ausentes solo como
+    # marcador interno de la aritmética (SVD/FFT no aceptan None); nunca se
+    # decide sobre él si falta una clave.
+    ENTRADAS = (
+        ("bz", ("bz_gsm", "bz")),                                # IMF Bz GSM (nT)
+        ("solar_wind", ("solar_wind",)),                         # km/s
+        ("schumann_activity", ("schumann_activity", "schumann_resonance")),
+        ("vix", ("vix",)),                                       # índice del miedo
+        ("lod", ("lod_ms", "lod")),                              # Length of Day (ms)
+    )
+    # Sin campo magnético y viento solar no hay «campo unificado» que medir.
+    ENTRADAS_CLAVE = ("bz", "solar_wind")
 
     def ingest(self, data: Dict[str, Any]) -> None:
         """Ingest multi-domain data: Bz, Solar Wind, Schumann, VIX, LOD"""
-        self._data_vector = [
-            float(data.get("bz", 0.0)),              # IMF Bz GSM (nT)
-            float(data.get("solar_wind", 0.0)),      # Solar wind speed (km/s)
-            float(data.get("schumann_activity", 0.0)), # Schumann resonance power
-            float(data.get("vix", 20.0)),            # VIX fear index
-            float(data.get("lod", 0.0))              # Length of Day (ms)
-        ]
-        self.logger.info(f"Loki: Data vector ingested: {self._data_vector}")
+        data = dict(data or {})
+        valores = {nombre: valor_medido(data, *alias) for nombre, alias in self.ENTRADAS}
+        self._medido = valores
+        self._faltan = [n for n, v in valores.items() if v is None]
+        self._data_vector = [0.0 if v is None else float(v) for v in valores.values()]
+        self.logger.info(
+            f"Loki: Data vector ingested: {self._data_vector} "
+            f"(sin dato: {self._faltan or 'ninguno'})")
 
     def _svd_cleaning(self) -> np.ndarray:
         """Step 1: Linear Cleaning via SVD (Gauss-Jordan proxy)"""
@@ -98,6 +128,18 @@ class LokiAgent(BaseAgent):
         if self._data_vector is None:
             return self.emit_signal(SignalType.NO_SIGNAL, 0.0, reasoning="No data vector ingested")
 
+        faltan_clave = [n for n in self.ENTRADAS_CLAVE if n in self._faltan]
+        if faltan_clave:
+            # Sin sus entradas clave Loki no colapsa sobre ceros: lo dice.
+            # Tampoco se actualiza el prior bayesiano con un ciclo no medido.
+            return self.emit_signal(
+                SignalType.NO_SIGNAL, 0.0,
+                data={"faltan": list(self._faltan), "sin_dato": True,
+                      "medido": dict(self._medido)},
+                reasoning="Loki sin dato: " + ", ".join(
+                    f"{n}=sin dato" for n in self._faltan),
+            )
+
         # --- THE FRACTAL-BAYESIAN MASSAGE ---
         
         # 1. SVD Cleaning
@@ -133,6 +175,8 @@ class LokiAgent(BaseAgent):
             "phi_alignment": round(likelihood, 4),
             "tlaxcala_node": [self.TLAXCALA_LAT, self.TLAXCALA_LON],
             "phi": self.PHI,
+            "medido": dict(self._medido),
+            "faltan": list(self._faltan),
         }
 
         # Decision logic

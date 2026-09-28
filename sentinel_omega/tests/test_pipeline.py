@@ -410,17 +410,29 @@ class TestSchumannConnector:
 
         assert analyze_spectrogram(None) is None
 
+    @patch("sentinel_omega.infrastructure.api.schumann.last_modified_de")
     @patch("sentinel_omega.infrastructure.api.schumann.fetch_schumann_spectrogram")
     @patch("sentinel_omega.infrastructure.api.schumann.analyze_spectrogram")
-    def test_full_pipeline(self, mock_analyze, mock_fetch):
+    def test_full_pipeline(self, mock_analyze, mock_fetch, mock_lm):
+        from datetime import datetime, timezone
         from sentinel_omega.infrastructure.api.schumann import fetch_schumann_resonance
 
         mock_fetch.return_value = "/tmp/fake.jpg"
         mock_analyze.return_value = (8.5, 12.0)
+        mock_lm.return_value = datetime.now(timezone.utc)  # fresh image
 
-        hz, pct = fetch_schumann_resonance(cleanup=False)
+        hz, pct = fetch_schumann_resonance(cleanup=False, previa=None)
         assert hz == 8.5
         assert pct == 12.0
+
+    @patch("sentinel_omega.infrastructure.api.schumann.fetch_schumann_spectrogram")
+    @patch("sentinel_omega.infrastructure.api.schumann.analyze_spectrogram")
+    def test_full_pipeline_image_without_timestamp(self, mock_analyze, mock_fetch):
+        from sentinel_omega.infrastructure.api.schumann import fetch_schumann_resonance
+
+        mock_fetch.return_value = "/tmp/fake.jpg"   # no Last-Modified recorded
+        mock_analyze.return_value = (8.5, 12.0)
+        assert fetch_schumann_resonance(cleanup=False, previa=None) is None
 
     @patch("sentinel_omega.infrastructure.api.schumann.fetch_schumann_spectrogram")
     def test_full_pipeline_no_download(self, mock_fetch):

@@ -9,7 +9,7 @@ Guía para dejar a Roy corriendo 24/7 en tu servidor (Linux) o en la MSI Katana 
 git clone https://github.com/Inzainos/workspaces.git sentinel-omega
 cd sentinel-omega
 
-# 2. Instalar (crea venv, dependencias y el servicio)
+# 2. Instalar (crea venv, dependencias y las units de USUARIO systemd; sin sudo)
 bash deploy/install.sh
 
 # 3. Poner tus keys
@@ -18,9 +18,17 @@ nano deploy/.env
 # 4. UNA SOLA VEZ: cargar 30 años + entrenar firmas (tarda ~30-60 min)
 .venv/bin/python sentinel_omega/launcher.py --backcast --entrenar --once --dry-run
 
-# 5. Arrancar 24/7
-sudo systemctl enable --now sentinel-omega
+# 5. Arrancar 24/7 (install.sh ya hace enable --now; esto es por si usaste --no-start)
+systemctl --user enable --now sentinel-omega sentinel-omega-watchdog
+sudo loginctl enable-linger $USER   # una vez, si install.sh no pudo (polkit)
 ```
+
+Sentinel corre como **units de usuario** (`~/.config/systemd/user/`,
+`WantedBy=default.target`, linger activo). Las units de sistema
+`/etc/systemd/system/sentinel-omega{,-watchdog}.service` deben quedar
+**enmascaradas** (`sudo systemctl mask sentinel-omega sentinel-omega-watchdog`);
+`install.sh` avisa y no arranca nada si no lo estan. Los timers
+(mantenimiento 00:00, retrain ONNX) siguen siendo units de sistema.
 
 El servicio se reinicia solo si el proceso muere y arranca solo al prender el servidor.
 
@@ -28,10 +36,10 @@ El servicio se reinicia solo si el proceso muere y arranca solo al prender el se
 
 | Qué | Comando |
 |---|---|
-| Estado | `systemctl status sentinel-omega` |
-| Logs en vivo | `journalctl -u sentinel-omega -f` |
-| Actualizar versión | `git pull && sudo systemctl restart sentinel-omega` |
-| Detener | `sudo systemctl stop sentinel-omega` |
+| Estado | `systemctl --user status sentinel-omega` |
+| Logs en vivo | `journalctl --user -u sentinel-omega -f` |
+| Actualizar versión | `git pull && systemctl --user restart sentinel-omega` |
+| Detener | `systemctl --user stop sentinel-omega` |
 | Dashboard | `.venv/bin/streamlit run sentinel_omega/infrastructure/dashboard/app.py` |
 
 ## Windows (MSI Katana)
@@ -65,7 +73,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now sentinel-omega-dashb
 |---|---|
 | **Safari** → `http://IP-DEL-SERVIDOR:8501` | Dashboard completo (9 pestañas, mapas, fantasma, muro) |
 | **Telegram** | Alertas rojas/amarillas al instante |
-| **Termius** (o Blink) → SSH al servidor | `journalctl -u sentinel-omega -f`, reiniciar, actualizar |
+| **Termius** (o Blink) → SSH al servidor | `journalctl --user -u sentinel-omega -f`, reiniciar, actualizar |
 | **Working Copy** | Ver/editar el repo, pull de versiones |
 
 > **Fuera de casa**: instala [Tailscale](https://tailscale.com) (gratis) en el
@@ -107,3 +115,69 @@ al repo en `estado/` como siempre.
 - El flag `--backcast` también corre el backfill secundario (SO2 volcánico
   NASA + BTC Yahoo). Todo es idempotente: re-correrlo no duplica datos.
 - **Nunca** pongas keys en el código ni subas `deploy/.env` a git.
+
+---
+
+## 2026-09-27 — En ESTA máquina manda la unidad de USUARIO (los `sudo systemctl` de arriba no aplican)
+
+Decisión del operador, **por practicidad: arrancar y parar sin sudo.** El día 27 se
+descubrió que había **dos** `sentinel-omega.service` activos a la vez --- uno de
+sistema (root) y uno de usuario (deamon) --- ciclando los dos contra la misma base.
+Se delató en la auditoría del Juez: veredictos alternándose cada ~45 s, unos con el
+tapón de rasgos con fuga y otros sin él. Consecuencia colateral: los conteos
+absolutos de ciclos de esos días están inflados (pueden ser dos filas por ciclo).
+
+Estado vigente:
+
+| unidad | estado |
+|---|---|
+| `sentinel-omega` / `-watchdog` (sistema) | **masked** |
+| `sentinel-omega` / `-watchdog` (`--user`) | **enabled**, con `Linger=yes` |
+
+`masked` y no `disable` a propósito: así no las puede levantar el watchdog ni un
+`Requires=` de otra unidad. Con `Linger=yes` las de usuario sobreviven al cierre de
+sesión y al reinicio, así que la operación 24/7 no depende de una sesión abierta.
+
+**Comandos vigentes (sin sudo):**
+
+```bash
+systemctl --user start  sentinel-omega.service sentinel-omega-watchdog.service
+systemctl --user stop   sentinel-omega.service sentinel-omega-watchdog.service
+systemctl --user status sentinel-omega.service
+journalctl --user -u sentinel-omega -f
+```
+
+**Efecto secundario bueno:** el launcher corre como `deamon`, así que el pid y el
+log dejan de ser de root. Eso retira el defecto del 2026-09-01
+(`_check_already_running` fallando con `PermissionError`) y el caso del log rotado
+ilegible. El manejo fail-soft del `RotatingFileHandler` en `launcher.py` se queda,
+para cubrir que alguien lo arranque con sudo.
+
+**Resuelto (diff unidad de usuario):** `deploy/install.sh` ya instala y
+habilita solo las unidades de USUARIO (sin sudo), no instala las de sistema
+`sentinel-omega{,-watchdog}` y avisa/no arranca si no están enmascaradas.
+
+### 2026-09-27 (noche) — Instalar con el `install.sh` nuevo
+
+`install.sh` ya no usa sudo. Se niega a correr como root y no arranca nada si las
+unidades de sistema `sentinel-omega{,-watchdog}` no están enmascaradas.
+
+```bash
+bash deploy/install.sh --no-start        # instala las units de usuario, sin arrancar
+systemctl --user start sentinel-omega sentinel-omega-watchdog
+```
+
+- `dashboard-web` **no** está en `USER_UNITS` por ahora: la unidad viva usa el npm de
+  Windows y `install.sh` no la toca.
+- Los timers `mantenimiento` y `onnx-retrain` siguen siendo de sistema, pero ahora
+  corren con `User=` del repo. `install.sh` deja las unidades listas en
+  `~/.cache/sentinel-omega/system-units/`; instalarlas requiere sudo:
+
+```bash
+sudo cp ~/.cache/sentinel-omega/system-units/sentinel-omega-{mantenimiento,onnx-retrain}.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start sentinel-omega-mantenimiento.timer   # parado desde el 27-sep 20:58
+```
+
+  Hacerlo **antes del 4-oct 03:07** (siguiente reentreno). Detalle y pendientes en
+  `estado/OPERACIONES_2026-09-27.md`.

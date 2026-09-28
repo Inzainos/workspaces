@@ -5,6 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# Unit de SISTEMA disparada por su timer, pero corre como el usuario del repo:
+# sus archivos (DB, modelos, logs) son de ese usuario, y sentinel-omega es unit
+# de USUARIO (la de sistema esta enmascarada). XDG_RUNTIME_DIR/DBUS permiten
+# `systemctl --user` desde aqui. install.sh sustituye los placeholders (usuario/uid).
+User=__RUN_USER__
+Environment=XDG_RUNTIME_DIR=/run/user/__RUN_UID__
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/__RUN_UID__/bus
 WorkingDirectory=__REPO_DIR__
 EnvironmentFile=-__REPO_DIR__/deploy/.env
 ExecStart=__REPO_DIR__/.venv/bin/python sentinel_omega/launcher.py --disciplina --barrido --dry-run

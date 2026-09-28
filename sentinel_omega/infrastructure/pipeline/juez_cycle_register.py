@@ -105,8 +105,12 @@ def register_cycle_predictions(
                 # confianza: sin él, saber QUIÉN decidió volvería a requerir
                 # recalcular la comparación en vez de leerla --- el mismo defecto
                 # que este bloque arregla.
+                # `onnx_callado` (2026-09-27): el modelo no se consultó por una
+                # fuga medida (p. ej. "fuga:kp_mean"); sin guardarlo, un
+                # `onnx: False` no distingue «callado a propósito» de «sin modelo».
                 for clave in ("onnx", "onnx_senal", "onnx_conf",
-                              "regla_senal", "regla_conf", "gano"):
+                              "regla_senal", "regla_conf", "gano",
+                              "onnx_callado"):
                     if clave in datos:
                         detalles[clave] = datos[clave]
             juez.registrar_prediccion(

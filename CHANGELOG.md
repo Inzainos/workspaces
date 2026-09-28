@@ -1,5 +1,33 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-09-27 - Una sola instancia (usuario), Schumann WPC, ONNX solo en_vivo, túnel cerrado
+
+Sin commit, sin push. Detalle: `estado/BITACORA_2026-09-26.md`, `estado/OPERACIONES_2026-09-27.md` (C),
+`estado/TELEGRAM_2026-09-27.md` (T), `bridge/TERMUX.md` (A), `deploy/DEPLOY.md`, `CANAL_CLAUDE.md`.
+
+### Fixed
+- **Dos Sentinel escribiendo a la vez** (usuario + sistema/root). Unidades de sistema `sentinel-omega` y
+  `sentinel-omega-watchdog` en `masked` (~20:05); decisión del Capitán 20:37: corre la unidad de **usuario**.
+  594 veredictos del proceso viejo/duplicados marcados `en_vivo=0` (20:14:43, con respaldo).
+- **Schumann WPC**: `shm.jpg` de Tomsk era imagen estática (1-sep-2025, 8.26 Hz / 25.0). Revisión por
+  `Last-Modified` + valor repetido; PREC queda NULL/NULL sin lectura viva (C, aprobado T, 77/77 tests).
+- **`train_onnx_from_db.py`**: etiquetas del Juez filtran `COALESCE(en_vivo,1)=1` (antes solo `fase='viva'`);
+  esperado 23 283 etiquetas en vez de 23 670 (C, aprobado T, 64/64).
+- **Token de Telegram**: `deploy/.env` tenia el token viejo de SismoBio_Bot (401); cambiado al valido a las 19:42, permisos `600` y respaldo (detalle en `estado/TELEGRAM_2026-09-27.md`, T).
+
+### Changed
+- `deploy/install.sh` y `.service`: unidades de usuario (`%h/workspaces`, `default.target`, linger),
+  marcadores `__REPO_DIR__`/`__RUN_USER__`/`__RUN_UID__`; `mantenimiento` y `onnx-retrain` con `User=`;
+  `dashboard-web` fuera de `USER_UNITS`. `network_watchdog.py` usa `systemctl --user`.
+- SSH: solo llave; `authorized_keys` con `restrict,port-forwarding,permitopen="127.0.0.1:11434"`;
+  `AllowTcpForwarding local` (21:00). Prueba `-R` rechazada y "Nodo OK" (21:09).
+- `chown` de `sentinel_omega/` a deamon (353 archivos de root); timer de mantenimiento parado esta noche.
+
+### Pendiente
+- Rebuild + ONNX de Claude en curso (desde 20:27:55); arranque `--user`, marcado Schumann 534/541 y PREC.
+- Con sudo: reinstalar `mantenimiento`/`onnx-retrain` antes del 4-oct; unidad `rutinas` como root.
+- Regla (e) de subir/bajar alarmas: decisión del Capitán.
+
 
 ## [Unreleased] - 2026-09-03 - Consenso Telegram: digest horario + solo sin precedentes
 

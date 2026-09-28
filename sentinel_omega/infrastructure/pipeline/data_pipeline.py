@@ -552,7 +552,12 @@ class GeodynamicPipeline:
                 geo = enriched.geophysical
                 result["geo_kp_max_3d"] = geo.kp_max_3d
                 result["geo_storm_active"] = int(geo.storm_active)
-                result["geo_schumann_deviation"] = geo.schumann_freq_deviation
+                # A DB LOCF series is old readings, not the current one: its last
+                # value must not be stored as today's deviation.
+                if getattr(enriched_data.schumann, "es_locf", False):
+                    result["geo_schumann_deviation"] = None
+                else:
+                    result["geo_schumann_deviation"] = geo.schumann_freq_deviation
 
             logger.info(
                 "Delta enriquecido: composite=%s, cross_coupling=%s, regime=%s, completeness=%s",

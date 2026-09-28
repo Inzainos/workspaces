@@ -70,6 +70,9 @@ class SchumannData:
     freq_hz: np.ndarray         # frequency of SR1 (baseline ~7.83 Hz)
     amplitude: np.ndarray       # relative amplitude (normalised to 1.0 baseline)
     freq_deviation: np.ndarray  # freq_hz − 7.83
+    # True when the series comes from the DB LOCF (old stored readings): it is
+    # history, never "the current reading".
+    es_locf: bool = False
 
 
 @dataclass
@@ -369,11 +372,13 @@ def _filtro_en_vivo_sch(con) -> str:
         return ""
 
 
-def _schumann_from_db(days: int) -> Optional[SchumannData]:
-    """LOCF from tbl_schumann_vivo excluding historical 7.83/0 placeholders."""
+def _schumann_from_db(days: int, db_path=None) -> Optional[SchumannData]:
+    """LOCF from tbl_schumann_vivo excluding historical 7.83/0 placeholders.
+
+    Marked ``es_locf=True``: old stored readings, never the current reading."""
     import sqlite3
     from pathlib import Path as _P
-    candidates = [
+    candidates = [_P(db_path)] if db_path else [
         _P("/home/deamon/workspaces/sentinel_omega/data/SENTINEL_OMEGA_PRO.db"),
         _P(__file__).resolve().parents[2] / "data" / "SENTINEL_OMEGA_PRO.db",
     ]
@@ -406,6 +411,7 @@ def _schumann_from_db(days: int) -> Optional[SchumannData]:
         freq_hz=freqs,
         amplitude=amps,
         freq_deviation=freqs - _SR1_BASELINE_HZ,
+        es_locf=True,
     )
 
 

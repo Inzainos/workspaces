@@ -209,6 +209,25 @@ def load_firmas_from_db(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray,
     return result
 
 
+def _filtro_juez_en_vivo(conn: sqlite3.Connection) -> str:
+    """``" AND COALESCE(en_vivo,1)=1"`` si TBL_JUEZ_AUDITORIA tiene la columna.
+
+    Medido el 2026-09-27: 594 filas con fase='viva' venían de un proceso
+    duplicado viejo con la fuga de `kp_mean` y se marcaron `en_vivo=0` (387 ya
+    resueltas). Filtrar solo por fase las dejaba entrar al entrenamiento. NULL
+    cuenta como vivo, igual que en el resto de lectores; una base sin la
+    columna (anterior a la bandera) se lee entera, con un aviso.
+    """
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(TBL_JUEZ_AUDITORIA)")}
+    except sqlite3.Error:
+        return ""
+    if "en_vivo" in cols:
+        return " AND COALESCE(en_vivo,1)=1"
+    logger.warning("TBL_JUEZ_AUDITORIA sin en_vivo: se entrena con todas las filas viva")
+    return ""
+
+
 def load_juez_feedback(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """Etiquetas y PESOS desde TBL_JUEZ_AUDITORIA (ACIERTO/FALLO/FALSO_POSITIVO).
 
@@ -227,7 +246,7 @@ def load_juez_feedback(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray, 
             "SELECT id, bot_name, prediccion, confianza, resultado, detalles_json "
             "FROM TBL_JUEZ_AUDITORIA "
             "WHERE resultado IN ('ACIERTO','FALLO','FALSO_POSITIVO') "
-            "AND fase = 'viva'"
+            "AND fase = 'viva'" + _filtro_juez_en_vivo(conn)
         ).fetchall()
     except sqlite3.Error as e:
         logger.info(f"Juez sin filas útiles: {e}")
