@@ -328,11 +328,41 @@ class GeodynamicLayerRunner:
                 "regla_senal": regla_senal,
                 "regla_conf": round(regla_conf, 4),
             })
-            if tipo != sig.signal_type or float(conf) > float(sig.confidence or 0):
+            # ── Quién gana el empate: EL DE MÁS CONFIANZA ──────────────────
+            #
+            # Hasta el 2026-09-27 el modelo ganaba SIEMPRE que hablara: estas dos
+            # asignaciones eran incondicionales y la comparación de arriba solo
+            # decidía si se escribía una línea de log. Así que un modelo con 0,35
+            # apagaba una alarma de regla con 0,60.
+            #
+            # Se vio en cuanto el registro dejó de mentir --- sobre cinco horas de
+            # operación real, con los campos `onnx_*` recién persistidos:
+            #
+            #     beta1   modelo=WATCH    regla=neutral    22 veces
+            #     beta2   modelo=NEUTRAL  regla=watch       8 veces
+            #
+            # Las 8 de beta2 son alarmas de la regla que el modelo apagó. Decisión
+            # del operador, consultada: **gana el de más confianza**, simétrico ---
+            # ni se privilegia alarmar ni callar, y las dos ramas se tratan como
+            # iguales. Si el modelo trae menos confianza que la regla, manda la
+            # regla y su texto queda intacto.
+            #
+            # `>=` y no `>`: en un empate exacto manda el modelo, que es lo que
+            # aprendió de 19.578 firmas frente a un umbral escrito a mano.
+            gana_el_modelo = float(conf) >= regla_conf
+            if not gana_el_modelo:
+                logger.info(
+                    "%s: manda la REGLA %s (%.2f) sobre el modelo %s (%.2f)",
+                    bot, regla_senal, regla_conf, nombre, conf,
+                )
+                datos["gano"] = "regla"
+                continue
+            if tipo != sig.signal_type:
                 logger.info(
                     "%s: modelo %s (%.2f) sobre regla %s (%.2f)",
                     bot, nombre, conf, regla_senal, regla_conf,
                 )
+            datos["gano"] = "modelo"
             sig.signal_type = tipo
             sig.confidence = float(conf)
             # El `reasoning` también, o el registro miente. Hasta el 2026-09-27

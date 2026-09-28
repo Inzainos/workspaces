@@ -101,8 +101,12 @@ def register_cycle_predictions(
             # no crezca con lo que cada agente decida meter en su `data`.
             datos = getattr(sig, "data", None)
             if isinstance(datos, dict):
+                # `gano` se añade el 2026-09-27 con la regla del empate por
+                # confianza: sin él, saber QUIÉN decidió volvería a requerir
+                # recalcular la comparación en vez de leerla --- el mismo defecto
+                # que este bloque arregla.
                 for clave in ("onnx", "onnx_senal", "onnx_conf",
-                              "regla_senal", "regla_conf"):
+                              "regla_senal", "regla_conf", "gano"):
                     if clave in datos:
                         detalles[clave] = datos[clave]
             juez.registrar_prediccion(
