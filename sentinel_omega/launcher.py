@@ -722,16 +722,53 @@ def _build_live_features(runner, conn=None) -> dict:
     # hubo sicigia» o «cero sismos», no «no lo sé». Se calculan aquí, de los
     # mismos datos que ya trae el ciclo.
     beta1 = cache.get("beta1") or {}
-    kp = beta1.get("kp_series")
-    if kp is not None and len(kp) > 0:
-        features["kp_mean"] = float(np.nanmean(kp))
-        features["kp_max"] = float(np.nanmax(kp))
-        # La serie de Kp viene en tramos de 3 h: las últimas 24 muestras son
-        # 72 h. Si hay menos, se usa lo que haya --- nunca se rellena.
-        ventana72 = np.asarray(kp[-24:], dtype=float)
-        ventana72 = ventana72[np.isfinite(ventana72)]
-        if ventana72.size:
-            features["kp_max_72h"] = float(np.max(ventana72))
+    # El Kp se agrega de la MISMA tabla y con las MISMAS ventanas que la firma,
+    # o no significa lo mismo. Medido el 2026-09-27 (hallazgo de Agente-C):
+    #
+    #   entrenamiento (signature_engine:148/280)  tbl_clima_espacial_raw, bloques
+    #                                             de 1 h, ventanas de 336 h y 72 h
+    #   inferencia    (esto, antes)               `kp_series` de NOAA, que es
+    #                                             `planetary_k_index_1m.json`
+    #
+    # Ese feed es de **1 minuto** y trae unas 6 h en total (medido en vivo: 358
+    # filas, 5,95 h). Así que `kp[-24:]` son **24 minutos**, no 72 h --- 72 h
+    # serían 4.320 muestras y el feed no las tiene ni puede tenerlas. El
+    # comentario que decía «viene en tramos de 3 h» era falso. Mismo nombre,
+    # cantidades que difieren 180×.
+    #
+    # Y no era solo `kp_max_72h`: los tres rasgos de Kp salían de una ventana de
+    # 6 h donde el entrenamiento usa 336 h. Comparado esta noche:
+    #
+    #   MAX(kp_max) 72 h real = 4,0        contra  max(kp[-24:]) = 0,000
+    #   AVG(kp_prom) 336 h    = 1,96       contra  mean(feed 6 h) ≈ 0,30
+    #
+    # La distribución con la que se entrenó tiene p5 = 0,896 y mediana 1,742, así
+    # que el ciclo vivo entregaba el Kp **por debajo del percentil 5** de forma
+    # permanente. Arreglar solo `kp_max_72h` y dejar los otros dos habría bajado
+    # el número sin cerrar el desajuste.
+    #
+    # Sin tabla no se inventa: los rasgos se omiten y `vector_para` pone 0,0.
+    # Las últimas 72 h tienen 71 de 72 bloques con 66 de Kp, así que la fuente
+    # está viva --- la escribe este mismo launcher cada hora.
+    if conn is not None:
+        try:
+            fila = conn.execute(
+                "SELECT AVG(kp_promedio), MAX(kp_max) "
+                "FROM tbl_clima_espacial_raw "
+                "WHERE timestamp_blk >= datetime('now','-336 hours')"
+            ).fetchone()
+            if fila and fila[0] is not None:
+                features["kp_mean"] = float(fila[0])
+            if fila and fila[1] is not None:
+                features["kp_max"] = float(fila[1])
+            fila = conn.execute(
+                "SELECT MAX(kp_max) FROM tbl_clima_espacial_raw "
+                "WHERE timestamp_blk >= datetime('now','-72 hours')"
+            ).fetchone()
+            if fila and fila[0] is not None:
+                features["kp_max_72h"] = float(fila[0])
+        except Exception as e:  # noqa: BLE001 — el ciclo sigue sin los rasgos
+            logger.warning("Kp por ventana no disponible (%s): queda sin dato", e)
     if "schumann_frequency" in beta1:
         features["schumann_mean"] = float(beta1["schumann_frequency"])
     # La dispersión de Schumann: el modelo la pide y nadie la calculaba.

@@ -200,6 +200,23 @@ sentinel_omega/
 ### Pipeline scripts (operational map)
 
 - Core runtime:
+  - `launcher.py` → `_build_live_features(runner, conn)` — **el vector que el
+    modelo recibe en vivo**. Regla que gobierna este archivo: cada rasgo se
+    calcula de la MISMA fuente y con la MISMA ventana que lo calcula la firma
+    (`signature_engine.extraer_features_ventana`), o el modelo responde a una
+    magnitud que no es la que aprendió. Tres casos ya medidos y arreglados:
+    los conteos sísmicos (globales y topados a 500 → del nodo, 336 h/72 h),
+    `proton_max` (nunca llegaba) y el Kp. El del Kp es el ejemplo a recordar:
+    `planetary_k_index_1m.json` es de **1 minuto** y trae ~6 h, así que
+    `kp[-24:]` eran **24 minutos** con el nombre `kp_max_72h`, y los tres rasgos
+    de Kp salían de 6 h donde el entrenamiento usa 336 h y 72 h. Ahora salen de
+    `tbl_clima_espacial_raw`. Sin fuente el rasgo se OMITE: `vector_para` pone
+    0,0, y ese 0,0 es «no lo sé» --- nunca se rellena.
+  - `core/onnx_mixin.py` — `inferencia_de` **se niega a usar un modelo cuya
+    entrada no coincida con `BOT_DIMS[bot]`** y manda la rama de reglas. Sin eso
+    `pad_vector` recorta o rellena y la excepción de `onnxruntime` queda como un
+    `None` indistinguible de «no hay modelo». Contrato:
+    `tests/test_onnx_dims.py`.
   - `infrastructure/pipeline/data_pipeline.py` — ingesta multi-fuente + LOCF.
     Expone `proton_flux` (último) y `proton_flux_max` (máximo de ventana): el
     flujo de protones NO viaja como columna del `omni_dataframe`, así que sin
@@ -222,9 +239,19 @@ sentinel_omega/
 - One-time / batch:
   - `infrastructure/pipeline/backcast.py` — carga histórica one-time.
   - `infrastructure/pipeline/entrenamiento.py` + `entrenar_paralelo.py` — aprendizaje por fases.
-    `BOT_FEATURES` decide qué rasgos llevan las firmas de cada bot; un rasgo
-    que no esté ahí no puede entrar al vector ONNX de ese bot (entrenaría en
-    cero y en vivo recibiría un valor real).
+    `BOT_FEATURES` decide qué rasgos llevan las firmas de cada bot. **Un rasgo que
+    está en `features_onnx.FEATURE_ORDER[bot]` y no en `BOT_FEATURES[bot]` es una
+    FUGA DE ETIQUETA POR PROCEDENCIA**, no un detalle: vale 0 en toda la mitad
+    etiquetada como alarma (las firmas nacen de eventos) y un valor real en la
+    mitad neutral (los ciclos vivos del Juez), así que el modelo aprende de qué
+    TABLA vino la fila. Medido el 2026-09-27: 17 rasgos en 4 bots, con
+    `P(alarma | rasgo=0)` entre 96,7 % y 100 % contra 1,2-1,5 % cuando el rasgo
+    venía. Cerrado esa noche; lo fija `tests/test_fuga_de_procedencia.py`.
+    Dos condiciones para declarar un rasgo, y las dos hacen falta:
+    **(1)** que exista en `signature_engine.FEATURE_KEYS` --- si no, el filtro
+    `if k in FEATURE_KEYS` lo descarta **en silencio** y el arreglo es falso; y
+    **(2)** cobertura medida sobre las ventanas REALES de ese bot, no sobre el
+    agregado (`padre` tiene el 73 % de las firmas y se traga cualquier promedio).
     `calcular_lags_anticipacion` aprende **cuánto avisa cada firma, en horas**:
     reprueba sus eventos con la ventana desplazada atrás y se queda con el
     desplazamiento más temprano en que aún emparejaba. Escribe
@@ -255,12 +282,10 @@ sentinel_omega/
 ## Environment variables
 
 ```
-SMTP_USER             — Cuenta emisora de correo (app password de Gmail)
-SMTP_PASS             — Contraseña de aplicación SMTP
-SMTP_HOST / SMTP_PORT — Opcionales (default smtp.gmail.com:587)
-CORREO_DESTINO        — Destinatario (default elan.zainos.corona@gmail.com)
-TELEGRAM_BOT_TOKEN    — Telegram alert dispatch (en pausa: el canal es correo)
-TELEGRAM_CHAT_ID      — Target chat for alerts (en pausa)
+TELEGRAM_BOT_TOKEN    — Canal ÚNICO de alertas. COMPARTIDO con
+                        ~/consensus-expert-agent (bot @IngZainos_bot, que vive
+                        allá): rotarlo desde aquí rompe el otro proyecto.
+TELEGRAM_CHAT_ID      — Chat destino
 OPENWEATHERMAP_KEY    — Atmospheric data
 BITSO_API_KEY         — Bitso exchange
 BITSO_API_SECRET      — Bitso exchange
@@ -274,24 +299,28 @@ ALPHA_VANTAGE_KEY     — Stock market data
   (con SUS nodos) y snapshot cimático.
 - **Cada 4 h** — el Juez verifica real vs predicción contra USGS (verdad
   por fila; ritmo auto-impuesto en `pipeline/verificacion.py`).
-- **Cada 6 h** — reporte ejecutivo (se encola por correo).
+- **Cada 6 h** — reporte ejecutivo.
 - **12am y 12pm MX** — comparativo contra el día anterior (con gráfica).
 - **Domingo 12:15pm MX** — reporte semanal (gráficas de fantasma/alertas/breaches).
 - **Fin de mes 12:30pm MX** — reporte mensual.
-- **Cada corrida** — despacho del outbox de correo (`deploy/enviar_correos.py`).
+- **Cada corrida** — despacho del digest (`deploy/enviar_correos.py`, que pese al
+  nombre despacha por **Telegram**).
 
-## Cimática y correo (sin Telegram)
+## Cimática (el canal es Telegram)
 
 - `tbl_cimatica_patrones` — snapshot del sistema por ciclo: patrón NUEVO →
   telemetría completa guardada; patrón existente → frecuencia+1 (contar,
   no anotar). Ámbito `general` o `nodo`; `event_class` cuando se conoce.
   Todo alta/incremento dispara la revisión del Padre; patrón nuevo con
   Padre activo o frecuencia consistente (≥3) con evento asociado → alerta
-  por correo. Módulo: `core/firmas/cimatica.py`.
-- `tbl_correo_salida` — outbox de ALERTAS y REPORTES a
-  elan.zainos.corona@gmail.com. Envío SMTP fail-soft
-  (`infrastructure/api/correo.py`): sin credenciales queda PENDIENTE,
-  nunca se finge enviado.
+  por Telegram. Módulo: `core/firmas/cimatica.py`.
+- **El correo ya no existe.** `infrastructure/api/correo.py` se borró el
+  2026-09-15 y las variables SMTP están comentadas. `tbl_correo_salida` sigue en
+  la base pero **cero código la referencia**: vestigio conservado a propósito
+  (decisión del operador, 2026-09-27, «por si acaso»). No la rellenes ni la leas.
+  Si lees una versión de este archivo que dice «el canal es correo» o «Telegram en
+  pausa», está desactualizada --- corregido el 2026-09-27 **contra el código**,
+  que es la autoridad, no contra la fecha del documento.
 
 ## Database (SQLite)
 

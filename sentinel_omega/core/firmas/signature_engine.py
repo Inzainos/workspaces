@@ -20,6 +20,7 @@ import json
 import logging
 import sqlite3
 import time
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -48,6 +49,20 @@ FEATURE_KEYS = [
     # que Júpiter no tenía de dónde formar su vector. Ahora se persisten en
     # tbl_xray_vivo / tbl_trends_vivo y se acumulan desde el ciclo operativo.
     "xray_mean", "xray_max", "trends_mean",
+    # beta2: marea terrestre por efemérides (2026-09-27).
+    #
+    # Entran aquí porque faltar de esta lista las hacía IMPOSIBLES de aprender:
+    # el vector ONNX de beta2 las pide desde el 2026-09-26, pero el filtro
+    # `{k: v for ... if k in FEATURE_KEYS}` las descartaba en silencio, así que
+    # valían 0 en las 806 firmas de beta2 y un valor real en la mitad viva.
+    # `P(alarma | marea=0)` medida: 99,8 %. El modelo no aprendía la marea:
+    # aprendía de qué tabla venía la fila (`tests/test_fuga_de_procedencia.py`).
+    #
+    # El lado vivo las calcula en `models/rasgos_juez._marea` con
+    # `marea_ventana(momento, horas=24)`; la firma usa la MISMA llamada con el
+    # ts de su ventana, así que las dos mitades hablan de lo mismo.
+    "marea_total", "marea_luna", "marea_sol", "marea_sicigia",
+    "marea_dist_luna", "marea_rango_24h", "marea_max_24h", "marea_deriv",
 ]
 
 # Dimensiones compartidas mínimas para que dos firmas puedan compararse.
@@ -366,7 +381,37 @@ def extraer_features_ventana(
     except Exception:
         pass  # tabla no existe aún → features delta_cross ausentes (NaN en vector)
 
+    # ── beta2: marea terrestre en la ventana de la firma ─────────────────────
+    # No se consulta ninguna tabla: se CALCULA por efemérides, así que cubre el
+    # 100 % de las ventanas, incluidas las de 1994. Es la razón por la que este
+    # rasgo puede cerrar la fuga sin depender de recuperar ninguna fuente.
+    features.update(_marea_de_ventana(str(ts_evento)))
+
     return features
+
+
+@lru_cache(maxsize=8192)
+def _marea_de_ventana(ts_evento: str) -> Tuple[Tuple[str, float], ...]:
+    """La marea al cierre de la ventana, memorizada por instante.
+
+    Depende SOLO del instante --- no del nodo --- y un mismo evento se extrae
+    una vez por cada nodo de su ventana, así que la caché evita repetir las 25
+    efemérides. Medido: 0,651 ms por ventana sin caché.
+
+    Devuelve una tupla (inmutable, para poder memorizarla); vacía si `ephem` no
+    está o el instante no es interpretable. Ausente, nunca cero: un 0,0 en
+    `marea_total` sería «la Luna no tira», que no existe.
+    """
+    try:
+        from sentinel_omega.core.mareas import marea_ventana
+        vals = marea_ventana(ts_evento, horas=24)
+    except Exception as e:  # noqa: BLE001 — la firma se forma sin marea
+        logger.warning("marea no disponible para %s: %s", ts_evento, e)
+        return ()
+    return tuple(
+        (k, float(v)) for k, v in sorted(vals.items())
+        if v is not None and np.isfinite(float(v))
+    )
 
 
 def _vector(features: Dict[str, float]) -> np.ndarray:

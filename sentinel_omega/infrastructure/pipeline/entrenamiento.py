@@ -64,13 +64,55 @@ MIN_MAGNITUD_OBSERVAR = 3.3   # piso de medición (= piso real del backcast); so
 
 # Feature domain per bot — each bot only remembers what it measures.
 # Padre keeps the full cross-domain vector (patterns within patterns).
+# 2026-09-27 — LA FUGA DE ETIQUETA POR PROCEDENCIA, cerrada aquí.
+#
+# Un rasgo que está en `features_onnx.FEATURE_ORDER[bot]` y NO en esta lista es
+# una fuga, no un descuido menor: `signature_engine` solo guarda en la firma las
+# claves que esta lista declara, así que el rasgo vale **0 en toda la mitad
+# etiquetada como alarma** (las firmas nacen de eventos) y un valor real en la
+# mitad neutral (los ciclos vivos del Juez). El modelo no aprende el rasgo:
+# aprende de qué TABLA vino la fila. Medido ese día:
+#
+#     bot     firmas   filas rasgo=0   P(alarma|0)   P(alarma|>0)
+#     alfa1    1.632       1.632          98,8 %        1,4 %
+#     loki       858         858         100,0 %        1,4 %
+#     omega      307         307          96,7 %        1,2 %
+#     beta2      806         806          99,8 %        1,5 %
+#
+# Los conteos coinciden EXACTO con el número de firmas de cada bot. En
+# producción: con el Kp decayendo solo (kp_max 3 → 1), alfa1, loki y omega
+# pasaron a WATCH en 10 de cada 10 ciclos, y el Juez se lo cobró como falso
+# positivo --- peso hundido por un defecto de datos.
+#
+# Los 17 rasgos entran con su cobertura MEDIDA sobre las firmas de `padre`, que
+# es el único bot con el vector completo y por tanto el testigo de qué produce
+# de verdad `extraer_features_ventana`. No se declara nada con cobertura pobre:
+# eso solo movería la fuga de sitio (`AGENTS.md` regla 8).
+#
+# Las firmas ya guardadas NO cambian por esto: hace falta un rebuild que las
+# regenere. Hasta entonces el vector sigue leyendo 0 en la mitad de alarma.
 BOT_FEATURES: Dict[str, Optional[List[str]]] = {
+    # `kp_mean` y `kp_max` (cobertura 100 %, no-cero 100 %): estaban en el
+    # vector de alfa1 desde siempre y jamás en sus firmas. Son el rasgo que
+    # disparó las 44 WATCH del 27-sep.
     "alfa1": ["bz_mean", "bz_min", "bz_deriv_std", "viento_avg", "viento_max",
-              "proton_max", "bz_mean_72h"],
+              "proton_max", "bz_mean_72h", "kp_mean", "kp_max"],
     "beta1": ["kp_mean", "kp_max", "schumann_mean", "schumann_std",
               "sismo_count_win", "sismo_max_mag_win", "fase_lunar",
               "es_sicigia", "kp_max_72h", "sismo_count_72h"],
-    "beta2": ["so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d"],
+    # beta2 — los cuatro volcánicos MÁS la marea terrestre.
+    #
+    # Las ocho de marea entraron al vector el 2026-09-26 y no aquí; ese error es
+    # mío y la «mejora de discriminación de 0,0948 a 0,3994» que reporté ese día
+    # era el modelo detectando la procedencia, no la marea. Ahora la firma las
+    # puede llenar: `signature_engine._marea_de_ventana` hace la MISMA llamada
+    # (`marea_ventana(ts, horas=24)`) que el lado vivo en `rasgos_juez._marea`.
+    # Cobertura 100 % por construcción --- se calculan por efemérides, no se
+    # consultan --- y es la única fuente del sistema sin huecos posibles.
+    "beta2": ["so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
+              "marea_total", "marea_luna", "marea_sol", "marea_sicigia",
+              "marea_dist_luna", "marea_rango_24h", "marea_max_24h",
+              "marea_deriv"],
     # `vix` se añade el 2026-09-27: el bot FINANCIERO no llevaba el índice
     # del miedo en sus firmas --- 0 de 676 --- mientras loki, que es
     # geofísico, sí lo tenía, y padre lo tenía en 6.959. Sin esto, el
@@ -87,15 +129,24 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     # envolvente solar + acoplamiento Schumann↔mercado. Todo mapeado de la
     # telemetría existente (sin fetchers nuevos). Sus correlaciones viven en
     # tbl_correlaciones_omega, independientes de las del Padre.
+    # `bz_mean`, `kp_mean` y `viento_avg` (cobertura 100 %, no-cero 100 %):
+    # omega los pide en su vector de 12 posiciones y no los guardaba.
     "omega": ["fase_lunar", "es_sicigia", "schumann_mean", "schumann_std",
               "kp_max", "kp_max_72h", "bz_min", "proton_max",
-              "delta_schumann_coupling"],
+              "delta_schumann_coupling", "bz_mean", "kp_mean", "viento_avg"],
     # Loki — Fractal-Bayesiano: Bz, viento solar, Schumann, VIX, LOD.
     # Los nombres eran "bz"/"solar_wind"/"schumann_activity", que NO existen
     # en FEATURE_KEYS: el filtro `if k in feats` dejaba su vector vacío y Loki
     # se saltaba el entrenamiento aunque se le quitara de BOTS_LIVE_ONLY. Se
     # usan los canónicos; vix y lod ya se extraen tras rellenar sus columnas.
-    "loki": ["bz_mean", "viento_avg", "schumann_mean", "vix", "lod"],
+    #
+    # `kp_mean`, `fase_lunar` y `bz_min` entran con cobertura 100 %.
+    # `btc_volatilidad` con 96,2 %: medido sobre las ventanas desde 2014-09, que
+    # es el rango real de las firmas de loki (858 firmas, 2014-09-17 →
+    # 2026-01-08). Su 48,7 % global es un artefacto de mezclar 1994-2013, donde
+    # no había BTC y donde loki no tiene ni una firma.
+    "loki": ["bz_mean", "viento_avg", "schumann_mean", "vix", "lod",
+             "kp_mean", "fase_lunar", "bz_min", "btc_volatilidad"],
     # Júpiter — atención colectiva: Kp + fulguración solar + interés de
     # búsqueda + Schumann. Seis de sus ocho nombres NO existían en
     # FEATURE_KEYS ("latest_kp", "storm_active", "attention_z",

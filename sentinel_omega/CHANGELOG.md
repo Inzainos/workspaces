@@ -1,3 +1,152 @@
+## 2026-09-27 (noche) — La fuga de procedencia, cerrada en el código; y el Kp que medía 24 minutos
+
+Reparto acordado con la pandilla del Capitán en `CANAL_CLAUDE.md`: a Agente-C
+`layer_runners.py`, `omega` y `loki`; a Claude `entrenamiento.py` y `launcher.py`;
+a Agente-T la revisión. Esto es la parte de Claude, y se salió del reparto en dos
+archivos por una razón que se explica abajo.
+
+### Changed — `infrastructure/pipeline/entrenamiento.py`: los 17 rasgos
+
+Un rasgo que está en `features_onnx.FEATURE_ORDER[bot]` y no en `BOT_FEATURES[bot]`
+vale **0 en toda la mitad etiquetada como alarma** --- las firmas nacen de eventos
+--- y un valor real en la mitad neutral --- los ciclos vivos del Juez. El modelo no
+aprende el rasgo: aprende de qué TABLA vino la fila. Los 17 quedan declarados, cada
+uno con la cobertura MEDIDA sobre las ventanas reales de su bot:
+
+| bot | rasgos añadidos | cobertura |
+|---|---|---|
+| alfa1 | `kp_mean`, `kp_max` | 100 % |
+| omega | `bz_mean`, `kp_mean`, `viento_avg` | 100 % |
+| loki | `kp_mean`, `fase_lunar`, `bz_min`, `btc_volatilidad` | 100 % (858/858) |
+| beta2 | las 8 de marea | 100 % (efemérides) |
+
+**Las firmas guardadas NO cambian por esto.** Hasta que un rebuild las regenere y
+se reentrenen los 8 ONNX, el vector sigue leyendo 0 en la mitad de alarma. La
+verificación de que la fuga murió es que `P(alarma | rasgo=0)` colapse del 98-100 %
+a la tasa base.
+
+### Changed — `core/firmas/signature_engine.py`: sin esto, el arreglo era falso
+
+Las 8 de marea **no existían en `FEATURE_KEYS`**. Declararlas solo en
+`BOT_FEATURES`, como decía el reparto, habría puesto el contador de fugas en cero
+con la firma igual de vacía: el filtro `{k: v for k, v in features.items() if k in
+FEATURE_KEYS}` las descarta **en silencio** (regla dura 10 aplicada a la
+corrección, no al defecto).
+
+- `FEATURE_KEYS` pasa de 36 a 44 claves. Retrocompatible: `features_json` es un
+  diccionario y `_vector` lo relee contra la lista vigente, así que una firma
+  vieja simplemente trae NaN en las nuevas y `similitud` las excluye.
+- `_marea_de_ventana(ts)` --- memorizada por instante --- llama a
+  `marea_ventana(ts, horas=24)`, **la misma función que usa el lado vivo** en
+  `models/rasgos_juez._marea`. Las dos mitades hablan de lo mismo, que era el
+  punto. Coste medido: 0,651 ms por ventana sin caché, y un evento se extrae una
+  vez por cada nodo, así que la caché lo absorbe (5 nodos del mismo instante:
+  5,9 ms en total, SQL incluido).
+- Verificado de punta a punta contra la base: las 8 claves salen para ventanas de
+  1997, 2014 y 2026. Se calculan por efemérides, así que no dependen de ninguna
+  fuente viva --- son la única cobertura del 100 % del sistema.
+
+**Efecto colateral medido, que necesita decisión del operador:** `padre` lleva el
+vector completo (`BOT_FEATURES["padre"] = None`), así que sus firmas también van a
+llevar la marea. Sobre 4.000 pares reales de `padre`/`SISMO_M5`:
+
+| | media | p95 | cruzan 0,85 |
+|---|---:|---:|---:|
+| sin marea | 0,6545 | 0,8297 | 2,85 % |
+| con marea | 0,6768 | 0,8144 | **1,38 %** |
+
+82 pares dejan de emparejar y 23 empiezan: padre se vuelve **más selectivo**, y eso
+significa menos fusiones → más firmas distintas → menos recurrencia → menos
+consolidadas, que son las que el Juez puede exigir. No parece malo (la marea es un
+forzamiento candidato real y aporta variación donde el clima espacial coincide),
+pero cambia la población de firmas exigibles y no era parte del encargo.
+
+### Changed — `launcher.py`: el Kp salía de una ventana de 6 horas
+
+Hallazgo de Agente-C, verificado contra la fuente en vivo: el endpoint es
+`planetary_k_index_1m.json`, y midiéndolo da **358 filas, paso de 1,0 min, span de
+5,95 h**. El código hacía `kp[-24:]` con un comentario que afirmaba «la serie viene
+en tramos de 3 h: las últimas 24 muestras son 72 h». Son **24 minutos**; 72 h
+necesitarían 4.320 muestras que ese feed no tiene ni puede tener.
+
+Y no era solo `kp_max_72h`: los **tres** rasgos de Kp salían de esa ventana de 6 h
+donde el entrenamiento usa 336 h y 72 h sobre `tbl_clima_espacial_raw`. Medido esa
+noche:
+
+| rasgo | entrenamiento (336/72 h) | ciclo vivo (feed de 6 h) |
+|---|---:|---:|
+| `kp_mean` | 1,96 | ≈ 0,30 |
+| `kp_max` | 4,00 | 1,00 |
+| `kp_max_72h` | 4,00 | **0,000** |
+
+La distribución con la que se entrenó tiene p5 = 0,896 y mediana 1,742: el ciclo
+entregaba el Kp **por debajo de su percentil 5 de forma permanente**. Arreglar solo
+`kp_max_72h` habría bajado un número dejando el desajuste. Los tres salen ahora de
+la misma tabla y las mismas ventanas que la firma; sin tabla el rasgo se omite y
+`vector_para` pone 0,0 --- no se inventa.
+
+**Con los modelos de hoy y todo lo demás fijo**, la ventana correcta desatura a los
+tres bots que llevaban 10 de cada 10 ciclos en WATCH:
+
+| bot | antes (Kp del feed) | ahora (Kp de la ventana) |
+|---|---|---|
+| alfa1 | `WATCH` 0,6771 | `NO_SIGNAL` 0,2150 |
+| omega | `WATCH` 0,6149 | `NO_SIGNAL` 0,2630 |
+| loki | `WATCH` **0,8200** | `NO_SIGNAL` 0,3500 |
+
+loki pasaba de 0,82, o sea **por encima del veto bayesiano de 0,8** del tercer
+acto: un fantasma satisfaciendo el acto final del consenso.
+
+**Esto no cierra la fuga**, y conviene no contarlo como tal: el modelo sigue
+respondiendo WATCH a un Kp casi nulo. Lo que cambió es que el ciclo ya no le sirve
+uno. Un Kp real bajo en una quincena tranquila lo dispararía otra vez. Basta un
+**reinicio** para que aplique --- no requiere rebuild.
+
+### Added — `core/onnx_mixin.py`: un modelo de otro tamaño no se usa
+
+Condición de Agente-T. `inferencia_de` compara la entrada declarada del `.onnx` con
+`BOT_DIMS[bot]` y, si no coinciden, **descarta el modelo con `logger.error`** y deja
+mandar a la regla. Sin esto el desajuste era invisible por los dos lados:
+`pad_vector` recorta o rellena con ceros, y la excepción de `onnxruntime` la atrapa
+`predict_signal` devolviendo `None`, indistinguible de «este bot no tiene modelo».
+
+T ya tenía escrito el contrato en `tests/test_onnx_dims.py` con `xfail(strict=True)`
+esperando el chequeo; se quitó la marca, como indica su propio docstring. Medido
+antes de tocar nada: los ocho `.onnx` en disco coinciden con `BOT_DIMS` (10, 8, 16,
+16, 16, 12, 8, 8), así que hoy no cambia nada --- existe para el reinicio en que sí
+cambie.
+
+### Descubierto al verificar
+
+- **`tbl_psique_financiera` está parada desde el 2026-01-01** (4.125 filas). Se
+  suma a `tbl_desgasificacion_raw` (31-jul) y `tbl_astronomia_cinematica`
+  (31-dic-2025). Importa para el rebuild: `btc_volatilidad` cubre el 100 % de las
+  858 ventanas reales de loki porque sus firmas terminan el 2026-01-08, pero los
+  eventos de 2026-01 a hoy son el **5,9 %** del material sísmico posterior a 2014 y
+  en esas ventanas no hay BTC. Tras el rebuild quedará una fuga residual de ese
+  tamaño en loki: de 100 % a ~6 %, no a cero.
+- **Una medición mía de la tarde estaba mal.** Reporté `btc_volatilidad` con 96,2 %
+  de cobertura; lo había sacado del `features_json` de `padre`, que está
+  **fusionado** entre eventos y por tanto puede traer claves de un evento distinto
+  al de su `primera_vista`. Rehecho ejecutando la extracción sobre cada ventana de
+  loki: 100 %. El error no cambia la decisión, pero el método sí importaba.
+- **`TBL_HISTORICO_SISMICO.timestamp` es epoch Unix**, no texto. Una consulta mía
+  comparándolo contra `'2014-09-01'` devolvió 0 filas y estuve a punto de leerlo
+  como «no hay eventos». Regla 9, esta vez del lado de quien pregunta.
+- **beta2 estaba en el mínimo exacto.** Tenía 4 rasgos, justo
+  `MIN_DIMENSIONES_COMPARABLES`, y los cuatro de una fuente muerta desde julio.
+  Ahora tiene 12, ocho de ellos incapaces de faltar.
+
+### Verificación
+
+Fugas: **17 → 0**, contadas como `FEATURE_ORDER[bot] - BOT_FEATURES[bot]` en los
+nueve bots, y con una prueba nueva (`test_lo_declarado_existe_de_verdad`) que exige
+además que todo nombre declarado exista en `FEATURE_KEYS` --- el modo de fallo que
+habría convertido esto en un arreglo de mentira. Antes eso solo se comprobaba para
+omega.
+
+---
+
 ## 2026-09-27 (cierre) — El modelo gana siempre, aunque confíe menos
 
 Primer hallazgo del registro arreglado. Sobre cinco horas de operación real, la

@@ -105,10 +105,43 @@ def pad_vector(values: list, n: int) -> np.ndarray:
 _SESIONES: Dict[str, Any] = {}
 
 
+def dimension_de_entrada(session: Any) -> Optional[int]:
+    """Cuántos rasgos espera el `.onnx`, o None si la forma es dinámica."""
+    try:
+        forma = session.get_inputs()[0].shape
+    except Exception:  # noqa: BLE001 — una sesión sin forma declarada no bloquea
+        return None
+    if not forma:
+        return None
+    ultimo = forma[-1]
+    return int(ultimo) if isinstance(ultimo, int) else None
+
+
 def inferencia_de(bot: str):
-    """La sesión ONNX del bot, cargada una vez y reutilizada."""
+    """La sesión ONNX del bot, cargada una vez y reutilizada.
+
+    **Se NIEGA a usar un modelo cuya entrada no coincida con `BOT_DIMS[bot]`**
+    (condición de Agente-T, 2026-09-27). `vector_para` construye siempre
+    `BOT_DIMS[bot]` posiciones: si el `.onnx` cargado espera otro número, o
+    `pad_vector` lo recorta, o `onnxruntime` lanza y `predict_signal` devuelve
+    None --- las dos cosas en silencio, y la segunda indistinguible de «no hay
+    modelo». El caso concreto que hay que evitar: cambiar el vector y reiniciar
+    con los modelos viejos todavía en disco. Preferimos la rama de reglas a un
+    modelo que responde a columnas que no son las que aprendió.
+    """
     if bot not in _SESIONES:
-        _, inferencia = try_load_onnx(bot)
+        session, inferencia = try_load_onnx(bot)
+        if session is not None and inferencia is not None:
+            from sentinel_omega.core.features_onnx import BOT_DIMS
+            esperadas = BOT_DIMS.get(bot)
+            reales = dimension_de_entrada(session)
+            if esperadas is not None and reales is not None and reales != esperadas:
+                logger.error(
+                    "%s: el modelo ONNX espera %d rasgos y el vector canónico "
+                    "tiene %d --- se DESCARTA y manda la rama de reglas. "
+                    "Reentrena el modelo con el vector vigente (BOT_DIMS[%r]=%d).",
+                    bot, reales, esperadas, bot, esperadas)
+                inferencia = None
         _SESIONES[bot] = inferencia
     return _SESIONES[bot]
 

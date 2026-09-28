@@ -20,9 +20,17 @@ from sentinel_omega.core.shared.agent_base import AgentSignal, SignalType
 from sentinel_omega.infrastructure.pipeline import layer_runners
 
 
+# El desempate se prueba sobre un bot que NO esté callado por `RASGOS_CON_FUGA`
+# (el tapón de Agente-C, 2026-09-27): a un bot de esa lista ni se le pregunta al
+# modelo, así que no hay empate que resolver y estas pruebas pasarían --- o
+# fallarían --- por un motivo que no es el suyo. Se usaba `beta2`, que entró a la
+# lista esa misma noche. `beta1` es el otro caso medido (22 veredictos subidos).
+BOT = "beta1"
+
+
 def _correr(monkeypatch, salida, senal_regla, conf_regla,
-            texto_regla="Normal spectral distribution"):
-    sig = AgentSignal(agent_name="beta2", signal_type=senal_regla,
+            texto_regla="Normal spectral distribution", bot=BOT):
+    sig = AgentSignal(agent_name=bot, signal_type=senal_regla,
                       confidence=conf_regla, timestamp=0.0, data={},
                       reasoning=texto_regla)
     runner = object.__new__(layer_runners.GeodynamicLayerRunner)
@@ -33,6 +41,29 @@ def _correr(monkeypatch, salida, senal_regla, conf_regla,
         lambda bot, rasgos, **kw: salida)
     layer_runners.GeodynamicLayerRunner._aplicar_modelos(runner, [sig])
     return sig
+
+
+def test_el_bot_de_prueba_no_esta_callado():
+    """Si el tapón crece hasta cubrir a `BOT`, estas pruebas dejan de probar el
+    desempate sin dar señal. Que falle aquí, en una línea, y no en seis sitios."""
+    assert BOT not in getattr(layer_runners, "RASGOS_CON_FUGA", {}), (
+        f"{BOT} entró a RASGOS_CON_FUGA: elige otro bot para BOT")
+
+
+def test_al_bot_callado_no_se_le_pregunta(monkeypatch):
+    """La otra cara: un bot con fuga no llega al desempate --- decisión de C, que
+    no escribe `gano` porque no hubo disputa. Se fija aquí para que el desempate
+    y el tapón no se pisen sin que nadie lo note."""
+    fuga = getattr(layer_runners, "RASGOS_CON_FUGA", {})
+    if not fuga:
+        pytest.skip("no hay tapón activo")
+    callado = sorted(fuga)[0]
+    sig = _correr(monkeypatch, (SignalType.WATCH, 0.99, "WATCH"),
+                  SignalType.NEUTRAL, 0.20, bot=callado)
+    assert sig.signal_type is SignalType.NEUTRAL, (
+        f"{callado} tiene un rasgo con fuga y el modelo le cambió el veredicto")
+    assert "gano" not in sig.data
+    assert sig.data.get("onnx_callado", "").startswith("fuga:")
 
 
 def test_el_modelo_ya_no_apaga_una_alarma_con_menos_confianza(monkeypatch):
