@@ -239,6 +239,13 @@ def leer_frp(ruta: Path, bbox: Optional[Dict[str, float]] = None) -> int:
     Con `bbox`, sólo las que caen dentro (el gránulo de SLSTR cubre ~1.400 km
     y la mayoría de sus fuegos no son de la zona). Lanza `LookupError` si no
     encuentra ninguna variable conocida: «no pude leerlo» no es «no hubo nada».
+
+    Pero variable PRESENTE y VACÍA (``shape=(0,)``) sí es «no hubo nada»: en
+    SL_2_FRP las variables raíz traen una entrada por fuego detectado, y un
+    gránulo sin detecciones (la mayoría sobre mar) las deja en cero. Eso es
+    un cero MEDIDO, no un producto ilegible — devolver 0, no excepción.
+    Hallado el 2026-09-30: dos productos por ciclo gritaban «no legible» con
+    un mensaje que listaba la variable como presente.
     """
     import h5py
     import numpy as np
@@ -251,6 +258,10 @@ def leer_frp(ruta: Path, bbox: Optional[Dict[str, float]] = None) -> int:
     for nc in candidatos:
         with h5py.File(nc, "r") as f:
             for nombre in VARIABLES_FRP:
+                if nombre not in f:
+                    continue
+                if f[nombre].size == 0:
+                    return 0
                 v = _vector(f, nombre)
                 if v is None:
                     continue

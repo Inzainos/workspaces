@@ -376,3 +376,30 @@ def test_formato_nt_frp_in_tambien_da_detecciones(tmp_path):
 def test_un_paso_solo_nt_se_salta():
     """Sólo NR (decisión de T): la variable sale siempre del mismo producto."""
     assert esa_frp._una_por_adquisicion([_P(NT)]) == []
+
+
+def test_granulo_sin_fuegos_es_cero_medido_no_ilegible(tmp_path):
+    """Hallado el 2026-09-30 en producción: variables PRESENTES pero vacías
+    (``shape=(0,)``) — un gránulo sin detecciones, el caso normal sobre mar —
+    hacían saltar LookupError con un mensaje que listaba la variable como
+    presente («ninguna de (...) está; hay: ['FRP_MWIR', …]»). Dos productos
+    por ciclo gritaban «no legible» siendo perfectamente legibles y con un
+    cero MEDIDO. Cero es un valor medido; lo que no se midió va ausente."""
+    h5py = pytest.importorskip("h5py")
+    d = tmp_path / "S3B_SL_2_FRP_vacio_0_NR_003"
+    d.mkdir()
+    with h5py.File(d / "FRP_MWIR1km_standard.nc", "w") as f:
+        f.create_dataset("FRP_MWIR", shape=(0,), dtype="f4")
+    assert esa_frp.leer_frp(d) == 0
+
+
+def test_sin_ninguna_variable_conocida_sigue_siendo_ilegible(tmp_path):
+    """La frontera intacta: si de verdad no hay variable conocida, ruido —
+    «no pude leerlo» sigue sin ser «no hubo nada»."""
+    h5py = pytest.importorskip("h5py")
+    d = tmp_path / "S3A_SL_2_FRP_raro_0_NR_003"
+    d.mkdir()
+    with h5py.File(d / "FRP_MWIR1km_standard.nc", "w") as f:
+        f.create_dataset("otra_cosa", data=np.array([1.0, 2.0]))
+    with pytest.raises(LookupError):
+        esa_frp.leer_frp(d)
