@@ -1314,7 +1314,8 @@ def _fetch_sismos_menores(anio: int, mag_min: float, mag_max: float,
 
 
 def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
-                         max_eventos: int = DISCIPLINA_MAX_EVENTOS) -> Dict:
+                         max_eventos: int = DISCIPLINA_MAX_EVENTOS,
+                         dry_run: bool = False) -> Dict:
     """Castigo desde abajo — disciplina rolling contra sismos menores.
 
     No toca la memoria permanente (TBL_FIRMAS): las firmas menores van a
@@ -1324,6 +1325,10 @@ def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
     para que su historial refleje también la vigilancia de precursores pequeños.
     Esos registros llevan fase="trasfondo" y NO se podan al terminar —
     son parte del historial de patrones del Juez.
+
+    Con dry_run=True evalúa y reporta los castigos/refuerzos que APLICARÍA,
+    pero no escribe nada: ni la tabla temporal, ni los registros del Juez,
+    ni los pesos.
     """
     from sentinel_omega.core.juez.pesos import castigar, reforzar
     from sentinel_omega.core.shared.geometria_uvg import nodo_mas_cercano
@@ -1332,18 +1337,19 @@ def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
 
     conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
     juez = Juez(conn)
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS tbl_firmas_menores ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT, bot_name TEXT, event_class TEXT, "
-        "id_nodo INTEGER, mag REAL, features_json TEXT, ts_evento TEXT, "
-        "creada_at TEXT DEFAULT (datetime('now')))"
-    )
-    # Poda rolling: fuera las firmas menores más viejas que la retención.
-    conn.execute(
-        "DELETE FROM tbl_firmas_menores WHERE creada_at < datetime('now', ?)",
-        (f"-{DISCIPLINA_RETENCION_DIAS} days",),
-    )
-    conn.commit()
+    if not dry_run:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tbl_firmas_menores ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, bot_name TEXT, event_class TEXT, "
+            "id_nodo INTEGER, mag REAL, features_json TEXT, ts_evento TEXT, "
+            "creada_at TEXT DEFAULT (datetime('now')))"
+        )
+        # Poda rolling: fuera las firmas menores más viejas que la retención.
+        conn.execute(
+            "DELETE FROM tbl_firmas_menores WHERE creada_at < datetime('now', ?)",
+            (f"-{DISCIPLINA_RETENCION_DIAS} days",),
+        )
+        conn.commit()
 
     # Bloque reciente = último año con contexto en el backcast.
     if anio is None:
@@ -1396,38 +1402,40 @@ def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
                 bots_acierto.append(bot)
             else:
                 bots_fallo.append(bot)
-            conn.execute(
-                "INSERT INTO tbl_firmas_menores "
-                "(bot_name, event_class, id_nodo, mag, features_json, ts_evento) "
-                "VALUES (?,?,?,?,?,?)",
-                (bot, clase, nodo, mag, json.dumps(sub), ts),
-            )
+            if not dry_run:
+                conn.execute(
+                    "INSERT INTO tbl_firmas_menores "
+                    "(bot_name, event_class, id_nodo, mag, features_json, ts_evento) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (bot, clase, nodo, mag, json.dumps(sub), ts),
+                )
 
         # Juez: log per-bot verdict for this minor event.
-        now = _time.time()
-        for bot in bots_acierto:
-            juez.registrar_prediccion(
-                bot_name=bot, prediccion="alert", confianza=1.0,
-                ventana_h=0,
-                detalles={"fase": "trasfondo", "clase": clase,
-                          "evento": evento_ref, "mag": round(float(mag), 1)},
-                timestamp=now,
-            )
-        for bot in bots_fallo:
-            juez.registrar_prediccion(
-                bot_name=bot, prediccion="no_signal", confianza=0.0,
-                ventana_h=0,
-                detalles={"fase": "trasfondo", "clase": clase,
-                          "evento": evento_ref, "mag": round(float(mag), 1)},
-                timestamp=now,
-            )
-        if bots_acierto or bots_fallo:
-            juez.evaluar_pendientes(
-                evento_ocurrido=True,
-                verdad=evento_ref,
-                firma_conocida=False,  # minor events are never enforceable
-                fase="trasfondo",
-            )
+        if not dry_run:
+            now = _time.time()
+            for bot in bots_acierto:
+                juez.registrar_prediccion(
+                    bot_name=bot, prediccion="alert", confianza=1.0,
+                    ventana_h=0,
+                    detalles={"fase": "trasfondo", "clase": clase,
+                              "evento": evento_ref, "mag": round(float(mag), 1)},
+                    timestamp=now,
+                )
+            for bot in bots_fallo:
+                juez.registrar_prediccion(
+                    bot_name=bot, prediccion="no_signal", confianza=0.0,
+                    ventana_h=0,
+                    detalles={"fase": "trasfondo", "clase": clase,
+                              "evento": evento_ref, "mag": round(float(mag), 1)},
+                    timestamp=now,
+                )
+            if bots_acierto or bots_fallo:
+                juez.evaluar_pendientes(
+                    evento_ocurrido=True,
+                    verdad=evento_ref,
+                    firma_conocida=False,  # minor events are never enforceable
+                    fase="trasfondo",
+                )
 
     # Ajuste de pesos ACOTADO por bot: más ceguera a los chiquitos → más castigo
     # (hasta DISCIPLINA_MAX_AJUSTES pasos), el resto se convierte en refuerzo.
@@ -1440,16 +1448,19 @@ def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
                          round((1.0 - tasa) * DISCIPLINA_MAX_AJUSTES))
         n_refuerzos = DISCIPLINA_MAX_AJUSTES - n_castigos
         es_padre = bot == "padre"
-        for _ in range(n_castigos):
-            castigar(conn, bot, es_padre=es_padre, gravedad=1.0)
-        for _ in range(n_refuerzos):
-            reforzar(conn, bot)
+        if not dry_run:
+            for _ in range(n_castigos):
+                castigar(conn, bot, es_padre=es_padre, gravedad=1.0)
+            for _ in range(n_refuerzos):
+                reforzar(conn, bot)
         ajustes[bot] = {"reconocimiento": round(tasa, 3),
                         "castigos": n_castigos, "refuerzos": n_refuerzos}
-    conn.commit()
+    if not dry_run:
+        conn.commit()
     conn.close()
     logger.info(
         f"Disciplina de trasfondo ({anio}, M{MAG_MENOR_MIN}-{MAG_MENOR_MAX}, "
-        f"{len(eventos)} eventos): {ajustes}"
+        f"{len(eventos)} eventos, dry_run={int(dry_run)}): {ajustes}"
     )
-    return {"anio": anio, "eventos": len(eventos), "ajustes": ajustes}
+    return {"anio": anio, "eventos": len(eventos), "ajustes": ajustes,
+            "dry_run": dry_run}

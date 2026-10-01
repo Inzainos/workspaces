@@ -173,20 +173,43 @@ else
     echo "   Sin linger, las units de usuario solo corren con una sesion abierta."
 fi
 
-# --- Timer de mantenimiento: se mantiene como unit de SISTEMA -------------
-# deploy/sentinel-omega-mantenimiento.{service,timer} (OnCalendar=daily = 00:00
-# hora local) se instala como unit de SISTEMA; este script no la toca.
-if [ -f "$USER_UNIT_DIR/sentinel-omega-mantenimiento.timer" ] \
-   && systemctl --user is-enabled --quiet sentinel-omega-mantenimiento.timer 2>/dev/null; then
-    echo "!! AVISO: sentinel-omega-mantenimiento.timer esta habilitado como unit de USUARIO;"
-    echo "   duplica al timer de sistema (00:00). Deshabilitalo:"
-    echo "     systemctl --user disable --now sentinel-omega-mantenimiento.timer"
+# --- Mantenimiento diario: unit de USUARIO (migración 2026-09-30) ----------
+# Antes vivía en /etc (system) con un drop-in --dry-run decorativo; ahora es
+# unit de usuario como el resto de Sentinel, administrable sin sudo. La dispara
+# su timer a medianoche (OnCalendar=daily, Persistent=true).
+MANTENIMIENTO_UNITS=(
+    sentinel-omega-mantenimiento.service
+    sentinel-omega-mantenimiento.timer
+)
+for u in "${MANTENIMIENTO_UNITS[@]}"; do
+    install_user_unit "$u"
+done
+systemctl --user daemon-reload
+if [ "$DO_START" -eq 1 ]; then
+    systemctl --user enable --now sentinel-omega-mantenimiento.timer \
+        && echo "   enable --now sentinel-omega-mantenimiento.timer (diario 00:00)" \
+        || echo "!! fallo enable --now sentinel-omega-mantenimiento.timer"
+else
+    systemctl --user enable sentinel-omega-mantenimiento.timer \
+        && echo "   enable sentinel-omega-mantenimiento.timer (sin arrancar)" \
+        || echo "!! fallo enable sentinel-omega-mantenimiento.timer"
+fi
+
+# --- Guardia: el timer de mantenimiento de SISTEMA legado debe desaparecer --
+# Si sigue habilitado dispara una SEGUNDA corrida a medianoche. Con el --dry-run
+# del ExecStart viejo (que desde 2026-09-30 es REAL) esa segunda corrida no
+# escribiría, pero es un desperdicio y una fuente de confusión eterna.
+if systemctl is-enabled --quiet sentinel-omega-mantenimiento.timer 2>/dev/null; then
+    echo "!! AVISO: el timer de SISTEMA (legacy) sigue habilitado y duplica la"
+    echo "   medianoche. Deshabilitálolo UNA VEZ (requiere sudo, manual):"
+    echo "     sudo systemctl disable --now sentinel-omega-mantenimiento.timer"
+    echo "   Y si quieres limpiar del todo:"
+    echo "     sudo rm -rf /etc/systemd/system/sentinel-omega-mantenimiento.service*"
 fi
 
 # --- Units de SISTEMA (timers): solo se RENDERIZAN; instalarlas es manual --
+# Mantenimiento ya NO está aquí (es unit de usuario desde 2026-09-30).
 SYSTEM_UNITS=(
-    sentinel-omega-mantenimiento.service
-    sentinel-omega-mantenimiento.timer
     sentinel-omega-onnx-retrain.service
     sentinel-omega-onnx-retrain.timer
 )
@@ -210,16 +233,15 @@ echo "    journalctl --user -u sentinel-omega -f"
 echo ""
 echo "  UNITS DE SISTEMA (timers; corren como User=$RUN_USER; instalacion manual con sudo):"
 echo "    # ya renderizadas (sin placeholders) en $RENDER_DIR"
-echo "    sudo install -m 0644 $RENDER_DIR/sentinel-omega-mantenimiento.{service,timer} \\"
-echo "        $RENDER_DIR/sentinel-omega-onnx-retrain.{service,timer} /etc/systemd/system/"
+echo "    sudo install -m 0644 $RENDER_DIR/sentinel-omega-onnx-retrain.{service,timer} /etc/systemd/system/"
 echo "    sudo systemctl daemon-reload"
-echo "    sudo systemctl enable --now sentinel-omega-mantenimiento.timer   # diario 00:00"
 echo "    sudo systemctl enable --now sentinel-omega-onnx-retrain.timer    # domingos 03:00"
 echo "    # NUNCA instalar deploy/sentinel-omega{,-watchdog}.service en /etc/systemd/system"
+echo "    # mantenimiento es de USUARIO desde 2026-09-30: install.sh ya lo instala y habilita"
 echo ""
 echo "  VER TIMERS / LOGS:"
-echo "    systemctl list-timers 'sentinel-omega*'"
-echo "    journalctl -u sentinel-omega-mantenimiento -n 50"
+echo "    systemctl --user list-timers 'sentinel-omega*'"
+echo "    journalctl --user -u sentinel-omega-mantenimiento -n 50"
 echo ""
 echo "  ALTERNATIVA CRON (si no usas timers):"
 echo "    sed \"s|__REPO_DIR__|$REPO_DIR|g\" deploy/crontab.example"

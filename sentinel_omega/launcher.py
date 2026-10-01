@@ -8,7 +8,7 @@ Usage:
     python sentinel_omega/launcher.py
     python sentinel_omega/launcher.py --once          # Single cycle, then exit
     python sentinel_omega/launcher.py --dashboard     # Launch dashboard alongside
-    python sentinel_omega/launcher.py --dry-run       # No Telegram alerts
+    python sentinel_omega/launcher.py --dry-run       # No Telegram + no writes in batch tasks
     python sentinel_omega/launcher.py --entrenar --reporte  # Train then report
     python sentinel_omega/launcher.py --reporte       # Report only (no training)
 """
@@ -291,7 +291,7 @@ def run(args):
             disciplina_trasfondo,
         )
         logger.info("Running background discipline (castigo desde abajo)...")
-        resultado = disciplina_trasfondo(str(db_path))
+        resultado = disciplina_trasfondo(str(db_path), dry_run=args.dry_run)
         logger.info(f"Background discipline complete: {resultado}")
 
     if args.barrido:
@@ -299,7 +299,7 @@ def run(args):
             barrido_diario,
         )
         logger.info("Running daily maintenance sweep (barrido diario)...")
-        resultado = barrido_diario(str(db_path))
+        resultado = barrido_diario(str(db_path), dry_run=args.dry_run)
         logger.info(f"Daily sweep complete: {resultado}")
 
     # ── Reportes (después de cualquier operación batch) ──────────────────────
@@ -1206,7 +1206,10 @@ def parse_args():
     )
     parser.add_argument(
         "--dry-run", action="store_true",
-        help="Disable Telegram alerts (dry run mode)",
+        help=(
+            "Dry run: silencia Telegram y bloquea las escrituras de las "
+            "tareas batch (--disciplina/--barrido)"
+        ),
     )
     parser.add_argument(
         "--backcast", action="store_true",

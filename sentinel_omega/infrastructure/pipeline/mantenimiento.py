@@ -47,14 +47,24 @@ def _dia_utc(ts: float) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
 
 
-def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
+def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL,
+                   dry_run: bool = False) -> Dict:
+    """Compacta historia y recalcula las tablas derivadas del día.
+
+    Con dry_run=True calcula y reporta lo que HARÍA (días a resumir, ciclos a
+    botar, detecciones a colapsar) pero no escribe nada: ni resúmenes, ni
+    borrados, ni correlaciones/sesgo/orden/secuencia, ni poda cimática, ni
+    vaciado de WAL, ni competencia, ni aprendizaje incremental. Lo omitido se
+    lista en stats["saltados"] — un dry-run nunca descarta en silencio.
+    """
     conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS tbl_resumen_diario ("
-        "dia TEXT PRIMARY KEY, n_ciclos INTEGER, fantasma_max REAL, "
-        "fantasma_media REAL, nivel_max TEXT, breaches INTEGER, alertas INTEGER, "
-        "senal_dominante TEXT, creada_at TEXT DEFAULT (datetime('now')))"
-    )
+    if not dry_run:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tbl_resumen_diario ("
+            "dia TEXT PRIMARY KEY, n_ciclos INTEGER, fantasma_max REAL, "
+            "fantasma_media REAL, nivel_max TEXT, breaches INTEGER, alertas INTEGER, "
+            "senal_dominante TEXT, creada_at TEXT DEFAULT (datetime('now')))"
+        )
 
     hoy = datetime.now(timezone.utc).date()
     corte = hoy - timedelta(days=dias_full)
@@ -64,10 +74,19 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
     hoy_ts = datetime(hoy.year, hoy.month, hoy.day, tzinfo=timezone.utc).timestamp()
 
     NIVEL_ORD = {"LOW": 0, "MODERATE": 1, "HIGH": 2, "CRITICAL": 3}
-    stats = {"dias_resumidos": 0, "ciclos_botados": 0, "detecciones_colapsadas": 0}
+    stats = {"dias_resumidos": 0, "ciclos_botados": 0, "precusores_botados": 0,
+             "detecciones_colapsadas": 0}
+    if dry_run:
+        stats["dry_run"] = True
+        stats["saltados"] = []
 
     # ── 1) Resumen de días anteriores al corte, aún no resumidos ──
-    ya = {r[0] for r in conn.execute("SELECT dia FROM tbl_resumen_diario")}
+    ya: set = set()
+    if conn.execute(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' "
+        "AND name='tbl_resumen_diario')"
+    ).fetchone()[0]:
+        ya = {r[0] for r in conn.execute("SELECT dia FROM tbl_resumen_diario")}
     por_dia: Dict[str, list] = {}
     for row in conn.execute(
         "SELECT timestamp, fantasma, nivel_riesgo, muro_breach, geo_signal "
@@ -81,29 +100,43 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
         fant = [f[1] for f in filas if f[1] is not None]
         niveles = [f[2] for f in filas if f[2]]
         senales = [f[4] for f in filas if f[4]]
-        conn.execute(
-            "INSERT OR REPLACE INTO tbl_resumen_diario "
-            "(dia, n_ciclos, fantasma_max, fantasma_media, nivel_max, breaches, "
-            " alertas, senal_dominante) VALUES (?,?,?,?,?,?,?,?)",
-            (dia, len(filas), round(max(fant), 2) if fant else None,
-             round(sum(fant) / len(fant), 2) if fant else None,
-             max(niveles, key=lambda n: NIVEL_ORD.get(n, 0)) if niveles else None,
-             sum(1 for f in filas if f[3]),
-             sum(1 for s in senales if s == "alert"),
-             Counter(senales).most_common(1)[0][0] if senales else None),
-        )
+        if not dry_run:
+            conn.execute(
+                "INSERT OR REPLACE INTO tbl_resumen_diario "
+                "(dia, n_ciclos, fantasma_max, fantasma_media, nivel_max, breaches, "
+                " alertas, senal_dominante) VALUES (?,?,?,?,?,?,?,?)",
+                (dia, len(filas), round(max(fant), 2) if fant else None,
+                 round(sum(fant) / len(fant), 2) if fant else None,
+                 max(niveles, key=lambda n: NIVEL_ORD.get(n, 0)) if niveles else None,
+                 sum(1 for f in filas if f[3]),
+                 sum(1 for s in senales if s == "alert"),
+                 Counter(senales).most_common(1)[0][0] if senales else None),
+            )
         stats["dias_resumidos"] += 1
 
     # ── 2) Botar ciclos de calma anteriores al corte ──
-    stats["ciclos_botados"] = conn.execute(
-        "DELETE FROM TBL_CICLOS WHERE timestamp < ? "
-        "AND muro_breach = 0 AND nivel_riesgo NOT IN ('HIGH','CRITICAL')",
-        (corte_ts,),
-    ).rowcount
-    conn.execute(
-        "DELETE FROM TBL_PRECURSORES_COSMICOS WHERE timestamp < ? AND fantasma < 15",
-        (corte_ts,),
-    )
+    if dry_run:
+        # En seco se cuenta lo que SE BOTARÍA con el mismo WHERE del DELETE.
+        stats["ciclos_botados"] = conn.execute(
+            "SELECT COUNT(*) FROM TBL_CICLOS WHERE timestamp < ? "
+            "AND muro_breach = 0 AND nivel_riesgo NOT IN ('HIGH','CRITICAL')",
+            (corte_ts,),
+        ).fetchone()[0]
+        stats["precusores_botados"] = conn.execute(
+            "SELECT COUNT(*) FROM TBL_PRECURSORES_COSMICOS "
+            "WHERE timestamp < ? AND fantasma < 15",
+            (corte_ts,),
+        ).fetchone()[0]
+    else:
+        stats["ciclos_botados"] = conn.execute(
+            "DELETE FROM TBL_CICLOS WHERE timestamp < ? "
+            "AND muro_breach = 0 AND nivel_riesgo NOT IN ('HIGH','CRITICAL')",
+            (corte_ts,),
+        ).rowcount
+        stats["precusores_botados"] = conn.execute(
+            "DELETE FROM TBL_PRECURSORES_COSMICOS WHERE timestamp < ? AND fantasma < 15",
+            (corte_ts,),
+        ).rowcount
 
     # ── 3) Colapsar detecciones repetidas de días ya cerrados ──
     dets = conn.execute(
@@ -118,88 +151,111 @@ def barrido_diario(db_path: str, dias_full: int = DIAS_RETENCION_FULL) -> Dict:
     conservar = {v[0] for v in mejor.values()}
     a_botar = [d[0] for d in dets if d[0] not in conservar]
     if a_botar:
-        conn.executemany(
-            "DELETE FROM TBL_DETECCIONES WHERE id = ?", [(i,) for i in a_botar]
-        )
         stats["detecciones_colapsadas"] = len(a_botar)
+        if not dry_run:
+            conn.executemany(
+                "DELETE FROM TBL_DETECCIONES WHERE id = ?", [(i,) for i in a_botar]
+            )
 
-    conn.commit()
+    if not dry_run:
+        conn.commit()
     conn.close()
 
-    # Correlaciones del Padre y Omega, sesgo de todos los bots
-    stats["correlaciones_padre"] = construir_correlaciones_padre(db_path)
-    stats["correlaciones_omega"] = construir_correlaciones_omega(db_path)
-    stats["sesgo_aprendizaje"] = evaluar_sesgo_aprendizaje(db_path)
+    if dry_run:
+        # Todo lo de abajo recalcula y PERSISTE tablas derivadas: en seco se
+        # omite y se declara, no se salta en silencio.
+        stats["saltados"] += [
+            "correlaciones_padre", "correlaciones_omega", "sesgo_aprendizaje",
+            "orden_precursores", "secuencia_nodos", "poda_cimatica",
+        ]
+        logger.info(
+            "[DRY_RUN] Barrido: se omite recálculo de correlaciones/sesgo/"
+            "orden/secuencia y poda cimática — nada se escribe"
+        )
+    else:
+        # Correlaciones del Padre y Omega, sesgo de todos los bots
+        stats["correlaciones_padre"] = construir_correlaciones_padre(db_path)
+        stats["correlaciones_omega"] = construir_correlaciones_omega(db_path)
+        stats["sesgo_aprendizaje"] = evaluar_sesgo_aprendizaje(db_path)
 
-    # El Padre también ve el ORDEN en que se presentaron los precursores y
-    # discierne si la secuencia importa o es indiferente (contando).
-    stats["orden_precursores"] = analizar_orden_precursores(db_path)
+        # El Padre también ve el ORDEN en que se presentaron los precursores y
+        # discierne si la secuencia importa o es indiferente (contando).
+        stats["orden_precursores"] = analizar_orden_precursores(db_path)
 
-    # Y la SECUENCIA DE NODOS: la ruta espacial por la que se propaga la
-    # energía. Rutas globales (que preceden a distintos tipos) = cimática
-    # organizada; locales = causas específicas.
-    stats["secuencia_nodos"] = analizar_secuencia_nodos(db_path)
+        # Y la SECUENCIA DE NODOS: la ruta espacial por la que se propaga la
+        # energía. Rutas globales (que preceden a distintos tipos) = cimática
+        # organizada; locales = causas específicas.
+        stats["secuencia_nodos"] = analizar_secuencia_nodos(db_path)
 
-    # Poda cimática: la línea base es TODA la telemetría, pero el patrón
-    # que tras su gracia nunca se asoció a un evento es ruido → se elimina.
-    try:
-        from sentinel_omega.core.firmas.cimatica import poda_cimatica
-        conn_poda = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
-        stats["cimatica_podados"] = poda_cimatica(conn_poda)
-        conn_poda.close()
-    except Exception as e:
-        logger.warning(f"Poda cimática falló (non-blocking): {e}")
+        # Poda cimática: la línea base es TODA la telemetría, pero el patrón
+        # que tras su gracia nunca se asoció a un evento es ruido → se elimina.
+        try:
+            from sentinel_omega.core.firmas.cimatica import poda_cimatica
+            conn_poda = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
+            stats["cimatica_podados"] = poda_cimatica(conn_poda)
+            conn_poda.close()
+        except Exception as e:
+            logger.warning(f"Poda cimática falló (non-blocking): {e}")
 
     logger.info(f"Barrido diario: {stats}")
     
     # Volcado 24h: telemetría viva → histórico + cascada
     try:
-        # Antes del volcado: pasar los sismos vivos a la memoria. Si esto no
-        # corre, el sistema sigue observando pero deja de aprender --- la última
-        # firma nueva era del 23-sep y ningún sismo posterior al 3-sep había
-        # entrado (medido el 2026-09-25).
-        # Vaciado de medianoche: el barrido corre a las 00:00, así que el WAL
-        # empieza el día en cero aunque el disparador por tamaño no se haya
-        # disparado nunca. Va PRIMERO: el resto del barrido escribe bastante, y
-        # vaciar antes deja ese trabajo sobre un registro limpio.
-        try:
-            from sentinel_omega.config.sentinel_config import load_config
-            from sentinel_omega.infrastructure.database.wal import volcar_wal
-            if bool(getattr(getattr(load_config(), "wal", None), "vaciado_diario", True)):
-                stats["wal"] = volcar_wal(db_path, modo="TRUNCATE")
-                logger.info("Vaciado de medianoche del WAL: %s", stats["wal"])
-            else:
-                logger.info("Vaciado diario del WAL desactivado por configuración")
-        except Exception as e:  # noqa: BLE001 — el barrido sigue sin esto
-            logger.warning("Vaciado del WAL falló (non-blocking): %s", e)
+        if dry_run:
+            stats["saltados"] += ["wal_vaciado", "competencia",
+                                  "aprendizaje_incremental"]
+        else:
+            # Antes del volcado: pasar los sismos vivos a la memoria. Si esto no
+            # corre, el sistema sigue observando pero deja de aprender --- la última
+            # firma nueva era del 23-sep y ningún sismo posterior al 3-sep había
+            # entrado (medido el 2026-09-25).
+            # Vaciado de medianoche: el barrido corre a las 00:00, así que el WAL
+            # empieza el día en cero aunque el disparador por tamaño no se haya
+            # disparado nunca. Va PRIMERO: el resto del barrido escribe bastante, y
+            # vaciar antes deja ese trabajo sobre un registro limpio.
+            try:
+                from sentinel_omega.config.sentinel_config import load_config
+                from sentinel_omega.infrastructure.database.wal import volcar_wal
+                if bool(getattr(getattr(load_config(), "wal", None), "vaciado_diario", True)):
+                    stats["wal"] = volcar_wal(db_path, modo="TRUNCATE")
+                    logger.info("Vaciado de medianoche del WAL: %s", stats["wal"])
+                else:
+                    logger.info("Vaciado diario del WAL desactivado por configuración")
+            except Exception as e:  # noqa: BLE001 — el barrido sigue sin esto
+                logger.warning("Vaciado del WAL falló (non-blocking): %s", e)
 
-        # La foto del perfil de competencia, una por barrido. Sin historia, el
-        # Padre solo puede reaccionar al ultimo numero y un bot que empeora
-        # despacio no se nota.
-        try:
-            from sentinel_omega.core.juez.pesos import guardar_competencia
-            _c = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
-            stats["competencia_guardada"] = guardar_competencia(_c)
-            _c.close()
-        except Exception as e:  # noqa: BLE001 — el barrido sigue sin esto
-            logger.warning("No se pudo guardar la competencia: %s", e)
+            # La foto del perfil de competencia, una por barrido. Sin historia, el
+            # Padre solo puede reaccionar al ultimo numero y un bot que empeora
+            # despacio no se nota.
+            try:
+                from sentinel_omega.core.juez.pesos import guardar_competencia
+                _c = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
+                stats["competencia_guardada"] = guardar_competencia(_c)
+                _c.close()
+            except Exception as e:  # noqa: BLE001 — el barrido sigue sin esto
+                logger.warning("No se pudo guardar la competencia: %s", e)
 
-        stats["eventos_promovidos"] = promover_eventos_vivos(db_path)
+        # Promover en seco cuenta lo que entraría (promover_eventos_vivos ya
+        # respeta dry_run y no escribe).
+        stats["eventos_promovidos"] = promover_eventos_vivos(
+            db_path, dry_run=dry_run
+        )
         # Y acto seguido, aprenderlos. Promover sin aprender deja los datos en
         # la memoria sin convertirlos en firmas, que es lo que el sistema usa
         # para reconocer. Medido el 2026-09-25: la corrida COMPLETA tarda 36 h
         # (186.806 eventos a 1,5/s) y por eso nunca se programó; la incremental
         # tardó 190 s con 22 días acumulados y dejó 89 firmas nuevas.
-        try:
-            from sentinel_omega.infrastructure.pipeline.entrenamiento import (
-                entrenar_incremental,
-            )
-            stats["aprendizaje"] = entrenar_incremental(db_path)
-        except Exception as e:  # noqa: BLE001 — el barrido sigue sin esto
-            logger.warning("Aprendizaje incremental falló (non-blocking): %s", e)
-            stats["aprendizaje"] = {"error": f"{type(e).__name__}: {e}"}
+        if not dry_run:
+            try:
+                from sentinel_omega.infrastructure.pipeline.entrenamiento import (
+                    entrenar_incremental,
+                )
+                stats["aprendizaje"] = entrenar_incremental(db_path)
+            except Exception as e:  # noqa: BLE001 — el barrido sigue sin esto
+                logger.warning("Aprendizaje incremental falló (non-blocking): %s", e)
+                stats["aprendizaje"] = {"error": f"{type(e).__name__}: {e}"}
         stats["volcado_vivo"] = volcar_telemetria_viva(
-            db_path, run_cascada=True, dry_run=False
+            db_path, run_cascada=True, dry_run=dry_run
         )
     except Exception as e:
         logger.warning(f"Volcado telemetría viva falló (no bloquea barrido): {e}")
@@ -1052,8 +1108,9 @@ def volcar_telemetria_viva(
     import json
 
     conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
-    conn.execute("PRAGMA journal_mode=WAL")
-    _ensure_hist_tables(conn)
+    if not dry_run:
+        conn.execute("PRAGMA journal_mode=WAL")
+        _ensure_hist_tables(conn)
 
     ahora = datetime.now(timezone.utc)
     corte = ahora - timedelta(hours=horas_retencion)
