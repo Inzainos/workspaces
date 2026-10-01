@@ -1,28 +1,33 @@
 """
-Schumann Resonance connector — Tomsk Observatory (sosrff.tsu.ru).
+Schumann Resonance connector — sos70.ru (sucesor de Tomsk, sosrff.tsu.ru).
+
 Public spectrogram images, no authentication required.
 
 Method: Computer vision (WPC — White Pixel Count) on HSV-filtered
 spectrogram to estimate resonance excitation above the 7.83 Hz fundamental.
 
 IMPORTANT (2026-09-10 ingest fix):
-  - Tomsk HTTP redirects to HTTPS with an *expired* certificate. We must
-    fetch with verify=False for sosrff.tsu.ru only, otherwise every cycle
-    silently falls back to (7.83, 0.0) and poisons tbl_schumann_vivo.
   - On any failure we return None (not a fake baseline) so callers can skip
     INSERT / mark LOCF instead of writing synthetic zeros.
 
-FROZEN IMAGE (2026-09-27): shm.jpg answers HTTP 200 with
-``Last-Modified: Mon, 01 Sep 2025 04:20:00 GMT``. The same image yields
-activity 21.46 % -> 7.83 + 21.46*0.02 = 8.26 Hz (25.0 Hz with the old *0.8
-scale): the "reading" that froze PREC from 24-jul to 26-sep and came back at
-19:45 CST on 27-sep. A WPC value is only a live reading when the image carries
-its own timestamp (Last-Modified), that timestamp is recent, and the value is
-not an exact repeat of the last stored live reading of an earlier hour.
+FROZEN IMAGE (2026-09-27): the old sosrff.tsu.ru answered HTTP 200 with
+``Last-Modified: Mon, 01 Sep 2025 04:20:00 GMT`` and the same image yielded
+activity 21.46 % -> 7.83 + 21.46*0.02 = 8.26 Hz: the "reading" that froze PREC
+from 24-jul to 26-sep. sosrff.tsu.ru is the OBSOLETE site; sos70.ru is its
+successor and serves the same shm.jpg updated every ~6 h.
+
+FUENTE NUEVA (2026-09-30): sos70.ru does NOT send Last-Modified (verified
+with GET: only `date`). The freshness gate for that case is the IMAGE HASH:
+the sha256 of the downloaded bytes against the sha of the image that produced
+the last en_vivo=1 reading (`tbl_schumann_img_estado`, one row). Same hash =
+no new data = no-signal; different hash + a value that moved = live reading.
+If the source ever sends Last-Modified again, the original age gate applies
+unchanged.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import sqlite3
 import tempfile
@@ -37,7 +42,10 @@ from sentinel_omega.infrastructure.api._http import get_session
 
 logger = logging.getLogger(__name__)
 
-TOMSK_URL = "http://sosrff.tsu.ru/new/shm.jpg"
+# sosrff.tsu.ru está MUERTO (imagen congelada 13 meses, sección 26 de la
+# bitácora del 28-sep). El sucesor sos70.ru sirve el mismo shm.jpg vivo.
+TOMSK_URL = "https://sos70.ru/provider.php?file=shm.jpg"
+UA = "Mozilla/5.0 (X11; Linux x86_64) SentinelOmega-schumann/1.0"
 TIMEOUT = 15
 FUNDAMENTAL_HZ = 7.83
 ROI_FRACTION = 0.4
@@ -54,13 +62,16 @@ _LAST_MODIFIED: dict = {}  # path -> Last-Modified (UTC) of the downloaded image
 def fetch_schumann_spectrogram(
     save_dir: Optional[str] = None,
 ) -> Optional[str]:
-    """Download today's Schumann spectrogram from Tomsk Observatory.
+    """Download the current Schumann spectrogram from sos70.ru.
 
-    Uses verify=False because sosrff.tsu.ru presents an expired TLS cert
-    after the HTTP→HTTPS redirect (confirmed 2026-09-10).
+    Proper HTTPS (valid cert): no verify=False needed since the sosrff era
+    ended. The image's Last-Modified is kept for the age gate; sos70 does not
+    send it today, in which case the sha256 gate applies (see module docstring).
     """
     try:
-        resp = get_session().get(TOMSK_URL, timeout=TIMEOUT, verify=False)
+        resp = get_session().get(
+            TOMSK_URL, timeout=TIMEOUT, headers={"User-Agent": UA}
+        )
         resp.raise_for_status()
 
         if save_dir:
@@ -203,29 +214,87 @@ def is_baseline_placeholder(hz: Optional[float], activity: Optional[float]) -> b
         return True
 
 
+# ── Puerta de frescura por sha256 (sos70 no manda Last-Modified) ─────────────
+
+_TABLA_IMG_ESTADO = "tbl_schumann_img_estado"
+
+
+def _sha256_archivo(ruta: str) -> Optional[str]:
+    try:
+        h = hashlib.sha256()
+        with open(ruta, "rb") as f:
+            for bloque in iter(lambda: f.read(65536), b""):
+                h.update(bloque)
+        return h.hexdigest()
+    except OSError as e:
+        logger.warning("Schumann: no se pudo hashear la imagen: %s", e)
+        return None
+
+
+def sha_ingestado(db_path: Optional[Path] = None) -> Optional[str]:
+    """sha256 de la imagen que produjo la última lectura viva; None si no hay."""
+    db = Path(db_path) if db_path else _DB_DEFAULT
+    if not db.exists():
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            r = con.execute(
+                f"SELECT sha256 FROM {_TABLA_IMG_ESTADO} WHERE id=1"
+            ).fetchone()
+        finally:
+            con.close()
+        return r[0] if r else None
+    except sqlite3.Error as e:
+        logger.warning("Schumann: no se pudo leer el sha ingestado: %s", e)
+        return None
+
+
+def guardar_sha_ingestado(sha: str, db_path: Optional[Path] = None) -> bool:
+    """Guarda el sha de la imagen recién aceptada. Una sola fila (id=1)."""
+    db = Path(db_path) if db_path else _DB_DEFAULT
+    try:
+        con = sqlite3.connect(db, timeout=60)
+        try:
+            con.execute(
+                f"CREATE TABLE IF NOT EXISTS {_TABLA_IMG_ESTADO} ("
+                "id INTEGER PRIMARY KEY CHECK (id=1), sha256 TEXT NOT NULL, "
+                "actualizado_at TEXT DEFAULT (datetime('now')))"
+            )
+            con.execute(
+                f"INSERT INTO {_TABLA_IMG_ESTADO} (id, sha256) VALUES (1, ?) "
+                "ON CONFLICT(id) DO UPDATE SET sha256=excluded.sha256, "
+                "actualizado_at=datetime('now')",
+                (sha,),
+            )
+            con.commit()
+        finally:
+            con.close()
+        return True
+    except sqlite3.Error as e:
+        logger.warning("Schumann: no se pudo guardar el sha ingestado: %s", e)
+        return False
+
+
 def fetch_schumann_resonance(
     save_dir: Optional[str] = None,
     cleanup: bool = True,
     previa=_NO_LEIDA,
     ahora: Optional[float] = None,
+    db_path: Optional[Path] = None,
 ) -> Optional[Tuple[float, float]]:
     """
     Full pipeline: download spectrogram → WPC analysis → (hz, activity_pct).
 
-    Returns None on any failure (network, SSL, missing cv2, bad image), and
-    also when the value is not a live reading: image without Last-Modified,
-    older than MAX_EDAD_IMAGEN_HORAS, or identical to the previous stored live
-    reading (``previa``; read from tbl_schumann_vivo when not given).
+    Returns None on any failure (network, missing cv2, bad image), and also
+    when the value is not a live reading. With Last-Modified: the age and
+    repeat gates apply (original 2026-09-27 behavior). Without it (sos70
+    today): the freshness proof is the image sha256 against the last
+    ingested image — same sha = no new data = no-signal; new sha with a value
+    that moved = live reading.
     Callers MUST NOT invent 7.83/0.0; skip persist or use LOCF instead.
     """
     import os
-    import urllib3
-
-    # Tomsk cert is expired; silence the single-host InsecureRequestWarning noise.
-    try:
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    except Exception:
-        pass
 
     path = fetch_schumann_spectrogram(save_dir=save_dir)
     if path is None:
@@ -233,6 +302,8 @@ def fetch_schumann_resonance(
     last_modified = last_modified_de(path)
 
     result = analyze_spectrogram(path)
+    # El sha se calcula ANTES del cleanup: sin archivo no hay prueba de cambio.
+    sha_img = _sha256_archivo(path)
 
     if cleanup and path and os.path.exists(path):
         try:
@@ -256,10 +327,44 @@ def fetch_schumann_resonance(
 
     if previa is _NO_LEIDA:
         previa = ultima_lectura_viva(ahora=ahora)
-    motivo = motivo_lectura_no_viva(hz, pct, last_modified, previa, ahora=ahora)
+
+    if last_modified is not None:
+        motivo = motivo_lectura_no_viva(hz, pct, last_modified, previa, ahora=ahora)
+    else:
+        # sos70 no manda Last-Modified: la prueba de frescura es el cambio de
+        # imagen (sha256 contra la última imagen ingestada).
+        motivo = None
+        prev_sha = sha_ingestado(db_path)
+        if sha_img is None:
+            motivo = "no se pudo hashear la imagen descargada"
+        elif prev_sha is not None and sha_img == prev_sha:
+            motivo = (
+                "imagen sin cambios desde la última lectura viva "
+                f"(sha256 {sha_img[:12]})"
+            )
+        elif (
+            previa is not None
+            and abs(float(hz) - float(previa[0])) < 1e-9
+            and abs(float(pct) - float(previa[1])) < 1e-9
+        ):
+            # Regla del 2026-09-27 conservada: un valor que repite exacto la
+            # última lectura viva no aporta información, venga de una imagen
+            # nueva o no. El arrastre de `registrar` hace el resto.
+            motivo = (
+                "imagen nueva pero el valor repite la última lectura viva "
+                f"({hz} Hz, {pct} %)"
+            )
+        if motivo is None and sha_img is not None:
+            if not guardar_sha_ingestado(sha_img, db_path):
+                logger.warning(
+                    "Schumann: sha no guardado — la próxima imagen idéntica "
+                    "volverá a evaluarse"
+                )
+
     if motivo:
         logger.warning(
-            "Schumann WPC %s Hz / %s %% is not a live reading (%s) — no-signal", hz, pct, motivo
+            "Schumann WPC %s Hz / %s %% is not a live reading (%s) — no-signal",
+            hz, pct, motivo,
         )
         return None
 

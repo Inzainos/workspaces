@@ -7,11 +7,18 @@ guardó en PREC y en `tbl_schumann_vivo` como si fuera en vivo (en_vivo=1,
 atraso 0). El commit 27f072a solo cubría el caso «sin lectura» (None → NULL);
 una descarga que SÍ responde, con un valor viejo, pasaba como lectura.
 
-Regla: la lectura WPC solo es viva si la imagen trae su propia hora
+Regla original: la lectura WPC solo es viva si la imagen trae su propia hora
 (Last-Modified), esa hora es reciente y el valor no repite exacto la última
 lectura viva guardada de una hora anterior. Y el LOCF de la base es historia,
 nunca «la lectura actual».
+
+2026-09-30 — sos70.ru (sucesor de sosrff, que quedó obsoleto) NO manda
+Last-Modified. La prueba de frescura para ese caso es el SHA256 de la imagen
+contra el de la última imagen ingestada (`tbl_schumann_img_estado`):
+sha igual = no hay dato nuevo = no-signal; sha nueva + valor que se movió =
+lectura viva. La regla «valor que repite exacto no aporta» se conserva.
 """
+import hashlib
 import sqlite3
 from datetime import datetime, timezone
 
@@ -29,11 +36,15 @@ FRESCA = datetime.fromtimestamp(T0 - 1800, tz=timezone.utc)  # media hora antes
 
 @pytest.fixture()
 def wpc(monkeypatch, tmp_path):
-    """Simula la descarga (con su Last-Modified) y el WPC, sin red ni opencv."""
-    estado = {"last_modified": CONGELADA, "valor": (8.26, 21.46)}
+    """Simula la descarga (con su Last-Modified y bytes) y el WPC, sin red ni opencv."""
+    estado = {"last_modified": CONGELADA, "valor": (8.26, 21.46), "bytes": b"x"}
     img = tmp_path / "shm.jpg"
-    img.write_bytes(b"x")
-    monkeypatch.setattr(sch, "fetch_schumann_spectrogram", lambda save_dir=None: str(img))
+
+    def _fetch(save_dir=None):
+        img.write_bytes(estado["bytes"])
+        return str(img)
+
+    monkeypatch.setattr(sch, "fetch_schumann_spectrogram", _fetch)
     monkeypatch.setattr(sch, "last_modified_de", lambda path: estado["last_modified"])
     monkeypatch.setattr(sch, "analyze_spectrogram", lambda p: estado["valor"])
     return estado
@@ -62,9 +73,51 @@ def test_imagen_congelada_de_2025_no_es_lectura(wpc):
     assert sch.fetch_schumann_resonance(cleanup=False, previa=None, ahora=T0) is None
 
 
-def test_imagen_sin_last_modified_no_es_lectura(wpc):
+def test_imagen_sin_last_modified_no_es_lectura(wpc, tmp_path):
+    """El caso sos70: sin Last-Modified, la prueba de frescura es el sha256.
+
+    La primera imagen entra (no hay estado previo ni valor previo); la MISMA
+    imagen otra vez ya no: no hay dato nuevo, no se inventa la lectura."""
     wpc["last_modified"] = None
-    assert sch.fetch_schumann_resonance(cleanup=False, previa=None, ahora=T0) is None
+    wpc["bytes"] = b"imagen-A"
+    db = tmp_path / "estado_sha.db"
+    r = sch.fetch_schumann_resonance(
+        cleanup=False, previa=None, ahora=T0, db_path=db)
+    assert r == (8.26, 21.46)
+    assert sch.sha_ingestado(db) == hashlib.sha256(b"imagen-A").hexdigest()
+    # La misma imagen de nuevo → no-signal, aunque no haya valor previo.
+    assert sch.fetch_schumann_resonance(
+        cleanup=False, previa=None, ahora=T0, db_path=db) is None
+
+
+def test_imagen_nueva_con_valor_nuevo_si_es_lectura(wpc, tmp_path):
+    wpc["last_modified"] = None
+    wpc["bytes"] = b"imagen-A"
+    db = tmp_path / "estado_sha.db"
+    assert sch.fetch_schumann_resonance(
+        cleanup=False, previa=None, ahora=T0, db_path=db) == (8.26, 21.46)
+    # Rota la imagen (sha nueva) y el valor se mueve → lectura viva.
+    wpc["bytes"] = b"imagen-B"
+    wpc["valor"] = (8.31, 24.0)
+    assert sch.fetch_schumann_resonance(
+        cleanup=False, previa=(8.26, 21.46), ahora=T0, db_path=db) == (8.31, 24.0)
+    assert sch.sha_ingestado(db) == hashlib.sha256(b"imagen-B").hexdigest()
+
+
+def test_imagen_nueva_con_valor_identico_no_es_lectura(wpc, tmp_path):
+    """Regla del 27-sep conservada: un valor que repite exacto la última
+    lectura viva no aporta información, aunque la imagen sí haya cambiado.
+    El sha de esa imagen rechazada NO se guarda."""
+    wpc["last_modified"] = None
+    wpc["bytes"] = b"imagen-A"
+    db = tmp_path / "estado_sha.db"
+    assert sch.fetch_schumann_resonance(
+        cleanup=False, previa=None, ahora=T0, db_path=db) is not None
+    wpc["bytes"] = b"imagen-B"  # imagen nueva…
+    # …pero el valor repite la lectura viva previa → no-signal.
+    assert sch.fetch_schumann_resonance(
+        cleanup=False, previa=(8.26, 21.46), ahora=T0, db_path=db) is None
+    assert sch.sha_ingestado(db) == hashlib.sha256(b"imagen-A").hexdigest()
 
 
 def test_imagen_fresca_con_valor_nuevo_si_es_lectura(wpc):
