@@ -125,20 +125,37 @@ def register_cycle_predictions(
 
     ventana_h = 2
 
-    juez.registrar_prediccion(
-        bot_name="padre",
-        prediccion=geo.final_signal.value,
-        confianza=geo.confidence,
-        ventana_h=ventana_h,
-        detalles={
-            "firma_matches": matches[:5],
-            "muro_lags": muro_lags,
-            "nodos": nodos_pred,
-            "ventana_h": ventana_h,
-            "features_generales": features,
-        },
-        fase="viva",
-    )
+    # El padre pasa por el MISMO filtro de episodio que los ocho --- y hace
+    # falta más que a ellos, no menos.
+    #
+    # Medido el 2026-10-01, con el filtro ya vivo para los bots: en 24 h los
+    # ocho pasaron de 2.304 filas a 320 para el mismo volumen de ciclos
+    # (factor 7,2x, episodios de hasta 26 ciclos), mientras el padre seguía en
+    # 290 filas <- 290 ciclos, factor 1,0x. Quedó fuera porque su registro vive
+    # ANTES del bucle, no dentro.
+    #
+    # Por qué importa el doble: `pesos.CASTIGO_PADRE = 0.90` contra
+    # `CASTIGO_HIJO = 0.95`. El padre es el único que paga doble y era el único
+    # sin filtrar, así que el sobrecastigo por ciclo seguía intacto justo en el
+    # voto que pondera a los otros ocho.
+    abierto_padre = _episodio_abierto(conn, "padre", features, ventana_h)
+    if abierto_padre is not None:
+        _sumar_ciclo(conn, abierto_padre)
+    else:
+        juez.registrar_prediccion(
+            bot_name="padre",
+            prediccion=geo.final_signal.value,
+            confianza=geo.confidence,
+            ventana_h=ventana_h,
+            detalles={
+                "firma_matches": matches[:5],
+                "muro_lags": muro_lags,
+                "nodos": nodos_pred,
+                "ventana_h": ventana_h,
+                "features_generales": features,
+            },
+            fase="viva",
+        )
 
     n_bots = 0
     for sig in (getattr(geo, "agent_signals", None) or []):

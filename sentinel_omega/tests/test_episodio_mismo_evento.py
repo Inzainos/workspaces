@@ -146,3 +146,69 @@ def test_el_registrador_no_abre_fila_si_el_episodio_sigue(tmp_path, monkeypatch)
     monkeypatch.setattr(_Juez, "registrar_prediccion", _Juez.registrar_prediccion)
     jcr.register_cycle_predictions(_Juez(), _Geo(), conn=c, features=dict(BASE))
     assert "alfa1" not in llamadas, "abrio fila nueva para el mismo evento"
+
+
+class _JuezEspia:
+    def __init__(self):
+        self.llamadas = []
+
+    def registrar_prediccion(self, **kw):
+        self.llamadas.append(kw.get("bot_name"))
+
+
+class _GeoVacio:
+    """Consenso sin bots: aisla al padre, que se registra FUERA del bucle."""
+    agent_signals = []
+    confidence = 0.4
+
+    class final_signal:
+        value = "neutral"
+
+
+def test_el_padre_tambien_entra_al_filtro(tmp_path):
+    """El padre quedo FUERA del filtro hasta el 2026-10-01, porque su registro
+    vive antes del bucle de bots.
+
+    Medido ese dia en produccion, con el filtro ya vivo para los ocho:
+
+        los ocho bots   2.304 filas -> 320 filas   factor 7,2x
+        el padre          290 filas -> 290 filas   factor 1,0x
+
+    Y el padre es el unico que paga DOBLE (`CASTIGO_PADRE = 0.90` contra
+    `CASTIGO_HIJO = 0.95`), asi que el sobrecastigo de 23x seguia intacto en el
+    voto que pondera a los demas."""
+    from sentinel_omega.infrastructure.pipeline import juez_cycle_register as jcr
+
+    c = _base(tmp_path, [("padre", 600, BASE)])
+    juez = _JuezEspia()
+    jcr.register_cycle_predictions(juez, _GeoVacio(), conn=c, features=dict(BASE))
+    assert "padre" not in juez.llamadas, "el padre sigue abriendo fila por ciclo"
+
+    d = json.loads(c.execute(
+        "SELECT detalles_json FROM TBL_JUEZ_AUDITORIA WHERE bot_name='padre'"
+    ).fetchone()[0])
+    assert d["ciclos"] == 2, d
+
+
+def test_el_padre_sin_episodio_abierto_si_registra(tmp_path):
+    """Control: el filtro no puede dejar al padre sin voz. Sin episodio previo
+    la fila se abre igual que antes."""
+    from sentinel_omega.infrastructure.pipeline import juez_cycle_register as jcr
+
+    c = _base(tmp_path)
+    juez = _JuezEspia()
+    jcr.register_cycle_predictions(juez, _GeoVacio(), conn=c, features=dict(BASE))
+    assert juez.llamadas == ["padre"], juez.llamadas
+
+
+def test_el_padre_no_cierra_su_episodio_con_telemetria_distinta(tmp_path):
+    """Mismo criterio que los hijos: si cambia la telemetria, es otro evento."""
+    from sentinel_omega.infrastructure.pipeline import juez_cycle_register as jcr
+
+    c = _base(tmp_path, [("padre", 600, BASE)])
+    otro = {"bz_mean": 4.1, "bz_min": 0.2, "viento_avg": 310.0, "viento_max": 350.0,
+            "kp_mean": 0.3, "kp_max": 1.0, "kp_max_72h": 1.0, "proton_max": 0.1,
+            "sismo_count_win": 12.0, "sismo_count_72h": 2.0, "fase_lunar": 0.9}
+    juez = _JuezEspia()
+    jcr.register_cycle_predictions(juez, _GeoVacio(), conn=c, features=otro)
+    assert juez.llamadas == ["padre"], juez.llamadas
