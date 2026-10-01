@@ -162,8 +162,12 @@ class GeodynamicPipeline:
 
         # Filas horarias para tbl_clima_espacial_raw (el runner las inserta).
         try:
+            # `fetch_kp_index` ya no finge aceptar una ventana: el endpoint es
+            # de 1 min y sirve ~6 h, así que las horas del omni window más
+            # viejas que eso salen con Kp NULL. Las repara el UPSERT de
+            # `_persistir_clima` en el ciclo siguiente, no un relleno.
             filas = self._filas_clima_horarias(
-                result["omni_dataframe"], prot_df, fetch_kp_index(days=2)
+                result["omni_dataframe"], prot_df, fetch_kp_index()
             )
             if filas:
                 result["clima_horas"] = filas

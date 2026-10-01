@@ -259,30 +259,60 @@ class GeodynamicLayerRunner:
         datos de NOAA cada vuelta. De ella comen el entrenamiento (features
         bz/viento/kp/protones) y el fallback de delta_enriched.
 
-        INSERT OR IGNORE por timestamp_blk. Fail-soft.
+        UPSERT por timestamp_blk que RELLENA huecos sin pisar dato medido.
+        Fail-soft.
         """
         filas = alfa1_data.get("clima_horas") if isinstance(alfa1_data, dict) else None
         if not filas:
             return
+        _HUECOS = ("SELECT COUNT(*) FROM tbl_clima_espacial_raw WHERE "
+                   "kp_promedio IS NULL OR kp_max IS NULL "
+                   "OR proton_flux_10mev IS NULL")
         try:
             repo = self._get_repo()
             antes = repo._execute(
                 "SELECT COUNT(*) FROM tbl_clima_espacial_raw"
             ).fetchone()[0]
+            huecos_antes = repo._execute(_HUECOS).fetchone()[0]
+            # UPSERT que RELLENA HUECOS, no `INSERT OR IGNORE` (2026-10-01).
+            #
+            # El Kp de NOAA cubre ~6 h (endpoint de 1 min) mientras el omni
+            # window llega mucho más atrás, así que las horas viejas del lote se
+            # escribían con `kp_promedio`/`kp_max` en NULL --- correcto, cero
+            # sintético --- y el OR IGNORE las dejaba así PARA SIEMPRE: el ciclo
+            # siguiente traía el Kp de esas horas y se descartaba por tener ya
+            # la clave. Medido ese día: 23 horas con Bz real y Kp nulo, el 6,6 %
+            # del periodo vivo, y 170 de 347 horas sin flujo de protones.
+            #
+            # `COALESCE(col, excluded.col)` solo escribe donde había NULL: un
+            # valor ya medido nunca se pisa, y un NULL que llega después nunca
+            # borra un dato bueno. Así la tabla se cura de cualquier fallo
+            # transitorio de fuente, no solo del Kp.
+            cols = ("bz_promedio", "bz_derivada", "bz_min", "bz_max",
+                    "viento_solar_avg", "viento_solar_max", "kp_max",
+                    "kp_promedio", "proton_flux_10mev")
             repo._executemany(
-                "INSERT OR IGNORE INTO tbl_clima_espacial_raw "
-                "(timestamp_blk, bz_promedio, bz_derivada, bz_min, bz_max, "
-                " viento_solar_avg, viento_solar_max, kp_max, kp_promedio, "
-                " proton_flux_10mev) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO tbl_clima_espacial_raw "
+                "(timestamp_blk, " + ", ".join(cols) + ") "
+                "VALUES (" + ",".join("?" * (len(cols) + 1)) + ") "
+                "ON CONFLICT(timestamp_blk) DO UPDATE SET "
+                + ", ".join(f"{c} = COALESCE({c}, excluded.{c})" for c in cols),
                 filas,
             )
             despues = repo._execute(
                 "SELECT COUNT(*) FROM tbl_clima_espacial_raw"
             ).fetchone()[0]
-            if despues > antes:
+            huecos_despues = repo._execute(_HUECOS).fetchone()[0]
+            nuevas = despues - antes
+            # Las reparaciones se cuentan aparte: sin esto, un ciclo que no trae
+            # horas nuevas pero rellena diez huecos no dejaba rastro, y el
+            # arreglo sería indistinguible de no hacer nada (regla dura 10).
+            reparadas = huecos_antes - huecos_despues
+            if nuevas or reparadas:
                 logger.info(
-                    "Clima espacial → DB: +%d horas nuevas de %d",
-                    despues - antes, len(filas),
+                    "Clima espacial → DB: +%d horas nuevas, %d huecos "
+                    "rellenados, de %d filas del lote",
+                    nuevas, reparadas, len(filas),
                 )
         except Exception as exc:  # noqa: BLE001 — fail-soft por diseño
             logger.warning("Persistencia de clima falló (no bloqueante): %s", exc)

@@ -24,8 +24,26 @@ TIMEOUT = 15
 
 
 @circuit("noaa")
-def fetch_kp_index(days: int = 30) -> Optional[pd.DataFrame]:
-    """Fetch Kp index from NOAA SWPC."""
+def fetch_kp_index() -> Optional[pd.DataFrame]:
+    """Fetch Kp index from NOAA SWPC. ~6 h de ventana, resolución de 1 minuto.
+
+    **El parámetro `days` se retiró el 2026-10-01: era MUERTO.** La firma decía
+    `days: int = 30`, el cuerpo nunca lo leía y la URL es fija, así que
+    `fetch_kp_index(days=2)` --- como lo llamaba `data_pipeline` para armar las
+    filas horarias de `tbl_clima_espacial_raw` --- pedía 48 h y recibía 5 h 57
+    min sin que nada lo dijera. Medido ese día: 358 registros, span 05:57.
+
+    Consecuencia, que es la que dolía: toda hora del omni window más antigua que
+    esas ~6 h se persistía con `kp_promedio`/`kp_max` en NULL, y el
+    `INSERT OR IGNORE` de `_persistir_clima` la dejaba así para siempre. 23
+    horas con Bz real y Kp nulo, el 6,6 % del periodo vivo.
+
+    Quien necesite una ventana larga de Kp usa `api.gfz_kp.fetch_kp_history`,
+    que devuelve la misma forma a resolución 3-horaria.
+
+    El span real se registra en cada llamada: un endpoint que cambie de ventana
+    no puede volver a pasar inadvertido (regla dura 9).
+    """
     url = f"{NOAA_BASE}planetary_k_index_1m.json"
     try:
         resp = get_session().get(url, timeout=TIMEOUT)
@@ -36,7 +54,13 @@ def fetch_kp_index(days: int = 30) -> Optional[pd.DataFrame]:
             df["time_tag"] = pd.to_datetime(df["time_tag"])
             df["kp_index"] = pd.to_numeric(df["kp_index"], errors="coerce")
             df = df.dropna(subset=["kp_index"])
-            logger.info(f"Fetched {len(df)} Kp records from NOAA")
+            if len(df):
+                span_h = (df["time_tag"].max()
+                          - df["time_tag"].min()).total_seconds() / 3600.0
+                logger.info(
+                    "Fetched %d Kp records from NOAA (span real %.1f h)",
+                    len(df), span_h,
+                )
             return df[["time_tag", "kp_index"]].sort_values("time_tag")
     except Exception as e:
         logger.error(f"NOAA Kp fetch failed: {e}")
