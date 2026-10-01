@@ -4,6 +4,11 @@ Pasada agendada del Juez — cada 4 horas (Roy Vigilante).
 Confronta las predicciones vivas expiradas contra el catálogo USGS real
 (verdad por fila: ventana de 72 h + nodos de la propia predicción) e
 imprime el resumen real vs predicción.
+
+2026-09-30: se llama cada 2 h (rutinas locales / Roy) pero SIN forzar —
+el ritmo de 4 h lo decide verificar_juez solo (RITMO_HORAS en
+pipeline/verificacion.py). Antes pasaba forzar=True y la verificación
+corría cada 2 h, pisando el ritmo documentado.
 """
 
 import logging
@@ -24,7 +29,7 @@ def main() -> None:
         verificar_juez,
     )
     conn = sqlite3.connect(DB)
-    resultado = verificar_juez(conn, forzar=True)
+    resultado = verificar_juez(conn)
     if resultado.get("saltada"):
         print(f"Verificación pospuesta: {resultado.get('motivo', 'ritmo')}")
         return

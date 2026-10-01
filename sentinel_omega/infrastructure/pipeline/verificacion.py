@@ -1,5 +1,5 @@
 """
-Verificación del Juez — real vs predicción, cada 2 horas (mismo ritmo del ciclo).
+Verificación del Juez — real vs predicción, cada 4 horas.
 
 Cada ciclo del Padre (~2 h) registra predicciones; el Juez confronta las
 pendientes cuya ventana ya expiró contra el catálogo real (USGS + futuros
@@ -7,7 +7,15 @@ multi-evento). Ventana por fila: 2 h mínimo de sesgo continuo, o el lag
 típico de la firma/evento si es mayor (no se corta a 72 h fijas).
 
 El ritmo se auto-impone: si la última resolución viva tiene menos de
-RITMO_HORAS, la pasada se salta (salvo forzar=True).
+RITMO_HORAS, la pasada se salta (salvo forzar=True). Los vigilantes llaman
+cada 2 h y el Juez decide solo si le toca — así local y GitHub Actions
+convergen al mismo ritmo sin coordinarse.
+
+2026-09-30 (orden del operador): RITMO_HORAS pasa de 2 a 4, como siempre
+dijeron AGENTS.md y los comentarios de rutinas_locales.sh / verificacion_juez.py
+— pero ni el código (2 h) ni el caller (forzar=True, que pisaba el ritmo)
+lo cumplían: la verificación corría forzada cada 2 h. forzar queda para
+pruebas manuales.
 """
 
 import logging
@@ -18,7 +26,7 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-RITMO_HORAS = 2
+RITMO_HORAS = 4
 
 
 def _ultima_resolucion_ts(conn: sqlite3.Connection) -> Optional[float]:
@@ -41,7 +49,7 @@ def verificar_juez(
 ) -> Dict[str, Any]:
     """Pasa el Juez: resuelve pendientes vivas contra USGS (verdad por fila).
 
-    forzar=True ignora el ritmo de 2 h (vigilante / prueba manual).
+    forzar=True ignora el ritmo (prueba manual).
     tracker: AssertivityTracker opcional — se alimenta con los eventos para
     la ganancia de Molchan en vivo.
     """
