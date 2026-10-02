@@ -25,6 +25,9 @@ Layout (heredado de SEED_NODOS, ver seed_nodos.py):
   - Node 0: Observation point (Tlaxcala — asynchronous, does not affect Euler sum)
 """
 
+import math
+from functools import lru_cache
+
 import numpy as np
 
 from sentinel_omega.infrastructure.database.seed_nodos import SEED_NODOS
@@ -82,17 +85,57 @@ MATRIZ_UVG_125 = _generar_matriz_125()
 NODOS_POR_ID = {n["id"]: n for n in MATRIZ_UVG_125}
 
 
-def nodo_mas_cercano(lat: float, lon: float) -> dict:
-    """Find the nearest UVG node to given coordinates. O(n) in-memory lookup.
+# Coordenadas de los 125 nodos en radianes, una sola vez. El haversine se
+# evalúa vectorizado sobre los 125 de golpe: `nodo_mas_cercano` se llama
+# cientos de miles de veces en un backcast, y un bucle de Python con trig por
+# nodo multiplicaría el coste del rebuild.
+_LAT_RAD = np.radians(np.array([n["lat"] for n in MATRIZ_UVG_125], dtype=float))
+_LON_RAD = np.radians(np.array([n["lon"] for n in MATRIZ_UVG_125], dtype=float))
+_COS_LAT = np.cos(_LAT_RAD)
 
-    NOTA: sigue usando distancia euclidiana en grados (no haversine) por
-    consistencia con el comportamiento previo del sistema en produccion;
-    no se cambia la metrica de distancia en este parche, solo la fuente
-    de coordenadas. Si se requiere precisión geodésica real (relevante
-    cerca de los polos o para distancias largas), evaluar migrar a
-    haversine en un parche separado.
+def distancias_a_nodos(lat: float, lon: float) -> "np.ndarray":
+    """Distancia haversine en km desde (lat, lon) a cada uno de los 125 nodos.
+
+    Reutiliza `RADIO_TERRESTRE_KM`, que ya existía en este módulo: dos radios
+    distintos en el mismo archivo son una contradicción esperando a confundir.
     """
-    return min(
-        MATRIZ_UVG_125,
-        key=lambda n: (lat - n["lat"]) ** 2 + (lon - n["lon"]) ** 2,
-    )
+    p = math.radians(float(lat))
+    dphi = _LAT_RAD - p
+    dlam = _LON_RAD - math.radians(float(lon))
+    h = (np.sin(dphi / 2.0) ** 2
+         + math.cos(p) * _COS_LAT * np.sin(dlam / 2.0) ** 2)
+    return 2.0 * RADIO_TERRESTRE_KM * np.arcsin(np.sqrt(h))
+
+
+@lru_cache(maxsize=65536)
+def _indice_mas_cercano(lat: float, lon: float) -> int:
+    return int(np.argmin(distancias_a_nodos(lat, lon)))
+
+
+def nodo_mas_cercano(lat: float, lon: float) -> dict:
+    """El nodo UVG más cercano a unas coordenadas, por distancia HAVERSINE.
+
+    Usaba `(lat-n.lat)**2 + (lon-n.lon)**2` --- euclidiana en GRADOS --- y su
+    propio docstring reconocía la deuda: «si se requiere precisión geodésica
+    real, evaluar migrar a haversine en un parche separado». Este es ese parche.
+
+    Por qué no era un detalle: un grado de longitud mide 111 km en el ecuador y
+    se encoge con el coseno de la latitud, así que la euclidiana sobrepondera
+    las diferencias de longitud y elige mal cuanto más lejos del ecuador.
+    Medido el 2026-10-01 sobre los 4.378 sismos de `TBL_HISTORICO_SISMICO`:
+
+        mapean a nodo DISTINTO     352  (8,0 %)
+        exceso de distancia        mediana 270 km · p90 724 km · max 2.359 km
+
+    El peor caso es un M4.6 en (-53,21 · 23,50): la euclidiana lo asignaba a
+    «Ghost East Africa Rift» a 5.700 km teniendo «Ghost Scotia Arc» a 3.341 km.
+
+    Va necesariamente CON un rebuild: `entrenamiento.py` y `backcast.py` mapean
+    cada evento a su nodo al extraer la firma, así que cambiar la métrica sin
+    reconstruir deja las firmas viejas colgadas de un nodo y las nuevas de otro.
+
+    Ojo con lo que esto NO arregla: la malla no tiene nodos polares, así que
+    incluso el haversine deja 3.341 km al más cercano en el Océano Austral. La
+    métrica ya es correcta; la cobertura sigue siendo gruesa.
+    """
+    return MATRIZ_UVG_125[_indice_mas_cercano(float(lat), float(lon))]
