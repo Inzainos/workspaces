@@ -253,12 +253,56 @@ def compute_temporal_coverage(
     }
 
 
+# Medio ancho de la caja que se dibuja alrededor de cada nodo de la malla, en
+# grados. 0,75 da cajas de 1,5° × 1,5°, del mismo tamaño que las diez escritas
+# a mano abajo --- lo bastante grandes para que un gránulo de Sentinel las cruce
+# y lo bastante chicas para que el filtro por caja signifique algo (el gránulo
+# de SLSTR cubre ~1.400 km y la mayoría de sus fuegos no son de la zona).
+ANCHO_ZONA_GRADOS = 0.75
+
+
+def zonas_de_la_malla() -> Dict[str, Tuple[float, float, float, float]]:
+    """Una caja por cada nodo REAL de la malla UVG-125. El alcance es global.
+
+    Las diez zonas escritas a mano cubrían siete cajas mexicanas y tres
+    internacionales, y el ciclo solo pedía TRES por defecto
+    (`guerrero_gap`, `oaxaca_costa`, `chiapas`) --- mientras el Juez calificaba
+    a alfa2 contra el catálogo mundial. Los 50 nodos `tipo='real'` ya son la
+    referencia global del sistema: latitudes -41 a 65, longitudes -175 a 174,
+    21 regiones distintas.
+
+    No incluye los `ghost` ni los `geobattery`: son nodos inferidos, no sitios
+    con sensores que mirar. Tampoco el nodo 0, que es el punto de observación.
+    """
+    from sentinel_omega.core.shared.geometria_uvg import MATRIZ_UVG_125
+
+    fuera: Dict[str, Tuple[float, float, float, float]] = {}
+    a = ANCHO_ZONA_GRADOS
+    for n in MATRIZ_UVG_125:
+        if n.get("tipo") != "real":
+            continue
+        lat, lon = float(n["lat"]), float(n["lon"])
+        fuera[f"nodo{int(n['id']):03d}"] = (lon - a, lat - a, lon + a, lat + a)
+    return fuera
+
+
 def get_seismic_zone_bboxes() -> Dict[str, Tuple[float, float, float, float]]:
+    """Cajas de monitoreo por nombre: las diez históricas + los 50 nodos.
+
+    Todo lo que resuelve una zona por nombre pasa por aquí ---  la cobertura
+    temporal de alfa2 y el FRP (`esa_frp._bbox_de`) ---, así que añadir la
+    malla aquí vuelve global a los dos de una sola vez.
+
+    Las diez históricas se CONSERVAN: hay detecciones guardadas que las
+    referencian (`tbl_frp_detecciones` tiene 'guerrero_gap' y 'chiapas'), y
+    borrarlas dejaría esas filas sin caja que las explique.
     """
-    Pre-defined bounding boxes for key seismic monitoring zones.
-    Aligned with dim_nodos_uvg from SENTINEL_OMEGA_PRO.db.
-    """
-    return {
+    cajas = dict(_ZONAS_HISTORICAS)
+    cajas.update(zonas_de_la_malla())
+    return cajas
+
+
+_ZONAS_HISTORICAS: Dict[str, Tuple[float, float, float, float]] = {
         "guerrero_gap": (-100.5, 16.0, -98.5, 17.5),
         "oaxaca_costa": (-97.5, 15.5, -96.5, 16.5),
         "baja_falla": (-117.5, 32.0, -116.5, 33.0),

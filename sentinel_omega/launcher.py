@@ -920,39 +920,53 @@ def _build_live_features(runner, conn=None) -> dict:
 
     # ── alfa2: cobertura satelital ────────────────────────────────
     alfa2_data = getattr(runner, "_last_alfa2_data", None)
+    # El agregado sale de TODAS las zonas medidas, no solo de las tres que le
+    # tocaron a este ciclo (2026-10-02). Antes el rasgo describía tres cajas
+    # mexicanas mientras el Juez calificaba a alfa2 contra el catálogo mundial;
+    # ahora describe el barrido global que la rotación mantiene al día.
+    # `agregado_global` devuelve None si todavía no hay ninguna lectura ---
+    # faltante es faltante ---, y entonces se cae al cálculo del propio ciclo.
+    from sentinel_omega.core.alfa2_zonas import agregado_global, puntaje_zona
+    glob = agregado_global(conn) if conn is not None else None
+    if glob:
+        features["satellite_coverage_score"] = glob["satellite_coverage_score"]
+        features["satellite_clear_passes"] = glob["satellite_clear_passes"]
+        logger.info("Alfa-2 cobertura GLOBAL: %d zonas medidas, puntaje %.4f, "
+                    "%d pasadas limpias", glob["zonas"],
+                    glob["satellite_coverage_score"],
+                    int(glob["satellite_clear_passes"]))
     if alfa2_data and alfa2_data.get("zone_coverages"):
         scores = []
         clear_total = 0
-        total_passes = 0
         for zona, cov in alfa2_data["zone_coverages"].items():
             cloud_covers = cov.get("s2_cloud_covers", [])
-            clear_p = sum(1 for cc in cloud_covers if cc < 20.0)
-            total_p = cov.get("total_passes", 0)
-            revisit = cov.get("mean_revisit_days", 0.0)
-            score = min(total_p / 8.0, 1.0) * 0.4
-            score += (clear_p / max(len(cloud_covers), 1)) * 0.3
-            score += max(0, 1.0 - revisit / 12.0) * 0.3
-            scores.append(score)
+            clear_p = sum(1 for cc in cloud_covers if cc is not None and cc < 20.0)
+            scores.append(puntaje_zona(
+                cov.get("total_passes", 0), clear_p, len(cloud_covers),
+                cov.get("mean_revisit_days", 0.0)))
             clear_total += clear_p
-            total_passes += total_p
-        if scores:
+        # Respaldo: solo si la rotación todavía no ha dejado ninguna lectura
+        # en la tabla (primer arranque, o base no disponible).
+        if scores and not glob:
             features["satellite_coverage_score"] = round(float(np.mean(scores)), 4)
             features["satellite_clear_passes"] = float(clear_total)
-            # La anomalía térmica solo entra si SE MIDIÓ.
-            #
-            # Medido el 2026-09-26: `fetch_alfa2_data` devolvía
-            # `"thermal_anomaly_count": 0` LITERAL, y de las 2.817 filas del
-            # histórico la columna tenía **un solo valor distinto: 0**. El bot
-            # que se llama «Satellite Thermal Anomaly Detection» nunca había
-            # medido una anomalía térmica: el cero era un marcador de posición
-            # que el entrenamiento leía como «aquí nunca pasa nada».
-            #
-            # Cero es un valor medido; faltante es faltante. Mientras el conteo
-            # no venga de un producto real (`api/esa_frp.py`, S3_SLSTR_L2FRP),
-            # la clave NO se escribe y `vector_para` la deja fuera.
-            anomalias = alfa2_data.get("thermal_anomaly_count")
-            if anomalias is not None:
-                features["satellite_thermal_anomalies"] = float(anomalias)
+        # La anomalía térmica solo entra si SE MIDIÓ, y va FUERA del respaldo:
+        # es un conteo del ciclo, independiente de que el puntaje venga del
+        # agregado global o de las zonas de esta vuelta. Estuvo anidada dentro
+        # del `if` del puntaje al hacer global la cobertura, lo que la habría
+        # dejado sin escribir en cuanto la rotación empezara a funcionar.
+        #
+        # Medido el 2026-09-26: `fetch_alfa2_data` devolvía
+        # `"thermal_anomaly_count": 0` LITERAL, y de las 2.817 filas del
+        # histórico la columna tenía **un solo valor distinto: 0**. El bot que
+        # se llama «Satellite Thermal Anomaly Detection» nunca había medido una
+        # anomalía térmica: el cero era un marcador de posición que el
+        # entrenamiento leía como «aquí nunca pasa nada».
+        #
+        # Cero es un valor medido; faltante es faltante.
+        anomalias = alfa2_data.get("thermal_anomaly_count")
+        if anomalias is not None:
+            features["satellite_thermal_anomalies"] = float(anomalias)
 
     # ── beta2: marea terrestre ────────────────────────────────────
     # El tirón de la Luna y el Sol, por efemérides. Es la única fuente del

@@ -645,7 +645,36 @@ class GeodynamicLayerRunner:
 
         if self._enable_satellite and self.alfa2:
             try:
-                alfa2_data = self.pipeline.fetch_alfa2_data()
+                # Cobertura GLOBAL por rotación (2026-10-02). Antes se pedían
+                # tres cajas mexicanas fijas mientras el Juez calificaba a
+                # alfa2 contra el catálogo mundial. Pedir los 50 nodos de la
+                # malla cada ciclo es imposible --- medido, ~20 s por zona:
+                # 1.000 s para un ciclo de 190 ---, así que cada vuelta mide
+                # las tres MÁS ANTIGUAS y los rasgos se agregan sobre la última
+                # lectura de todas. Barrido completo en ~17 ciclos, menos de
+                # una hora, al mismo coste por ciclo que antes.
+                from sentinel_omega.core.alfa2_zonas import (
+                    guardar_cobertura, zonas_a_medir,
+                )
+                try:
+                    conn_z = self._get_repo()._conn
+                except Exception:  # noqa: BLE001 — sin base, zonas por defecto
+                    conn_z = None
+                zonas = zonas_a_medir(conn_z)
+                logger.info("Alfa-2: midiendo %d zonas de la rotación: %s",
+                            len(zonas), ", ".join(zonas))
+                alfa2_data = self.pipeline.fetch_alfa2_data(zones=zonas)
+                if conn_z is not None:
+                    from sentinel_omega.infrastructure.api.esa_sentinel import (
+                        get_seismic_zone_bboxes,
+                    )
+                    cajas = get_seismic_zone_bboxes()
+                    for zona, cov in (alfa2_data.get("zone_coverages") or {}).items():
+                        b = cajas.get(zona)
+                        guardar_cobertura(
+                            conn_z, zona, cov,
+                            lat=(b[1] + b[3]) / 2 if b else None,
+                            lon=(b[0] + b[2]) / 2 if b else None)
                 self.alfa2.ingest(alfa2_data)
                 signals.append(self.alfa2.analyze())
                 self._last_alfa2_data = alfa2_data
