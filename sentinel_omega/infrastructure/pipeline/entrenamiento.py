@@ -50,6 +50,12 @@ from sentinel_omega.core.juez.juez import Juez
 # nadie.
 ESPERA_CANDADO_S = 120
 
+# Las conexiones de lote salen de aqui: ademas del `busy_timeout`, ponen
+# `synchronous=NORMAL`. El commit con fsync era el 73 % de la Fase 2 (medido
+# el 2026-10-02: 13.571 commits = 207,6 s de 286,1 s). Ver el docstring de
+# `conexion_de_lote` para la medicion completa y lo que se canjea.
+from sentinel_omega.infrastructure.database.schema import conexion_de_lote
+
 logger = logging.getLogger(__name__)
 
 # Los bots OBSERVAN todas las magnitudes (hasta el mínimo movimiento es un
@@ -422,7 +428,7 @@ def entrenar_reconocimiento(
     bots: restrict registration to these bots (e.g. ["beta2", "delta"] for
     an incremental training pass without inflating other bots' recurrence).
     """
-    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
+    conn = conexion_de_lote(db_path)
     memoria = FirmaMemoria(conn)
     juez = Juez(conn)
     bots_activos = {
@@ -554,7 +560,7 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
     The adjusted weights persist in TBL_PESOS_BOTS and the Padre uses them
     to weigh each bot's vote in live consensus.
     """
-    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
+    conn = conexion_de_lote(db_path)
     memoria = FirmaMemoria(conn)
     juez = Juez(conn)
 
@@ -719,7 +725,7 @@ def backtest_disciplinario(db_path: str, bots: Optional[List[str]] = None) -> Di
 
 def ultimo_bloque_aprendido(db_path: str) -> Optional[str]:
     """El bloque más reciente que YA produjo firma. None si no hay ninguno."""
-    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
+    conn = conexion_de_lote(db_path)
     try:
         fila = conn.execute("SELECT MAX(ts_evento) FROM tbl_firma_eventos").fetchone()
         return fila[0] if fila else None
@@ -942,7 +948,7 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
     from datetime import datetime as _dt, timedelta as _td
     from sentinel_omega.core.firmas.signature_engine import similitud
 
-    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
+    conn = conexion_de_lote(db_path)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_lag_anticipacion ("
         "event_class TEXT PRIMARY KEY, lag_promedio_h REAL, lag_max_h REAL, "
@@ -1036,7 +1042,7 @@ def analizar_factores_lag(db_path: str) -> Dict:
     earlier — persisted to tbl_factores_lag for the report and, in time,
     for predicting a match's expected delay from its own features.
     """
-    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
+    conn = conexion_de_lote(db_path)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_factores_lag ("
         "feature TEXT PRIMARY KEY, media_rapidas REAL, media_lentas REAL, "
@@ -1125,7 +1131,7 @@ def entrenar_reconocimiento_no_sismico(
     atmospheric (Beta-2) patterns that precede these events too, enabling
     the correlation heatmap to reveal cross-domain relationships.
     """
-    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
+    conn = conexion_de_lote(db_path)
 
     # Derive if table is absent or empty
     n_previos = 0
@@ -1207,7 +1213,7 @@ def calcular_correlaciones_evento(db_path: str) -> Dict:
     the report generator to render the correlation heatmap. Re-running is safe
     (INSERT OR REPLACE).
     """
-    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
+    conn = conexion_de_lote(db_path)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tbl_patrones_correlacion "
         "(event_class TEXT NOT NULL, feature TEXT NOT NULL, "
@@ -1340,7 +1346,7 @@ def disciplina_trasfondo(db_path: str, anio: Optional[int] = None,
 
     import time as _time
 
-    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
+    conn = conexion_de_lote(db_path)
     juez = Juez(conn)
     if not dry_run:
         conn.execute(

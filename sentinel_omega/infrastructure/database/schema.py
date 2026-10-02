@@ -76,6 +76,75 @@ def _con_espera(conn: sqlite3.Connection) -> sqlite3.Connection:
     return conn
 
 
+# Los PRAGMA de runtime que el esquema expandido ya pone en `get_connection`.
+# Se repiten aquí porque los lotes NO pasan por ahí: abrir `get_connection` en
+# cada función de lote reejecutaría las migraciones DDL en cada llamada, que es
+# justo lo que el envoltorio resiliente de más abajo intenta evitar.
+#
+# Que estén en DOS sitios es una duplicación real, y la fija
+# `tests/test_conexion_de_lote.py` comparando una conexión de lote contra una
+# viva: si alguien cambia uno y no el otro, falla.
+PRAGMAS_RUNTIME = (
+    "PRAGMA journal_mode=WAL",
+    "PRAGMA synchronous=NORMAL",
+    "PRAGMA cache_size=-8000",
+    "PRAGMA temp_store=MEMORY",
+)
+
+
+def conexion_de_lote(db_path: str) -> sqlite3.Connection:
+    """Conexión para TAREAS DE LOTE, con la MISMA política que la ruta viva.
+
+    Lo que estaba roto (medido el 2026-10-02, perfilando la Fase 2)
+    ---------------------------------------------------------------
+    `entrenamiento.py` y `mantenimiento.py` abrían `sqlite3.connect(db_path,
+    timeout=...)` a pelo, así que **se saltaban los PRAGMA del esquema** y
+    heredaban los de SQLite por defecto. El que dolía:
+
+        sqlite3.connect pelado      synchronous = 2  (FULL)
+        get_connection (ruta viva)  synchronous = 1  (NORMAL, desde siempre)
+
+    O sea: no era un canje de durabilidad que hiciera falta decidir. Los lotes
+    eran accidentalmente **más** durables que el ciclo vivo, y lo pagaban con
+    un `fsync` por commit.
+
+    Lo que costaba, medido en esta máquina:
+
+        synchronous=FULL     6,83 ms/commit
+        synchronous=NORMAL   0,04 ms/commit     --- 170x
+
+    Y los commits no son pocos. Perfil de la Fase 2:
+
+        13.571 commits  =  207,6 s de 286,1 s  =  **73 %** del total
+        4.523 evaluaciones -> 3,0 commits cada una
+
+    Tres por evaluación, uno en cada sitio y los tres correctos ahí:
+    `juez.registrar_prediccion`, `juez.evaluar_pendientes`, `pesos._ajustar`.
+    Para las 140.613 evaluaciones de una Fase 2 completa son **~420.000 fsync**
+    --- 48 minutos de puro disco.
+
+    Por qué la misma tarea tardaba 14, >110 y 38 minutos
+    ----------------------------------------------------
+    Porque la latencia del `fsync` es lo que varía con la carga del disco: el
+    dashboard leyendo 1,6 MB/s con nueve cerrojos abiertos, el `clamscan` del
+    watchdog cada hora en punto. El trabajo era idéntico (140.800 contra
+    140.613 evaluaciones, 0,1 %). Se descartaron por medición la E/S del
+    proceso, la competencia de CPU y las estadísticas rancias de `sqlite_stat1`
+    --- el plan de `Juez.reincidencia` seguía siendo el correcto y tardaba
+    0,03 ms. Era el disco, dentro del commit.
+
+    A/B con el código real sobre la misma copia limpia: **286,1 s -> 74,1 s**.
+    """
+    conn = sqlite3.connect(db_path, timeout=ESPERA_CANDADO_S)
+    _con_espera(conn)
+    for pragma in PRAGMAS_RUNTIME:
+        try:
+            conn.execute(pragma)
+        except sqlite3.Error as exc:  # noqa: BLE001 — el lote corre igual
+            logger.warning("No se pudo aplicar %s: %s", pragma, exc)
+    return conn
+
+
 def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     """Get DB connection with lock-tolerant fallback.
 
