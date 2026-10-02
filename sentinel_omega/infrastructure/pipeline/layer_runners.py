@@ -290,7 +290,7 @@ class GeodynamicLayerRunner:
             # transitorio de fuente, no solo del Kp.
             cols = ("bz_promedio", "bz_derivada", "bz_min", "bz_max",
                     "viento_solar_avg", "viento_solar_max", "kp_max",
-                    "kp_promedio", "proton_flux_10mev")
+                    "kp_promedio", "proton_flux_10mev", "densidad_protones")
             repo._executemany(
                 "INSERT INTO tbl_clima_espacial_raw "
                 "(timestamp_blk, " + ", ".join(cols) + ") "

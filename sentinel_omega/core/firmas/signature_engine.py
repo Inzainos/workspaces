@@ -32,7 +32,19 @@ FEATURE_KEYS = [
     "bz_mean", "bz_min", "bz_deriv_std",
     "viento_avg", "viento_max",
     "kp_mean", "kp_max",
+    # `proton_max` es el FLUJO >10 MeV, y está muerto en los dos lados: OMNI2
+    # publica sus columnas 42-47 todas en centinela y NOAA solo sirve 6 h, así
+    # que la tabla lo tiene en 178 de 286.932 horas (0,062 %). Se conserva
+    # porque el ciclo vivo SÍ lo mide y la historia se acumula desde el
+    # 2026-09-24; no está en el vector de ningún modelo.
     "proton_max",
+    # DENSIDAD de protones — otra magnitud, y ésta sí tiene treinta años.
+    # OMNI2 col 23: 97,7 % de cobertura, mediana 5,70 n/cc, cero negativos
+    # (medido contra omni2_2024.dat el 2026-10-02). En vivo la baja
+    # `fetch_solar_wind()` y llega hasta `omni_dataframe`; lo único que faltaba
+    # era leerla. Ocupa las dos posiciones que el flujo repetía como relleno en
+    # el vector de alfa1, así que entra sin cambiar dimensiones.
+    "densidad_prot_mean", "densidad_prot_max",
     "schumann_mean", "schumann_std",
     "sismo_count_win", "sismo_max_mag_win",
     "fase_lunar", "es_sicigia", "lod", "vix",
@@ -132,10 +144,16 @@ def extraer_features_ventana(
     Reads the backcast tables (1H blocks). Returns None when the window has
     no space-weather coverage at all (nothing real to learn from).
     """
+    # `densidad_protones` se añadió el 2026-10-02 y puede faltar en un esquema
+    # viejo: se pide solo si existe, igual que el resto de las lecturas
+    # defensivas de este módulo.
+    hay_densidad = _tiene_columna(conn, "tbl_clima_espacial_raw",
+                                  "densidad_protones")
     q_win = (
         "SELECT bz_promedio, bz_min, bz_derivada, viento_solar_avg, "
-        "viento_solar_max, kp_promedio, kp_max, proton_flux_10mev "
-        "FROM tbl_clima_espacial_raw "
+        "viento_solar_max, kp_promedio, kp_max, proton_flux_10mev"
+        + (", densidad_protones " if hay_densidad else " ")
+        + "FROM tbl_clima_espacial_raw "
         "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?) "
         "ORDER BY timestamp_blk"
     )
@@ -169,6 +187,14 @@ def extraer_features_ventana(
     protones = _stats(list(cols[7]))
     if protones:
         features["proton_max"] = protones[2]
+    if hay_densidad and len(cols) > 8:
+        # Media Y máximo: el nivel de densidad y su pico dicen cosas distintas
+        # --- una corriente rápida comprime el plasma antes de llegar ---, y son
+        # las dos posiciones que el flujo repetido ocupaba sin dato.
+        densidad = _stats(list(cols[8]))
+        if densidad:
+            features["densidad_prot_mean"] = densidad[0]
+            features["densidad_prot_max"] = densidad[2]
 
     if not features:
         return None

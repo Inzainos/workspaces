@@ -199,6 +199,11 @@ def test_el_ciclo_guarda_todos_los_rasgos_de_alfa1():
         "plasma_speed": [400.0, 600.0, 500.0],
         "proton_flux_10mev": [1.0, 4.0, 2.0],
         "kp_index": [3.0, 5.0, 4.0],
+        # `proton_density` entró al vector de alfa1 el 2026-10-02 en lugar de
+        # `proton_max`, que ocupaba dos posiciones sin dato. La trae
+        # `fetch_solar_wind()` y el `omni_dataframe` la lleva de verdad ---
+        # verificado en vivo: 1.399 valores, mediana 3,58 n/cc.
+        "proton_density": [4.0, 7.0, 5.0],
     })
 
     class _Pipeline:

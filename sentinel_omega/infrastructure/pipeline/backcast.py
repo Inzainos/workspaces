@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS tbl_clima_espacial_raw (
     viento_solar_max REAL,
     kp_max          REAL,
     kp_promedio     REAL,
-    proton_flux_10mev REAL
+    proton_flux_10mev REAL,
+    densidad_protones REAL
 );
 
 CREATE TABLE IF NOT EXISTS tbl_astronomia_cinematica (
@@ -109,8 +110,37 @@ def _get_db_path() -> str:
     return str(Path(__file__).parent.parent.parent / "data" / "SENTINEL_OMEGA_PRO.db")
 
 
+# Columnas añadidas DESPUÉS de que la tabla existiera en producción. El
+# `CREATE TABLE IF NOT EXISTS` no las añade a una tabla ya creada, y el DDL
+# canónico vive comprimido en `database/schema_parts/*.b64`, así que la vía
+# forward-only aquí es el mismo patrón que usa `core/schumann_vivo.py`:
+# comprobar `PRAGMA table_info` y hacer `ALTER TABLE ADD COLUMN` si falta.
+# Regla dura 5: no se borra ninguna, solo se añaden.
+_COLUMNAS_NUEVAS = {
+    "tbl_clima_espacial_raw": [("densidad_protones", "REAL")],
+}
+
+
+def asegurar_columnas(conn: sqlite3.Connection) -> None:
+    """Añade las columnas nuevas a tablas que ya existían. Idempotente."""
+    for tabla, columnas in _COLUMNAS_NUEVAS.items():
+        try:
+            existentes = {r[1] for r in conn.execute(
+                f"PRAGMA table_info({tabla})").fetchall()}
+        except sqlite3.Error:
+            continue
+        if not existentes:          # la tabla no existe todavía: el DDL la crea
+            continue
+        for nombre, tipo in columnas:
+            if nombre not in existentes:
+                conn.execute(
+                    f"ALTER TABLE {tabla} ADD COLUMN {nombre} {tipo}")
+                logger.info("Columna añadida: %s.%s %s", tabla, nombre, tipo)
+
+
 def _init_backcast_tables(conn: sqlite3.Connection):
     conn.executescript(BACKCAST_SCHEMA)
+    asegurar_columnas(conn)
     conn.commit()
 
 
@@ -182,7 +212,24 @@ def extraer_nasa_omni_real(year: int) -> pd.DataFrame:
         #                      protones (que no puede ser negativo)
         #   df[42..47]         flujos de protones: HOY SON TODO CENTINELA
         #                      en OMNI2; no hay dato que extraer.
-        CO_BZ_GSM, CO_VELOCIDAD, CO_KP10 = 16, 24, 38
+        #
+        # df[23] DENSIDAD DE PROTONES — añadida el 2026-10-02. El operador
+        # recordó que «la densidad de protones la traíamos de una API de la
+        # NASA», y la bitácora del 20-sep lo confirma: `fetch_solar_wind()` sí
+        # baja `proton_density`, pero `fetch_alfa1_data` solo renombra
+        # `proton_speed → plasma_speed` y la densidad nunca se leyó como rasgo.
+        # El arreglo de ese día cableó el FLUJO >10 MeV, que es otra magnitud y
+        # está muerta en los dos lados; la densidad está viva en los dos.
+        #
+        # Verificado contra omni2_2024.dat, no contra el manual (regla dura 9):
+        #
+        #   col 23  min 0,40  max 999,90  MEDIANA 5,80  centinela 2,3 %  neg 0 %
+        #   col 24  min 256   max 9999    mediana 387   centinela 2,3 %  neg 0 %
+        #
+        # Mediana 5,80 n/cc y cero negativos es densidad de viento solar de
+        # libro, y comparte el 2,3 % de huecos con la velocidad porque salen
+        # del mismo instrumento de plasma. Centinela documentado: 999.9.
+        CO_BZ_GSM, CO_VELOCIDAD, CO_KP10, CO_DENSIDAD = 16, 24, 38, 23
 
         # Centinelas reales observados en el archivo, no del manual.
         df["bz_promed"] = df[CO_BZ_GSM].where(
@@ -196,10 +243,14 @@ def extraer_nasa_omni_real(year: int) -> pd.DataFrame:
         # centinela). Antes se tomaba DST en su lugar. Cero sintético: queda
         # NULL y lo alimenta GOES por la vía viva (fetch_proton_flux).
         df["p_flux"] = np.nan
+        # Densidad: el centinela es 999.9 y los valores reales no pasan de ~100
+        # n/cc, así que el corte en 999.0 no puede comerse un dato bueno.
+        df["p_density"] = pd.to_numeric(
+            df[CO_DENSIDAD], errors="coerce").where(
+            lambda s: s < 999.0, np.nan)
 
-        return df[["fecha", "bz_promed", "sw_speed", "p_flux", "kp_val"]].dropna(
-            subset=["fecha"]
-        )
+        return df[["fecha", "bz_promed", "sw_speed", "p_flux", "kp_val",
+                   "p_density"]].dropna(subset=["fecha"])
     except Exception as e:
         logger.error(f"NASA OMNI fetch failed for {year}: {e}")
         return pd.DataFrame()
@@ -423,6 +474,7 @@ def ejecutar_bloque_anual(
             kp_max=("kp_val", "max"),
             kp_promedio=("kp_val", "mean"),
             proton_flux_10mev=("p_flux", "max"),
+            densidad_protones=("p_density", "mean"),
         ).reset_index()
         agg_omni.rename(columns={"fecha": "fecha"}, inplace=True)
         # Sin fillna(0.0): la derivada de la primera hora, o la que sigue a un
@@ -442,6 +494,7 @@ def ejecutar_bloque_anual(
             "bz_promedio", "bz_derivada", "bz_min", "bz_max",
             "viento_solar_avg", "viento_solar_max",
             "kp_max", "kp_promedio", "proton_flux_10mev",
+            "densidad_protones",
         ]:
             master_df[col] = None
 
@@ -451,11 +504,28 @@ def ejecutar_bloque_anual(
     try:
         for _, row in master_df.iterrows():
             cursor.execute(
-                """INSERT OR IGNORE INTO tbl_clima_espacial_raw
+                # UPSERT que RELLENA, no `INSERT OR IGNORE`: el mismo arreglo
+                # que `layer_runners._persist_clima` (2026-10-01). Sin esto, un
+                # re-backcast sobre filas existentes --- que es justo lo que
+                # hace falta para poblar `densidad_protones` en 32 años de
+                # historia ya cargada --- se descartaría entero por tener la
+                # clave. `COALESCE` no pisa ningún valor ya medido.
+                """INSERT INTO tbl_clima_espacial_raw
                    (timestamp_blk, bz_promedio, bz_derivada, bz_min, bz_max,
                     viento_solar_avg, viento_solar_max, kp_max, kp_promedio,
-                    proton_flux_10mev)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    proton_flux_10mev, densidad_protones)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(timestamp_blk) DO UPDATE SET
+                     bz_promedio      = COALESCE(bz_promedio, excluded.bz_promedio),
+                     bz_derivada      = COALESCE(bz_derivada, excluded.bz_derivada),
+                     bz_min           = COALESCE(bz_min, excluded.bz_min),
+                     bz_max           = COALESCE(bz_max, excluded.bz_max),
+                     viento_solar_avg = COALESCE(viento_solar_avg, excluded.viento_solar_avg),
+                     viento_solar_max = COALESCE(viento_solar_max, excluded.viento_solar_max),
+                     kp_max           = COALESCE(kp_max, excluded.kp_max),
+                     kp_promedio      = COALESCE(kp_promedio, excluded.kp_promedio),
+                     proton_flux_10mev = COALESCE(proton_flux_10mev, excluded.proton_flux_10mev),
+                     densidad_protones = COALESCE(densidad_protones, excluded.densidad_protones)""",
                 (
                     row["timestamp_blk"],
                     _safe_float(row.get("bz_promedio")),
@@ -467,6 +537,7 @@ def ejecutar_bloque_anual(
                     _safe_float(row.get("kp_max")),
                     _safe_float(row.get("kp_promedio")),
                     _safe_float(row.get("proton_flux_10mev")),
+                    _safe_float(row.get("densidad_protones")),
                 ),
             )
 

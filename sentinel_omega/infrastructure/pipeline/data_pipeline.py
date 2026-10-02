@@ -207,6 +207,12 @@ class GeodynamicPipeline:
             if "plasma_speed" in o.columns:
                 agg["viento_solar_avg"] = ("plasma_speed", "mean")
                 agg["viento_solar_max"] = ("plasma_speed", "max")
+            # Densidad de protones: `fetch_solar_wind()` la baja y el rename de
+            # arriba solo toca `proton_speed`, así que llega intacta hasta aquí.
+            # Se persistía NUNCA --- no había columna --- y por eso el rasgo
+            # vivía solo en el aire. Media por hora, igual que el backcast.
+            if "proton_density" in o.columns:
+                agg["densidad_protones"] = ("proton_density", "mean")
             if not agg:
                 return []
             h = o.resample("1h").agg(**agg)
@@ -234,7 +240,7 @@ class GeodynamicPipeline:
 
             cols = ["bz_promedio", "bz_derivada", "bz_min", "bz_max",
                     "viento_solar_avg", "viento_solar_max", "kp_max",
-                    "kp_promedio", "proton_flux_10mev"]
+                    "kp_promedio", "proton_flux_10mev", "densidad_protones"]
             filas = []
             for ts, row in h.iterrows():
                 vals = [None if c not in h.columns or _pd.isna(row.get(c))

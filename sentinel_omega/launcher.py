@@ -784,8 +784,23 @@ def _build_live_features(runner, conn=None) -> dict:
             ).fetchone()
             if fila and fila[0] is not None:
                 features["kp_max_72h"] = float(fila[0])
+            # Densidad de protones, MISMA ventana que la firma (336 h) y misma
+            # tabla. El valor instantáneo de `fetch_solar_wind()` NO sirve aquí
+            # por la regla de este archivo: la firma calcula media y máximo
+            # sobre la ventana, así que preguntarle al modelo con un instante
+            # es la misma trampa que costó el desajuste del Kp.
+            fila = conn.execute(
+                "SELECT AVG(densidad_protones), MAX(densidad_protones) "
+                "FROM tbl_clima_espacial_raw "
+                "WHERE timestamp_blk >= datetime('now','-336 hours')"
+            ).fetchone()
+            if fila and fila[0] is not None:
+                features["densidad_prot_mean"] = float(fila[0])
+            if fila and fila[1] is not None:
+                features["densidad_prot_max"] = float(fila[1])
         except Exception as e:  # noqa: BLE001 — el ciclo sigue sin los rasgos
-            logger.warning("Kp por ventana no disponible (%s): queda sin dato", e)
+            logger.warning("Kp/densidad por ventana no disponible (%s): "
+                           "quedan sin dato", e)
     if "schumann_frequency" in beta1:
         features["schumann_mean"] = float(beta1["schumann_frequency"])
     # La dispersión de Schumann: el modelo la pide y nadie la calculaba.

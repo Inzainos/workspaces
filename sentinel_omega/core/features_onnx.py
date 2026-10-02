@@ -57,8 +57,25 @@ BOT_DIMS: Dict[str, int] = {
 # guerrero_gap, FRP 5,68 MW. Una fila no es material de entrenamiento. El
 # vector de alfa2 cambia cuando haya historia, no antes.
 FEATURE_ORDER: Dict[str, List[str]] = {
+    # alfa1, 2026-10-02: las dos posiciones que repetían `proton_max` ahora
+    # llevan la DENSIDAD de protones, que es la magnitud que sí existe.
+    #
+    # `proton_max` es el flujo >10 MeV: OMNI2 publica sus columnas 42-47 todas
+    # en centinela y NOAA sirve 6 h, así que la tabla lo tenía en **178 de
+    # 286.932 horas (0,062 %)** --- 26 de las 1.483 firmas de alfa1 ---, y el
+    # launcher SÍ lo ponía en vivo. Era el espejo de la fuga de procedencia:
+    # cero constante en el entrenamiento, valor real en producción.
+    #
+    # La densidad (OMNI2 col 23) tiene **97,7 %** de cobertura desde 1994,
+    # mediana 5,70 n/cc, y en vivo la baja `fetch_solar_wind()` y llega hasta
+    # `omni_dataframe` --- solo faltaba leerla. Lo documentaba la bitácora del
+    # 20-sep: «`fetch_solar_wind()` sí baja `proton_speed`/`proton_density`,
+    # pero `fetch_alfa1_data` renombra `proton_speed → plasma_speed`». El
+    # arreglo de ese día cableó el flujo, que es la que no tiene historia.
+    #
+    # La dimensión NO cambia (10): se sustituye relleno por medición.
     "alfa1": [
-        "bz_mean", "viento_avg", "proton_max", "proton_max",
+        "bz_mean", "viento_avg", "densidad_prot_mean", "densidad_prot_max",
         "bz_min", "kp_mean", "kp_max", "bz_deriv_std",
         "viento_max", "bz_mean_72h",
     ],
@@ -170,6 +187,14 @@ _AGREGADOS_OMNI = {
     "plasma_speed": (("viento_avg", "mean"), ("viento_max", "max")),
     "proton_flux_10mev": (("proton_max", "max"),),
     "kp_index": (("kp_mean", "mean"), ("kp_max", "max")),
+    # Densidad de protones: `fetch_solar_wind()` la trae y el `omni_dataframe`
+    # la lleva intacta (el rename de `data_pipeline` solo toca `proton_speed`).
+    # OJO: esta ventana es la del RTSW (~6 h) y la firma usa 336 h, así que
+    # `launcher._build_live_features` la PISA con el agregado de la tabla ---
+    # igual que hace con el Kp. Esto es el respaldo para cuando no hay conexión
+    # a la base, no la vía principal.
+    "proton_density": (("densidad_prot_mean", "mean"),
+                       ("densidad_prot_max", "max")),
 }
 
 

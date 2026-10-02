@@ -40,14 +40,19 @@ CREATE TABLE tbl_clima_espacial_raw (
     viento_solar_max REAL,
     kp_max          REAL,
     kp_promedio     REAL,
-    proton_flux_10mev REAL
+    proton_flux_10mev REAL,
+    densidad_protones REAL
 )
 """
 
-# El orden de `_filas_clima_horarias`: ts + las nueve columnas.
-#            ts      bz_prom bz_der bz_min bz_max v_avg v_max kp_max kp_prom prot
-FILA_SIN_KP = ["2026-09-23 15:00", 5.04, 0.1, 1.0, 9.0, 420.0, 500.0, None, None, None]
-FILA_CON_KP = ["2026-09-23 15:00", 5.04, 0.1, 1.0, 9.0, 420.0, 500.0, 4.0, 2.33, 0.29]
+# El orden de `_filas_clima_horarias`: ts + las DIEZ columnas.
+# `densidad_protones` se añadió el 2026-10-02: es la magnitud que OMNI2 sí
+# publica (col 23, 97,7 % de cobertura) frente al flujo >10 MeV, que está en
+# centinela desde siempre. Entra aquí porque este UPSERT es el que la persiste
+# desde el ciclo vivo.
+#            ts      bz_prom bz_der bz_min bz_max v_avg v_max kp_max kp_prom prot dens
+FILA_SIN_KP = ["2026-09-23 15:00", 5.04, 0.1, 1.0, 9.0, 420.0, 500.0, None, None, None, None]
+FILA_CON_KP = ["2026-09-23 15:00", 5.04, 0.1, 1.0, 9.0, 420.0, 500.0, 4.0, 2.33, 0.29, 6.2]
 
 
 class _RepoFalso:
@@ -86,7 +91,8 @@ def runner_y_base(tmp_path):
 
 def _fila(conn, ts="2026-09-23 15:00"):
     return conn.execute(
-        "SELECT kp_promedio, kp_max, proton_flux_10mev, bz_promedio "
+        "SELECT kp_promedio, kp_max, proton_flux_10mev, bz_promedio, "
+        "densidad_protones "
         "FROM tbl_clima_espacial_raw WHERE timestamp_blk = ?", (ts,)
     ).fetchone()
 
@@ -99,9 +105,10 @@ def test_el_hueco_de_kp_se_rellena_en_el_ciclo_siguiente(runner_y_base):
     assert _fila(conn)[:3] == (None, None, None), "la hora debió entrar sin Kp"
 
     runner._persist_clima({"clima_horas": [list(FILA_CON_KP)]})
-    kp_prom, kp_max, prot, _ = _fila(conn)
+    kp_prom, kp_max, prot, _, dens = _fila(conn)
     assert (kp_prom, kp_max, prot) == (2.33, 4.0, 0.29), (
         "el hueco no se rellenó: el UPSERT volvió a ser un OR IGNORE")
+    assert dens == 6.2, "la densidad de protones no se rellenó"
 
 
 def test_no_se_pisa_un_valor_ya_medido(runner_y_base):
@@ -113,9 +120,10 @@ def test_no_se_pisa_un_valor_ya_medido(runner_y_base):
     otro[8] = 9.99   # kp_promedio distinto
     otro[1] = 111.0  # bz_promedio distinto
     runner._persist_clima({"clima_horas": [otro]})
-    kp_prom, _, _, bz = _fila(conn)
+    kp_prom, _, _, bz, dens = _fila(conn)
     assert kp_prom == 2.33, "pisó el Kp ya medido"
     assert bz == 5.04, "pisó el Bz ya medido"
+    assert dens == 6.2, "pisó la densidad ya medida"
 
 
 def test_un_nulo_posterior_no_borra_un_dato_bueno(runner_y_base):
@@ -124,9 +132,10 @@ def test_un_nulo_posterior_no_borra_un_dato_bueno(runner_y_base):
     runner, conn = runner_y_base
     runner._persist_clima({"clima_horas": [list(FILA_CON_KP)]})
     runner._persist_clima({"clima_horas": [list(FILA_SIN_KP)]})
-    kp_prom, kp_max, prot, _ = _fila(conn)
+    kp_prom, kp_max, prot, _, dens = _fila(conn)
     assert (kp_prom, kp_max, prot) == (2.33, 4.0, 0.29), (
         "un NULL posterior borró dato real")
+    assert dens == 6.2, "un NULL posterior borró la densidad"
 
 
 def test_una_hora_nueva_sigue_entrando(runner_y_base):

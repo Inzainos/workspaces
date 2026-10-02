@@ -95,8 +95,13 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     # `kp_mean` y `kp_max` (cobertura 100 %, no-cero 100 %): estaban en el
     # vector de alfa1 desde siempre y jamás en sus firmas. Son el rasgo que
     # disparó las 44 WATCH del 27-sep.
+    # `proton_max` (flujo >10 MeV) se queda declarado aunque YA NO esté en el
+    # vector ONNX: el ciclo vivo lo mide desde el 2026-09-24 y así la historia
+    # se acumula para el día que haya cobertura. Las dos de densidad son las
+    # que el modelo lee ahora (ver `features_onnx.FEATURE_ORDER["alfa1"]`).
     "alfa1": ["bz_mean", "bz_min", "bz_deriv_std", "viento_avg", "viento_max",
-              "proton_max", "bz_mean_72h", "kp_mean", "kp_max"],
+              "proton_max", "densidad_prot_mean", "densidad_prot_max",
+              "bz_mean_72h", "kp_mean", "kp_max"],
     "beta1": ["kp_mean", "kp_max", "schumann_mean", "schumann_std",
               "sismo_count_win", "sismo_max_mag_win", "fase_lunar",
               "es_sicigia", "kp_max_72h", "sismo_count_72h"],
