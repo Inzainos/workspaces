@@ -79,11 +79,20 @@ FEATURE_ORDER: Dict[str, List[str]] = {
         "bz_min", "kp_mean", "kp_max", "bz_deriv_std",
         "viento_max", "bz_mean_72h",
     ],
+    # alfa2, 2026-10-02: entra `satellite_revisita_dias` --- su CUARTA señal,
+    # la que lo convierte en votante. Ocupa dos de las posiciones que repetían
+    # relleno; quedan 4 rasgos reales en 8 posiciones (antes eran 3).
+    #
+    # La elección se midió, no se supuso: 153 valores distintos y 100 % de
+    # cobertura sobre las 3.231 filas del histórico, más que `coverage_score`
+    # (136). Y no es redundante con el puntaje aunque éste la use: su término
+    # tiene tope en 12 DÍAS y la realidad vive entre 0 y 1,7, así que solo se
+    # mueve de 0,2580 a 0,3000 --- el puntaje aplana el 98,6 % de la señal.
     "alfa2": [
         "satellite_coverage_score", "satellite_thermal_anomalies",
-        "satellite_clear_passes", "satellite_coverage_score",
-        "satellite_clear_passes", "satellite_thermal_anomalies",
-        "satellite_coverage_score", "satellite_thermal_anomalies",
+        "satellite_clear_passes", "satellite_revisita_dias",
+        "satellite_coverage_score", "satellite_clear_passes",
+        "satellite_revisita_dias", "satellite_thermal_anomalies",
     ],
     "beta1": [
         "kp_mean", "kp_max", "schumann_mean", "schumann_std",

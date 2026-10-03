@@ -15,16 +15,40 @@ puede ser castigado por alarmar**. Medido ese día:
 
 Un experto que no opina no aporta al consenso y tampoco se puede corregir.
 """
+from pathlib import Path
+
 import pytest
 
 from sentinel_omega.config.onnx_config import onnx_config
 from sentinel_omega.core.features_onnx import BOT_DIMS, FEATURE_ORDER
 
 
+# alfa2 está APAGADO a propósito desde el 2026-10-02: vota con su REGLA porque
+# su reentreno salía `hybrid real=23 + boot=2500` --- 99 % sintético, y cinco de
+# las ocho columnas del prior llevan otra magnitud que el vector. Ver
+# `tests/test_alfa2_votante.py` y el comentario de `onnx_config.alfa2`.
+#
+# Se declara aquí, y no se afloja la prueba: su CONFIG y su ARCHIVO siguen
+# verificándose como los demás; lo único que no se exige es que se le pregunte.
+APAGADOS_A_PROPOSITO = {"alfa2"}
+
+
 def test_la_config_conoce_los_ocho_modelos():
-    conocidos = set(onnx_config.get_enabled_models())
+    """Los ocho siguen declarados; `get_enabled_models` filtra los apagados."""
+    conocidos = set(onnx_config.get_enabled_models()) | APAGADOS_A_PROPOSITO
     assert conocidos == set(BOT_DIMS), (
         f"faltan en onnx_config: {set(BOT_DIMS) - conocidos}")
+
+
+def test_los_apagados_siguen_declarando_su_dimension():
+    """Apagar no es borrar: si mañana se enciende, su config tiene que seguir
+    cuadrando con el vector o `inferencia_de` lo descartará igual."""
+    for bot in APAGADOS_A_PROPOSITO:
+        cfg = getattr(onnx_config, bot)
+        assert cfg.enabled is False
+        assert cfg.input_features == BOT_DIMS[bot], (
+            f"{bot}: apagado y además con la dimensión mal ({cfg.input_features} "
+            f"contra {BOT_DIMS[bot]})")
 
 
 def test_cada_modelo_declara_las_dimensiones_de_su_vector():
@@ -96,7 +120,27 @@ def test_un_vector_vacio_no_se_pregunta():
     assert senal_desde_rasgos("delta", {"rasgo_que_no_usa": 5.0}) is None
 
 
-def test_los_ocho_modelos_cargan():
+def test_los_modelos_encendidos_cargan():
+    """Los apagados a propósito se excluyen; el resto tiene que cargar, o el
+    bot cae a reglas sin que nadie lo haya decidido."""
     from sentinel_omega.core.onnx_mixin import inferencia_de
-    sin_cargar = [b for b in BOT_DIMS if inferencia_de(b) is None]
+    sin_cargar = [b for b in BOT_DIMS
+                  if b not in APAGADOS_A_PROPOSITO and inferencia_de(b) is None]
     assert not sin_cargar, f"no cargan: {sin_cargar}"
+
+
+def test_el_archivo_del_apagado_sigue_en_disco_y_con_su_dimension():
+    """Lo que la prueba anterior ya no cubre, cubierto aquí: el `.onnx` de un
+    bot apagado existe y declara la dimensión del vector. Así «apagado» no
+    puede tapar «roto»."""
+    import onnxruntime as ort
+
+    from sentinel_omega.core.onnx_mixin import dimension_de_entrada
+
+    for bot in APAGADOS_A_PROPOSITO:
+        cfg = getattr(onnx_config, bot)
+        ruta = Path(onnx_config.models_dir) / cfg.model_path
+        assert ruta.exists(), f"{bot}: falta {ruta.name}"
+        s = ort.InferenceSession(str(ruta), providers=["CPUExecutionProvider"])
+        assert dimension_de_entrada(s) == BOT_DIMS[bot], (
+            f"{bot}: el archivo en disco no cuadra con el vector")

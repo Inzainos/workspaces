@@ -555,6 +555,9 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
     # ── Persistir alfa2 (cobertura satelital) ──────────────────────
     if runner is not None:
         try:
+            from sentinel_omega.core.alfa2_zonas import (
+                puntaje_zona as _puntaje_zona,
+            )
             alfa2_data = getattr(runner, "_last_alfa2_data", None)
             if alfa2_data and alfa2_data.get("zone_coverages"):
                 ts_blk = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:00:00")
@@ -562,16 +565,20 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
                     cloud_covers = cov.get("s2_cloud_covers", [])
                     clear_passes = sum(1 for cc in cloud_covers if cc < 20.0)
                     total = cov.get("total_passes", 0)
-                    s2 = cov.get("s2_count", 0)
-                    s1 = cov.get("s1_count", 0)
-                    coverage_score = min(total / 8.0, 1.0)
-                    clarity = clear_passes / max(len(cloud_covers), 1)
+                    # s2_count/s1_count se leían aquí y no se usaban:
+                    # `insert_cobertura_satelital` no los acepta. Eran
+                    # asignaciones muertas; el desglose por satélite vive en
+                    # `tbl_alfa2_cobertura_zona`.
                     revisit = cov.get("mean_revisit_days", 0.0)
                     repo.insert_cobertura_satelital(
                         timestamp_blk=ts_blk,
                         zona=zona,
-                        coverage_score=round(coverage_score * 0.4 + clarity * 0.3 +
-                                             max(0, 1.0 - revisit / 12.0) * 0.3, 4),
+                        # La fórmula es `alfa2_zonas.puntaje_zona`, no una
+                        # cuarta copia: estaba escrita a mano aquí, otra vez en
+                        # `_build_live_features` y una tercera en el agregado.
+                        # Tres copias de la misma aritmética se separan solas.
+                        coverage_score=round(_puntaje_zona(
+                            total, clear_passes, len(cloud_covers), revisit), 4),
                         # None, no 0: la columna acepta NULL y así el
                         # histórico distingue «no se midió» de «no hubo».
                         thermal_anomalies=alfa2_data.get("thermal_anomaly_count"),
@@ -929,44 +936,78 @@ def _build_live_features(runner, conn=None) -> dict:
     from sentinel_omega.core.alfa2_zonas import agregado_global, puntaje_zona
     glob = agregado_global(conn) if conn is not None else None
     if glob:
-        features["satellite_coverage_score"] = glob["satellite_coverage_score"]
-        features["satellite_clear_passes"] = glob["satellite_clear_passes"]
-        logger.info("Alfa-2 cobertura GLOBAL: %d zonas medidas, puntaje %.4f, "
-                    "%d pasadas limpias", glob["zonas"],
-                    glob["satellite_coverage_score"],
-                    int(glob["satellite_clear_passes"]))
-    if alfa2_data and alfa2_data.get("zone_coverages"):
-        scores = []
-        clear_total = 0
-        for zona, cov in alfa2_data["zone_coverages"].items():
-            cloud_covers = cov.get("s2_cloud_covers", [])
-            clear_p = sum(1 for cc in cloud_covers if cc is not None and cc < 20.0)
-            scores.append(puntaje_zona(
-                cov.get("total_passes", 0), clear_p, len(cloud_covers),
-                cov.get("mean_revisit_days", 0.0)))
-            clear_total += clear_p
-        # Respaldo: solo si la rotación todavía no ha dejado ninguna lectura
-        # en la tabla (primer arranque, o base no disponible).
-        if scores and not glob:
-            features["satellite_coverage_score"] = round(float(np.mean(scores)), 4)
-            features["satellite_clear_passes"] = float(clear_total)
-        # La anomalía térmica solo entra si SE MIDIÓ, y va FUERA del respaldo:
-        # es un conteo del ciclo, independiente de que el puntaje venga del
-        # agregado global o de las zonas de esta vuelta. Estuvo anidada dentro
-        # del `if` del puntaje al hacer global la cobertura, lo que la habría
-        # dejado sin escribir en cuanto la rotación empezara a funcionar.
-        #
-        # Medido el 2026-09-26: `fetch_alfa2_data` devolvía
-        # `"thermal_anomaly_count": 0` LITERAL, y de las 2.817 filas del
-        # histórico la columna tenía **un solo valor distinto: 0**. El bot que
-        # se llama «Satellite Thermal Anomaly Detection» nunca había medido una
-        # anomalía térmica: el cero era un marcador de posición que el
-        # entrenamiento leía como «aquí nunca pasa nada».
-        #
-        # Cero es un valor medido; faltante es faltante.
-        anomalias = alfa2_data.get("thermal_anomaly_count")
-        if anomalias is not None:
-            features["satellite_thermal_anomalies"] = float(anomalias)
+        # Solo para el registro: cuántas zonas lleva medidas la rotación. NO se
+        # usa como rasgo --- ver el bloque de abajo.
+        logger.info("Alfa-2 rotación: %d zonas con lectura, puntaje medio "
+                    "%.4f", glob["zonas"], glob["satellite_coverage_score"])
+
+    # Los CUATRO rasgos de alfa2 salen de la MISMA ventana, la MISMA tabla y
+    # con la MISMA agregación que la firma (`signature_engine`: media para
+    # `coverage_score` y `revisita_dias`, SUMA para `thermal_anomalies` y
+    # `clear_passes`, sobre 336 h de `tbl_cobertura_satelital` unida a su
+    # histórico).
+    #
+    # Antes dos de ellos salían del agregado de la rotación --- la suma sobre
+    # las ZONAS de la última lectura --- y eso es otra magnitud con el mismo
+    # nombre. Medido el 2026-10-02, justo antes de hacer votante a alfa2:
+    #
+    #   coverage_score     firma 0,7894 media   vivo 0,8019    compatible
+    #   thermal_anomalies  firma   447  SUMA    vivo 0-1        ~160x
+    #   clear_passes       firma  5437  SUMA    vivo   34       ~160x
+    #   revisita_dias      firma 0,6916 media   vivo 0,6916     identico
+    #
+    # Es el desajuste del Kp otra vez, y habría entrado en producción con el
+    # voto de alfa2 si no se hubieran mirado sus firmas antes de declararlo.
+    if conn is not None:
+        try:
+            filas = conn.execute(
+                "SELECT coverage_score, thermal_anomalies, clear_passes, "
+                "       revisit_days FROM ("
+                "  SELECT coverage_score, thermal_anomalies, clear_passes,"
+                "         revisit_days FROM tbl_cobertura_satelital"
+                "   WHERE timestamp_blk >= datetime('now','-336 hours')"
+                "  UNION ALL"
+                "  SELECT coverage_score, thermal_anomalies, clear_passes,"
+                "         revisit_days FROM tbl_cobertura_satelital_historico"
+                "   WHERE timestamp_blk >= datetime('now','-336 hours'))"
+            ).fetchall()
+            cov = [f[0] for f in filas if f[0] is not None]
+            ther = [f[1] for f in filas if f[1] is not None]
+            clar = [f[2] for f in filas if f[2] is not None]
+            revi = [f[3] for f in filas if f[3] is not None]
+            if cov:
+                features["satellite_coverage_score"] = round(float(np.mean(cov)), 4)
+            if ther:
+                features["satellite_thermal_anomalies"] = float(sum(ther))
+            if clar:
+                features["satellite_clear_passes"] = float(sum(clar))
+            if revi:
+                features["satellite_revisita_dias"] = float(np.mean(revi))
+            if filas:
+                logger.info("Alfa-2 (ventana 336 h, %d lecturas): puntaje "
+                            "%.4f · %d limpias · %d anomalías · revisita "
+                            "%.3f d", len(filas),
+                            features.get("satellite_coverage_score", float("nan")),
+                            int(features.get("satellite_clear_passes", 0)),
+                            int(features.get("satellite_thermal_anomalies", 0)),
+                            features.get("satellite_revisita_dias", float("nan")))
+        except Exception as e:  # noqa: BLE001 — los rasgos se OMITEN, no se fingen
+            logger.warning("Rasgos satelitales por ventana no disponibles "
+                           "(%s): quedan sin dato", e)
+    # NO hay respaldo por ciclo, y es deliberado.
+    #
+    # Lo hubo hasta el 2026-10-02: si la ventana estaba vacía, se escribían el
+    # puntaje y las pasadas limpias sumadas sobre las ZONAS de este ciclo. Pero
+    # eso no es un respaldo, es el desajuste con un `if` delante --- 34 contra
+    # 5.437 para el mismo nombre de rasgo. Si la ventana no tiene lecturas, los
+    # rasgos se OMITEN y `vector_para` pone 0,0, que significa «no lo sé».
+    #
+    # La anomalía térmica tampoco se escribe desde aquí: el conteo del FRP se
+    # persiste en `tbl_cobertura_satelital` unas líneas más abajo
+    # (`thermal_anomalies=alfa2_data.get("thermal_anomaly_count")`), así que
+    # llega al rasgo por la ventana y a la escala en que se entrenó. Pasar por
+    # la tabla es más lento de ver, pero es la única forma de que lo entrenado
+    # y lo preguntado sean la misma magnitud.
 
     # ── beta2: marea terrestre ────────────────────────────────────
     # El tirón de la Luna y el Sol, por efemérides. Es la única fuente del

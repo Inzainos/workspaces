@@ -121,16 +121,17 @@ def test_guardar_sobreescribe_la_misma_zona(base):
 
 
 def test_el_puntaje_es_una_sola_formula():
-    """Vivía suelta dentro de `launcher._build_live_features`. Dos copias se
-    separan con el tiempo; ésta es la única."""
-    import inspect
+    """Estaba escrita a mano TRES veces: en `_build_live_features`, en el
+    bloque que persiste la cobertura y en el agregado. Tres copias de la misma
+    aritmética se separan solas. Ahora la única es `puntaje_zona`."""
+    from pathlib import Path
 
-    from sentinel_omega import launcher
-
-    fuente = inspect.getsource(launcher._build_live_features)
-    assert "puntaje_zona(" in fuente
-    assert "min(total_p / 8.0, 1.0)" not in fuente, (
-        "volvió una copia de la fórmula al launcher")
+    fuente = Path("sentinel_omega/launcher.py").read_text()
+    assert "_puntaje_zona(" in fuente, (
+        "el launcher dejó de usar la función compartida")
+    for copia in ("min(total / 8.0, 1.0)", "min(total_p / 8.0, 1.0)",
+                  "max(0, 1.0 - revisit / 12.0)"):
+        assert copia not in fuente, f"volvió una copia de la fórmula: {copia}"
 
 
 def test_el_puntaje_satura_y_premia_lo_limpio():
@@ -141,23 +142,34 @@ def test_el_puntaje_satura_y_premia_lo_limpio():
     assert puntaje_zona(8, 8, 10, 1.0) > puntaje_zona(8, 2, 10, 1.0)
 
 
-def test_la_anomalia_termica_no_depende_del_puntaje():
-    """Estuvo anidada dentro del `if` del puntaje al hacer global la cobertura,
-    lo que la habría dejado sin escribir en cuanto la rotación funcionara."""
+def test_los_cuatro_rasgos_salen_DE_LA_VENTANA_no_de_las_zonas():
+    """El desajuste de escala que casi entro en produccion con el voto de alfa2.
+
+    La firma agrega sobre 336 h de `tbl_cobertura_satelital` unida a su
+    historico; el agregado de la rotacion suma sobre las ZONAS de la ultima
+    lectura. Son dos magnitudes con el mismo nombre."""
     import inspect
 
     from sentinel_omega import launcher
 
     fuente = inspect.getsource(launcher._build_live_features)
-    i_anom = fuente.index('alfa2_data.get("thermal_anomaly_count")')
-    i_resp = fuente.index("if scores and not glob:")
-    # La anomalía va DESPUÉS del respaldo y a su mismo nivel de indentación.
-    assert i_anom > i_resp
-    linea = fuente[fuente.rindex("\n", 0, i_anom) + 1:i_anom]
-    sangria = len(linea) - len(linea.lstrip())
-    assert sangria == 8, (
-        f"la anomalía térmica está a {sangria} espacios, no a 8: volvió a "
-        "quedar anidada dentro del respaldo del puntaje")
+    # Los cuatro rasgos salen de la MISMA ventana que la firma, y no hay
+    # respaldo por ciclo --- un respaldo a otra escala es el desajuste con un
+    # `if` delante. Medido el 2026-10-02 mirando las firmas de alfa2 antes de
+    # declararlo votante:
+    #
+    #   coverage_score     firma 0,7894 media   vivo 0,8019    compatible
+    #   thermal_anomalies  firma   447  SUMA    vivo 0-1        ~160x
+    #   clear_passes       firma  5437  SUMA    vivo   34       ~160x
+    #   revisita_dias      firma 0,6916 media   vivo 0,6916     identico
+    assert "-336 hours" in fuente
+    assert "tbl_cobertura_satelital_historico" in fuente, (
+        "la ventana viva dejó de unir el histórico: la firma sí lo une")
+    for agregacion in ("np.mean(cov)", "sum(ther)", "sum(clar)", "np.mean(revi)"):
+        assert agregacion in fuente, f"falta la agregación {agregacion}"
+    assert "if scores and not glob:" not in fuente, (
+        "volvió el respaldo por ciclo, que escribía 34 donde el modelo "
+        "aprendió 5.437")
 
 
 def test_el_ciclo_ya_no_pide_tres_cajas_fijas():

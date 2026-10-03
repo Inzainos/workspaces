@@ -75,12 +75,33 @@ def _con_modelo_de(monkeypatch, bot, n):
     return llamadas
 
 
+# Bots cuyo ONNX está apagado a propósito en `onnx_config`: a ésos no se les
+# pregunta aunque la dimensión cuadre, así que el control de abajo no aplica.
+# alfa2, desde el 2026-10-02: vota con su REGLA porque su reentreno salía
+# `hybrid real=23 + boot=2500` (99 % sintético, y cinco de las ocho columnas
+# del prior llevan otra magnitud). Ver `tests/test_alfa2_votante.py`.
+APAGADOS = {b for b in BOT_DIMS
+            if not getattr(getattr(onnx_config, b, None), "enabled", True)}
+
+
 @pytest.mark.parametrize("bot", sorted(BOT_DIMS))
 def test_control_con_la_dimension_correcta_si_se_pregunta(monkeypatch, bot):
     """Control: sin este, el test de rechazo podría pasar por accidente."""
+    if bot in APAGADOS:
+        pytest.skip(f"{bot}: ONNX apagado a propósito en onnx_config")
     llamadas = _con_modelo_de(monkeypatch, bot, BOT_DIMS[bot])
     out = onnx_mixin.senal_desde_rasgos(bot, _rasgos_llenos(bot))
     assert out is not None and llamadas, f"{bot}: con N correcto no preguntó"
+
+
+@pytest.mark.parametrize("bot", sorted(APAGADOS))
+def test_al_apagado_no_se_le_pregunta_ni_con_la_dimension_correcta(monkeypatch, bot):
+    """El otro lado del contrato: apagar tiene que SERVIR. Si `enabled=False`
+    no se honrara, alfa2 votaría con el modelo que se decidió no usar."""
+    llamadas = _con_modelo_de(monkeypatch, bot, BOT_DIMS[bot])
+    out = onnx_mixin.senal_desde_rasgos(bot, _rasgos_llenos(bot))
+    assert out is None and not llamadas, (
+        f"{bot}: está apagado en onnx_config y aun así se le preguntó")
 
 
 @pytest.mark.parametrize("bot", sorted(BOT_DIMS))

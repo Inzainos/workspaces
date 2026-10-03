@@ -134,8 +134,13 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     # alfa2 entrena desde la tabla tbl_cobertura_satelital, que se acumula en
     # ciclos en vivo (no hay backcast de 14 años de cobertura ESA Sentinel).
     # Las firmas de alfa2 empiezan en 0 y crecen con el tiempo operativo.
+    # alfa2 pasa a VOTANTE el 2026-10-02 («vota y avisa», decisión del
+    # operador). La cuarta señal es `satellite_revisita_dias`, elegida MIDIENDO
+    # sobre las 3.231 filas del histórico: 153 valores distintos y 100 % de
+    # cobertura, más varianza que cualquier otra columna de la capa. Detalle y
+    # por qué no es redundante con el puntaje, en `FEATURE_KEYS`.
     "alfa2": ["satellite_coverage_score", "satellite_thermal_anomalies",
-              "satellite_clear_passes"],
+              "satellite_clear_passes", "satellite_revisita_dias"],
     # Omega — el ritmo cósmico: fase lunar/sicigias + resonancia Schumann +
     # envolvente solar + acoplamiento Schumann↔mercado. Todo mapeado de la
     # telemetría existente (sin fetchers nuevos). Sus correlaciones viven en
@@ -183,17 +188,28 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
 # Funcionan como AVISO TEMPRANO --- una anomalía suya es motivo para ir a
 # mirar, no una predicción del consenso.
 #
-# alfa2 (decisión del operador, 2026-09-24): sus sensores satelitales van casi
-# en tiempo real, así que ve los movimientos antes que nadie. Sus tres features
-# ---coverage_score, thermal_anomalies, clear_passes--- nunca llegan a las
-# cuatro que exige el emparejamiento. Las alternativas eran bajar ese suelo
-# (debilita a TODOS los bots) o prestarle features de otras capas (deja de ser
-# satelital). Se prefiere que avise sin votar. Sale de este conjunto cuando la
-# capa satelital aporte una cuarta señal real y pueda formar firmas propias.
+# alfa2 SALIÓ de aquí el 2026-10-02: «vota y avisa» (decisión del operador).
 #
-# El dashboard los expone con rol="notificador" y peso=None (ver /api/bots):
-# antes simplemente no aparecían, y eso se leía como que estaban rotos.
-BOTS_ESPERANDO_SENALES = {"alfa2"}
+# Estuvo dentro desde el 2026-09-24 porque sus tres features
+# ---coverage_score, thermal_anomalies, clear_passes--- nunca llegaban a las
+# cuatro que exige el emparejamiento, y las alternativas de entonces eran malas:
+# bajar el suelo (debilita a TODOS los bots) o prestarle features de otras capas
+# (deja de ser satelital). La condición escrita para que saliera era «cuando la
+# capa satelital aporte una cuarta señal real», y se cumplió: la capa aporta
+# `satellite_revisita_dias`, con 153 valores distintos y 100 % de cobertura
+# sobre 70 días de histórico --- más varianza que cualquier otra columna suya.
+#
+# No pierde el aviso temprano al votar: sus sensores siguen yendo casi en tiempo
+# real y su señal ya llegaba al consenso (está en `padre.FAMILIES` como junior
+# de `space_weather`). Lo que gana es memoria y peso propios.
+#
+# El dashboard rotula `notificador` a quien NO esté en `TBL_PESOS_BOTS`
+# (api.py:567), así que se corrige solo en cuanto la Fase 2 le dé peso.
+#
+# El conjunto se conserva VACÍO a propósito: es el mecanismo, y el día que otro
+# bot se quede sin señales suficientes tiene que poder entrar aquí en vez de
+# fallar en silencio.
+BOTS_ESPERANDO_SENALES: set = set()
 
 
 def _auditar_features_declaradas(bots_activos) -> None:

@@ -417,10 +417,29 @@ def bootstrap_xy(bot: str, n: int = 2500):
     """
     sys.path.insert(0, str(MODELS_DIR.parent.parent))
     from sentinel_omega.models.train_onnx_bootstrap import (
-        gen_alfa1, gen_alfa2, gen_beta1, gen_beta2, gen_delta, gen_omega,
+        gen_alfa1, gen_beta1, gen_beta2, gen_delta, gen_omega,
     )
+    # alfa2 SALE del prior sintético el 2026-10-02, con medición.
+    #
+    # `gen_alfa2` fabrica 2.500 muestras con `RNG.uniform/poisson/normal`, y
+    # **cinco de sus ocho columnas llevan otra magnitud** que las del vector
+    # vigente: la posición 4 del prior es `revisit` (1-14 días) donde el vector
+    # tiene `coverage_score` (0,30-0,93); la 5 es `cloud` (0-1) donde el vector
+    # tiene `clear_passes` (~5.437, suma de ventana). Las dimensiones cuadran
+    # (8 = 8), así que `test_onnx_dims` no puede verlo.
+    #
+    # Con 23 muestras reales, el reentreno salía `hybrid real=23+boot=2500`:
+    # un 99 % de ruido en las posiciones de los rasgos. Sin prior, el camino es
+    # «NO se reentrena» y se conserva el modelo en disco --- que es lo que
+    # quiere su propio comentario: «inventar muestras para rellenar sería peor
+    # que no reentrenar».
+    #
+    # Los demás conservan su prior porque hoy no lo usan (alfa1 entrena
+    # `db-only (1407)`), pero su alineación NO se ha medido: si a alguno le
+    # bajan las muestras reales por debajo del mínimo, hay que comprobar
+    # columna por columna antes de dejarlo bootstrapear.
     gens = {
-        "alfa1": gen_alfa1, "alfa2": gen_alfa2, "beta1": gen_beta1,
+        "alfa1": gen_alfa1, "beta1": gen_beta1,
         "beta2": gen_beta2, "delta": gen_delta, "omega": gen_omega,
     }
     if bot not in gens:

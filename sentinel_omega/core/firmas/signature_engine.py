@@ -54,6 +54,26 @@ FEATURE_KEYS = [
     "bz_mean_72h", "kp_max_72h", "sismo_count_72h",
     # alfa2: cobertura satelital ESA Sentinel (live-only, acumulado desde ciclos)
     "satellite_coverage_score", "satellite_thermal_anomalies", "satellite_clear_passes",
+    # La CUARTA señal de alfa2 (2026-10-02, decisión del operador: «vota y
+    # avisa»). Con tres rasgos nunca llegaba a `MIN_DIMENSIONES_COMPARABLES`
+    # (4), así que no formaba firmas, no recibía peso y el tablero lo rotulaba
+    # notificador. Todo colgaba de ese 3 < 4.
+    #
+    # Se eligió `revisit_days` MIDIENDO, no por conveniencia. Sobre las 3.231
+    # filas de `tbl_cobertura_satelital_historico` (70 días reales):
+    #
+    #   revisit_days      153 valores distintos, 100 % de cobertura
+    #                     p10 0,32 · p50 0,51 · p75 0,72 · p90 0,86 · max 1,68 d
+    #   coverage_score    136 distintos
+    #   total_passes       54 distintos
+    #   clear_passes       31 distintos
+    #
+    # Y no es redundante con el puntaje aunque el puntaje lo use: su término es
+    # `max(0, 1 - revisita/12) * 0,3`, con un tope de 12 DÍAS mientras la
+    # realidad vive entre 0 y 1,7. Medido: el término solo se mueve de 0,2580 a
+    # 0,3000 en todo el rango real --- el puntaje aplana el 98,6 % de esta
+    # información. Darla cruda expone varianza que el agregado tira.
+    "satellite_revisita_dias",
     # delta_enriched: acoplamiento geofísico-financiero (live-only, desde tbl_delta_cross)
     "delta_cross_coupling", "delta_geo_coupling", "delta_schumann_coupling",
     # jupiter: fulguraciones solares (GOES) + atención colectiva (Google Trends).
@@ -333,11 +353,11 @@ def extraer_features_ventana(
     # estaba en BOTS_LIVE_ONLY y nunca acumulaba memoria.
     try:
         sat = conn.execute(
-            "SELECT coverage_score, thermal_anomalies, clear_passes "
+            "SELECT coverage_score, thermal_anomalies, clear_passes, revisit_days "
             "FROM tbl_cobertura_satelital "
             "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?) "
             "UNION ALL "
-            "SELECT coverage_score, thermal_anomalies, clear_passes "
+            "SELECT coverage_score, thermal_anomalies, clear_passes, revisit_days "
             "FROM tbl_cobertura_satelital_historico "
             "WHERE timestamp_blk < ? AND timestamp_blk >= datetime(?, ?)",
             (ts_evento, ts_evento, f"-{VENTANA_HORAS} hours",
@@ -355,6 +375,12 @@ def extraer_features_ventana(
                 features["satellite_thermal_anomalies"] = float(sum(thermal))
             if clear_p:
                 features["satellite_clear_passes"] = float(sum(clear_p))
+            # La cuarta: MEDIA de la revisita en la ventana. Media y no suma,
+            # porque es un periodo (días entre pasadas), no un conteo --- su
+            # suma no significa nada.
+            revisitas = [r[3] for r in sat if r[3] is not None]
+            if revisitas:
+                features["satellite_revisita_dias"] = float(np.mean(revisitas))
     except Exception:
         pass  # tabla no existe aún → features de alfa2 ausentes (NaN en vector)
 

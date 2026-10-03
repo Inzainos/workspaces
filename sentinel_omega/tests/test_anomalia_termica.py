@@ -37,11 +37,31 @@ def test_el_cero_literal_ya_no_esta_en_el_pipeline():
 def test_el_ciclo_no_escribe_la_clave_si_no_se_midio():
     """`vector_para` pone 0.0 donde falta un rasgo --- y para el modelo eso
     significa «cero anomalías medidas». La diferencia está en NO escribir la
-    clave: así el descarte por vector vacío puede actuar."""
+    clave: así el descarte por vector vacío puede actuar.
+
+    La propiedad es la misma desde el 2026-09-26; lo que cambió el 2026-10-02
+    es la CAPA donde se cumple. Antes el rasgo se escribía directo en
+    `_build_live_features` desde el conteo del ciclo. Eso resultó ser un
+    desajuste de escala al hacer votante a alfa2: la firma SUMA
+    `thermal_anomalies` sobre la ventana de 336 h (medido: 447) y el conteo del
+    ciclo vale 0 o 1. Ahora el conteo se persiste en `tbl_cobertura_satelital`
+    --- donde `None` sigue siendo `None`, lo fija
+    `test_el_repositorio_guarda_null_no_cero` --- y el rasgo se agrega de la
+    ventana, a la escala en que se entrenó.
+
+    Así que la frontera se defiende en dos sitios, y los dos se comprueban:
+    el launcher no lee con 0 por defecto, y la ventana filtra los NULL antes
+    de sumar.
+    """
     fuente = Path("sentinel_omega/launcher.py").read_text()
     # el patrón viejo: leer con 0 por defecto
     assert 'alfa2_data.get("thermal_anomaly_count", 0)' not in fuente
-    assert 'anomalias = alfa2_data.get("thermal_anomaly_count")' in fuente
+    # se persiste tal cual, sin convertir el None en 0
+    assert 'thermal_anomalies=alfa2_data.get("thermal_anomaly_count")' in fuente
+    # y la ventana descarta los NULL antes de sumar, así que sin ninguna
+    # medición la clave no se escribe
+    assert "ther = [f[1] for f in filas if f[1] is not None]" in fuente
+    assert "if ther:" in fuente
 
 
 def test_el_repositorio_guarda_null_no_cero(tmp_path):
