@@ -143,6 +143,10 @@ que no tener semáforo.
   base pero cero código la lee. No volver a pintarla como canal activo.
 - **`Number(x ?? 0)` en una serie** convierte "no hay lectura" en un cero
   dibujable. Filtrar los nulos y decir cuántos faltaron.
+- **`Number(null)` es `0`, no `NaN`.** Un `Number(nd.lat)` con `lat: null`
+  pasa el filtro `Number.isFinite` y el nodo cae en (0,0). Guardar con
+  `x == null ? NaN : Number(x)` antes de filtrar (arreglado en Mapas,
+  2026-09-28; hoy ningún nodo carece de coords, pero el pozo estaba abierto).
 - **Radix Tabs ignora `.click()` sintético** (escucha pointer events). Para
   automatizar la navegación hay que despachar `Input.dispatchMouseEvent` por
   CDP, o parecerá que todas las pestañas muestran lo mismo.

@@ -5,6 +5,11 @@
 # %h = $HOME del usuario (en vivo: /home/deamon); el repo vive en %h/workspaces.
 [Unit]
 Description=Sentinel Omega - Precursor Detection Platform (Fractal Core)
+# Wants= (2026-09-28): levantar Sentinel levanta los dashboards. El orden lo
+# ponen las units mismas (api: After=sentinel-omega; web: Wants+After=api).
+# Si dashboard-web no existe en esta instalación, systemd solo avisa en el
+# journal — Sentinel arranca igual, y el watchdog re-levantará lo que exista.
+Wants=sentinel-omega-dashboard-api.service sentinel-omega-dashboard-web.service
 StartLimitIntervalSec=300
 StartLimitBurst=5
 

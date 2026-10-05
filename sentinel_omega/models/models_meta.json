@@ -1,12 +1,54 @@
 {
-  "retrained_at": "2026-10-02T19:32:59.673049Z",
+  "retrained_at": "2026-10-04T18:44:39.534210Z",
   "db_path": "sentinel_omega/data/SENTINEL_OMEGA_PRO.db",
   "bots": {
     "alfa1": {
       "path": "/home/deamon/workspaces/sentinel_omega/models/alfa1_spaceweather_rf.onnx",
-      "n": 1407,
-      "source": "db-only (1407)",
+      "n": 1420,
+      "source": "db-only (1420)",
       "reentrenado": true
+    },
+    "alfa2": {
+      "path": null,
+      "n": 0,
+      "source": "NO se reentrena: 35 muestras reales (<50) y sin prior",
+      "reentrenado": false
+    },
+    "beta1": {
+      "path": "/home/deamon/workspaces/sentinel_omega/models/beta1_schumann_fft.onnx",
+      "n": 1030,
+      "source": "db-only (1030)",
+      "reentrenado": true
+    },
+    "beta2": {
+      "path": "/home/deamon/workspaces/sentinel_omega/models/beta2_atmospheric_cnn.onnx",
+      "n": 2027,
+      "source": "db-only (2027)",
+      "reentrenado": true
+    },
+    "delta": {
+      "path": "/home/deamon/workspaces/sentinel_omega/models/delta_financial_lstm.onnx",
+      "n": 739,
+      "source": "db-only (739)",
+      "reentrenado": true
+    },
+    "omega": {
+      "path": "/home/deamon/workspaces/sentinel_omega/models/omega_espacial_rf.onnx",
+      "n": 1057,
+      "source": "db-only (1057)",
+      "reentrenado": true
+    },
+    "loki": {
+      "path": "/home/deamon/workspaces/sentinel_omega/models/loki_unificado_rf.onnx",
+      "n": 1818,
+      "source": "db-only (1818)",
+      "reentrenado": true
+    },
+    "jupiter": {
+      "path": null,
+      "n": 0,
+      "source": "NO se reentrena: 34 muestras reales (<50) y sin prior",
+      "reentrenado": false
     }
   }
 }

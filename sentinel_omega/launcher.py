@@ -1188,6 +1188,7 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                 FRECUENCIA_CONSISTENTE, registrar_snapshot,
             )
             from sentinel_omega.infrastructure.messaging.alert_service import AlertService, AlertTemplates
+            from sentinel_omega.infrastructure.pipeline.entrenamiento import dispara_alerta
 
             if features:
                 ec_top = matches[0]["event_class"] if matches else None
@@ -1207,7 +1208,7 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                         f"({'nuevo' if es_nuevo else f'frecuencia {frec}'}"
                         f"{f', nodo {id_nodo}' if id_nodo else ', general'})"
                     )
-                    if es_nuevo and padre_activo:
+                    if es_nuevo and padre_activo and dispara_alerta(ec_top):
                         svc = AlertService()
                         msg = AlertTemplates.cimatica_nuevo(
                             patron_id=pid_c,
@@ -1218,7 +1219,7 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                         )
                         svc.dispatch(msg, channels=["telegram", "log"], conn=conn,
                                      extra={"es_nuevo": True, "frecuencia": frec})
-                    elif frec == FRECUENCIA_CONSISTENTE and ec:
+                    elif frec == FRECUENCIA_CONSISTENTE and ec and dispara_alerta(ec):
                         svc = AlertService()
                         msg = AlertTemplates.cimatica_consistente(
                             patron_id=pid_c,
