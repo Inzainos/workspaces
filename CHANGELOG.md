@@ -1,5 +1,44 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-04/05 - Cortes, rebuild, muro vivo, CSV USGS
+
+Sin push. Nota: `estado/CORTES_2026-10-04.md`. Branch `local/recuperacion-datos-2026-09`.
+
+### Data / base
+
+- USGS geojson (`usgs_catalogo`): upsert M≥4.5 → `tbl_eventos_sismicos_fuente` con `depth_km`, segmento, tipos, tsunami/alert/mmi/cdi/felt/sig. 215 769 filas; 1994–2025 con profundidad.
+- Rebuild desde cero 4-oct (PID 597333) cerrado a las 17:55 CST: ~40 361 firmas, cimática ~189 933.
+
+### Cortes y firma
+
+- Observación desde M2.5; predicción/castigo desde M4.5; alerta sísmica M6/M7. Trasfondo USGS menor sigue en 3.3.
+- Ventana previa en la firma (sin el sismo predicho). Claves ausentes no se inventan.
+
+### Detector / reporte
+
+- Tsunami/profundidad en precursor (scanner + pipeline).
+- Blanco de reportes nuevos: M≥6 en 24 h. Contadores = ventana guardada. Nadie llama `es_blanco_del_reporte`.
+
+### Muro por magnitud
+
+- `entrenar_umbral_por_magnitud` + `calcular_umbral_muro` → `tbl_muro_umbral_magnitud`.
+- Tabla (cálculo 4-oct 20:50): M4=2 (278), M5=1 (143), M6/M7 vacíos (13/3).
+- Vivo: relee SISMO_M6 cada ciclo en solo lectura; vacío → corte **3**. PID launcher 2815744 desde 5-oct 08:17. Watchdog intacto. Timer de rutinas apagado.
+
+### CSV backcast / topología
+
+- Conserva `depth`/`type`/… del CSV FDSN. Topología mapea a `depth_km`/`event_type` dentro de `if not dry_run`.
+- CSV no trae alert/mmi/…; eso sigue en geojson. Sin `--refetch` en este hilo.
+
+### Tests
+
+- `test_cortes_firma`, `test_muro_por_magnitud`, `test_tsunami_profundidad`, `test_reporte_blanco`, `test_csv_usgs_columnas`, `test_usgs_catalogo`.
+
+### Explicitamente fuera
+
+- ONNX, dashboard/mapas, SSN loader, push a remoto.
+
+
 ## [Unreleased] - 2026-09-28 - Dashboard v3: rediseño + seis datos que mentían
 
 Sin commit, sin push. Trabajo sobre el dashboard React (`:5173` → API `:8787`).
@@ -106,6 +145,54 @@ Documentado en `infrastructure/dashboard/README.md`.
 - `tbl_schumann_vivo` seguirá `CONGELADO` hasta que se arregle la ingesta de
   Tomsk. El tablero ya lo avisa; el dato sigue entrando como NULL al Fantasma.
 
+
+### Mapas — el globo mentía y los hex violaban el sistema (2026-09-28, tarde)
+
+Sin commit, sin push. Rediseño de Map2D/Globe3D (`components/maps/`), verificado
+en navegador real (Chromium headless + CDP, eventos de puntero): 0 errores de
+consola, fichas de hover funcionando, aro de focus desde el ranking, Principal
+sin regresión.
+
+- **El globo prometía lo que no dibujaba.** El caption decía «el tamaño y color
+  de cada nodo reflejan su saturación» y `Globe3D` ignoraba `sat`/`medido` por
+  completo: puntos fijos por tipo. Ahora el radio crece con la saturación, el
+  aro va en la rampa de riesgo y un nodo sin lectura se dibuja hueco y neutro.
+- **Hex sueltos fuera del sistema de diseño.** `#5e6ad2` (indigo decorativo)
+  para nodos y `#ff1744` para TODOS los sismos violaban «el color saturado
+  significa riesgo y nada más». Ahora: tipo = categoría en `--color-serie-*`,
+  carga = rampa calma→atención→aviso, sismo = magnitud (M≥5 aviso, M≥6
+  crítico) con opacidad por recencia (0.95 recién, 0.35 a los 60 días).
+- **Datos que la API daba y el mapa tiraba:** `depth_km` y `timestamp` de cada
+  sismo viajan a la ficha de hover («M4.9 · 71 km de profundidad · 2 km SW of
+  Sakai, Japan · hace 2 h»); cada nodo muestra región y fecha de lectura. Meta
+  honesta: «últimos 60 de 1.975 sismos M≥4.5» en vez de insinuar que lo
+  visible es todo el catálogo.
+- **`Number(nd.lat)` con `null` es `0`, no `NaN`:** un nodo sin coordenadas
+  pasaría el filtro `Number.isFinite` y caería en (0,0). Guard explícito
+  `nd.lat == null ? NaN : Number(nd.lat)` (hoy 0 nodos lo sufren, pero el pozo
+  estaba abierto).
+- Mundo compartido (`maps/shared.tsx`): costas reconocibles + islas (Japón, GB,
+  Madagascar, NZ, Indonesia, Filipinas…) en vez de 6 manchas de 15 vértices;
+  leyenda única para ambos mapas con cada codificación explicada.
+- Globo: canvas nítido (devicePixelRatio + ResizeObserver), auto-rotación en
+  reposo que se pausa al arrastrar o hacer hover y respeta
+  `prefers-reduced-motion`; tooltip con hit-test al pasar el cursor.
+- Mapas 2D: graticule con etiquetas de latitud, ficha bajo el mapa al hacer
+  hover (altura fija, sin salto de layout); hover en el ranking «Nodos con más
+  tensión» marca el nodo con aro punteado en 2D y 3D.
+- Retrocompatible: Principal/Loki no pasan `sat`/`medido` y siguen viendo
+  puntos por tipo como antes.
+
+### Verified (mapas)
+
+- `npx tsc -b` limpio · `npm run build` 344 KB / 107 KB gzip.
+- Chromium headless + CDP con `Input.dispatchMouseEvent` (Radix Tabs exige
+  eventos reales): Mapas renderiza 284 círculos SVG (125 nodos + 37 aros de
+  carga + 120 de sismos + Tlaxcala) y canvas del globo; leyendas y fichas
+  presentes; meta «últimos 60 de 1.975»; **0 errores de consola**; Principal
+  sin regresión (207 círculos). El aro de focus se probó tras
+  `scrollIntoView` — el primer intento falló porque el ranking quedaba bajo el
+  pliegue del viewport: era el harness, no el código.
 
 ## [Unreleased] - 2026-09-27 - Una sola instancia (usuario), Schumann WPC, ONNX solo en_vivo, túnel cerrado
 

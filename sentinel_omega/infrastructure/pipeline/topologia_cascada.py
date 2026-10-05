@@ -148,7 +148,11 @@ def crear_tablas_fuente(conn: sqlite3.Connection, dry_run: bool) -> None:
 # ── Fetch desde fuentes publicas (reutiliza logica de backcast.py) ──
 
 def fetch_sismos_usgs(year: int) -> pd.DataFrame:
-    """Identico a backcast.py::extraer_sismos_usgs_real."""
+    """CSV FDSN USGS → columnas del CSV (no geojson).
+
+    Conserva depth/type/magType/place/status. El INSERT a
+    tbl_eventos_sismicos_fuente renombra depth→depth_km y type→event_type.
+    """
     url = "https://earthquake.usgs.gov/fdsnws/event/1/query"
     params = {
         "format": "csv",
@@ -164,8 +168,16 @@ def fetch_sismos_usgs(year: int) -> pd.DataFrame:
         if df.empty:
             return pd.DataFrame()
         df["time"] = pd.to_datetime(df["time"]).dt.tz_localize(None)
+        faltan = [c for c in ("id", "time", "mag", "latitude", "longitude") if c not in df.columns]
+        if faltan:
+            raise KeyError(f"CSV USGS sin columnas obligatorias: {faltan}")
+        cols = [
+            "id", "time", "mag", "latitude", "longitude",
+            "depth", "type", "magType", "place", "status",
+        ]
+        keep = [c for c in cols if c in df.columns]
         logger.info(f"  {year}: {len(df)} sismos M{MIN_MAGNITUD_USGS}+")
-        return df[["id", "time", "mag", "latitude", "longitude"]].copy()
+        return df[keep].copy()
     except Exception as e:
         logger.error(f"  Fallo al descargar USGS {year}: {e}")
         return pd.DataFrame()
@@ -215,18 +227,61 @@ def poblar_eventos_sismicos_fuente(conn: sqlite3.Connection, dry_run: bool) -> i
             continue
         for _, row in df.iterrows():
             nodo = nodo_mas_cercano(float(row["latitude"]), float(row["longitude"]))
+            depth_raw = row["depth"] if "depth" in row.index else None
+            try:
+                depth_km = (
+                    float(depth_raw)
+                    if depth_raw is not None and pd.notna(depth_raw)
+                    else None
+                )
+            except (TypeError, ValueError):
+                depth_km = None
+            if depth_km is None:
+                segmento = None
+            elif depth_km < 70:
+                segmento = "corteza"
+            else:
+                segmento = "profundo"
+            event_type = (
+                str(row["type"])
+                if "type" in row.index and pd.notna(row["type"])
+                else None
+            )
+            mag_type = (
+                str(row["magType"])
+                if "magType" in row.index and pd.notna(row["magType"])
+                else None
+            )
+            place = (
+                str(row["place"])
+                if "place" in row.index and pd.notna(row["place"])
+                else None
+            )
+            status = (
+                str(row["status"])
+                if "status" in row.index and pd.notna(row["status"])
+                else None
+            )
             if not dry_run:
                 conn.execute(
                     """INSERT INTO tbl_eventos_sismicos_fuente
-                       (usgs_id, time_utc, lat, lon, mag, id_nodo, topologia_version)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)
+                       (usgs_id, time_utc, lat, lon, mag, id_nodo, topologia_version,
+                        depth_km, mag_type, event_type, place, status, segmento)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(usgs_id) DO UPDATE SET
                            lat=excluded.lat, lon=excluded.lon, mag=excluded.mag,
                            id_nodo=excluded.id_nodo,
                            topologia_version=excluded.topologia_version,
+                           depth_km=excluded.depth_km,
+                           mag_type=excluded.mag_type,
+                           event_type=excluded.event_type,
+                           place=excluded.place,
+                           status=excluded.status,
+                           segmento=excluded.segmento,
                            updated_at=datetime('now')""",
                     (str(row["id"]), str(row["time"]), float(row["latitude"]),
-                     float(row["longitude"]), float(row["mag"]), nodo["id"], version),
+                     float(row["longitude"]), float(row["mag"]), nodo["id"], version,
+                     depth_km, mag_type, event_type, place, status, segmento),
                 )
             total += 1
         if not dry_run:

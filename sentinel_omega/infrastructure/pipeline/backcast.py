@@ -257,7 +257,16 @@ def extraer_nasa_omni_real(year: int) -> pd.DataFrame:
 
 
 def extraer_sismos_usgs_real(year: int) -> pd.DataFrame:
-    """Extract real seismic catalog from USGS FDSN for a given year."""
+    """Extract real seismic catalog from USGS FDSN for a given year.
+
+    El CSV de FDSN trae 22 columnas fijas (`time`, `mag`, `latitude`,
+    `longitude`, `depth`, `type`, `id`, `magType`, `place`, `status`, …).
+    Antes se botaban `depth` y `type` al quedarse solo con 4. Se conservan
+    las utiles con los nombres del CSV; el bloque anual sigue escribiendo
+    solo conteo/hora en `tbl_historico_sismico_raw` (esa tabla no tiene
+    profundidad). Quien necesite el evento completo usa geojson
+    (`usgs_catalogo`) o el camino de topologia.
+    """
     url = "https://earthquake.usgs.gov/fdsnws/event/1/query"
     params = {
         "format": "csv",
@@ -273,7 +282,16 @@ def extraer_sismos_usgs_real(year: int) -> pd.DataFrame:
         if df.empty:
             return pd.DataFrame()
         df["time"] = pd.to_datetime(df["time"]).dt.tz_localize(None)
-        return df[["time", "mag", "latitude", "longitude"]].copy()
+        # Nombres del CSV USGS, no los de geojson (mag≠magnitude, depth≠depth_km).
+        cols = [
+            "time", "mag", "latitude", "longitude",
+            "depth", "type", "id", "magType", "place", "status",
+        ]
+        faltan = [c for c in ("time", "mag", "latitude", "longitude") if c not in df.columns]
+        if faltan:
+            raise KeyError(f"CSV USGS sin columnas obligatorias: {faltan}")
+        keep = [c for c in cols if c in df.columns]
+        return df[keep].copy()
     except Exception as e:
         logger.error(f"USGS seismic fetch failed for {year}: {e}")
         return pd.DataFrame()

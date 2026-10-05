@@ -148,7 +148,27 @@ class GeodynamicLayerRunner:
         self._enable_satellite = enable_satellite
         self.assertivity = AssertivityTracker(radius_degrees=5.0, window_days=30)
         self.scanner = PrecursorScanner()
-        self.muro = MuroCincoEventos(min_walls_for_breach=3)
+        # Ruta de la DB para releer el umbral en cada ciclo.
+        # cargar_umbral_vivo vive dentro de evaluate; aqui solo se pasa la ruta.
+        _db = None
+        try:
+            from sentinel_omega.config.sentinel_config import load_config
+            _cfg = load_config()
+            _db = str(
+                Path(__file__).resolve().parents[2]
+                / _cfg.databases.geodynamic_db
+            )
+        except Exception:
+            _db = None
+        self.muro = MuroCincoEventos(
+            min_walls_for_breach=3,
+            db_path=_db,
+            clase_vivo="SISMO_M6",
+        )
+        logger.info(
+            "Muro vivo: releera SISMO_M6 cada ciclo (fallback=3, db=%s)",
+            _db,
+        )
         self.last_risk: Optional[PrecursorRisk] = None
         self.last_detections: List[PrecursorDetection] = []
         self.last_muro: Optional[MuroResult] = None

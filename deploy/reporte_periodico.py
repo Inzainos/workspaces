@@ -22,6 +22,10 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 from deploy.aciertos_reporte import obtener_estadisticas_aciertos
+from sentinel_omega.core.precursor.baseline import (
+    BLANCO_REPORTE_MAGNITUD,
+    BLANCO_REPORTE_VENTANA_H,
+)
 
 DB_DEFAULT = str(RAIZ / "sentinel_omega" / "data" / "SENTINEL_OMEGA_PRO.db")
 DIR_ESTADO = RAIZ / "estado"
@@ -143,7 +147,7 @@ def _nivel_fantasma(v) -> str:
 
 
 # Glosario común: hace el reporte legible para cualquiera, no solo para el operador.
-GLOSARIO = """## ℹ️ Cómo leer este reporte
+GLOSARIO = f"""## ℹ️ Cómo leer este reporte
 
 - **Fantasma** — índice de *riesgo cósmico* (TITAN V32). **No es un sismo**: mide la
   tensión del sistema combinando campo magnético (Bz), viento solar, resonancia
@@ -153,8 +157,11 @@ GLOSARIO = """## ℹ️ Cómo leer este reporte
   oceánica, solar/geomagnética y financiera). Hay *breach* cuando **3 o más** se
   activan a la vez.
 - **Asertividad viva** — de las predicciones ya verificadas contra la realidad (USGS),
-  qué porcentaje resultó **ACIERTO**. Verdad por fila, ventana de 72 h; el Juez
-  audita aparte (nunca predice).
+  qué porcentaje resultó **ACIERTO**. El conteo impreso conserva la `ventana_h`
+  almacenada en cada fila; no es todavía un filtro de **M>={BLANCO_REPORTE_MAGNITUD:.1f}
+  dentro de {BLANCO_REPORTE_VENTANA_H} h** ni una relabelización del histórico.
+  Ese es el blanco objetivo para reportes nuevos. El umbral del muro no cambia.
+  El Juez audita aparte (nunca predice).
 - **Cimática** — patrones de telemetría que el sistema ve repetirse; si un patrón
   antecede a un evento real se etiqueta con su clase (SISMO_M4…M7, ERUPCION_VEI…).
   La frecuencia es cuántas veces se ha visto ese patrón.

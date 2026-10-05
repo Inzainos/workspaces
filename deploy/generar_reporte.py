@@ -24,7 +24,11 @@ from aciertos_reporte import seccion_aciertos_markdown
 # Las severidades del Juez, importadas y NO copiadas: si allí se retoca el
 # castigo del silencio, el coste de este reporte tiene que moverse con él.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from sentinel_omega.core.precursor.baseline import evaluar_veredictos
+from sentinel_omega.core.precursor.baseline import (
+    evaluar_veredictos,
+    BLANCO_REPORTE_MAGNITUD,
+    BLANCO_REPORTE_VENTANA_H,
+)
 # Los umbrales del semáforo se LEEN de donde viven. Estaban escritos a mano en
 # cuatro sitios de este archivo, así que recalibrarlos no habría llegado al
 # texto: la misma familia de fallo que todo lo de hoy.
@@ -494,10 +498,13 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 f"{f'. Hoy las alarmas se disparan con un {molchan.precision:.1%}' if molchan.precision is not None else ''}"
                 f"{', que es ' + f'{molchan.umbral_rentable / molchan.precision:.0f}' + ' veces menos' if (molchan.precision or 0) > 0 and molchan.precision < molchan.umbral_rentable else ''}.*",
                 "",
-                "*Con 50 nodos reales y radio de 5°, casi toda ventana de 72 h "
-                "tiene un M4.5+ cerca de algún nodo: para ganar de verdad, las "
-                "predicciones tendrán que volverse específicas por nodo, no "
-                "globales.*",
+                f"*El conteo de asertividad conserva la ventana_h almacenada "
+                f"en cada fila: no es todavía un filtro M>={BLANCO_REPORTE_MAGNITUD:.1f} "
+                f"en {BLANCO_REPORTE_VENTANA_H} h ni una relabelización del histórico. "
+                f"Ese es el blanco objetivo para reportes nuevos. La vara vieja "
+                f"(M4.5 en 72 h, 50 nodos, radio de 5°) es cierta casi siempre "
+                f"y no mide habilidad. El umbral del muro no se toca: el breach "
+                f"sigue en ≥3 de 5.*",
                 "",
             ]
     except sqlite3.OperationalError:

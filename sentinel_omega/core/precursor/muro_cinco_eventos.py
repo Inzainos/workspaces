@@ -14,15 +14,59 @@ The "muro" fires when >= 3 walls are simultaneously active with correlated
 precursors. The correlation score weights each wall by the confidence of
 its strongest active precursor.
 
-AVISO medido el 2026-09-26, al auditarlo: un muro se activa con UNA detección
-de cualquiera de sus miembros, sin umbral de confianza. Y dos de los detectores
-están prácticamente siempre encendidos --- SEISMIC_CLUSTER dispara con ~200
-eventos regionales, que es lo normal en el planeta, y SILENT_TRIGGER dispara
-PORQUE HAY CALMA (Kp bajo), que es el estado habitual. Resultado: el «breach»
-de 3 muros ocurrió el **66 % de los ciclos** del histórico, cuando la frase de
-arriba dice que casi nunca es coincidencia. Las confianzas, además, son un único
-valor fijo por tipo (0,95 / 0,9 / 0,7): son banderas, no medidas.
-Auditar esos detectores queda pendiente; está en la bitácora del 25-sep.
+CALIBRACIÓN MEDIDA el 2026-10-02 sobre los 6.915 ciclos de `TBL_MURO_EVENTOS`.
+Sustituye el aviso del 26-sep, que daba 66 % de breach --- hoy es 32 %, tras
+mover FANTASMA fuera del muro geofísico.
+
+Reparto de muros activos:
+
+    5/5      0 ciclos   ( 0,0 %)   <- NUNCA ha ocurrido
+    4/5     20          ( 0,3 %)
+    3/5  2.200          (31,8 %)   -> el breach (>=3) dispara el 32,1 %
+    2/5  1.692          (24,5 %)
+    1/5  2.543          (36,8 %)
+    0/5    460          ( 6,7 %)
+
+Cuánto se enciende cada muro, que es donde está el defecto:
+
+    geofisico    82,4 %      <- SEISMIC_CLUSTER dispara el 81,8 % de los ciclos
+    solar        66,7 %      <- SILENT_TRIGGER el 55,4 %: dispara PORQUE hay calma
+    oceanico     27,9 %      <- TSUNAMI el 27,9 %; no puede estar midiendo tsunamis
+    atmosferico   5,2 %
+    financiero    0,0 %      <- MUERTO: no se ha encendido ni una vez
+
+Con dos muros encendidos tres cuartas partes del tiempo, la premisa de arriba
+---«dominios físicos distintos alterados a la vez casi nunca es coincidencia»---
+queda vacía. Y con el muro financiero muerto, exigir 5/5 no es un umbral
+estricto: es un instrumento **permanentemente mudo**. 4/5 son 20 ciclos, n
+insuficiente para calibrar nada.
+
+LO QUE SÍ DISCRIMINA, y por qué parecía que no. Medido contra «¿hay un sismo
+M>=4.5 en el planeta en las próximas 72 h?», la ganancia de Molchan sale 1,00x
+en TODOS los umbrales --- pero no porque el muro no sepa nada, sino porque ese
+blanco es cierto el **99,6 %** del tiempo. La vara estaba rota antes que el
+umbral. Con un blanco alcanzable:
+
+    BLANCO M>=6.0 en 24 h   (tasa base 0,238, 31 sismos)
+      >=1   dispara 93,3 %   ganancia 0,92x   peor que el azar
+      >=2   dispara 56,6 %   ganancia 1,29x
+      >=3   dispara 32,1 %   ganancia **1,93x**   <- el optimo medido
+      >=4   dispara  0,3 %   ganancia 1,47x   (n=20, no fiable)
+
+    BLANCO M>=6.0 en 48 h: >=3 da 1,54x · BLANCO M>=5.5 en 24 h: >=3 da 1,37x
+
+Así que **el umbral de 3 es el óptimo medido** y no se toca; lo que hay que
+arreglar son los detectores y la vara con la que se reporta.
+
+LOS PESOS SON DECORATIVOS. `correlation_score` se reduce algebraicamente a
+`weighted_sum / total_walls` --- el `walls_active` se cancela --- y las
+confianzas son constantes fijas por tipo (0,95 / 0,9 / 0,7): banderas, no
+medidas. Medido: su mejor cuartil da 1,89x contra el 1,93x del simple conteo de
+muros. No aporta información; sugiere una precisión que no existe.
+
+PENDIENTE, en orden de daño: (1) el muro FINANCIERO muerto, (2) SEISMIC_CLUSTER
+y SILENT_TRIGGER siempre encendidos, (3) TSUNAMI al 27,9 %, (4) decidir si los
+pesos se hacen reales o se retiran.
 
 Legacy: TITAN V32 only had walls 1+4. V53 added atmospheric. Sentinel Omega
 completes the picture with oceanic and financial correlation.
@@ -121,12 +165,35 @@ class MuroResult:
 
 class MuroCincoEventos:
 
-    def __init__(self, min_walls_for_breach: int = 3):
+    def __init__(
+        self,
+        min_walls_for_breach: int = 3,
+        db_path: Optional[str] = None,
+        clase_vivo: str = "SISMO_M6",
+    ):
+        # Fallback fijo si la tabla no da numero. El vivo lo relee
+        # en cada evaluate; no se congela al arrancar.
         self.min_walls_for_breach = min_walls_for_breach
+        self.db_path = db_path
+        self.clase_vivo = clase_vivo
+        self.senales_breach: Optional[tuple] = None
+        self.last_umbral_fuente: str = "fallback"
         self.last_result: Optional[MuroResult] = None
 
     def evaluate(self, detections: list) -> MuroResult:
         """Evaluate all five walls against current precursor detections."""
+        umbral = self.min_walls_for_breach
+        senales = None
+        if self.db_path:
+            _uv = cargar_umbral_vivo(
+                self.db_path,
+                clase=self.clase_vivo,
+                fallback=self.min_walls_for_breach,
+            )
+            umbral = int(_uv["umbral"])
+            senales = _uv.get("senales")
+            self.last_umbral_fuente = str(_uv.get("fuente") or "fallback")
+            self.senales_breach = senales
         detection_types: Dict[PrecursorType, float] = {}
         for d in detections:
             tipo = d.tipo
@@ -165,7 +232,12 @@ class MuroCincoEventos:
         if walls_active > 0:
             correlation_score = (walls_active / total_walls) * (weighted_sum / walls_active)
 
-        muro_breach = walls_active >= self.min_walls_for_breach
+        if senales:
+            activas = {ws.name for ws in wall_statuses if ws.active}
+            conteo = sum(1 for s in senales if s in activas)
+            muro_breach = conteo >= umbral
+        else:
+            muro_breach = walls_active >= umbral
 
         result = MuroResult(
             timestamp=time.time(),
@@ -218,3 +290,172 @@ def format_muro_report(result: MuroResult) -> str:
         lines.append(f"<b>⚠️ ALERTA: Correlación multi-dominio detectada</b>")
 
     return "\n".join(lines)
+
+
+# Entrenamiento aparte por magnitud (2026-10-04).
+# El 2.5 es gatillo, no blanco. El blanco empieza en la prediccion, 4.5.
+# Lo que precede a un 4.5 no entra como acierto del muro de un 6.
+# Cada senal se juzga sola. Entra al muro de una magnitud solo si esta
+# encendida mas a menudo antes de esa magnitud que antes de las otras.
+# Si esta encendida para todas, no cuenta para esa clase. No se borra:
+# la misma senal se vuelve a juzgar para cada magnitud.
+# Geofisico y solar pasan por el mismo corte. No hay excepcion por nombre.
+# Si una clase no tiene con que aprender, el umbral queda None: no se copia el 3.
+
+CLASES_BLANCO_MURO = ("SISMO_M4", "SISMO_M5", "SISMO_M6", "SISMO_M7")
+SENALES_MURO = tuple(WALL_MEMBERS)
+
+
+def cargar_umbral_vivo(
+    db_path: str,
+    clase: str = "SISMO_M6",
+    fallback: int = 3,
+) -> Dict[str, Any]:
+    """Lee el umbral guardado para el vivo.
+
+    Blanco del vivo: SISMO_M6 (alerta). Si la fila no existe, umbral es
+    NULL, o senales vacias, se queda el fallback (hoy 3) sin senales.
+    No inventa numeros. Abre en solo lectura: si la ruta falla, no crea
+    un .db vacio.
+    """
+    import json
+    import sqlite3
+
+    out: Dict[str, Any] = {
+        "clase": clase,
+        "umbral": fallback,
+        "senales": None,
+        "fuente": "fallback",
+    }
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            row = conn.execute(
+                "SELECT umbral, senales FROM tbl_muro_umbral_magnitud WHERE clase = ?",
+                (clase,),
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception:
+        return out
+    if not row:
+        return out
+    umbral, senales_json = row
+    if umbral is None:
+        return out
+    try:
+        senales = tuple(json.loads(senales_json or "[]"))
+    except Exception:
+        return out
+    if not senales:
+        return out
+    out["umbral"] = int(umbral)
+    out["senales"] = senales
+    out["fuente"] = "tabla"
+    return out
+
+
+def clase_blanco_muro(mag: float) -> Optional[str]:
+    """Clase que el muro puede aprender. Por debajo de 4.5 no hay blanco."""
+    if mag is None or mag < 4.5:
+        return None
+    if mag >= 7.0:
+        return "SISMO_M7"
+    if mag >= 6.0:
+        return "SISMO_M6"
+    if mag >= 5.0:
+        return "SISMO_M5"
+    return "SISMO_M4"
+
+
+def entrenar_umbral_por_magnitud(
+    filas: List[tuple],
+    min_positivos: int = 30,
+) -> Dict[str, Dict[str, Any]]:
+    """Senales y umbral de cada magnitud.
+
+    Cada fila es (senales_activas, magnitud). senales_activas son nombres
+    de muro. magnitud None es un ciclo sin sismo de blanco. Un sismo solo
+    es acierto de SU clase.
+
+    Una senal entra a la clase si su tasa delante de esa clase es mayor
+    que su tasa delante de las otras clases con blanco. Empate, o
+    encendida para todas, no entra. El umbral es el conteo de esas
+    senales, de 1 hasta las que entraron, cuya ganancia supera al azar.
+    Si dos conteos empatan, se queda el mas alto. Si ninguno supera, o
+    no hay suficientes sismos, el umbral es None.
+    """
+    activas: List[Set[str]] = []
+    etiquetas: List[Optional[str]] = []
+    for senales, mag in filas:
+        activas.append(set(senales))
+        etiquetas.append(None if mag is None else clase_blanco_muro(float(mag)))
+    n = len(etiquetas)
+    out: Dict[str, Dict[str, Any]] = {}
+    for clase in CLASES_BLANCO_MURO:
+        idx = [i for i, et in enumerate(etiquetas) if et == clase]
+        vacio = {"senales": (), "umbral": None}
+        if n == 0 or len(idx) < min_positivos:
+            out[clase] = vacio
+            continue
+        otras = [i for i, et in enumerate(etiquetas) if et is not None and et != clase]
+        if not otras:
+            out[clase] = vacio
+            continue
+        entran = []
+        for senal in SENALES_MURO:
+            tasa_clase = sum(senal in activas[i] for i in idx) / len(idx)
+            tasa_otras = sum(senal in activas[i] for i in otras) / len(otras)
+            if tasa_clase > tasa_otras:
+                entran.append(senal)
+        if not entran:
+            out[clase] = vacio
+            continue
+        mejor_k: Optional[int] = None
+        mejor_g = 1.0
+        n_pos = len(idx)
+        for k in range(1, len(entran) + 1):
+            alarmas = 0
+            aciertos = 0
+            for i, encienden in enumerate(activas):
+                if sum(s in encienden for s in entran) >= k:
+                    alarmas += 1
+                    if i in idx:
+                        aciertos += 1
+            if not alarmas:
+                continue
+            ganancia = (aciertos / n_pos) / (alarmas / n)
+            if ganancia > mejor_g or (
+                mejor_k is not None and ganancia == mejor_g and k > mejor_k
+            ):
+                mejor_g = ganancia
+                mejor_k = k
+        out[clase] = {"senales": tuple(entran), "umbral": mejor_k}
+    return out
+
+
+def filas_muros_antes_del_sismo(
+    ciclos: List[tuple],
+    sismos: List[tuple],
+) -> List[tuple]:
+    """Una fila por ciclo: los muros de ese ciclo y la magnitud posterior.
+
+    El ciclo que cuenta es el ultimo con marca estrictamente anterior al
+    sismo. El del mismo instante, o uno posterior, no entra. Si varios
+    sismos caen sobre el mismo ciclo, se queda la magnitud mayor. Un ciclo
+    sin sismo despues lleva magnitud None.
+    """
+    ordenados = sorted(ciclos, key=lambda fila: fila[0])
+    eventos = sorted(sismos, key=lambda fila: fila[0])
+    mejor: Dict[int, float] = {}
+    j = 0
+    n = len(ordenados)
+    for ts, mag in eventos:
+        while j + 1 < n and ordenados[j + 1][0] < ts:
+            j += 1
+        if n == 0 or ordenados[j][0] >= ts:
+            continue
+        previa = mejor.get(j)
+        if previa is None or mag > previa:
+            mejor[j] = float(mag)
+    return [(senales, mejor.get(i)) for i, (_, senales) in enumerate(ordenados)]

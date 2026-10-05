@@ -105,7 +105,7 @@ class PrecursorScanner:
         detections.extend(self._scan_schumann(schumann_hz, schumann_pct))
         detections.extend(self._scan_tormenta_solar(bz, kp_mean, viento))
         detections.extend(self._scan_perturbacion_geomagnetica(bz, kp_mean))
-        detections.extend(self._scan_tsunami(seismic_mags, delta_data))
+        detections.extend(self._scan_tsunami(seismic_mags, delta_data, beta1_data))
         detections.extend(self._scan_hurricanes(hurricane_data or {}))
         detections.extend(self._scan_financial_correlation(financial_data or {}))
         detections.extend(self._scan_precipitacion(atmospheric, schumann_hz))
@@ -477,13 +477,32 @@ class PrecursorScanner:
         return results
 
     def _scan_tsunami(
-        self, seismic_mags: Optional[Any], delta_data: Dict[str, Any]
+        self,
+        seismic_mags: Optional[Any],
+        delta_data: Dict[str, Any],
+        beta1_data: Optional[Dict[str, Any]] = None,
     ) -> List[PrecursorDetection]:
-        if seismic_mags is None:
+        if seismic_mags is None or len(seismic_mags) == 0:
             return []
 
-        max_mag = float(np.max(seismic_mags)) if len(seismic_mags) > 0 else 0.0
-        depth_km = delta_data.get("max_quake_depth_km", 30.0)
+        max_mag = float(np.max(seismic_mags))
+        # La profundidad es la del sismo de mayor magnitud, escrita junto a
+        # las magnitudes (beta1). delta solo conserva pruebas que ya la
+        # pasaban ahí. Si falta, falta: no se usa 30 ni 0.
+        if isinstance(beta1_data, dict) and "max_quake_depth_km" in beta1_data:
+            raw_depth = beta1_data.get("max_quake_depth_km")
+        elif isinstance(delta_data, dict) and "max_quake_depth_km" in delta_data:
+            raw_depth = delta_data.get("max_quake_depth_km")
+        else:
+            raw_depth = None
+        if raw_depth is None:
+            return []
+        try:
+            depth_km = float(raw_depth)
+        except (TypeError, ValueError):
+            return []
+        if not np.isfinite(depth_km):
+            return []
 
         if not detect_tsunami_potential(max_mag, depth_km):
             return []

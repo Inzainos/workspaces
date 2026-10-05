@@ -58,15 +58,24 @@ from sentinel_omega.infrastructure.database.schema import conexion_de_lote
 
 logger = logging.getLogger(__name__)
 
-# Los bots OBSERVAN todas las magnitudes (hasta el mínimo movimiento es un
-# gatillo precursor), pero el sistema solo ALERTA y CASTIGA desde 4.5 para
-# arriba: ese es el piso de firmas exigibles y de disciplina del Juez.
-MIN_MAGNITUD_FIRMA = 4.5
+# Cortes del Capitan, 2026-10-04.
+# 2.5 es el gatillo: el temblor chico arma la firma. Se lee de la tabla
+# que ya esta. Este diff no baja de USGS el tramo 2.5 a 4.49.
+# 4.5 es la prediccion que el sistema sostiene. Por debajo se observa
+# y no se cobra.
+# 6 es el muro. Ahi se dispara la alerta. Un 4.5 no la dispara.
+MIN_MAGNITUD_FIRMA = 4.5       # prediccion y castigo
+MIN_MAGNITUD_OBSERVAR = 2.5    # gatillo; lee lo ya guardado
+MIN_MAGNITUD_ALERTA = 6.0      # muro y alerta
 
-# Mínimo observado en Fase 1: los bots registran firmas desde esta magnitud.
-# Eventos M2.5–4.49 generan firmas pero NO activan disciplina (castigo/Juez
-# solo punish) — solo alimentan el ACIERTO histórico del Juez.
-MIN_MAGNITUD_OBSERVAR = 3.3   # piso de medición (= piso real del backcast); solo alerta desde 4.5
+
+def dispara_alerta(event_class: Optional[str]) -> bool:
+    """La alerta sismica sale desde M6. Una clase que no es sismo no se calla."""
+    if not event_class or not str(event_class).startswith("SISMO_"):
+        return True
+    return event_class in ("SISMO_M6", "SISMO_M7")
+
+
 
 # Feature domain per bot — each bot only remembers what it measures.
 # Padre keeps the full cross-domain vector (patterns within patterns).
@@ -110,6 +119,19 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
               "bz_mean_72h", "kp_mean", "kp_max"],
     "beta1": ["kp_mean", "kp_max", "schumann_mean", "schumann_std",
               "sismo_count_win", "sismo_max_mag_win", "fase_lunar",
+              "sismo_depth_mean_win",
+              "sismo_corteza_win",
+              "sismo_profundo_win",
+              "sismo_mag_mw_win",
+              "sismo_mag_otro_win",
+              "sismo_eq_win",
+              "sismo_otro_tipo_win",
+              "sismo_tsunami_win",
+              "sismo_alert_max_win",
+              "sismo_mmi_max_win",
+              "sismo_cdi_max_win",
+              "sismo_felt_sum_win",
+              "sismo_sig_max_win",
               "es_sicigia", "kp_max_72h", "sismo_count_72h"],
     # beta2 — los cuatro volcánicos MÁS la marea terrestre.
     #
@@ -315,7 +337,7 @@ def _event_class(mag: float) -> str:
     if mag >= 5.0:
         return "SISMO_M5"
     if mag >= 4.5:
-        return "SISMO_M4"      # 4.5–4.99: piso de alerta/castigo (exigible)
+        return "SISMO_M4"      # 4.5–4.99: piso de prediccion y castigo; la alerta es M6
     if mag >= 4.0:
         return "SISMO_M4_obs"  # 4.0–4.49: observado, no exigible
     if mag >= 3.0:
@@ -432,7 +454,7 @@ def entrenar_reconocimiento(
 ) -> Dict:
     """Fase 1 — learn signatures from every observed historical event.
 
-    Observes ALL magnitudes >= MIN_MAGNITUD_OBSERVAR (3.3): bots register
+    Observes ALL magnitudes >= MIN_MAGNITUD_OBSERVAR (2.5): bots register
     firma patterns for every size of event so that small precursors are
     captured. The Juez logs an ACIERTO for every successful registration —
     this builds the positive pattern-history used by resumen_por_bot() even
@@ -768,6 +790,101 @@ def entrenar_incremental(db_path: str, max_eventos: Optional[int] = None) -> Dic
     return stats
 
 
+
+def calcular_umbral_muro(db_path: str) -> Dict[str, Dict]:
+    """Calcula y guarda el umbral del muro por magnitud.
+
+    No es un rebuild. No toca firmas, pesos, cimatica ni el corte en vivo.
+    La fila es el ciclo cuya marca es la ultima estrictamente anterior al
+    sismo. El ciclo del mismo instante no entra. Si no hay suficientes
+    sismos, el umbral queda NULL. No se copia el 3.
+    """
+    from datetime import timezone
+
+    from sentinel_omega.core.precursor.muro_cinco_eventos import (
+        CLASES_BLANCO_MURO,
+        clase_blanco_muro,
+        WALL_ATMOSFERICO,
+        WALL_FINANCIERO,
+        WALL_GEOFISICO,
+        WALL_OCEANICO,
+        WALL_SOLAR,
+        entrenar_umbral_por_magnitud,
+        filas_muros_antes_del_sismo,
+    )
+
+    columnas = (
+        ("wall_geofisico", WALL_GEOFISICO),
+        ("wall_atmosferico", WALL_ATMOSFERICO),
+        ("wall_oceanico", WALL_OCEANICO),
+        ("wall_solar", WALL_SOLAR),
+        ("wall_financiero", WALL_FINANCIERO),
+    )
+    conn = conexion_de_lote(db_path)
+    try:
+        crudos = conn.execute(
+            "SELECT timestamp, wall_geofisico, wall_atmosferico, "
+            "wall_oceanico, wall_solar, wall_financiero "
+            "FROM TBL_MURO_EVENTOS ORDER BY timestamp"
+        ).fetchall()
+        ciclos = []
+        for ts, *flags in crudos:
+            senales = tuple(
+                nombre for (_, nombre), flag in zip(columnas, flags) if flag
+            )
+            ciclos.append((float(ts), senales))
+        if ciclos:
+            desde = datetime.fromtimestamp(ciclos[0][0], timezone.utc).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            sismos_raw = conn.execute(
+                "SELECT time_utc, mag FROM tbl_eventos_sismicos_fuente "
+                "WHERE mag >= ? AND time_utc >= ? "
+                "AND (event_type IS NULL OR event_type = 'earthquake') "
+                "ORDER BY time_utc",
+                (MIN_MAGNITUD_FIRMA, desde),
+            ).fetchall()
+        else:
+            sismos_raw = []
+        sismos = []
+        for time_utc, mag in sismos_raw:
+            ts = datetime.strptime(str(time_utc)[:19], "%Y-%m-%d %H:%M:%S").replace(
+                tzinfo=timezone.utc
+            ).timestamp()
+            sismos.append((ts, float(mag)))
+        filas = filas_muros_antes_del_sismo(ciclos, sismos)
+        umbral = entrenar_umbral_por_magnitud(filas)
+        ahora = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tbl_muro_umbral_magnitud ("
+            "clase TEXT PRIMARY KEY, senales TEXT NOT NULL, "
+            "umbral INTEGER, n_filas INTEGER NOT NULL, "
+            "calculado_en TEXT NOT NULL)"
+        )
+        conn.execute("DELETE FROM tbl_muro_umbral_magnitud")
+        for clase in CLASES_BLANCO_MURO:
+            dato = umbral[clase]
+            conn.execute(
+                "INSERT INTO tbl_muro_umbral_magnitud "
+                "(clase, senales, umbral, n_filas, calculado_en) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    clase,
+                    json.dumps(list(dato["senales"])),
+                    dato["umbral"],
+                    sum(
+                        1 for _, mag in filas
+                        if mag is not None and clase_blanco_muro(mag) == clase
+                    ),
+                    ahora,
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return umbral
+
+
 def entrenar(
     db_path: str,
     max_eventos: Optional[int] = None,
@@ -843,12 +960,14 @@ def entrenar(
     except Exception as e:
         logger.warning(f"Sesgo post-entrenamiento no disponible: {e}")
 
+    umbral_muro = calcular_umbral_muro(db_path)
     return {"fase1": fase1, "fase1b": fase1b, "fase2": fase2, "lags": lags,
             "correlaciones": correlaciones,
             "cimatica": cimatica_stats,
             "sesgo_pre": sesgo_pre.get("por_bot", {}),
             "sesgo_post": sesgo_post.get("por_bot", {}),
-            "mejora_causal": mejora}
+            "mejora_causal": mejora,
+            "umbral_muro": umbral_muro}
 
 
 # Offsets probados: la ventana de la firma termina N horas ANTES del evento.
@@ -1295,14 +1414,14 @@ def calcular_correlaciones_evento(db_path: str) -> Dict:
 
 
 # ── Disciplina de trasfondo — "castigo desde abajo" ──────────────────────────
-# Los bots ALERTAN y guardan firmas PERMANENTES desde M4.5 (memoria de 32 años).
+# Las firmas permanentes se guardan desde la prediccion (M4.5). La alerta sale desde M6.
 # Pero para que no se duerman con los precursores chiquitos, se les disciplina
 # cada cierto tiempo contra sismos MENORES (M3.3–4.49) de un bloque reciente de
 # años. Esas firmas viven en una tabla TEMPORAL que se poda por edad — solo
 # sobreviven los PESOS neuronales. El ajuste de peso por corrida está ACOTADO
 # para no cráterizar la credibilidad de un bot de un golpe.
-MAG_MENOR_MIN = 3.3   # piso de medición vivo, alineado al backcast (alerta solo desde 4.5)
-MAG_MENOR_MAX = MIN_MAGNITUD_FIRMA          # 4.5 — justo por debajo del piso de alerta
+MAG_MENOR_MIN = 3.3   # este fetch no baja a 2.5: esa bajada no entra en este diff
+MAG_MENOR_MAX = MIN_MAGNITUD_FIRMA          # 4.5, por debajo de la prediccion
 DISCIPLINA_MAX_EVENTOS = 300                # muestreo acotado por corrida
 DISCIPLINA_RETENCION_DIAS = 90             # poda rolling de la tabla temporal
 DISCIPLINA_MAX_AJUSTES = 3                  # pasos de peso por bot por corrida

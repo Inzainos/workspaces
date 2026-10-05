@@ -47,6 +47,15 @@ FEATURE_KEYS = [
     "densidad_prot_mean", "densidad_prot_max",
     "schumann_mean", "schumann_std",
     "sismo_count_win", "sismo_max_mag_win",
+    # Agregados de la ventana previa. No son el sismo que se predice.
+    # Ausente = NULL. Un 0 medido se queda 0. El vector ONNX no las lleva.
+    "sismo_depth_mean_win",
+    "sismo_corteza_win", "sismo_profundo_win",
+    "sismo_mag_mw_win", "sismo_mag_otro_win",
+    "sismo_eq_win", "sismo_otro_tipo_win",
+    "sismo_tsunami_win", "sismo_alert_max_win",
+    "sismo_mmi_max_win", "sismo_cdi_max_win",
+    "sismo_felt_sum_win", "sismo_sig_max_win",
     "fase_lunar", "es_sicigia", "lod", "vix",
     "btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h",
     "so2_kt_win", "erupciones_win", "so2_kt_90d", "erupciones_90d",
@@ -154,6 +163,83 @@ def _tiene_columna(conn, tabla: str, columna: str) -> bool:
         return False
 
 
+
+_MAG_MOMENTO = ("mw", "mww", "mwc", "mwr", "mwb", "mwp")
+_ALERTA_NIVEL = {"green": 1.0, "yellow": 2.0, "orange": 3.0, "red": 4.0}
+_COLS_SISMOS_VENTANA = (
+    "depth_km", "segmento", "mag_type", "event_type",
+    "tsunami", "alert", "mmi", "cdi", "felt", "sig",
+)
+
+
+def _sismos_de_ventana(conn, ts_evento: str, id_nodo: int) -> Dict[str, float]:
+    """Agregados de los sismos ya guardados en la ventana, anteriores al evento.
+
+    El sismo que se predice no entra: el corte es time_utc < ts_evento, el
+    mismo de sismo_count_win. Lo que no es earthquake no entra a depth,
+    segmento, mag_type, tsunami, alert, mmi, cdi, felt ni sig. event_type
+    sí se cuenta, para dejar fuera del resto lo que no sea earthquake.
+
+    Si falta la medición, la clave no se escribe (NULL). Un 0 medido se
+    queda 0. Estas claves no alargan el vector ONNX.
+    """
+    if not all(_tiene_columna(conn, "tbl_eventos_sismicos_fuente", c)
+               for c in _COLS_SISMOS_VENTANA):
+        return {}
+    filas = conn.execute(
+        "SELECT depth_km, segmento, mag_type, event_type, tsunami, "
+        "alert, mmi, cdi, felt, sig "
+        "FROM tbl_eventos_sismicos_fuente "
+        "WHERE id_nodo = ? AND time_utc < ? "
+        "AND time_utc >= datetime(?, ?)",
+        (id_nodo, ts_evento, ts_evento, "-%d hours" % VENTANA_HORAS),
+    ).fetchall()
+    if not filas:
+        return {}
+    out: Dict[str, float] = {}
+    tipos = [r[3] for r in filas if r[3]]
+    if tipos:
+        out["sismo_eq_win"] = float(sum(t == "earthquake" for t in tipos))
+        out["sismo_otro_tipo_win"] = float(sum(t != "earthquake" for t in tipos))
+    eq = [r for r in filas if r[3] == "earthquake"]
+    if not eq:
+        return out
+    depths = [r[0] for r in eq if r[0] is not None]
+    if depths:
+        out["sismo_depth_mean_win"] = float(sum(depths) / len(depths))
+    segs = [r[1] for r in eq if r[1] in ("corteza", "profundo")]
+    if segs:
+        out["sismo_corteza_win"] = float(sum(s == "corteza" for s in segs))
+        out["sismo_profundo_win"] = float(sum(s == "profundo" for s in segs))
+    mags = [str(r[2]).strip().lower() for r in eq if r[2] and str(r[2]).strip()]
+    if mags:
+        out["sismo_mag_mw_win"] = float(sum(m in _MAG_MOMENTO for m in mags))
+        out["sismo_mag_otro_win"] = float(sum(m not in _MAG_MOMENTO for m in mags))
+    tsun = [r[4] for r in eq if r[4] is not None]
+    if tsun:
+        out["sismo_tsunami_win"] = float(sum(tsun))
+    niveles = []
+    for r in eq:
+        if not r[5]:
+            continue
+        nivel = _ALERTA_NIVEL.get(str(r[5]).strip().lower())
+        if nivel is not None:
+            niveles.append(nivel)
+    if niveles:
+        out["sismo_alert_max_win"] = float(max(niveles))
+    for clave, idx, como in (
+        ("sismo_mmi_max_win", 6, "max"),
+        ("sismo_cdi_max_win", 7, "max"),
+        ("sismo_felt_sum_win", 8, "sum"),
+        ("sismo_sig_max_win", 9, "max"),
+    ):
+        vals = [r[idx] for r in eq if r[idx] is not None]
+        if not vals:
+            continue
+        out[clave] = float(max(vals) if como == "max" else sum(vals))
+    return out
+
+
 def extraer_features_ventana(
     conn: sqlite3.Connection,
     ts_evento: str,
@@ -242,6 +328,7 @@ def extraer_features_ventana(
     ).fetchone()
     features["sismo_count_win"] = float(sis[0])
     features["sismo_max_mag_win"] = float(sis[1])
+    features.update(_sismos_de_ventana(conn, ts_evento, id_nodo))
 
     # Lunar state at event time (tidal trigger context)
     luna = conn.execute(

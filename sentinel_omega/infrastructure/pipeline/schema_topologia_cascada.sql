@@ -28,6 +28,11 @@
 -- seed_nodos.py), la unica fuente de verdad para nombres. Guardar el
 -- nombre en dos lugares es exactamente el patron que causo el bug
 -- original.
+--
+-- place es el texto del catalogo USGS, no el nombre del nodo.
+-- segmento usa el corte de 70 km ya presente en detect_tsunami_potential.
+-- Una base vieja no recibe estas columnas con CREATE IF NOT EXISTS:
+-- las agrega asegurar_columnas() antes de escribir.
 
 CREATE TABLE IF NOT EXISTS tbl_eventos_sismicos_fuente (
     usgs_id         TEXT    PRIMARY KEY,   -- id oficial USGS, estable
@@ -37,7 +42,19 @@ CREATE TABLE IF NOT EXISTS tbl_eventos_sismicos_fuente (
     mag             REAL    NOT NULL,
     id_nodo         INTEGER NOT NULL,      -- DERIVADO — recalculable desde lat/lon
     topologia_version TEXT NOT NULL,       -- que corrida de geometria_uvg.py lo calculo
-    updated_at      TEXT    DEFAULT (datetime('now'))
+    updated_at      TEXT    DEFAULT (datetime('now')),
+    depth_km        REAL,                  -- tercera coordenada USGS; NULL si falta
+    mag_type        TEXT,
+    event_type      TEXT,                  -- properties.type; no es el nombre del nodo
+    place           TEXT,                  -- texto del catalogo USGS, no el nodo
+    status          TEXT,
+    tsunami         INTEGER,               -- 0 se queda 0
+    alert           TEXT,
+    mmi             REAL,
+    cdi             REAL,
+    felt            INTEGER,
+    sig             INTEGER,
+    segmento        TEXT                   -- corteza <70 km, profundo >=70; NULL si no hay depth
 );
 CREATE INDEX IF NOT EXISTS idx_eventos_sismicos_fuente_time
     ON tbl_eventos_sismicos_fuente(time_utc);

@@ -3,63 +3,52 @@
 from __future__ import annotations
 import argparse, logging, sqlite3
 from datetime import datetime, timedelta, timezone
-from io import StringIO
-import pandas as pd
-import requests
+
+from sentinel_omega.infrastructure.pipeline.usgs_catalogo import (
+    asegurar_columnas,
+    descargar_anio,
+    descargar_rango,
+    pedir_http,
+    upsert_fila,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("sismos_refetch")
 MIN_MAG = 2.5
 
-def fetch_recent(days: int) -> pd.DataFrame:
+def fetch_recent(days: int):
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
-    url = "https://earthquake.usgs.gov/fdsnws/event/1/query"
-    params = {
-        "format": "csv",
-        "starttime": start.strftime("%Y-%m-%d"),
-        "endtime": end.strftime("%Y-%m-%dT%H:%M:%S"),
-        "minmagnitude": str(MIN_MAG),
-    }
-    r = requests.get(url, params=params, timeout=90)
-    r.raise_for_status()
-    df = pd.read_csv(StringIO(r.text))
-    if df.empty:
-        return df
-    df["time"] = pd.to_datetime(df["time"]).dt.tz_localize(None)
-    return df[["id", "time", "mag", "latitude", "longitude"]].copy()
+    return descargar_rango(start, end, MIN_MAG, pedir_http)
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", required=True)
-    ap.add_argument("--days", type=int, default=14)
+    ap.add_argument("--days", type=int)
+    ap.add_argument("--year", type=int, help="un ano M4.5+, solo upsert, sin purgar")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
-    df = fetch_recent(args.days)
-    logger.info("USGS rows=%s", len(df))
-    if df.empty:
+    if args.year is not None and args.days is not None:
+        ap.error("usa --year o --days, no los dos")
+    if args.year is not None:
+        filas = descargar_anio(args.year, 4.5, pedir_http)
+    else:
+        filas = fetch_recent(14 if args.days is None else args.days)
+    logger.info("USGS rows=%s", len(filas))
+    if not filas:
         return
     try:
         from sentinel_omega.core.shared.geometria_uvg import nodo_mas_cercano
     except Exception:
         from core.shared.geometria_uvg import nodo_mas_cercano
     con = sqlite3.connect(args.db)
+    if not args.dry_run:
+        asegurar_columnas(con)
     n = 0
-    for _, row in df.iterrows():
-        nodo = nodo_mas_cercano(float(row["latitude"]), float(row["longitude"]))
+    for fila in filas:
+        nodo = nodo_mas_cercano(float(fila["lat"]), float(fila["lon"]))
         if not args.dry_run:
-            con.execute(
-                """INSERT INTO tbl_eventos_sismicos_fuente
-                   (usgs_id, time_utc, lat, lon, mag, id_nodo, topologia_version)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(usgs_id) DO UPDATE SET
-                       lat=excluded.lat, lon=excluded.lon, mag=excluded.mag,
-                       id_nodo=excluded.id_nodo,
-                       topologia_version=excluded.topologia_version,
-                       updated_at=datetime('now')""",
-                (str(row["id"]), str(row["time"]), float(row["latitude"]),
-                 float(row["longitude"]), float(row["mag"]), nodo["id"], "incremental"),
-            )
+            upsert_fila(con, fila, nodo["id"], "incremental")
         n += 1
     if not args.dry_run:
         con.commit()

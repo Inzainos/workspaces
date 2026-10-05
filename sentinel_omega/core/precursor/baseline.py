@@ -25,6 +25,13 @@ import numpy as np
 DEFAULT_RADIUS_DEG = 5.0
 DEFAULT_WINDOW_H = 72
 
+# Blanco objetivo para reportes nuevos (medido 2026-10-02); no reetiqueta
+# el conteo histórico del Juez.
+# M>=4.5 en 72 h es cierto el 99,6 % del tiempo: no discrimina.
+# El umbral del muro NO vive aqui y no se mueve: sigue en 3.
+BLANCO_REPORTE_MAGNITUD = 6.0
+BLANCO_REPORTE_VENTANA_H = 24
+
 
 def _event_epoch(event: Dict[str, Any]) -> Optional[float]:
     """Epoch en segundos del evento; acepta segundos o milisegundos USGS."""
@@ -59,6 +66,26 @@ class BaselineResult:
         if self.gain > 1.0:
             return "ganancia marginal sobre el modelo nulo"
         return "SIN ganancia — no supera a alertar-siempre"
+
+
+def es_blanco_del_reporte(magnitud, horas_despues) -> bool:
+    """True si el sismo es el blanco del reporte: M>=6.0 dentro de 24 h.
+
+    No decide el breach del muro. Ese umbral sigue en 3.
+    """
+    if magnitud is None or horas_despues is None:
+        return False
+    try:
+        mag = float(magnitud)
+        horas = float(horas_despues)
+    except (TypeError, ValueError):
+        return False
+    if mag != mag or horas != horas:
+        return False
+    return (
+        mag >= BLANCO_REPORTE_MAGNITUD
+        and 0.0 <= horas <= float(BLANCO_REPORTE_VENTANA_H)
+    )
 
 
 class AlwaysAlertBaseline:

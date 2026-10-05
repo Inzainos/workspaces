@@ -72,6 +72,33 @@ from sentinel_omega.infrastructure.api.bolsa import (
 logger = logging.getLogger(__name__)
 
 
+def depth_km_o_null(depth: Any) -> Optional[float]:
+    """Profundidad real en km, o None si falta. Nunca inventa 0."""
+    try:
+        if pd.isna(depth):
+            return None
+    except (TypeError, ValueError):
+        return None
+    return float(depth)
+
+
+def profundidad_del_sismo_mayor(eq_df: Optional[pd.DataFrame]) -> Optional[float]:
+    """Profundidad del sismo de mayor magnitud.
+
+    No es la más somera ni un máximo de profundidad aparte. Si ESE sismo
+    no trae profundidad, devuelve None.
+    """
+    if eq_df is None or "magnitude" not in getattr(eq_df, "columns", []):
+        return None
+    if "depth_km" not in eq_df.columns or len(eq_df) == 0:
+        return None
+    mags = pd.to_numeric(eq_df["magnitude"], errors="coerce").to_numpy(dtype=float)
+    if mags.size == 0 or not np.isfinite(mags).any():
+        return None
+    i = int(np.nanargmax(mags))
+    return depth_km_o_null(eq_df["depth_km"].iloc[i])
+
+
 class GeodynamicPipeline:
     """Single pipeline for all 6 agents in the Sentinel Omega system.
 
@@ -262,6 +289,8 @@ class GeodynamicPipeline:
         eq_df = fetch_earthquakes(min_magnitude=2.5, days=30)
         if eq_df is not None and "magnitude" in eq_df.columns:
             result["seismic_magnitudes"] = eq_df["magnitude"].values.astype(float)
+            # Profundidad del sismo de MAYOR magnitud. Sin dato: None (no 0, no 30).
+            result["max_quake_depth_km"] = profundidad_del_sismo_mayor(eq_df)
             # No descartar el catálogo: el Juez lee TBL_HISTORICO_SISMICO y hay
             # que persistir estos sismos (el runner los inserta, INSERT OR IGNORE
             # dedup por event_id). Se exponen mapeados y filtrados. Cero
@@ -279,7 +308,7 @@ class GeodynamicPipeline:
                         "timestamp": float(pd.Timestamp(t).timestamp()),
                         "lat": float(lat),
                         "lon": float(lon),
-                        "depth_km": 0.0 if pd.isna(depth) else float(depth),
+                        "depth_km": depth_km_o_null(depth),
                         "magnitude": float(mag),
                         "region": str(r.get("place") or ""),
                         "source": "USGS",

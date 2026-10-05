@@ -259,6 +259,9 @@ def detect_hurricane_proximity(
 def detect_tsunami_potential(
     magnitude: float, depth_km: float
 ) -> bool:
+    # Sin profundidad no hay blanco: no se inventa 0 ni 30. Umbrales intactos.
+    if magnitude is None or depth_km is None:
+        return False
     return magnitude >= 7.0 and depth_km < 70.0
 
 
