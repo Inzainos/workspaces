@@ -52,3 +52,24 @@ sentinel_omega/data/backups/
 # salida de compilación; el WAL/SHM son estado vivo de SQLite.
 *.log.*
 *.egg-info/
+
+# ── Estado de ejecución y artefactos en `data/` (2026-10-07) ──────────────
+#
+# `sentinel_omega/data/` NO está ignorada como carpeta, aunque la regla 3 de
+# `AGENTS.md` diga que sí: solo lo están `*.db`, `*.pid`, `cache/` y
+# `backups/`. Verificado con `git check-ignore`. Así que todo lo demás que el
+# sistema escriba ahí acaba apareciendo como «sin commitear», y algo de eso no
+# puede entrar nunca.
+#
+# `estado_digesto.json` es el caso claro: es la marca del último digesto de
+# Telegram, por máquina. Si se commiteara, un checkout nuevo arrastraría la
+# hora de otro equipo y la compuerta de `TG_DIGEST_MINUTES` dejaría al
+# operador hasta una hora sin reporte --- justo el silencio que ese arreglo
+# venía a evitar.
+sentinel_omega/data/estado_digesto.json
+sentinel_omega/data/schumann_sos70/
+sentinel_omega/data/reporte_padre_*.txt
+
+# Respaldos que deja un agente antes de tocar un archivo. Son de un momento,
+# no del proyecto (p. ej. `CHANGELOG.md.bak_g_20260927`).
+*.bak_*
