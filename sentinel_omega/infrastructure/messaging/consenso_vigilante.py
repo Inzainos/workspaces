@@ -20,12 +20,14 @@ Dry-run: SENTINEL_DRY_RUN=1 / dry_run=True never calls the Telegram API.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sqlite3
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from sentinel_omega.infrastructure.messaging.alert_service import (
@@ -37,6 +39,29 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DIGEST_MINUTES = 60
 IMMEDIATE_COOLDOWN_S = int(os.environ.get("TELEGRAM_COOLDOWN_S", "1800"))
+
+# Marca del último digesto, COMPARTIDA ENTRE PROCESOS.
+#
+# `TG_DIGEST_MINUTES` era un mando muerto en la ruta que de verdad despacha
+# (2026-10-07). La cadena medida: `sentinel-omega-rutinas.timer` corre cada 15
+# min, el script llama `deploy/enviar_correos.py`, y ese es un `Type=oneshot` ---
+# **cada corrida es un proceso nuevo**. `last_digest_ts` nacía en 0.0 en el
+# `__init__` y no se guardaba en ninguna parte, así que la compuerta de
+# `maybe_flush` (`now - last_digest_ts < due_s`) no podía cerrarse NUNCA.
+# Resultado en el teléfono del operador: **54 digestos en un día, 4 por hora
+# exactas**, con `TG_DIGEST_MINUTES=60` declarado en tres documentos.
+#
+# Es la tercera vez que aparece el mismo bicho: el `days` de `fetch_kp_index` y
+# el `confidence_threshold` de los ocho ONNX también estaban declarados y leídos
+# por nadie. Aquí el mando SÍ se leía --- `digest_minutes()` lo lee --- pero el
+# estado contra el que se comparaba moría con el proceso, que para el caso es lo
+# mismo.
+#
+# Se persiste en un archivo junto a la base y NO en la base: esta clase abre la
+# DB en `mode=ro` en todas sus rutas, y la DB de producción tiene un escritor
+# vivo 24/7. Un archivo de dos campos no necesita migración ni compite por el
+# candado. `data/` está en `.gitignore`, así que se crea al vuelo (regla 3).
+DIGEST_STATE_FILE = "estado_digesto.json"
 
 # Alert types that are always unprecedented (loop / health).
 _ALWAYS_IMMEDIATE_TYPES = frozenset(
@@ -210,7 +235,9 @@ class ConsensoVigilante:
         )
         self._snapshot_fn = snapshot_fn
         self.buffer: List[BufferedAlert] = []
-        self.last_digest_ts: float = 0.0
+        # Se LEE del disco, no nace en cero: ver `DIGEST_STATE_FILE`. Sin esto
+        # cada proceso nuevo creía que nunca se había mandado un digesto.
+        self.last_digest_ts: float = self._load_last_digest_ts()
         self.dispatched: List[DispatchRecord] = []
         self._immediate_last: Dict[str, float] = {}
 
@@ -258,13 +285,102 @@ class ConsensoVigilante:
             "pending": len(self.buffer),
         }
 
+    # ------------------------------------------------------------------ #
+    # Cadencia del digesto — estado que sobrevive al proceso
+    # ------------------------------------------------------------------ #
+
+    def _digest_state_path(self) -> Optional[Path]:
+        """Dónde vive la marca, o None si esta instancia no debe tocarla.
+
+        `TG_DIGEST_STATE` la mueve, y los tests la apuntan a un `tmp_path`.
+
+        **En dry-run no hay archivo**, a propósito y por dos razones. Una: en
+        dry-run no sale ningún digesto, así que no hay nada que marcar. Dos, y
+        es la que importa: si una instancia dry-run leyera la marca de
+        producción, el resultado de un test dependería de cuándo salió el
+        último digesto de verdad --- y una prueba podría escribirla y dejar al
+        operador una hora sin reporte. La cadencia en dry-run vuelve a ser la
+        del proceso, que es lo que el `launcher.py` de siempre ya hacía bien.
+        """
+        override = (os.environ.get("TG_DIGEST_STATE") or "").strip()
+        if override:
+            return Path(override)
+        if self.dry_run or not self.db_path:
+            return None
+        return Path(self.db_path).parent / DIGEST_STATE_FILE
+
+    def _load_last_digest_ts(self) -> float:
+        """La marca del último digesto enviado, o 0.0 si no hay ninguna.
+
+        0.0 significa «manda ahora». Es el default correcto: ante la duda se
+        envía, porque la política 1 del módulo es no saltarse la hora. Lo que
+        NO se hace es callar el motivo --- un archivo ilegible se registra
+        (regla 10), porque si no la cadencia volvería al bicho de 4/hora sin
+        que nadie viera por qué.
+        """
+        ruta = self._digest_state_path()
+        if ruta is None:
+            return 0.0
+        try:
+            crudo = ruta.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return 0.0          # primera corrida: normal, no es un fallo
+        except OSError as exc:
+            logger.warning(
+                "no se pudo leer la marca del digesto en %s (%s) --- esta "
+                "corrida manda digesto", ruta, exc)
+            return 0.0
+        try:
+            ts = float(json.loads(crudo)["last_digest_ts"])
+        except (ValueError, TypeError, KeyError) as exc:
+            logger.warning(
+                "marca del digesto ilegible en %s (%s) --- esta corrida manda "
+                "digesto y la reescribe", ruta, exc)
+            return 0.0
+        # Un reloj que salta al futuro silenciaría el digesto durante horas sin
+        # que nada lo delate. Se desconfía del valor, no del operador (regla 7).
+        if ts > self._now() + 60.0:
+            logger.warning(
+                "la marca del digesto (%.0f) está en el futuro respecto al "
+                "reloj (%.0f) --- se ignora y esta corrida manda digesto",
+                ts, self._now())
+            return 0.0
+        return ts
+
+    def _persist_last_digest_ts(self, ts: float) -> None:
+        """Guarda la marca de forma atómica. Un fallo aquí NO tumba el envío:
+        el digesto ya salió, y lo peor que pasa es volver a la cadencia en
+        memoria --- pero queda dicho en el log."""
+        ruta = self._digest_state_path()
+        if ruta is None:
+            return
+        try:
+            ruta.parent.mkdir(parents=True, exist_ok=True)
+            tmp = ruta.with_suffix(".tmp")
+            tmp.write_text(
+                json.dumps({"last_digest_ts": float(ts)}), encoding="utf-8")
+            os.replace(tmp, ruta)
+        except OSError as exc:
+            logger.warning(
+                "no se pudo guardar la marca del digesto en %s (%s) --- la "
+                "cadencia vuelve a depender de la memoria del proceso y "
+                "`TG_DIGEST_MINUTES` deja de valer entre corridas", ruta, exc)
+
     def maybe_flush(self, snapshot: Optional[Dict[str, Any]] = None) -> Optional[DispatchRecord]:
         """Flush the hourly digest if the timer is due. Always sends when due,
         even if the buffer is empty (calm hour still gets a concentrado).
+
+        La compuerta funciona **entre procesos** desde el 2026-10-07: la marca
+        se lee del disco en el `__init__`, así que un `Type=oneshot` que corre
+        cada 15 min respeta `TG_DIGEST_MINUTES=60`. Ver `DIGEST_STATE_FILE`.
         """
         due_s = self._digest_minutes * 60
         now = self._now()
         if self.last_digest_ts and (now - self.last_digest_ts) < due_s:
+            faltan = (due_s - (now - self.last_digest_ts)) / 60.0
+            logger.info(
+                "CONSENSO digesto aún no toca: faltan %.0f min de los %d "
+                "declarados en TG_DIGEST_MINUTES", faltan, self._digest_minutes)
             return None
         return self.flush_digest(force=True, snapshot=snapshot)
 
@@ -312,6 +428,11 @@ class ConsensoVigilante:
         )
         rec.sent = self._send(html, "DIGESTO_HORARIO", cooldown=0, reply_markup=markup)
         self.last_digest_ts = rec.ts
+        # La marca en disco solo se mueve si el digesto SALIÓ de verdad. Si
+        # Telegram falló, la siguiente corrida (15 min) reintenta en vez de
+        # callarse una hora; y un `dry_run` no toca el estado de producción.
+        if rec.sent and not self.dry_run:
+            self._persist_last_digest_ts(rec.ts)
         self.dispatched.append(rec)
         logger.info(
             "CONSENSO digest horario (%s, buffered=%d, dry_run=%s)",

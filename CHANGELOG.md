@@ -1,5 +1,92 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-07 - La cadencia del digesto dejó de ser decorativa
+
+Sin push. Branch `local/recuperacion-datos-2026-09`.
+
+### El timer de rutinas está ENCENDIDO (corrección de documentación)
+
+Las notas del 4-oct dicen «timer de rutinas apagado». Era cierto entonces: se
+apagó mientras se trabajaba y **se volvió a levantar al terminar los cambios**
+(operador, 7-oct). Lo que seguía desactualizado era el documento, no el
+servicio. `systemctl --user list-timers` lo da `active`, disparando cada 15 min.
+
+### Despachaba 4 digestos por hora con `TG_DIGEST_MINUTES=60` declarado
+
+Medido en el journal del 7-oct: **54 digestos en un día, 4 por hora exactas**.
+La cadena necesita sus cuatro eslabones:
+
+1. `sentinel-omega-rutinas.timer` corre cada 15 min (`OnUnitActiveSec=15min`).
+2. `deploy/rutinas_locales.sh` pone compuerta de minuto a todos sus bloques
+   **menos al último**, que es `enviar_correos.py`.
+3. Ese llamaba `flush_digest(force=True)`, y `force` salta el temporizador ---
+   lo dice su propio docstring: «force ignores the timer».
+4. Y debajo, el eslabón que hacía inútil arreglar solo el 3: `last_digest_ts`
+   nacía en `0.0` y **no se guardaba en ninguna parte**. El servicio es
+   `Type=oneshot`, o sea un proceso nuevo cada corrida, así que la compuerta de
+   `maybe_flush` no podía cerrarse nunca.
+
+`launcher.py` no sufría el bicho: es un proceso largo con un único
+`get_vigilante()`, y ahí la marca en memoria sí funcionaba. Por eso el defecto
+solo se veía en el teléfono del operador, nunca en el código.
+
+Tercera aparición de la misma familia, tras el `days` de `fetch_kp_index` y el
+`confidence_threshold` de los ocho ONNX. La variante de aquí es más fina: el
+mando **sí** se leía, pero el estado contra el que se comparaba moría con el
+proceso, que para el caso es lo mismo.
+
+### Arreglo
+
+- `consenso_vigilante.py`: la marca se persiste en `data/estado_digesto.json`
+  (escritura atómica), se lee en el `__init__`, y solo avanza **si el digesto
+  salió de verdad** --- si Telegram falla, la corrida de los 15 min siguientes
+  reintenta en vez de callarse una hora. Guardas medidas: marca en el futuro
+  (reloj que salta) y marca ilegible mandan digesto y lo **dicen** en el log.
+  No va en la base: esta clase la abre `mode=ro` en todas sus rutas y
+  producción tiene un escritor vivo 24/7.
+- `deploy/enviar_correos.py`: `force=False`. Quien decide la cadencia es
+  `maybe_flush` contra la marca, no el llamador. `rutinas_locales.sh` **no se
+  tocó**: una sola fuente de verdad, y es `TG_DIGEST_MINUTES`.
+- `deploy/enviar_correos.py`: el heartbeat imprimía `ok` cuando se quedaba en
+  el buffer --- y en un `oneshot` el buffer muere con el proceso, así que NO
+  llegaba a Telegram. `dispatch` cuenta «buffered» como éxito
+  (`alert_service.py:359`). Ahora dice cuál de las dos cosas pasó.
+
+### El arreglo casi se convierte en un silencio nuevo
+
+Al persistir la marca, **la suite empezó a escribir la de producción**. Medido:
+se movió el archivo a un lado, se corrió la suite y reapareció con el sello de
+la corrida. Ningún mensaje real salió (el transporte estaba sustituido), pero
+el estado sí se tocaba: una corrida de tests podía dejar al operador una hora
+sin reporte. El guardarraíl de `dry_run` no basta y no puede bastar --- un test
+tiene derecho a usar `dry_run=False` con el transporte sustituido.
+
+Cerrado con `sentinel_omega/tests/conftest.py` (primer conftest del proyecto):
+fixture de sesión que apunta `TG_DIGEST_STATE` a un temporal. Se descartó que
+el código de producción mirara `PYTEST_CURRENT_TEST`: no debe cambiar de
+comportamiento según quién lo corre. Quien se aísla es el instrumento.
+
+### Verificado de punta a punta (regla 0)
+
+En el despachador real, en procesos separados, sin mandar nada:
+
+```
+marca de hace  5 min → «digesto aún no toca: faltan 55 min de los 60 declarados»
+marca de hace 61 min → «DIGESTO_HORARIO enviado»
+```
+
+Suite: 1.181 pasan, 8 se saltan, 3 fallan --- los tres de antes
+(`test_producto_en_cache_no_se_vuelve_a_bajar` y los dos de
+`test_fantasma_alfa1_kp_cero`), ninguno nuevo. 23 pruebas nuevas.
+
+### Pendiente anotado, no tocado
+
+`send_alert` devuelve `True` por la rama de `alert_queue` sin comprobar
+credenciales: «enviado» significa **encolado** en la cola del Concilio
+(`~/consensus-expert-agent/alert_queue.py`), que drena su `telegram_bot.py`. Si
+ese bot está caído, Sentinel sigue creyendo que mandó. Es del proyecto
+compartido, no de aquí.
+
 ## [Unreleased] - 2026-10-04/05 - Cortes, rebuild, muro vivo, CSV USGS
 
 Sin push. Nota: `estado/CORTES_2026-10-04.md`. Branch `local/recuperacion-datos-2026-09`.

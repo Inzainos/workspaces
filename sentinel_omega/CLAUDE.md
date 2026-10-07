@@ -435,5 +435,16 @@ All development on: `claude/sentinel-omega-architecture-j3c2kn`
 Canal Telegram ya no dispara cada ciclo. El Padre (`consenso_vigilante.py`):
 
 1. **Reporte horario siempre** (`TG_DIGEST_MINUTES=60`) — Fantasma+nivel, muro n/5, telemetría, top precursores, loop, botón Mini App (`TELEGRAM_WEBAPP_URL` HTTPS público a `/mini`). No se omite la hora en calma. No es un pile de "precursores revisar".
+   **La cadencia se cumple entre procesos** desde el 2026-10-07: la marca del
+   último envío vive en `data/estado_digesto.json`, no en memoria. Hasta
+   entonces el despacho real (`enviar_correos.py`, un `Type=oneshot` cada 15
+   min) mandaba **4 digestos por hora** con el `60` declarado, porque la marca
+   nacía en `0.0` en cada proceso nuevo y `force=True` saltaba el temporizador.
+   Dos cosas que NO hay que hacer al tocar esto: poner la compuerta de minuto
+   en `rutinas_locales.sh` (sería una segunda fuente de verdad) y dejar que un
+   test escriba la marca de producción — lo impide el fixture de sesión de
+   `tests/conftest.py`, y un test que lo hiciera dejaría al operador una hora
+   sin reporte. Contrato: `tests/test_cadencia_digesto.py` y
+   `tests/test_aislamiento_estado_vivo.py`.
 2. **Page inmediato solo si no hay registro** (`is_unprecedented`): patrón cimática NUEVO, firma `TBL_FIRMAS` nueva, tipo de muro no visto, `SYSTEM_DEAD`. Firmas recurrentes y watches de precursores van al digest. Rojo/naranja rutinario NO pagina.
 3. Correo (`tbl_correo_salida`) no cambia. `SENTINEL_DRY_RUN=1` no envía. Mini App exige HTTPS; este repo no crea túnel.
