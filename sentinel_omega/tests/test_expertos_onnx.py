@@ -23,14 +23,20 @@ from sentinel_omega.config.onnx_config import onnx_config
 from sentinel_omega.core.features_onnx import BOT_DIMS, FEATURE_ORDER
 
 
-# alfa2 está APAGADO a propósito desde el 2026-10-02: vota con su REGLA porque
-# su reentreno salía `hybrid real=23 + boot=2500` --- 99 % sintético, y cinco de
-# las ocho columnas del prior llevan otra magnitud que el vector. Ver
-# `tests/test_alfa2_votante.py` y el comentario de `onnx_config.alfa2`.
+# Modelos APAGADOS a propósito. Se declaran aquí, y no se afloja la prueba: su
+# CONFIG y su ARCHIVO siguen verificándose como los demás; lo único que no se
+# exige es que se les pregunte.
 #
-# Se declara aquí, y no se afloja la prueba: su CONFIG y su ARCHIVO siguen
-# verificándose como los demás; lo único que no se exige es que se le pregunte.
-APAGADOS_A_PROPOSITO = {"alfa2"}
+#   alfa2 (2026-10-02) — su reentreno salía `hybrid real=23 + boot=2500`, 99 %
+#     sintético, y cinco de las ocho columnas del prior llevan otra magnitud
+#     que el vector. Ver `tests/test_alfa2_votante.py`.
+#
+#   beta1, delta, loki, omega (2026-10-07) — los ONNX de `53f51e7` salieron
+#     CONSTANTES: desviación típica de la confianza 0,0100-0,0183 sobre 27
+#     ciclos, contra 0,1663 de alfa1. Cinco bots alarmaron el 100 % de los
+#     ciclos dos días, con ganancia de Molchan 0,81x --- peor que el azar.
+#     Ver `tests/test_modelos_constantes.py` y la nota de `onnx_config`.
+APAGADOS_A_PROPOSITO = {"alfa2", "beta1", "beta2", "delta", "loki", "omega"}
 
 
 def test_la_config_conoce_los_ocho_modelos():

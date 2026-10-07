@@ -95,13 +95,60 @@ class AllONNXModelsConfig:
         enabled=False      # vota con su REGLA — ver el comentario de arriba
     ))
 
+    # ── MODELOS APAGADOS POR CONSTANTES (2026-10-07) ──────────────────────
+    #
+    # Aplica a beta1, delta, loki y omega. Decisión del operador tras medir.
+    #
+    # Los ONNX reentrenados en `53f51e7` (5-oct 17:06) salieron devolviendo
+    # prácticamente un número fijo. Desviación típica de la confianza sobre 27
+    # ciclos vivos: beta2 0,0026 · loki 0,0100 · omega 0,0149 · beta1 0,0153 ·
+    # delta 0,0183 · jupiter 0,0199, contra alfa1 **0,1663** --- el único que
+    # varía de verdad, y por eso alfa1 se queda encendido.
+    #
+    # Un modelo con desviación 0,010 sobre 0,736 devuelve 0,736 ± 1,4 %: no
+    # responde al dato, devuelve el promedio del objetivo. Consecuencia medida:
+    # cinco bots alarmaron el 100 % de los ciclos durante dos días, con
+    # ganancia de Molchan **0,81x a 2 h --- peor que el azar ---** y 159 falsos
+    # positivos que hundieron seis pesos al suelo de 0,300.
+    #
+    # Los tests lo habían dicho desde el 5-oct y la suite llevaba roja sin que
+    # nadie mirara: «el fantasma VOLVIÓ: con el Kp ausente sale WATCH 0.599»
+    # (`test_fantasma_alfa1_kp_cero`) y «loki: el modelo volvió a alarmar con
+    # kp_mean bajo (WATCH 0.7399) --- la fuga de procedencia regresó»
+    # (`test_claves_omega_loki`).
+    #
+    # Efecto medido de apagar, contra lo que dice la REGLA de cada uno:
+    #
+    #     beta1  modelo  93 %  regla   0 %   -> alarma BAJA a 0 %
+    #     delta  modelo 100 %  regla   0 %   -> alarma BAJA a 0 %
+    #     loki   modelo 100 %  regla   0 %   -> alarma BAJA a 0 %
+    #     omega  modelo 100 %  regla 100 %   -> SIN CAMBIO
+    #
+    # omega se apaga igual, y a propósito: su modelo tampoco informa, y
+    # apagarlo DESTAPA que quien alarma es su regla --- con el modelo encima el
+    # log decía «modelo WATCH sobre regla watch», y eso lo escondía.
+    #
+    # `beta2` tambien se apaga, y su caso corrige una incoherencia mia: lo
+    # habia dejado encendido pensando que bastaba el umbral de confianza (emite
+    # WATCH a 0,50 con 0,60 declarado, asi que A lo filtra), pero su desviacion
+    # es **0,0026 --- la MAS constante de las ocho**. Y apagarlo baja su alarma
+    # del 30 % al 4 %, que es lo que dice su regla. Dejar encendido el modelo
+    # mas constante por un tecnicismo era justo el error que esta nota describe.
+    #
+    # NO se apagan: `alfa1` (el único con discriminación, 0,1663) ni `jupiter`
+    # (su modelo dice NEUTRAL y está FRENANDO los watches de su regla: apagarlo
+    # subiría su alarma del 0 % al 22 %).
+    #
+    # PARA RECONENDER cualquiera de los cuatro: reentrenar con un objetivo que
+    # varíe y comprobar que la desviación típica de la confianza sube de 0,02.
+    # Mientras siga constante, encenderlo es volver a alarmar sin información.
     beta1: ONNXModelConfig = field(default_factory=lambda: ONNXModelConfig(
         name="beta1",
         model_path="beta1_schumann_fft.onnx",
         input_features=16,
         output_shape=(1, 2),
         confidence_threshold=0.55,
-        enabled=True
+        enabled=False      # constante — ver «MODELOS APAGADOS POR CONSTANTES»
     ))
 
     beta2: ONNXModelConfig = field(default_factory=lambda: ONNXModelConfig(
@@ -110,7 +157,7 @@ class AllONNXModelsConfig:
         input_features=16,
         output_shape=(1, 2),
         confidence_threshold=0.60,
-        enabled=True
+        enabled=False      # constante 0,0026 — ver «MODELOS APAGADOS POR CONSTANTES»
     ))
 
     delta: ONNXModelConfig = field(default_factory=lambda: ONNXModelConfig(
@@ -119,7 +166,7 @@ class AllONNXModelsConfig:
         input_features=16,
         output_shape=(1, 2),
         confidence_threshold=0.50,
-        enabled=True
+        enabled=False      # constante — ver «MODELOS APAGADOS POR CONSTANTES»
     ))
 
     omega: ONNXModelConfig = field(default_factory=lambda: ONNXModelConfig(
@@ -128,7 +175,7 @@ class AllONNXModelsConfig:
         input_features=12,
         output_shape=(1, 2),
         confidence_threshold=0.55,
-        enabled=True
+        enabled=False      # constante — ver «MODELOS APAGADOS POR CONSTANTES»
     ))
 
     # loki y jupiter existían como modelos en disco --- el reentrenamiento
@@ -142,7 +189,7 @@ class AllONNXModelsConfig:
         input_features=8,
         output_shape=(1, 2),
         confidence_threshold=0.55,
-        enabled=True
+        enabled=False      # constante — ver «MODELOS APAGADOS POR CONSTANTES»
     ))
 
     jupiter: ONNXModelConfig = field(default_factory=lambda: ONNXModelConfig(

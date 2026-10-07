@@ -20,6 +20,13 @@ _SIGNAL_MAP = {
     "BEARISH": SignalType.BEARISH,
 }
 
+# Señales que CUESTAN: son las que el umbral de confianza tiene que cruzar.
+# `NEUTRAL` y `NO_SIGNAL` no están aquí a propósito --- ver `predict_signal`.
+_SENALES_QUE_ALARMAN = frozenset({
+    SignalType.WATCH, SignalType.ALERT,
+    SignalType.BULLISH, SignalType.BEARISH,
+})
+
 
 def try_load_onnx(bot_name: str) -> Tuple[Any, Any]:
     """Load ONNX session + inference wrapper. Returns (session, inference) or (None, None)."""
@@ -51,7 +58,43 @@ def predict_signal(
     allow_alert: bool = True,
     allow_bullish_bearish: bool = False,
 ) -> Optional[Tuple[SignalType, float, str]]:
-    """Run ONNX predict; map to SignalType. None → caller uses rule branch."""
+    """Run ONNX predict; map to SignalType. None → caller uses rule branch.
+
+    `confidence_threshold` SE HONRA, y solo para las señales que alarman
+    (2026-10-07)
+    -----------------------------------------------------------------------
+    Estaba declarado para los ocho bots en `onnx_config` y **leído por nadie**:
+    cero menciones en todo el código. Un mando muerto, igual que el `days` de
+    `fetch_kp_index`. Se vio porque beta2 emitía WATCH con confianza 0,50
+    teniendo 0,60 declarado.
+
+    Se aplica SOLO a WATCH/ALERT/BULLISH/BEARISH, no a NEUTRAL. No es una
+    comodidad: honrarlo simétricamente HACE DAÑO, medido el 2026-10-07 sobre
+    los 27 ciclos vivos de cada bot:
+
+        bot      umbral  senal    n  bajo umbral  pasaria a
+        jupiter    0,55  NEUTRAL  27      27      regla neutral/WATCH
+        beta2      0,60  NEUTRAL  19      19      regla neutral/WATCH
+        beta2      0,60  WATCH     8       8      regla neutral
+        alfa1      0,60  NEUTRAL   8       8      regla neutral
+        delta/loki/omega  WATCH 27/27/27    0     sin cambio
+
+    O sea: silenciaría a los DOS bots que discriminan ---`jupiter` y `beta2`,
+    los de mejor peso, cuyos NEUTRAL vienen con poca confianza--- y dejaría
+    intactos a los cinco que alarman el 100 % de los ciclos, porque sus
+    constantes de 0,68-0,76 están cómodamente por encima de sus umbrales. En
+    algunos de esos ciclos la regla dice `watch`, así que habría SUBIDO las
+    alarmas.
+
+    La asimetría del sistema ya dice cuál es el acto costoso: perder un evento
+    pesa 10x contra 1x de una falsa alarma, así que la barra es para ALARMAR.
+    Un «nada que reportar» con poca confianza sigue siendo un «nada que
+    reportar»; exigirle confianza es pedir seguridad para callarse.
+
+    Efecto medido con los números de hoy: apaga los 8 WATCH de beta2 (su regla
+    dice neutral) y no toca nada más. Solo puede REDUCIR alarmas, nunca
+    añadirlas.
+    """
     if inference is None:
         return None
     try:
@@ -61,6 +104,17 @@ def predict_signal(
             return None
         tipo = _SIGNAL_MAP.get(name)
         if tipo is None:
+            return None
+        umbral = getattr(
+            getattr(inference, "model_config", None), "confidence_threshold", None)
+        if (umbral is not None and tipo in _SENALES_QUE_ALARMAN
+                and float(conf) < float(umbral)):
+            # Se registra: un descarte silencioso esconde el fallo (regla 10).
+            logger.info(
+                "%s: el modelo alarmaría %s con confianza %.3f, por debajo de "
+                "su umbral %.2f --- se descarta y manda la regla",
+                getattr(inference, "bot_name", "?"), name, float(conf),
+                float(umbral))
             return None
         if not allow_alert and tipo == SignalType.ALERT:
             tipo = SignalType.WATCH
