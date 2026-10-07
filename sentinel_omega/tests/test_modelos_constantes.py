@@ -82,15 +82,52 @@ def test_jupiter_sigue_encendido_porque_FRENA_su_regla():
         "así que apagarlo sube su alarma del 0 % al 22 %")
 
 
-def test_el_corte_cae_en_el_hueco_que_separa_a_los_dos_grupos():
-    """Regla dura 8 --- el umbral se calibra contra datos. Entre 0,0183 (el
-    mayor de los constantes) y 0,1663 (alfa1) hay un hueco de casi un orden de
-    magnitud; 0,02 cae dentro."""
-    constantes = [v for b, v in DESVIACIONES_MEDIDAS.items()
-                  if b not in ("alfa1", "jupiter")]
-    assert max(constantes) < DESVIACION_MINIMA < DESVIACIONES_MEDIDAS["alfa1"], (
-        f"el corte {DESVIACION_MINIMA} ya no separa: constantes hasta "
-        f"{max(constantes)}, alfa1 en {DESVIACIONES_MEDIDAS['alfa1']}")
+# `jupiter` mide 0,0199 --- por debajo del corte --- y sigue ENCENDIDO a
+# propósito: su modelo dice NEUTRAL 22/22 y está frenando los watches de su
+# propia regla, así que apagarlo SUBIRÍA su alarma del 0 % al 22 %. Es la única
+# excepción y va con su medición al lado, para que no se pueda añadir otra sin
+# una.
+EXCEPCIONES_MEDIDAS = {
+    "jupiter": "su NEUTRAL frena los watches de su propia regla (0 % contra 22 %)",
+}
+
+
+def test_el_corte_y_lo_apagado_se_derivan_de_la_misma_medicion():
+    """Lo que esta prueba comprobaba antes era **nada** (hallado 2026-10-07).
+
+    Decía:
+
+        constantes = [v for b, v in DESVIACIONES_MEDIDAS.items() if b not in ...]
+        assert max(constantes) < DESVIACION_MINIMA < DESVIACIONES_MEDIDAS["alfa1"]
+
+    O sea: afirmaba relaciones entre literales del PROPIO archivo. No puede
+    fallar salvo que alguien edite los literales, y no toca el sistema por
+    ningún lado. Parecía una calibración contra datos --- regla dura 8 --- y era
+    documentación disfrazada de prueba.
+
+    Ahora el corte es load-bearing: de la medición se DERIVA qué tiene que estar
+    apagado, y eso se compara contra `onnx_config`, que es el sistema. Así
+    `DESVIACIONES_MEDIDAS` deja de ser decorativo --- tocar un número cambia el
+    conjunto derivado y la prueba cae, que es lo correcto: esos números son
+    historia medida, y cambiarlos es reescribirla.
+    """
+    derivados = {b for b, v in DESVIACIONES_MEDIDAS.items()
+                 if v < DESVIACION_MINIMA and b not in EXCEPCIONES_MEDIDAS}
+    assert derivados == CONSTANTES_APAGADOS, (
+        f"la medición ya no deriva en la lista de apagados: de "
+        f"DESVIACIONES_MEDIDAS sale {sorted(derivados)} y CONSTANTES_APAGADOS "
+        f"dice {sorted(CONSTANTES_APAGADOS)}. Si cambió una medición, cambia la "
+        "lista; si cambió la lista, trae la medición que lo respalde")
+    for bot in derivados:
+        assert getattr(onnx_config, bot).enabled is False, (
+            f"{bot} mide {DESVIACIONES_MEDIDAS[bot]} (por debajo de "
+            f"{DESVIACION_MINIMA}) y está ENCENDIDO en onnx_config")
+    # Y que el hueco siga existiendo: si un día un «constante» sube por encima
+    # del corte, lo que hay que hacer es reentrenar y volver a medir, no mover
+    # el corte para que siga cuadrando.
+    assert max(DESVIACIONES_MEDIDAS[b] for b in derivados) < DESVIACION_MINIMA
+
+
 
 
 def test_queda_al_menos_un_modelo_vivo():

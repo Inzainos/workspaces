@@ -14,7 +14,9 @@ midió va ausente**, y el lector de FRP falla ruidosamente antes que devolver 0.
 
 from __future__ import annotations
 
+import os
 import sqlite3
+import time
 from pathlib import Path
 
 import numpy as np
@@ -283,11 +285,30 @@ def test_fallo_de_autenticacion_corta_el_ciclo_sin_bucle(tmp_path, monkeypatch):
     assert dag.descargas == 1
 
 
-def test_producto_en_cache_no_se_vuelve_a_bajar(tmp_path, monkeypatch):
+def _cachear(destino: Path) -> Path:
+    """Copia la muestra como un producto RECIÉN cacheado.
+
+    El `os.utime` no es cosmético, y por no estar esta prueba llevaba once días
+    en rojo (hallado el 2026-10-07). `shutil.copytree` **conserva la fecha de
+    modificación**, y la muestra del repo es del 2026-09-26: a los 9 días
+    `_podar_cache(7)` --- que borra lo que pase de `dias + 2` --- se llevaba la
+    caché que la prueba acababa de montar, así que `medir_frp` bajaba el
+    producto y `descargas` valía 1.
+
+    O sea: no era una regresión de la caché, que funciona; era una prueba con
+    fecha de caducidad, que empezó a fallar sola al envejecer el fixture. Una
+    prueba cuyo veredicto depende del calendario no vigila nada.
+    """
     import shutil
 
+    shutil.copytree(MUESTRA, destino)
+    os.utime(destino, None)          # cacheado AHORA, no el día de la muestra
+    return destino
+
+
+def test_producto_en_cache_no_se_vuelve_a_bajar(tmp_path, monkeypatch):
     cache = tmp_path / "cache"
-    shutil.copytree(MUESTRA, cache / "S3A_SL_2_FRP_prueba_0_NR_003")
+    _cachear(cache / "S3A_SL_2_FRP_prueba_0_NR_003")
     dag = _DagSinCredenciales()
     dag.search = lambda **kw: [_Prod(0)]
     monkeypatch.setattr(esa_frp, "CACHE_DIR", cache)
@@ -297,6 +318,31 @@ def test_producto_en_cache_no_se_vuelve_a_bajar(tmp_path, monkeypatch):
     m = esa_frp.medir_frp(["z"])
     assert dag.descargas == 0
     assert m["conteo"] == 6 and len(m["detecciones"]) == 34
+
+
+def test_un_producto_viejo_en_cache_SI_se_poda(tmp_path, monkeypatch):
+    """La otra mitad, la que faltaba y por eso el envejecimiento del fixture
+    pudo romper la prueba de arriba sin que nadie entendiera por qué.
+
+    `_podar_cache(dias)` borra lo que pase de `dias + 2`. Aquí la dependencia
+    del tiempo es EXPLÍCITA --- se fabrica la antigüedad con `os.utime` --- en
+    vez de heredarla del calendario.
+    """
+    cache = tmp_path / "cache"
+    viejo = _cachear(cache / "S3A_SL_2_FRP_prueba_0_NR_003")
+    antiguo = time.time() - 10 * 86400          # 10 > 7 + 2
+    os.utime(viejo, (antiguo, antiguo))
+
+    dag = _DagSinCredenciales()
+    dag.search = lambda **kw: [_Prod(0)]
+    monkeypatch.setattr(esa_frp, "CACHE_DIR", cache)
+    monkeypatch.setattr(esa_frp, "_dag", lambda: dag)
+    monkeypatch.setattr(esa_frp, "_bbox_de", lambda zonas: [
+        (z, TODO_EL_GRANULO) for z in zonas])
+    esa_frp.medir_frp(["z"])
+    assert not viejo.exists(), "la poda no se llevó un producto de 10 días"
+    assert dag.descargas == 1, (
+        "podado y además NO reintentado: el producto quedaría inalcanzable")
 
 
 def test_el_ciclo_persiste_las_detecciones():

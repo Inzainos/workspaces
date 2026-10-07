@@ -29,12 +29,13 @@ BOT = "beta1"
 
 
 def _correr(monkeypatch, salida, senal_regla, conf_regla,
-            texto_regla="Normal spectral distribution", bot=BOT):
+            texto_regla="Normal spectral distribution", bot=BOT, rasgos=None):
     sig = AgentSignal(agent_name=bot, signal_type=senal_regla,
                       confidence=conf_regla, timestamp=0.0, data={},
                       reasoning=texto_regla)
     runner = object.__new__(layer_runners.GeodynamicLayerRunner)
-    monkeypatch.setattr(runner, "_rasgos_del_ciclo", lambda: {"kp_mean": 2.0},
+    monkeypatch.setattr(runner, "_rasgos_del_ciclo",
+                        lambda: dict(rasgos or {"kp_mean": 2.0}),
                         raising=False)
     monkeypatch.setattr(
         "sentinel_omega.core.onnx_mixin.senal_desde_rasgos",
@@ -50,20 +51,104 @@ def test_el_bot_de_prueba_no_esta_callado():
         f"{BOT} entró a RASGOS_CON_FUGA: elige otro bot para BOT")
 
 
-def test_al_bot_callado_no_se_le_pregunta(monkeypatch):
+def test_al_bot_callado_por_fuga_no_se_le_pregunta(monkeypatch):
     """La otra cara: un bot con fuga no llega al desempate --- decisión de C, que
-    no escribe `gano` porque no hubo disputa. Se fija aquí para que el desempate
-    y el tapón no se pisen sin que nadie lo note."""
-    fuga = getattr(layer_runners, "RASGOS_CON_FUGA", {})
-    if not fuga:
-        pytest.skip("no hay tapón activo")
-    callado = sorted(fuga)[0]
+    no escribe `gano` porque no hubo disputa.
+
+    **Esta prueba se SALTABA** (hallado el 2026-10-07). Dependía de que
+    `RASGOS_CON_FUGA` tuviera algo, y al cerrarse las 17 fugas el diccionario
+    quedó vacío, así que desde entonces imprimía «no hay tapón activo» y la rama
+    de silenciado dejó de probarse. Su hermana
+    `test_el_bot_de_prueba_no_esta_callado` vigila que el tapón CREZCA; nadie
+    vigilaba que desapareciera, que es lo que pasó. Un salto silencioso esconde
+    el hueco igual que un `except: pass` (regla dura 10).
+
+    Ahora la prueba **monta su propio tapón**, así que cubre la rama exista o no
+    deuda viva --- que es como tenía que haber estado desde el principio.
+    """
+    monkeypatch.setattr(layer_runners, "RASGOS_CON_FUGA", {"omega": ["kp_mean"]})
+    monkeypatch.setattr(layer_runners, "ETIQUETA_FUGA", {"omega": "kp"})
     sig = _correr(monkeypatch, (SignalType.WATCH, 0.99, "WATCH"),
-                  SignalType.NEUTRAL, 0.20, bot=callado)
+                  SignalType.NEUTRAL, 0.20, texto_regla="la regla calla",
+                  bot="omega")
     assert sig.signal_type is SignalType.NEUTRAL, (
-        f"{callado} tiene un rasgo con fuga y el modelo le cambió el veredicto")
+        "omega tiene un rasgo con fuga y el modelo le cambió el veredicto")
+    assert sig.confidence == 0.20
+    assert sig.reasoning == "la regla calla", "se tocó el texto de la regla"
+    assert "gano" not in sig.data, "no hubo disputa que resolver"
+    assert sig.data["onnx"] is False
+    assert sig.data["onnx_callado"] == "fuga:kp"
+
+
+def test_sin_etiqueta_el_callado_nombra_el_rasgo(monkeypatch):
+    """`ETIQUETA_FUGA.get(bot, fuga[0])`: sin etiqueta cae al nombre del rasgo,
+    y eso tiene que seguir diciendo algo legible en el registro."""
+    monkeypatch.setattr(layer_runners, "RASGOS_CON_FUGA", {"omega": ["bz_mean"]})
+    monkeypatch.setattr(layer_runners, "ETIQUETA_FUGA", {})
+    sig = _correr(monkeypatch, (SignalType.WATCH, 0.99, "WATCH"),
+                  SignalType.NEUTRAL, 0.20, bot="omega")
+    assert sig.data["onnx_callado"] == "fuga:bz_mean"
+
+
+# ── La otra puerta de silenciado: `_rasgo_requerido_ausente` ────────────────
+#
+# No tenía NINGUNA prueba (hallado el 2026-10-07), y está viva hoy:
+# `RASGOS_REQUERIDOS = {"beta2": ["marea_total"]}`. Es la que evita preguntarle
+# al modelo de beta2 cuando la marea no llegó --- el mismo principio que el
+# fantasma del Kp, pero aplicado antes de inferir en vez de después.
+
+def test_el_rasgo_requerido_ausente_calla_al_modelo(monkeypatch):
+    """Sin `marea_total` no se le pregunta al modelo de beta2, y el registro
+    dice por qué."""
+    monkeypatch.setattr(layer_runners, "RASGOS_CON_FUGA", {})
+    sig = _correr(monkeypatch, (SignalType.WATCH, 0.99, "WATCH"),
+                  SignalType.NEUTRAL, 0.20, texto_regla="sin marea",
+                  bot="beta2", rasgos={"kp_mean": 2.0})
+    assert sig.signal_type is SignalType.NEUTRAL
+    assert sig.reasoning == "sin marea"
     assert "gano" not in sig.data
-    assert sig.data.get("onnx_callado", "").startswith("fuga:")
+    assert sig.data["onnx_callado"] == "falta:marea_total"
+
+
+@pytest.mark.parametrize("valor", [0.0, None, float("nan"), float("inf"), "x"])
+def test_un_requerido_que_no_es_un_numero_util_tambien_calla(monkeypatch, valor):
+    """El 0,0 cuenta como ausente, y es lo importante: en este sistema el cero
+    de un forzamiento es «no lo sé», no «no tira». Lo mismo un NaN, un infinito
+    o un texto --- cada uno llegaría al vector como un número plausible."""
+    monkeypatch.setattr(layer_runners, "RASGOS_CON_FUGA", {})
+    sig = _correr(monkeypatch, (SignalType.WATCH, 0.99, "WATCH"),
+                  SignalType.NEUTRAL, 0.20, bot="beta2",
+                  rasgos={"marea_total": valor})
+    assert sig.data.get("onnx_callado") == "falta:marea_total", (
+        f"con marea_total={valor!r} se le preguntó al modelo igual")
+    assert sig.signal_type is SignalType.NEUTRAL
+
+
+def test_con_el_requerido_presente_el_modelo_SI_opina(monkeypatch):
+    """La compuerta no puede dejar callado a beta2 para siempre: con la marea
+    puesta, su modelo vuelve a entrar al desempate normal."""
+    monkeypatch.setattr(layer_runners, "RASGOS_CON_FUGA", {})
+    sig = _correr(monkeypatch, (SignalType.WATCH, 0.99, "WATCH"),
+                  SignalType.NEUTRAL, 0.20, bot="beta2",
+                  rasgos={"marea_total": 1.5})
+    assert "onnx_callado" not in sig.data
+    assert sig.data["gano"] == "modelo"
+    assert sig.signal_type is SignalType.WATCH
+
+
+def test_los_requeridos_declarados_existen_en_el_vector():
+    """Un requerido que el vector no pide callaría al bot para siempre sin que
+    nadie entienda por qué --- el primo de `test_lo_declarado_existe_de_verdad`
+    de la fuga de procedencia."""
+    from sentinel_omega.core.features_onnx import FEATURE_ORDER
+
+    req = getattr(layer_runners, "RASGOS_REQUERIDOS", {})
+    for bot, claves in req.items():
+        orden = set(FEATURE_ORDER.get(bot, ()))
+        huerfanos = [k for k in claves if k not in orden]
+        assert not huerfanos, (
+            f"{bot} exige {huerfanos}, que no están en su vector: el modelo "
+            "quedaría callado en todos los ciclos")
 
 
 def test_el_modelo_ya_no_apaga_una_alarma_con_menos_confianza(monkeypatch):

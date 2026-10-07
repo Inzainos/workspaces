@@ -17,6 +17,32 @@ Medido el 2026-09-27 sobre el ciclo 14419 y el histórico del Juez. La cadena:
      1,425, porque las firmas no pasan por ese vector.
 
 Esta es la cuarta cara del mismo defecto: el cero que significa dos cosas.
+
+Addendum del 2026-10-07 --- cómo NO leer el rojo de este archivo
+----------------------------------------------------------------
+Las dos primeras pruebas se pusieron rojas y su mensaje mandó a buscar una fuga
+de procedencia que **no existía**: medido ese día, cero rasgos en
+`FEATURE_ORDER` fuera de `BOT_FEATURES` en los nueve bots, y cero declarados
+fuera de `FEATURE_KEYS`. Se perdió medio día, y la conclusión que casi se tomó
+---apagar el modelo de alfa1--- habría sido correcta por un motivo falso.
+
+La distinción que faltaba escrita, y que la bitácora §22.2 ya tenía:
+
+    el fantasma es ASIMETRÍA, no «alarmar»
+
+Antes del arreglo: ausencia 0,7165 contra dato real 0,3114 --- **2,3x**, y por
+eso ganaba el consenso. Después: 1,06x. Medido el 2026-10-07 con el modelo del
+4-oct: **1,016x** con los huecos de densidad y **1,002x** con densidad real. La
+fuga sigue muerta.
+
+Lo que sí pasaba el 7-oct es que ese modelo alarmaba en TODAS las
+configuraciones (0,608 / 0,599 / 0,715), con AUC 0,467 por nodo y 0,511 global
+---azar--- y 18 falsos positivos contra 1 acierto en sus 19 watches vivos. Eso
+es el objetivo degenerado del entrenamiento, que es un defecto distinto y vive
+en `train_onnx_from_db.py`, no aquí.
+
+Regla práctica: **si `test_la_asimetria_del_fantasma_desaparecio` está verde, el
+fantasma no ha vuelto**, por rojas que estén las otras dos.
 """
 import numpy as np
 import pytest
@@ -39,6 +65,18 @@ def _pred(modelo, rasgos):
 
 
 # Los rasgos reales del ciclo 14419 que tocan a alfa1.
+#
+# Son OCHO de las diez posiciones del vector, y las dos que faltan
+# ---`densidad_prot_mean` y `densidad_prot_max`--- están ausentes **porque lo
+# estaban**: `tbl_clima_espacial_raw.densidad_protones` se añadió el 2026-10-02
+# y la ventana de 336 h de este ciclo tiene **0 lecturas no nulas** (medido el
+# 2026-10-07). `vector_para` las pone en 0,0, que es «no lo sé», igual que hizo
+# la ruta viva ese día.
+#
+# NO las rellenes. Poner un número aquí sería dato sintético (regla 2) y además
+# cambia la respuesta ---medido con la densidad de octubre, el mismo modelo pasa
+# de `WATCH` 0,6081 a `WATCH` 0,7153---, así que inventarlas convertiría esta
+# prueba en una afirmación sobre un ciclo que nunca existió.
 _CICLO = {
     "bz_mean": -0.2743169014084506,
     "bz_min": -4.43,
@@ -51,6 +89,35 @@ _CICLO = {
 }
 
 
+# Qué revisar cuando estas dos se pongan rojas, EN ESTE ORDEN.
+#
+# El mensaje viejo mandaba directo a «un rasgo entró a FEATURE_ORDER sin entrar
+# a BOT_FEATURES». El 2026-10-07 se puso rojo y esa pista era falsa: la fuga
+# estaba cerrada en los nueve bots y se perdió medio día persiguiéndola, con el
+# agravante de que la conclusión que casi se tomó ---apagar el modelo de alfa1---
+# se habría tomado por un motivo inexistente.
+#
+# El fantasma tiene una firma propia, y es la ASIMETRÍA. Mientras
+# `test_la_asimetria_del_fantasma_desaparecio` siga en verde, el fantasma NO ha
+# vuelto, por mucho que estas dos estén rojas: lo que falla entonces es el nivel
+# del modelo, que es otro defecto y se arregla en otro sitio.
+_QUE_REVISAR = (
+    "QUÉ REVISAR, en este orden: "
+    "(1) ¿está verde `test_la_asimetria_del_fantasma_desaparecio`? Si SÍ, el "
+    "fantasma no ha vuelto --- la fuga se manifiesta como asimetría >2x entre "
+    "el dato ausente y el real, no como alarmar. Pasa al (3). "
+    "(2) si está ROJA, entonces sí es la fuga: corre "
+    "`test_fuga_de_procedencia.py` y busca el rasgo que entró a FEATURE_ORDER "
+    "sin entrar a BOT_FEATURES, y si las firmas se regeneraron después. "
+    "(3) si la asimetría está bien, esto es NIVEL, no fantasma: el modelo "
+    "llama alarma a un ciclo que el registro da por calmo. Mira la fecha del "
+    "`.onnx` y qué reentrenamiento lo produjo. El del 2026-10-04 daba `WATCH` "
+    "0,608 aquí, con AUC 0,467 por nodo y 0,511 global (azar) y 18 falsos "
+    "positivos contra 1 acierto en 19 watches vivos. Eso es el objetivo "
+    "degenerado del entrenamiento, no esta fuga."
+)
+
+
 def test_con_el_kp_real_el_modelo_no_alarma(modelo):
     """Con el Kp medido (1,94 / 3,0) no hay alarma. Se afirma que NO alarma, no
     la etiqueta exacta: `NO_SIGNAL` y `NEUTRAL` son los dos «nada que
@@ -58,7 +125,7 @@ def test_con_el_kp_real_el_modelo_no_alarma(modelo):
     nombre, conf = _pred(modelo, _CICLO)
     assert nombre not in ("WATCH", "ALERT"), (
         f"con el Kp medido el modelo alarmó ({nombre} {conf:.3f}); el registro "
-        "del ciclo 14419 dice que no")
+        f"del ciclo 14419 dice que no. {_QUE_REVISAR}")
 
 
 def test_con_el_kp_ausente_el_modelo_YA_NO_inventa_un_watch(modelo):
@@ -81,15 +148,15 @@ def test_con_el_kp_ausente_el_modelo_YA_NO_inventa_un_watch(modelo):
         con el Kp ausente   NO_SIGNAL 0,2932    (antes WATCH 0,7165)
         con el Kp real      NO_SIGNAL 0,2755
 
-    Si esto se pone rojo, el fantasma volvió --- y lo más probable es que alguien
-    haya añadido un rasgo al vector sin añadirlo a `BOT_FEATURES`.
+    Si esto se pone rojo, **no concluyas todavía que el fantasma volvió**: el
+    fantasma se manifiesta como ASIMETRÍA, y eso lo mide la prueba siguiente.
+    Que el modelo alarme con el Kp ausente Y con el Kp real a la vez es otro
+    defecto --- nivel, no procedencia. Ver `_QUE_REVISAR`.
     """
     sin_kp = {k: v for k, v in _CICLO.items() if not k.startswith("kp")}
     nombre, conf = _pred(modelo, sin_kp)
     assert nombre not in ("WATCH", "ALERT"), (
-        f"el fantasma VOLVIÓ: con el Kp ausente sale {nombre} {conf:.3f}. "
-        "Revisa si un rasgo entró a FEATURE_ORDER sin entrar a BOT_FEATURES, y "
-        "si las firmas se regeneraron después")
+        f"con el Kp ausente sale {nombre} {conf:.3f}. {_QUE_REVISAR}")
 
 
 def test_la_asimetria_del_fantasma_desaparecio(modelo):
@@ -101,6 +168,11 @@ def test_la_asimetria_del_fantasma_desaparecio(modelo):
     No se exige que la ausencia pese MENOS --- un modelo puede ser algo más o
     menos confiado sin que eso sea un defecto. Se exige que no vuelva a pesar el
     doble, que es lo que le daba el voto.
+
+    **Esta es la prueba que decide si el fantasma volvió**, no las dos de
+    arriba. Medido el 2026-10-07 con el modelo del 4-oct: 1,016x con los huecos
+    de densidad de este ciclo y 1,002x con densidad real. Las otras dos estaban
+    rojas ese día y el fantasma seguía muerto; ver el addendum del módulo.
     """
     _, conf_real = _pred(modelo, _CICLO)
     sin_kp = {k: v for k, v in _CICLO.items() if not k.startswith("kp")}
