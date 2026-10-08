@@ -758,6 +758,98 @@ class TestSesgoAprendizaje:
         assert fila is not None
 
 
+    def test_la_calma_entra_en_la_medicion_y_delata_al_alarmista(self, db):
+        """La medición existía para detectar el sesgo alarmista y lo PREMIABA.
+
+        Hasta el 2026-10-07 la muestra eran 400 eventos y nada más
+        (`WHERE sismo_max_mag >= 4.5`), así que `recon_causal` era recall sin
+        precisión: un bot cuya memoria empareje con todo sacaba 1,0 y quedaba
+        como el mejor. Medido ese día con las firmas reales: `alfa1`, `beta1` y
+        `omega` reconocían el 99,75 % de los eventos **y el 100 % de la
+        calma**; `loki` emparejaba el 99,2 % de la calma y solo el 44,9 % de
+        los eventos.
+
+        Ahora la medición trae las dos mitades y una `ganancia` = causal −
+        falsa_alarma. Reconocer todo emparejando todo es ganancia 0, y así se
+        lee.
+        """
+        conn, path = db
+        import json as _json
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            evaluar_sesgo_aprendizaje,
+        )
+        _seed_backcast(conn, n_eventos=6)
+        # Memoria ANTERIOR a los eventos (para que cuente como causal) y con
+        # los rasgos del caso, o sea el alarmista perfecto: empareja todo.
+        feats = _features_base(sismo_count_win=5.0, sismo_max_mag_win=6.4)
+        conn.execute(
+            "INSERT INTO TBL_FIRMAS (bot_name, event_class, id_nodo, "
+            "features_json, eventos_json, recurrencia, estado, ventana_horas) "
+            "VALUES ('padre','SISMO_M6',45,?,?,9,'consolidada',336)",
+            (_json.dumps(feats),
+             _json.dumps(["1999-01-01 00:00|nodo45|M6.4"])),
+        )
+        conn.commit()
+        res = evaluar_sesgo_aprendizaje(path, muestra=30, aplicar_castigo=False)
+        p = res["por_bot"].get("padre") or {}
+        # Las dos claves nuevas existen y, si hubo calma que medir, la ganancia
+        # es exactamente causal - falsa_alarma.
+        assert "falsa_alarma" in p and "ganancia" in p, p
+        if p.get("falsa_alarma") is not None:
+            assert p["ganancia"] == pytest.approx(
+                p["causal"] - p["falsa_alarma"], abs=1e-3)
+
+    def test_las_columnas_nuevas_se_persisten(self, db):
+        """Si no se guardan, el reporte y el tablero siguen leyendo solo el
+        recall --- que es como se llegó hasta aquí."""
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            evaluar_sesgo_aprendizaje,
+        )
+        _seed_backcast(conn, n_eventos=6)
+        conn.commit()
+        evaluar_sesgo_aprendizaje(path, muestra=20, aplicar_castigo=False)
+        cols = {r[1] for r in conn.execute(
+            "PRAGMA table_info(tbl_sesgo_aprendizaje)")}
+        for c in ("n_calma", "falsa_alarma", "ganancia"):
+            assert c in cols, f"falta la columna {c} en tbl_sesgo_aprendizaje"
+
+    def test_la_migracion_es_forward_only(self, db):
+        """Una base con la tabla VIEJA se migra sin perder filas (regla 5)."""
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            evaluar_sesgo_aprendizaje,
+        )
+        conn.execute("DROP TABLE IF EXISTS tbl_sesgo_aprendizaje")
+        conn.execute(
+            "CREATE TABLE tbl_sesgo_aprendizaje (bot TEXT PRIMARY KEY, "
+            "n INTEGER, recon_insample REAL, recon_causal REAL, sesgo REAL, "
+            "castigos INTEGER, evaluada_at TEXT)")
+        conn.execute(
+            "INSERT INTO tbl_sesgo_aprendizaje (bot, n, recon_causal) "
+            "VALUES ('viejo', 7, 0.5)")
+        conn.commit()
+        _seed_backcast(conn, n_eventos=6)
+        conn.commit()
+        evaluar_sesgo_aprendizaje(path, muestra=20, aplicar_castigo=False)
+        fila = conn.execute(
+            "SELECT n, recon_causal, falsa_alarma FROM tbl_sesgo_aprendizaje "
+            "WHERE bot='viejo'").fetchone()
+        assert fila == (7, 0.5, None), (
+            "la migración perdió o pisó la fila vieja")
+
+    def test_el_castigo_sigue_cableado_al_recall_y_queda_dicho(self):
+        """La fórmula `round((1 - causal) * 3)` es inalcanzable con causal
+        ~0,99: los nueve bots tenían `castigos = 0`. No se cambia porque mueve
+        pesos de producción, pero que no se pueda leer el código sin verlo."""
+        import inspect
+
+        from sentinel_omega.infrastructure.pipeline import mantenimiento as mant
+        fuente = inspect.getsource(mant.evaluar_sesgo_aprendizaje)
+        assert "MUERTA en la práctica" in fuente
+        assert "GANANCIA" in fuente
+
+
 class TestSesgoEnEntrenamiento:
     """El sesgo se mide en el pre y el post del entrenamiento."""
 

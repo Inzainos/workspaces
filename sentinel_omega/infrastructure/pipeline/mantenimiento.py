@@ -432,6 +432,44 @@ SESGO_MUESTRA = 400
 SESGO_MAX_CASTIGOS_PADRE = 3
 SESGO_MAX_CASTIGOS_OMEGA = 3  # mismo límite; Omega también se castiga si no aprende causal
 
+# ─── La mitad que faltaba: la CALMA (2026-10-07) ─────────────────────────────
+#
+# Esta medición existe para detectar el sesgo alarmista, y lo estaba
+# premiando. La muestra eran 400 EVENTOS y nada más ---
+# `WHERE sismo_max_mag >= 4.5` --- así que `recon_causal` es RECALL sin
+# precisión: un bot cuyas firmas emparejen con todo saca 1,0 y queda como el
+# mejor.
+#
+# Medido ese día con las mismas firmas consolidadas y el mismo
+# `SIMILARITY_ALERT`, pero sobre 400 ventanas de CALMA:
+#
+#     bot      recon_causal (eventos)   empareja en CALMA
+#     alfa1                   99,75 %             100,0 %
+#     beta1                   99,75 %             100,0 %
+#     beta2                   51,62 %              99,8 %
+#     omega                   99,75 %             100,0 %
+#     loki                    44,89 %              99,2 %
+#     padre                   99,00 %              98,8 %
+#     delta                   88,61 %              33,0 %
+#
+# `loki` empareja el 99,2 % de la calma y solo el 44,9 % de los eventos: su
+# memoria responde MÁS a la calma. Y las distribuciones de similitud son
+# idénticas --- en eventos la mediana va de 0,896 a 0,941 y en calma de 0,877 a
+# 0,965 ---, así que **no hay umbral que separe**: subir `SIMILARITY_ALERT`
+# dispararía menos en los dos lados por igual. El umbral vigente, 0,8, está por
+# debajo del percentil 5 de la calma (0,903).
+#
+# La causa está en `similitud`: es una media sobre todas las dimensiones, y los
+# rasgos que discriminan quedan diluidos entre los que son casi iguales en todo
+# el planeta a cualquier hora (Kp, Schumann, fase lunar). Por eso `beta1`, con
+# 16 columnas sísmicas de nodo, empareja la calma MÁS que los eventos: añadir
+# columnas a una media no la hace discriminar.
+#
+# Desde hoy la medición trae las dos mitades y una GANANCIA. Un reconocimiento
+# del 99,75 % con falsa alarma del 100 % es ganancia 0, y así se lee.
+SESGO_MUESTRA_CALMA = 400
+SESGO_HORIZONTE_CALMA_H = 190   # el lag aprendido de SISMO_M6
+
 
 def evaluar_sesgo_aprendizaje(
     db_path: str,
@@ -453,6 +491,14 @@ def evaluar_sesgo_aprendizaje(
         "bot TEXT PRIMARY KEY, n INTEGER, recon_insample REAL, recon_causal REAL, "
         "sesgo REAL, castigos INTEGER, evaluada_at TEXT DEFAULT (datetime('now')))"
     )
+    # Migración forward-only (regla 5): las tres columnas de la mitad que
+    # faltaba. Una base vieja se lee igual; estas salen NULL hasta la siguiente
+    # evaluación.
+    _cols = {r[1] for r in conn.execute("PRAGMA table_info(tbl_sesgo_aprendizaje)")}
+    for _c, _t in (("n_calma", "INTEGER"), ("falsa_alarma", "REAL"),
+                   ("ganancia", "REAL")):
+        if _c not in _cols:
+            conn.execute(f"ALTER TABLE tbl_sesgo_aprendizaje ADD COLUMN {_c} {_t}")
 
     # Incluye 'omega' en el dominio de evaluación aunque no esté en BOT_FEATURES
     # (Omega usa None como keys → vector completo)
@@ -496,7 +542,53 @@ def evaluar_sesgo_aprendizaje(
     paso = max(1, len(todos) // muestra)
     eventos = todos[::paso]
 
-    conteo = {b: {"n": 0, "insample": 0, "causal": 0} for b in bots_evaluar}
+    # ── La otra mitad: ventanas de CALMA, para que el reconocimiento se pueda
+    # leer contra algo. Sin esto la medición premia al que empareja con todo.
+    import bisect as _bisect
+    import datetime as _dtm
+    import random as _rnd
+
+    por_nodo_ev: Dict[int, list] = {}
+    for _ts, _nd in todos:
+        por_nodo_ev.setdefault(int(_nd), []).append(str(_ts))
+    horas = [r[0] for r in conn.execute(
+        "SELECT timestamp_blk FROM tbl_clima_espacial_raw ORDER BY timestamp_blk")]
+    from sentinel_omega.core.shared.geometria_uvg import MATRIZ_UVG_125
+    nodos_reales = [int(nd["id"]) for nd in MATRIZ_UVG_125 if nd["tipo"] == "real"]
+    _rng = _rnd.Random(SESGO_MUESTRA)
+
+    def _es_calma(ts: str, nodo: int) -> bool:
+        lista = por_nodo_ev.get(int(nodo))
+        if not lista:
+            return True
+        i = _bisect.bisect_right(lista, ts)
+        if i >= len(lista):
+            return True
+        try:
+            t0 = _dtm.datetime.strptime(ts[:16], "%Y-%m-%d %H:%M")
+        except ValueError:
+            return False
+        tope = (t0 + _dtm.timedelta(hours=SESGO_HORIZONTE_CALMA_H)
+                ).strftime("%Y-%m-%d %H:%M")
+        return lista[i] > tope
+
+    calmas: list = []
+    intentos = 0
+    while horas and nodos_reales and len(calmas) < SESGO_MUESTRA_CALMA and intentos < 15 * SESGO_MUESTRA_CALMA:
+        intentos += 1
+        ts = horas[_rng.randrange(len(horas))]
+        nodo = nodos_reales[_rng.randrange(len(nodos_reales))]
+        if not _es_calma(ts, nodo):
+            continue
+        calmas.append((ts, nodo))
+    if len(calmas) < SESGO_MUESTRA_CALMA:
+        logger.warning(
+            "sesgo: solo %d ventanas de calma de %d pedidas tras %d intentos "
+            "--- la falsa alarma sale con menos resolución",
+            len(calmas), SESGO_MUESTRA_CALMA, intentos)
+
+    conteo = {b: {"n": 0, "insample": 0, "causal": 0,
+                  "n_calma": 0, "falsa": 0} for b in bots_evaluar}
     for ts, nodo in eventos:
         feats = extraer_features_ventana(conn, ts, nodo)
         if not feats:
@@ -519,6 +611,25 @@ def evaluar_sesgo_aprendizaje(
             if best_causal >= SIMILARITY_ALERT:
                 c["causal"] += 1
 
+    # La misma pregunta, sobre ventanas que NO fueron seguidas de nada. Se usa
+    # `best_causal` igual que arriba, para comparar peras con peras.
+    for ts, nodo in calmas:
+        feats = extraer_features_ventana(conn, ts, nodo)
+        if not feats:
+            continue
+        for bot, keys in bots_evaluar.items():
+            fs = firmas.get(bot)
+            if not fs:
+                continue
+            sub = feats if keys is None else {k: feats[k] for k in keys if k in feats}
+            if not sub:
+                continue
+            c = conteo[bot]
+            c["n_calma"] += 1
+            if max((similitud(sub, f) for f, t0 in fs if t0 and t0 < ts),
+                   default=0.0) >= SIMILARITY_ALERT:
+                c["falsa"] += 1
+
     resultado = {}
     for bot, c in conteo.items():
         if c["n"] == 0:
@@ -530,9 +641,10 @@ def evaluar_sesgo_aprendizaje(
             # aunque el resto del pipeline (Fase 2/auditoria) ya los evalúa.
             conn.execute(
                 "INSERT OR REPLACE INTO tbl_sesgo_aprendizaje "
-                "(bot, n, recon_insample, recon_causal, sesgo, castigos) "
-                "VALUES (?,?,?,?,?,?)",
-                (bot, 0, None, None, None, 0),
+                "(bot, n, recon_insample, recon_causal, sesgo, castigos, "
+                " n_calma, falsa_alarma, ganancia) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (bot, 0, None, None, None, 0, 0, None, None),
             )
             resultado[bot] = {"insample": None, "causal": None, "sesgo": None,
                                "castigos": 0, "n": 0}
@@ -540,9 +652,27 @@ def evaluar_sesgo_aprendizaje(
         insample = c["insample"] / c["n"]
         causal = c["causal"] / c["n"]
         sesgo = insample - causal
+        # La ganancia es lo que hay que leer: reconocer el 99,75 % de los
+        # eventos emparejando el 100 % de la calma es ganancia CERO.
+        falsa = (c["falsa"] / c["n_calma"]) if c["n_calma"] else None
+        ganancia = None if falsa is None else causal - falsa
         castigos = 0
         # Padre y Omega se castigan si su reconocimiento causal es bajo
         # (solo en evaluaciones disciplinarias, no en líneas base 'pre')
+        #
+        # OJO --- esta fórmula está MUERTA en la práctica, y es parte del mismo
+        # defecto (medido el 2026-10-07). `castigos = round((1 - causal) * 3)`:
+        # con el causal de padre en 0,99 sale `round(0,03) = 0`, y con el de
+        # omega en 0,9975 sale 0. Los nueve bots tenían `castigos = 0`.
+        #
+        # O sea que el castigo solo puede caer si el bot NO reconoce, nunca si
+        # alarma de más --- y como la memoria empareja el 100 % de la calma, el
+        # reconocimiento es alto por alarmismo y el castigo es inalcanzable. La
+        # disciplina está cableada contra el fallo opuesto al que hay.
+        #
+        # Lo honesto sería castigar sobre la GANANCIA (`causal - falsa_alarma`),
+        # que ya se mide arriba. NO se cambia aquí: mueve los pesos de
+        # producción y eso es decisión del operador.
         if aplicar_castigo and bot in ("padre", "omega"):
             max_cast = SESGO_MAX_CASTIGOS_PADRE if bot == "padre" else SESGO_MAX_CASTIGOS_OMEGA
             castigos = min(max_cast, round((1.0 - causal) * max_cast))
@@ -550,12 +680,25 @@ def evaluar_sesgo_aprendizaje(
                 castigar(conn, bot, es_padre=(bot == "padre"), gravedad=1.0)
         conn.execute(
             "INSERT OR REPLACE INTO tbl_sesgo_aprendizaje "
-            "(bot, n, recon_insample, recon_causal, sesgo, castigos) "
-            "VALUES (?,?,?,?,?,?)",
-            (bot, c["n"], round(insample, 4), round(causal, 4), round(sesgo, 4), castigos),
+            "(bot, n, recon_insample, recon_causal, sesgo, castigos, "
+            " n_calma, falsa_alarma, ganancia) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (bot, c["n"], round(insample, 4), round(causal, 4), round(sesgo, 4),
+             castigos, c["n_calma"],
+             None if falsa is None else round(falsa, 4),
+             None if ganancia is None else round(ganancia, 4)),
         )
         resultado[bot] = {"insample": round(insample, 3), "causal": round(causal, 3),
-                          "sesgo": round(sesgo, 3), "castigos": castigos}
+                          "sesgo": round(sesgo, 3), "castigos": castigos,
+                          "falsa_alarma": None if falsa is None else round(falsa, 3),
+                          "ganancia": None if ganancia is None else round(ganancia, 3)}
+        if ganancia is not None and ganancia <= 0.0:
+            logger.error(
+                "%s: reconocimiento causal %.1f %% con falsa alarma %.1f %% --- "
+                "ganancia %+.3f. Su memoria NO discrimina: empareja la calma "
+                "igual o más que los eventos, así que el reconocimiento alto no "
+                "es aprendizaje, es alarmismo.",
+                bot, 100 * causal, 100 * falsa, ganancia)
     conn.commit()
     conn.close()
     logger.info(f"Sesgo de aprendizaje (realidad vs fantasía): {resultado}")
