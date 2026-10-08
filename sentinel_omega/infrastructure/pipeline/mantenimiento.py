@@ -480,7 +480,7 @@ def evaluar_sesgo_aprendizaje(
     del entrenamiento): mide realidad vs fantasía sin disciplinar al Padre."""
     import json as _json
     from sentinel_omega.core.firmas.signature_engine import (
-        SIMILARITY_ALERT, extraer_features_ventana, similitud,
+        SIMILARITY_ALERT, _filtro_exigible, extraer_features_ventana, similitud,
     )
     from sentinel_omega.infrastructure.pipeline.entrenamiento import BOT_FEATURES
     from sentinel_omega.core.juez.pesos import castigar
@@ -518,7 +518,13 @@ def evaluar_sesgo_aprendizaje(
     firmas: Dict[str, list] = {}
     for firma_id, bot, feats in conn.execute(
         "SELECT firma_id, bot_name, features_json FROM TBL_FIRMAS "
+        # EXIGIBLES, no solo consolidadas (2026-10-08). Si esta medición usara
+        # un conjunto distinto del que el sistema consulta por
+        # `consolidadas()`, estaría midiendo ---y castigando por--- una memoria
+        # que ya no se usa. Es la misma regla que gobierna todo este archivo:
+        # medir lo que de verdad decide.
         "WHERE estado = 'consolidada'"
+        + _filtro_exigible(conn)
     ):
         try:
             f = _json.loads(feats)
@@ -648,6 +654,25 @@ def evaluar_sesgo_aprendizaje(
             )
             resultado[bot] = {"insample": None, "causal": None, "sesgo": None,
                                "castigos": 0, "n": 0}
+            # Distinguir «todavía no tiene memoria» de «tiene memoria y NINGUNA
+            # es exigible», que son dos cosas muy distintas y aquí salían
+            # iguales. El segundo caso es el peor estado posible y además deja
+            # al bot INMUNE al castigo por no tener nada que medir --- el mismo
+            # patrón de «el que no opina no puede ser castigado» que deformó la
+            # disciplina en 2026-09-26. No se castiga desde aquí (sería un
+            # castigo sobre un dato que no se tomó), pero que se vea.
+            try:
+                cons = conn.execute(
+                    "SELECT COUNT(*) FROM TBL_FIRMAS WHERE bot_name=? AND "
+                    "estado='consolidada'", (bot,)).fetchone()[0]
+            except sqlite3.Error:
+                cons = 0
+            if cons:
+                logger.error(
+                    "%s: tiene %d firmas consolidadas y NINGUNA exigible --- "
+                    "su memoria recurre pero no discrimina, así que no hay nada "
+                    "que medir y queda INMUNE al castigo. Es el peor estado, no "
+                    "el neutro.", bot, cons)
             continue
         insample = c["insample"] / c["n"]
         causal = c["causal"] / c["n"]
