@@ -73,3 +73,11 @@ sentinel_omega/data/reporte_padre_*.txt
 # Respaldos que deja un agente antes de tocar un archivo. Son de un momento,
 # no del proyecto (p. ej. `CHANGELOG.md.bak_g_20260927`).
 *.bak_*
+*.bak.20*
+
+# Copia de los `.onnx` antes de un reentrenamiento (regla del operador:
+# «siempre antes de un cambio, respaldo»). `models/` SÍ está en git --- lleva
+# su `.gitkeep` ---, así que una copia hermana aparece como sin commitear.
+# Son 5,6 MB de un momento concreto; el modelo bueno es el que está en
+# `models/`, y si la compuerta niega, el anterior ya se queda solo.
+sentinel_omega/models_pre_retrain_*/
