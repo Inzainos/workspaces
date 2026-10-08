@@ -1,54 +1,209 @@
 {
-  "retrained_at": "2026-10-04T18:44:39.534210Z",
+  "retrained_at": "2026-10-08T19:30:19.349333Z",
   "db_path": "sentinel_omega/data/SENTINEL_OMEGA_PRO.db",
+  "fuente": "ventanas",
+  "objetivo": {
+    "horizonte_h": 190,
+    "mag_min": 4.5,
+    "n_ventanas": 7000
+  },
+  "compuerta": {
+    "auc_minima": 0.55,
+    "auc_maxima_creible": 0.95,
+    "activa": true,
+    "aprueban": [],
+    "niega": [
+      "alfa1",
+      "beta1",
+      "beta2",
+      "delta",
+      "omega",
+      "loki",
+      "jupiter"
+    ]
+  },
   "bots": {
     "alfa1": {
-      "path": "/home/deamon/workspaces/sentinel_omega/models/alfa1_spaceweather_rf.onnx",
-      "n": 1420,
-      "source": "db-only (1420)",
-      "reentrenado": true
+      "path": null,
+      "n": 7000,
+      "source": "db-only (7000)",
+      "fuente": "ventanas",
+      "reentrenado": false,
+      "habilidad": {
+        "auc": 0.48988378381831266,
+        "auc_inferior": 0.4513340921322409,
+        "auc_sin_sismo": null,
+        "auc_nulo_por_nodo": 0.8993089417045323,
+        "ganancia_sobre_nulo": -0.4094251578862197,
+        "origen": "rasgos_propios",
+        "n_train": 4900,
+        "n_test": 2100,
+        "n_pos_test": 646,
+        "base_test": 0.3076190476190476,
+        "corte": "temporal",
+        "motivo": "AUC 0.490 pero su extremo inferior es 0.451, por debajo de 0.55: con 646 positivas de prueba no se distingue del azar. Un punto suelto por encima del suelo no es habilidad --- lo que tiene que cruzarlo es la barra de error (regla dura 8).",
+        "aprueba": false,
+        "auc_minima": 0.55,
+        "auc_maxima_creible": 0.95,
+        "ganancia_minima": 0.02,
+        "escrito": false
+      }
     },
     "alfa2": {
       "path": null,
       "n": 0,
-      "source": "NO se reentrena: 35 muestras reales (<50) y sin prior",
+      "source": "NO se reentrena: 38 muestras reales (<50) y sin prior",
       "reentrenado": false
     },
     "beta1": {
-      "path": "/home/deamon/workspaces/sentinel_omega/models/beta1_schumann_fft.onnx",
-      "n": 1030,
-      "source": "db-only (1030)",
-      "reentrenado": true
+      "path": null,
+      "n": 7000,
+      "source": "db-only (7000)",
+      "fuente": "ventanas",
+      "reentrenado": false,
+      "habilidad": {
+        "auc": 0.8004149969551275,
+        "auc_inferior": 0.7695929574005472,
+        "auc_sin_sismo": 0.5181079417939622,
+        "auc_nulo_por_nodo": 0.8993089417045323,
+        "ganancia_sobre_nulo": -0.09889394474940483,
+        "origen": "agrupamiento_omori",
+        "n_train": 4900,
+        "n_test": 2100,
+        "n_pos_test": 646,
+        "base_test": 0.3076190476190476,
+        "corte": "temporal",
+        "motivo": "AUC 0.800 pero la tasa base POR NODO sola da 0.899: la ganancia es -0.099, por debajo de 0.02. El modelo dice QU\u00c9 nodo, no CU\u00c1NDO --- eso es un mapa de peligrosidad, no detecci\u00f3n de precursores. El modelo nulo de este problema es la tasa base del nodo, no 0,5 (misma l\u00f3gica de Molchan que `core/precursor/baseline.py`).",
+        "aprueba": false,
+        "auc_minima": 0.55,
+        "auc_maxima_creible": 0.95,
+        "ganancia_minima": 0.02,
+        "escrito": false
+      }
     },
     "beta2": {
-      "path": "/home/deamon/workspaces/sentinel_omega/models/beta2_atmospheric_cnn.onnx",
-      "n": 2027,
-      "source": "db-only (2027)",
-      "reentrenado": true
+      "path": null,
+      "n": 7000,
+      "source": "db-only (7000)",
+      "fuente": "ventanas",
+      "reentrenado": false,
+      "habilidad": {
+        "auc": 0.5015549077808202,
+        "auc_inferior": 0.4629975099326934,
+        "auc_sin_sismo": null,
+        "auc_nulo_por_nodo": 0.8993089417045323,
+        "ganancia_sobre_nulo": -0.3977540339237121,
+        "origen": "rasgos_propios",
+        "n_train": 4900,
+        "n_test": 2100,
+        "n_pos_test": 646,
+        "base_test": 0.3076190476190476,
+        "corte": "temporal",
+        "motivo": "AUC 0.502 pero su extremo inferior es 0.463, por debajo de 0.55: con 646 positivas de prueba no se distingue del azar. Un punto suelto por encima del suelo no es habilidad --- lo que tiene que cruzarlo es la barra de error (regla dura 8).",
+        "aprueba": false,
+        "auc_minima": 0.55,
+        "auc_maxima_creible": 0.95,
+        "ganancia_minima": 0.02,
+        "escrito": false
+      }
     },
     "delta": {
-      "path": "/home/deamon/workspaces/sentinel_omega/models/delta_financial_lstm.onnx",
-      "n": 739,
-      "source": "db-only (739)",
-      "reentrenado": true
+      "path": null,
+      "n": 2427,
+      "source": "db-only (2427)",
+      "fuente": "ventanas",
+      "reentrenado": false,
+      "habilidad": {
+        "auc": 0.550925510332322,
+        "auc_inferior": 0.48489670214379443,
+        "auc_sin_sismo": null,
+        "auc_nulo_por_nodo": 0.9004560225497764,
+        "ganancia_sobre_nulo": -0.34953051221745446,
+        "origen": "rasgos_propios",
+        "n_train": 1698,
+        "n_test": 729,
+        "n_pos_test": 218,
+        "base_test": 0.299039780521262,
+        "corte": "temporal",
+        "motivo": "AUC 0.551 pero su extremo inferior es 0.485, por debajo de 0.55: con 218 positivas de prueba no se distingue del azar. Un punto suelto por encima del suelo no es habilidad --- lo que tiene que cruzarlo es la barra de error (regla dura 8).",
+        "aprueba": false,
+        "auc_minima": 0.55,
+        "auc_maxima_creible": 0.95,
+        "ganancia_minima": 0.02,
+        "escrito": false
+      }
     },
     "omega": {
-      "path": "/home/deamon/workspaces/sentinel_omega/models/omega_espacial_rf.onnx",
-      "n": 1057,
-      "source": "db-only (1057)",
-      "reentrenado": true
+      "path": null,
+      "n": 7000,
+      "source": "db-only (7000)",
+      "fuente": "ventanas",
+      "reentrenado": false,
+      "habilidad": {
+        "auc": 0.49282911238773364,
+        "auc_inferior": 0.4542754936863949,
+        "auc_sin_sismo": null,
+        "auc_nulo_por_nodo": 0.8993089417045323,
+        "ganancia_sobre_nulo": -0.4064798293167987,
+        "origen": "rasgos_propios",
+        "n_train": 4900,
+        "n_test": 2100,
+        "n_pos_test": 646,
+        "base_test": 0.3076190476190476,
+        "corte": "temporal",
+        "motivo": "AUC 0.493 pero su extremo inferior es 0.454, por debajo de 0.55: con 646 positivas de prueba no se distingue del azar. Un punto suelto por encima del suelo no es habilidad --- lo que tiene que cruzarlo es la barra de error (regla dura 8).",
+        "aprueba": false,
+        "auc_minima": 0.55,
+        "auc_maxima_creible": 0.95,
+        "ganancia_minima": 0.02,
+        "escrito": false
+      }
     },
     "loki": {
-      "path": "/home/deamon/workspaces/sentinel_omega/models/loki_unificado_rf.onnx",
-      "n": 1818,
-      "source": "db-only (1818)",
-      "reentrenado": true
+      "path": null,
+      "n": 7000,
+      "source": "db-only (7000)",
+      "fuente": "ventanas",
+      "reentrenado": false,
+      "habilidad": {
+        "auc": 0.49394485586893844,
+        "auc_inferior": 0.4553900990896996,
+        "auc_sin_sismo": null,
+        "auc_nulo_por_nodo": 0.8993089417045323,
+        "ganancia_sobre_nulo": -0.4053640858355939,
+        "origen": "rasgos_propios",
+        "n_train": 4900,
+        "n_test": 2100,
+        "n_pos_test": 646,
+        "base_test": 0.3076190476190476,
+        "corte": "temporal",
+        "motivo": "AUC 0.494 pero su extremo inferior es 0.455, por debajo de 0.55: con 646 positivas de prueba no se distingue del azar. Un punto suelto por encima del suelo no es habilidad --- lo que tiene que cruzarlo es la barra de error (regla dura 8).",
+        "aprueba": false,
+        "auc_minima": 0.55,
+        "auc_maxima_creible": 0.95,
+        "ganancia_minima": 0.02,
+        "escrito": false
+      }
     },
     "jupiter": {
       "path": null,
-      "n": 0,
-      "source": "NO se reentrena: 34 muestras reales (<50) y sin prior",
-      "reentrenado": false
+      "n": 53,
+      "source": "db-only (53)",
+      "fuente": "ventanas",
+      "reentrenado": false,
+      "habilidad": {
+        "auc": null,
+        "n_train": 0,
+        "n_test": 0,
+        "base_test": null,
+        "corte": null,
+        "motivo": "solo 53 muestras; por debajo de 60 el AUC es ruido",
+        "aprueba": false,
+        "auc_minima": 0.55,
+        "auc_maxima_creible": 0.95,
+        "ganancia_minima": 0.02,
+        "escrito": false
+      }
     }
   }
 }
