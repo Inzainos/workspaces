@@ -192,10 +192,35 @@ def escribir_reporte_rebuild():
         "SELECT bot_name, ROUND(peso,3) FROM TBL_PESOS_BOTS "
         "ORDER BY bot_name").fetchall() if q1(
         "SELECT COUNT(*) FROM TBL_PESOS_BOTS") else []
-    sesgo = conn.execute(
-        "SELECT bot, ROUND(recon_insample,3), ROUND(recon_causal,3), "
-        "ROUND(sesgo,3) FROM tbl_sesgo_aprendizaje ORDER BY bot").fetchall() \
-        if q1("SELECT COUNT(*) FROM tbl_sesgo_aprendizaje") else []
+    # Desde el 2026-10-08 se leen tambien `falsa_alarma` y `ganancia`. Sin
+    # ellas el reporte mostraba «causal 0,95» como si fuera un logro, cuando la
+    # falsa alarma era 0,945 y la ganancia +0,005: reconocer todo emparejando
+    # todo. El operador lee ESTE archivo, asi que el numero que decide tiene
+    # que estar aqui.
+    _cols_sesgo = {r[1] for r in conn.execute(
+        "PRAGMA table_info(tbl_sesgo_aprendizaje)")}
+    _tiene_ganancia = {"falsa_alarma", "ganancia"} <= _cols_sesgo
+    if q1("SELECT COUNT(*) FROM tbl_sesgo_aprendizaje") and _tiene_ganancia:
+        sesgo = conn.execute(
+            "SELECT bot, ROUND(recon_insample,3), ROUND(recon_causal,3), "
+            "ROUND(sesgo,3), ROUND(falsa_alarma,3), ROUND(ganancia,3), "
+            "castigos FROM tbl_sesgo_aprendizaje ORDER BY bot").fetchall()
+    elif q1("SELECT COUNT(*) FROM tbl_sesgo_aprendizaje"):
+        sesgo = [(b, i, c, s, None, None, None) for b, i, c, s in conn.execute(
+            "SELECT bot, ROUND(recon_insample,3), ROUND(recon_causal,3), "
+            "ROUND(sesgo,3) FROM tbl_sesgo_aprendizaje ORDER BY bot")]
+    else:
+        sesgo = []
+    # Cuanta memoria quedo EXIGIBLE, que es lo que el sistema puede exigir.
+    if "exigible" in {r[1] for r in conn.execute("PRAGMA table_info(TBL_FIRMAS)")}:
+        exig = conn.execute(
+            "SELECT bot_name, "
+            " SUM(CASE WHEN estado='consolidada' THEN 1 ELSE 0 END), "
+            " SUM(CASE WHEN estado='consolidada' AND COALESCE(exigible,1)=1 "
+            "          THEN 1 ELSE 0 END) "
+            "FROM TBL_FIRMAS GROUP BY bot_name ORDER BY 2 DESC").fetchall()
+    else:
+        exig = []
     cim = q1("SELECT COUNT(*) FROM tbl_cimatica_patrones")
     glob = q1("SELECT COUNT(*) FROM tbl_secuencia_veredictos WHERE alcance='GLOBAL'")
     loc = q1("SELECT COUNT(*) FROM tbl_secuencia_veredictos WHERE alcance='LOCAL'")
@@ -235,12 +260,42 @@ def escribir_reporte_rebuild():
         L += [f"| {b} | {p} |" for b, p in pesos]
     else:
         L.append("*(pesos aún no calculados)*")
-    L += ["", "## Sesgo de aprendizaje (realidad vs fantasía)", ""]
+    L += ["", "## Sesgo de aprendizaje — y la GANANCIA, que es lo que decide", ""]
     if sesgo:
-        L += ["| Bot | In-sample | Causal | Sesgo |", "|---|---:|---:|---:|"]
-        L += [f"| {b} | {i} | {c} | {s} |" for b, i, c, s in sesgo]
+        L += ["> `causal` es cuántos eventos reconoce; `f.alarma`, cuánta CALMA",
+              "> empareja igual. La **ganancia** es la resta, y es el número que",
+              "> importa: reconocer el 95 % emparejando el 94,5 % es ganancia",
+              "> 0,005, o sea alarmismo, no aprendizaje.", ""]
+        L += ["| Bot | In-sample | Causal | f.alarma | **Ganancia** | Castigos |",
+              "|---|---:|---:|---:|---:|---:|"]
+        for fila in sesgo:
+            b, i, c, s, fa, g, ca = fila
+            marca = ""
+            if g is not None:
+                marca = " ⚠" if g <= 0.02 else ""
+            L.append(f"| {b} | {i} | {c} | {fa if fa is not None else '—'} | "
+                     f"**{g if g is not None else '—'}**{marca} | "
+                     f"{ca if ca is not None else '—'} |")
     else:
         L.append("*(sesgo aún no calculado)*")
+
+    L += ["", "## Memoria EXIGIBLE (consolidada y que discrimina)", ""]
+    if exig:
+        L += ["> `consolidada` es recurrencia; `exigible` es que la firma",
+              "> empareje eventos MÁS que calma. Son dos cosas distintas desde",
+              "> el 2026-10-07: la promoción va por recurrencia, así que un",
+              "> patrón que reaparece en calma se consolidaba igual.", ""]
+        L += ["| Bot | Consolidadas | Exigibles | % |", "|---|---:|---:|---:|"]
+        tc = te = 0
+        for b, c, e in exig:
+            c, e = c or 0, e or 0
+            tc += c; te += e
+            pct = f"{100.0 * e / c:.1f} %" if c else "—"
+            L.append(f"| {b} | {c:,} | {e:,} | {pct} |")
+        pct = f"{100.0 * te / tc:.1f} %" if tc else "—"
+        L.append(f"| **total** | **{tc:,}** | **{te:,}** | **{pct}** |")
+    else:
+        L.append("*(discriminación aún no medida)*")
     L += [
         "", "## Asertividad viva (append-only, no se tocó)",
         f"- {viva}", "",
