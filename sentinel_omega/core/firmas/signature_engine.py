@@ -790,6 +790,67 @@ class _ClaseEnMemoria:
         return self._buf[: self.n]
 
 
+# ─── «Exigible» = consolidada Y que discrimina (2026-10-07) ──────────────────
+#
+# Mismo idioma que `_filtro_juez_en_vivo` para la bandera `en_vivo`: una base
+# que todavía no tiene la columna se lee entera, con aviso, en vez de reventar
+# o de filtrar en silencio.
+COLUMNAS_DISCRIMINACION = (
+    ("discrimina_pe", "REAL"),      # fracción de ventanas de EVENTO que empareja
+    ("discrimina_pc", "REAL"),      # fracción de ventanas de CALMA que empareja
+    ("discriminacion", "REAL"),     # pe - pc
+    ("exigible", "INTEGER"),        # 1/0; NULL = sin medir todavía
+    ("discrimina_at", "TEXT"),
+)
+
+# Medido el 2026-10-07 firma a firma contra 300 ventanas de evento y 300 de
+# calma. Cuántas sobreviven de 4.164 según el umbral de `pe - pc`:
+#
+#     >0,02  659 (15,8 %) · >0,05  189 (4,5 %) · >0,10  57 (1,4 %) · >0,20  0
+#
+# Se elige 0,05: deja una población utilizable (~1.800 de las 40.684 firmas)
+# excluyendo al 95 % que no distingue. Mover este número exige volver a medir
+# --- es un umbral calibrado, no una preferencia (regla dura 8).
+UMBRAL_DISCRIMINACION = 0.05
+
+
+def asegurar_columnas_discriminacion(conn: sqlite3.Connection) -> int:
+    """Migración forward-only (regla 5) de las columnas de discriminación."""
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(TBL_FIRMAS)")}
+    except sqlite3.Error as exc:
+        logger.warning("no se pudo leer el esquema de TBL_FIRMAS: %s", exc)
+        return 0
+    if not cols:
+        return 0
+    nuevas = 0
+    for nombre, tipo in COLUMNAS_DISCRIMINACION:
+        if nombre not in cols:
+            conn.execute(f"ALTER TABLE TBL_FIRMAS ADD COLUMN {nombre} {tipo}")
+            nuevas += 1
+    if nuevas:
+        conn.commit()
+        logger.info("TBL_FIRMAS: %d columnas de discriminación añadidas", nuevas)
+    return nuevas
+
+
+def _filtro_exigible(conn: sqlite3.Connection) -> str:
+    """``" AND COALESCE(exigible,1)=1"`` si la columna existe.
+
+    NULL cuenta como exigible: una firma que nadie ha medido todavía no se
+    demota en silencio. Lo que se excluye es lo MEDIDO y reprobado.
+    """
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(TBL_FIRMAS)")}
+    except sqlite3.Error:
+        return ""
+    if "exigible" in cols:
+        return " AND COALESCE(exigible, 1) = 1"
+    logger.debug("TBL_FIRMAS sin columna `exigible`: se leen todas las "
+                 "consolidadas (base anterior a la medición de discriminación)")
+    return ""
+
+
 class FirmaMemoria:
     """CRUD + promotion over TBL_FIRMAS. One instance per database."""
 
@@ -940,8 +1001,36 @@ class FirmaMemoria:
         return firma_id, "nueva", True
 
     def consolidadas(self, bot_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Las firmas EXIGIBLES: consolidadas por recurrencia y que discriminan.
+
+        Hasta el 2026-10-07 «consolidada» y «exigible» eran lo mismo, y la
+        promoción `nueva → observada → recurrente → consolidada` va solo por
+        RECURRENCIA (`ESTADO_POR_RECURRENCIA`). Un patrón que reaparece en
+        calma se consolidaba igual que uno que precede eventos.
+
+        Medido ese día, firma a firma, contra 300 ventanas de evento y 300 de
+        calma --- cuántas emparejan eventos MÁS que calma (`pe - pc`):
+
+            umbral   sobreviven de 4.164
+             >0,02        659  (15,8 %)
+             >0,05        189  ( 4,5 %)
+             >0,10         57  ( 1,4 %)
+             >0,20          0
+
+        O sea que el «conocimiento exigible» del sistema ---15.322 firmas---
+        era en su enorme mayoría memoria que no distingue. Eso está aguas
+        arriba del AUC 0,5 de los modelos, del `recon_causal` del 99,75 % y de
+        los 159 falsos positivos.
+
+        El arreglo separa los dos conceptos: `estado` sigue siendo el hecho de
+        recurrencia, y `exigible` es el hecho de DISCRIMINACIÓN, medido por
+        `mantenimiento.medir_discriminacion_firmas`. Una firma sin medir
+        (`exigible IS NULL`) cuenta como exigible --- no se demota a nadie en
+        silencio por no haberla mirado todavía.
+        """
         q = ("SELECT firma_id, bot_name, event_class, id_nodo, features_json, "
-             "recurrencia, estado FROM TBL_FIRMAS WHERE estado = 'consolidada'")
+             "recurrencia, estado FROM TBL_FIRMAS WHERE estado = 'consolidada'"
+             + _filtro_exigible(self._conn))
         params: tuple = ()
         if bot_name:
             q += " AND bot_name = ?"

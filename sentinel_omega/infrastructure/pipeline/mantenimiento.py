@@ -717,6 +717,183 @@ def evaluar_sesgo_aprendizaje(
     return {"eventos": len(eventos), "por_bot": resultado}
 
 
+# ── Discriminación por firma: ¿esta memoria distingue, o solo recurre? ───────
+#
+# La promoción `nueva → observada → recurrente → consolidada` va por
+# RECURRENCIA (`ESTADO_POR_RECURRENCIA`), y nada más. Un patrón que reaparece
+# en calma se consolida igual que uno que precede eventos, y el sistema llama
+# «conocimiento exigible» a las consolidadas.
+#
+# Medido el 2026-10-07, firma a firma, contra 300 ventanas de evento y 300 de
+# calma --- cuántas emparejan eventos MÁS que calma (`pe - pc`):
+#
+#     umbral   sobreviven de 4.164 muestreadas
+#      >0,02        659  (15,8 %)
+#      >0,05        189  ( 4,5 %)
+#      >0,10         57  ( 1,4 %)
+#      >0,20          0
+#
+# Por bot, a >0,05: beta1 105 de 400 (las de `sismo_*`), alfa1 25, delta 13,
+# omega 11, beta2 7, padre 0 de 400, loki 0. O sea que de las 15.322 firmas
+# consolidadas, la enorme mayoría es memoria que no distingue.
+#
+# Eso está AGUAS ARRIBA de todo lo demás que se midió ese día: del AUC 0,5 de
+# los ocho modelos, del `recon_causal` del 99,75 % con falsa alarma del 100 %,
+# y de los 159 falsos positivos. Ningún modelo ni ninguna métrica de similitud
+# lo arregla mientras el criterio de promoción no mire la calma.
+#
+# Esta medición no reescribe `estado` --- la recurrencia sigue siendo un hecho
+# --- sino la bandera `exigible`, que es el hecho de discriminación. Las dos
+# cosas separadas y las dos medidas.
+DISC_MUESTRA_EVENTO = 300
+DISC_MUESTRA_CALMA = 300
+
+
+def medir_discriminacion_firmas(
+    db_path: str,
+    n_evento: int = DISC_MUESTRA_EVENTO,
+    n_calma: int = DISC_MUESTRA_CALMA,
+    horizonte_h: int = SESGO_HORIZONTE_CALMA_H,
+    min_recurrencia: int = 3,
+    aplicar: bool = False,
+) -> Dict:
+    """Mide `pe`, `pc` y `pe - pc` por firma y marca `exigible`.
+
+    `aplicar=False` (por defecto) MIDE y devuelve el reparto sin escribir nada:
+    cambiar qué es exigible mueve lo que el Juez puede exigir, así que se ve
+    antes de aplicarse. Con `aplicar=True` persiste las cuatro columnas.
+    """
+    import bisect as _bisect
+    import datetime as _dtm
+    import json as _json
+    import random as _rnd
+
+    import numpy as _np
+
+    from sentinel_omega.core.firmas.signature_engine import (
+        SIMILARITY_ALERT, UMBRAL_DISCRIMINACION, _vector,
+        asegurar_columnas_discriminacion, extraer_features_ventana,
+        similitudes_contra,
+    )
+    from sentinel_omega.core.shared.geometria_uvg import MATRIZ_UVG_125
+
+    conn = conexion_de_lote(db_path)
+    try:
+        if aplicar:
+            asegurar_columnas_discriminacion(conn)
+
+        eventos_nodo = conn.execute(
+            "SELECT timestamp_blk, id_nodo FROM tbl_historico_sismico_raw "
+            "WHERE sismo_max_mag >= 4.5 ORDER BY timestamp_blk").fetchall()
+        if not eventos_nodo:
+            return {"firmas": 0, "motivo": "sin catálogo sísmico"}
+        por_nodo: Dict[int, list] = {}
+        for _ts, _nd in eventos_nodo:
+            por_nodo.setdefault(int(_nd), []).append(str(_ts))
+        horas = [r[0] for r in conn.execute(
+            "SELECT timestamp_blk FROM tbl_clima_espacial_raw "
+            "ORDER BY timestamp_blk")]
+        reales = [int(nd["id"]) for nd in MATRIZ_UVG_125 if nd["tipo"] == "real"]
+        if not horas or not reales:
+            return {"firmas": 0, "motivo": "sin horas de clima o sin nodos"}
+
+        # Ventanas de EVENTO, repartidas por toda la línea de tiempo.
+        paso = max(1, len(eventos_nodo) // n_evento)
+        vent_ev = []
+        for ts, nodo in eventos_nodo[::paso][:n_evento]:
+            f = extraer_features_ventana(conn, ts, int(nodo))
+            if f:
+                vent_ev.append(_vector(f))
+
+        # Ventanas de CALMA: ninguna seguida de evento en el horizonte.
+        _rng = _rnd.Random(DISC_MUESTRA_CALMA)
+        vent_ca = []
+        intentos = 0
+        while len(vent_ca) < n_calma and intentos < 15 * n_calma:
+            intentos += 1
+            ts = horas[_rng.randrange(len(horas))]
+            nodo = reales[_rng.randrange(len(reales))]
+            lista = por_nodo.get(nodo)
+            if lista:
+                i = _bisect.bisect_right(lista, ts)
+                if i < len(lista):
+                    try:
+                        t0 = _dtm.datetime.strptime(ts[:16], "%Y-%m-%d %H:%M")
+                    except ValueError:
+                        continue
+                    tope = (t0 + _dtm.timedelta(hours=horizonte_h)
+                            ).strftime("%Y-%m-%d %H:%M")
+                    if lista[i] <= tope:
+                        continue
+            f = extraer_features_ventana(conn, ts, nodo)
+            if f:
+                vent_ca.append(_vector(f))
+        if len(vent_ev) < 30 or len(vent_ca) < 30:
+            return {"firmas": 0,
+                    "motivo": f"muestra insuficiente: {len(vent_ev)} eventos, "
+                              f"{len(vent_ca)} calmas"}
+
+        filas = conn.execute(
+            "SELECT firma_id, bot_name, features_json FROM TBL_FIRMAS "
+            "WHERE recurrencia >= ?", (min_recurrencia,)).fetchall()
+        if not filas:
+            return {"firmas": 0, "motivo": "sin firmas con esa recurrencia"}
+        ids = [r[0] for r in filas]
+        bots = [r[1] for r in filas]
+        M = _np.vstack([_vector(_json.loads(r[2])) for r in filas])
+
+        # Por VENTANA contra todas las firmas: 600 pasadas sobre una matriz,
+        # en vez de 40.000 pasadas sobre 600 filas.
+        cuenta_ev = _np.zeros(len(ids), dtype=float)
+        cuenta_ca = _np.zeros(len(ids), dtype=float)
+        for v in vent_ev:
+            cuenta_ev += (similitudes_contra(v, M) >= SIMILARITY_ALERT)
+        for v in vent_ca:
+            cuenta_ca += (similitudes_contra(v, M) >= SIMILARITY_ALERT)
+        pe = cuenta_ev / len(vent_ev)
+        pc = cuenta_ca / len(vent_ca)
+        disc = pe - pc
+        exig = (disc >= UMBRAL_DISCRIMINACION)
+
+        por_bot: Dict[str, Dict[str, int]] = {}
+        for b, e in zip(bots, exig):
+            d = por_bot.setdefault(b, {"n": 0, "exigibles": 0})
+            d["n"] += 1
+            d["exigibles"] += int(bool(e))
+
+        if aplicar:
+            ahora = _dtm.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn.executemany(
+                "UPDATE TBL_FIRMAS SET discrimina_pe=?, discrimina_pc=?, "
+                "discriminacion=?, exigible=?, discrimina_at=? "
+                "WHERE firma_id=?",
+                [(round(float(a), 4), round(float(b2), 4), round(float(c2), 4),
+                  int(bool(e)), ahora, i)
+                 for a, b2, c2, e, i in zip(pe, pc, disc, exig, ids)],
+            )
+            conn.commit()
+
+        stats = {
+            "firmas": len(ids),
+            "ventanas_evento": len(vent_ev),
+            "ventanas_calma": len(vent_ca),
+            "umbral": UMBRAL_DISCRIMINACION,
+            "exigibles": int(exig.sum()),
+            "no_exigibles": int((~exig).sum()),
+            "por_bot": por_bot,
+            "aplicado": bool(aplicar),
+        }
+        logger.info(
+            "Discriminación por firma: %d medidas, %d exigibles (%.1f %%) con "
+            "umbral %.2f%s", stats["firmas"], stats["exigibles"],
+            100.0 * stats["exigibles"] / max(stats["firmas"], 1),
+            UMBRAL_DISCRIMINACION,
+            "" if aplicar else " --- SOLO MEDIDO, no se escribió nada")
+        return stats
+    finally:
+        conn.close()
+
+
 # ── Orden de los precursores — ¿la secuencia importa? ────────────────────────
 # El Padre ahora también ve el ORDEN en que se presentaron los dominios en la
 # víspera de cada evento (p. ej. SOLAR→SISMICO→DESGAS vs DESGAS→SISMICO) y

@@ -883,6 +883,128 @@ class TestSesgoAprendizaje:
         assert real is evaluar_sesgo_aprendizaje
 
 
+class TestDiscriminacionDeFirmas:
+    """«Exigible» = consolidada Y que discrimina.
+
+    La promoción `nueva → observada → recurrente → consolidada` va solo por
+    RECURRENCIA, así que un patrón que reaparece en calma se consolidaba igual
+    que uno que precede eventos --- y el sistema llama «conocimiento exigible»
+    a las consolidadas.
+
+    Medido el 2026-10-07 contra producción entera, firma a firma, con 300
+    ventanas de evento y 300 de calma: de **30.367** firmas con recurrencia ≥ 3,
+    solo **1.023 (3,4 %)** emparejan eventos más que calma. Por bot:
+
+        padre  0 de 21.076   beta1  853 de 3.594   beta2  0 de 1.677
+        alfa1  134 de 1.190  omega   22 de   876   loki   9 de 1.360
+        delta    5 de   544  jupiter  0 de     26  alfa2  0 de    24
+
+    El árbitro no tiene UNA. Eso está aguas arriba del AUC 0,5 de los modelos,
+    del `recon_causal` del 99,75 % y de los 159 falsos positivos.
+    """
+
+    def test_la_migracion_de_columnas_es_forward_only(self, db):
+        from sentinel_omega.core.firmas.signature_engine import (
+            COLUMNAS_DISCRIMINACION, asegurar_columnas_discriminacion,
+        )
+        conn, _ = db
+        antes = conn.execute("SELECT COUNT(*) FROM TBL_FIRMAS").fetchone()[0]
+        asegurar_columnas_discriminacion(conn)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(TBL_FIRMAS)")}
+        for nombre, _t in COLUMNAS_DISCRIMINACION:
+            assert nombre in cols, f"falta {nombre}"
+        assert conn.execute("SELECT COUNT(*) FROM TBL_FIRMAS").fetchone()[0] == antes
+        # Idempotente: correrla dos veces no añade nada ni revienta.
+        assert asegurar_columnas_discriminacion(conn) == 0
+
+    def test_sin_la_columna_se_leen_TODAS_las_consolidadas(self, db):
+        """Una base anterior a la medición no pierde memoria en silencio."""
+        from sentinel_omega.core.firmas.signature_engine import _filtro_exigible
+        conn, _ = db
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(TBL_FIRMAS)")}
+        if "exigible" in cols:
+            pytest.skip("el fixture ya trae la columna")
+        assert _filtro_exigible(conn) == ""
+
+    def test_una_firma_medida_y_reprobada_deja_de_ser_exigible(self, db):
+        """El contrato que importa: `consolidadas()` la excluye."""
+        import json as _json
+        from sentinel_omega.core.firmas.signature_engine import (
+            FirmaMemoria, asegurar_columnas_discriminacion,
+        )
+        conn, _ = db
+        asegurar_columnas_discriminacion(conn)
+        feats = _features_base(sismo_count_win=5.0, sismo_max_mag_win=6.4)
+        for exig in (1, 0, None):
+            conn.execute(
+                "INSERT INTO TBL_FIRMAS (bot_name, event_class, id_nodo, "
+                "features_json, recurrencia, estado, ventana_horas, exigible) "
+                "VALUES ('padre','SISMO_M6',45,?,9,'consolidada',336,?)",
+                (_json.dumps(feats), exig))
+        conn.commit()
+        vistas = FirmaMemoria(conn).consolidadas(bot_name="padre")
+        # Entran la exigible y la SIN MEDIR (NULL); se queda fuera la reprobada.
+        assert len(vistas) == 2, [v["firma_id"] for v in vistas]
+
+    def test_medir_sin_aplicar_NO_escribe_nada(self, db):
+        """Cambiar qué es exigible mueve lo que el Juez puede exigir, así que
+        la medición por defecto solo mide."""
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            medir_discriminacion_firmas,
+        )
+        conn, path = db
+        # La guarda de muestra mínima pide >=30 ventanas de cada clase, así que
+        # el fixture tiene que dar al menos eso --- con 6 eventos se salta, que
+        # es justo lo que comprueba `test_una_muestra_insuficiente...`.
+        _seed_backcast(conn, n_eventos=35)
+        import json as _json
+        conn.execute(
+            "INSERT INTO TBL_FIRMAS (bot_name, event_class, id_nodo, "
+            "features_json, recurrencia, estado, ventana_horas) "
+            "VALUES ('padre','SISMO_M6',45,?,9,'consolidada',336)",
+            (_json.dumps(_features_base(sismo_count_win=5.0,
+                                        sismo_max_mag_win=6.4)),))
+        conn.commit()
+        r = medir_discriminacion_firmas(path, n_evento=35, n_calma=35,
+                                        aplicar=False)
+        assert r.get("firmas", 0) > 0, r.get("motivo")
+        assert r.get("aplicado") is False
+        cols = {c[1] for c in conn.execute("PRAGMA table_info(TBL_FIRMAS)")}
+        if "exigible" in cols:
+            sin_medir = conn.execute(
+                "SELECT COUNT(*) FROM TBL_FIRMAS WHERE exigible IS NOT NULL"
+            ).fetchone()[0]
+            assert sin_medir == 0, "midió sin aplicar y aun así escribió"
+
+    def test_una_muestra_insuficiente_se_dice_y_no_se_inventa(self, db):
+        """Con pocas ventanas no se marca nada: un `exigible` sobre 5 ventanas
+        sería numerología, y demotar memoria con eso es peor que no medir."""
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            medir_discriminacion_firmas,
+        )
+        conn, path = db
+        _seed_backcast(conn, n_eventos=6)
+        conn.commit()
+        r = medir_discriminacion_firmas(path, n_evento=3, n_calma=3,
+                                        aplicar=True)
+        assert r.get("firmas") == 0
+        assert "insuficiente" in (r.get("motivo") or ""), r
+
+    def test_el_umbral_esta_calibrado_y_no_es_una_preferencia(self):
+        """Regla dura 8. El 0,05 sale del barrido medido: >0,02 deja el 15,8 %,
+        >0,05 el 4,5 %, >0,10 el 1,4 % y >0,20 cero. Moverlo exige medir otra
+        vez, así que el número va con su medición al lado."""
+        import inspect
+
+        from sentinel_omega.core.firmas import signature_engine as se
+        assert 0.0 < se.UMBRAL_DISCRIMINACION < 0.2
+        fuente = inspect.getsource(se)
+        i = fuente.index("UMBRAL_DISCRIMINACION = ")
+        contexto = fuente[max(0, i - 900):i]
+        assert "4.164" in contexto or "0,05" in contexto, (
+            "el umbral perdió la medición que lo respalda")
+
+
 class TestSesgoEnEntrenamiento:
     """El sesgo se mide en el pre y el post del entrenamiento."""
 
