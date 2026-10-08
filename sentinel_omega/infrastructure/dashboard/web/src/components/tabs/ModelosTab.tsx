@@ -99,6 +99,17 @@ export function ModelosTab() {
   const sumaBotsF = Number(b?.fallos_total ?? 0);
   const ganancia = b?.ganancia_real != null ? Number(b.ganancia_real) : null;
   const conMerito = items.filter((r) => r.merito != null);
+  // Mismo patrón que `vs` arriba: `api.bots()` devuelve
+  // `Record<string, unknown>`, así que un objeto anidado hay que tiparlo al
+  // leerlo o no se puede indexar.
+  const voto = (b?.voto || {}) as {
+    disponible?: boolean;
+    por_merito_pedido?: boolean;
+    meritos_aplicados?: number;
+    competencias_aplicadas?: number;
+    minimo_ventanas?: number;
+    origen?: string;
+  };
 
   return (
     <div className="space-y-5">
@@ -153,12 +164,17 @@ export function ModelosTab() {
       </Panel>
 
       {/* ---------- Mérito: el diferenciador ---------- */}
-      {conMerito.length ? (
-        <Panel
-          titulo="Mérito contra el silencio"
-          meta="1.00 = no aporta nada"
-          nota="Cada bot paga sus errores en la moneda del Juez (omitir ×10, falsa alarma ×1) y se compara con lo que habría pagado callándose. Esta métrica discrimina donde el peso de disciplina ya no: el peso satura en su techo y varios bots quedan empatados arriba sin que eso signifique que sean iguales."
-        >
+      {/* Cuando no hay mérito, el panel YA NO desaparece. Antes se ocultaba
+          entero con `conMerito.length ? ... : null`, así que el tablero se veía
+          igual con mérito medido y sin medirlo — y lleva sin medirse desde
+          siempre, porque pide ≥50 ventanas de fase viva y hay 36. Es la regla 3
+          del diseño: lo que no se midió tiene que verse distinto. */}
+      <Panel
+        titulo="Mérito contra el silencio"
+        meta={conMerito.length ? "1.00 = no aporta nada" : "sin evidencia todavía"}
+        nota="Cada bot paga sus errores en la moneda del Juez (omitir ×10, falsa alarma ×1) y se compara con lo que habría pagado callándose. Esta métrica discrimina donde el peso de disciplina ya no: el peso satura en su techo y varios bots quedan empatados arriba sin que eso signifique que sean iguales."
+      >
+        {conMerito.length ? (
           <SimpleBars
             data={conMerito.map((r) => ({ bot: r.bot_name, merito: Number(r.merito) }))}
             xKey="bot"
@@ -166,8 +182,26 @@ export function ModelosTab() {
             height={180}
             mostrarX
           />
-        </Panel>
-      ) : null}
+        ) : (
+          <div className="text-sm text-muted space-y-1">
+            <div className="dato-ausente">— sin mérito calculado para ningún bot</div>
+            <div>
+              Hace falta evidencia de la fase viva:{" "}
+              <b className="text-body">
+                ≥ {Number(voto.minimo_ventanas ?? 50)} ventanas por bot
+              </b>
+              {voto.meritos_aplicados != null ? (
+                <> · aplicados ahora: <b className="text-body">{Number(voto.meritos_aplicados)}</b></>
+              ) : null}
+              . Hasta entonces el voto sale de{" "}
+              <b className="text-body">{String(voto.origen ?? "el marcador almacenado")}</b>.
+            </div>
+            {b?.merito_error ? (
+              <div className="text-riesgo-alto">Fallo al calcularlo: {String(b.merito_error)}</div>
+            ) : null}
+          </div>
+        )}
+      </Panel>
 
       {/* ---------- Tabla comparativa ---------- */}
       <Panel
@@ -175,6 +209,11 @@ export function ModelosTab() {
         meta="TBL_PESOS_BOTS · snapshot"
         nota={
           <>
+            <b className="text-body">Peso</b> es el MARCADOR (paseo multiplicativo, saturado
+            arriba) y <b className="text-body">Voto</b> lo que el Padre aplica de verdad: si
+            coinciden, el mérito no se pudo calcular y el voto cayó al marcador ·{" "}
+            <b className="text-body">Exigibles</b> son las firmas consolidadas que emparejan
+            eventos MÁS que calma, de las consolidadas totales ·{" "}
             <b className="text-body">Individual</b> es su propia tasa de acierto ·{" "}
             <b className="text-body">Histórica</b> el in-sample del entrenamiento ·{" "}
             <b className="text-body">Viva</b> lo verificado contra la realidad, que es la que cuenta.
@@ -188,7 +227,27 @@ export function ModelosTab() {
           columns={[
             { key: "bot_name", label: "Bot" },
             { key: "peso", label: "Peso", num: true, render: (r) => <Cifra valor={r.peso} digits={3} /> },
+            {
+              key: "peso_voto",
+              label: "Voto",
+              num: true,
+              render: (r) => <Cifra valor={r.peso_voto} digits={3} />,
+            },
             { key: "merito", label: "Mérito", num: true, render: (r) => <Cifra valor={r.merito} digits={2} /> },
+            {
+              key: "firmas_exigibles",
+              label: "Exigibles",
+              num: true,
+              render: (r) =>
+                r.firmas_consolidadas == null ? (
+                  <Cifra valor={null} />
+                ) : (
+                  <span className="tnum">
+                    <Cifra valor={r.firmas_exigibles} digits={0} />
+                    <span className="text-muted"> / {Number(r.firmas_consolidadas).toLocaleString("es-MX")}</span>
+                  </span>
+                ),
+            },
             { key: "aciertos", label: "Aciertos", num: true, render: (r) => <Cifra valor={r.aciertos} digits={0} /> },
             { key: "fallos", label: "Fallos", num: true, render: (r) => <Cifra valor={r.fallos} digits={0} /> },
             { key: "individual", label: "Individual", num: true, render: (r) => pct(individual(r)) },
@@ -205,22 +264,31 @@ export function ModelosTab() {
 
       {/* ---------- Sesgo ---------- */}
       <Panel
-        titulo="Sesgo — in-sample contra causal"
+        titulo="Reconocimiento, falsa alarma y GANANCIA"
         meta="tbl_sesgo_aprendizaje"
-        nota="La diferencia entre lo que el bot acertaba DENTRO de su set de entrenamiento y lo que acierta FUERA. Una brecha grande significa que memorizó en vez de aprender."
+        nota={
+          <>
+            <b className="text-body">Causal</b> son los eventos que su memoria reconoce;{" "}
+            <b className="text-body">f.alarma</b>, cuánta CALMA empareja igual. La{" "}
+            <b className="text-body">ganancia</b> es la resta, y es el número que decide:
+            reconocer el 95 % emparejando el 94,5 % es ganancia 0,005, o sea alarmismo, no
+            aprendizaje. El <b className="text-body">sesgo</b> (in-sample − causal) solo mide
+            memorización, y era lo único que se mostraba aquí hasta el 2026-10-07.
+          </>
+        }
       >
         {sesgoItems.length ? (
           <>
             <SimpleBars
               data={sesgoItems.map((r) => ({
                 bot: r.bot,
-                insample: Number(r.recon_insample || 0) * 100,
-                causal: Number(r.recon_causal || 0) * 100,
+                causal: r.recon_causal == null ? null : Number(r.recon_causal) * 100,
+                falsa: r.falsa_alarma == null ? null : Number(r.falsa_alarma) * 100,
               }))}
               xKey="bot"
               bars={[
-                { key: "insample", color: "var(--color-serie-3)", name: "in-sample" },
-                { key: "causal", color: "var(--color-serie-1)", name: "causal" },
+                { key: "causal", color: "var(--color-serie-1)", name: "reconoce eventos" },
+                { key: "falsa", color: "var(--color-serie-3)", name: "empareja calma" },
               ]}
               height={180}
               mostrarX
@@ -235,6 +303,34 @@ export function ModelosTab() {
                   { key: "n", label: "n", num: true },
                   { key: "recon_insample", label: "In-sample", num: true, render: (r) => fmtNum(r.recon_insample) },
                   { key: "recon_causal", label: "Causal", num: true, render: (r) => fmtNum(r.recon_causal) },
+                  {
+                    key: "falsa_alarma",
+                    label: "f.alarma",
+                    num: true,
+                    render: (r) => fmtNum(r.falsa_alarma),
+                  },
+                  {
+                    key: "ganancia",
+                    label: "Ganancia",
+                    num: true,
+                    // Saturado = riesgo, y una ganancia que no despega ES el
+                    // riesgo: significa que el reconocimiento alto no es
+                    // aprendizaje. Es el unico color de esta tabla.
+                    render: (r) =>
+                      r.ganancia == null ? (
+                        <Cifra valor={null} />
+                      ) : (
+                        <b className={Number(r.ganancia) <= 0.02 ? "text-riesgo-alto" : "text-body"}>
+                          {fmtNum(r.ganancia)}
+                        </b>
+                      ),
+                  },
+                  {
+                    key: "castigos",
+                    label: "Castigos",
+                    num: true,
+                    render: (r) => <Cifra valor={r.castigos} digits={0} />,
+                  },
                   { key: "sesgo", label: "Sesgo", num: true, render: (r) => fmtNum(r.sesgo) },
                 ]}
               />

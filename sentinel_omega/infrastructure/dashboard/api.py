@@ -8,12 +8,15 @@ overridable with SENTINEL_DB.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import sys
 import threading
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 from typing import Any, Dict, List, Optional
 
 from fastapi import Body, FastAPI, Query
@@ -249,6 +252,22 @@ def _table_exists(name: str) -> bool:
         return bool(row)
     except Exception:
         return False
+
+
+def _columnas(tabla: str) -> set:
+    """Las columnas que una tabla tiene de verdad.
+
+    Las mediciones del 2026-10-07/08 anadieron columnas a
+    `tbl_sesgo_aprendizaje` (`falsa_alarma`, `ganancia`, `n_calma`) y a
+    `TBL_FIRMAS` (`exigible`, `discriminacion`). Una base anterior a la
+    migracion no las tiene, y el tablero tiene que seguir sirviendo en vez de
+    devolver 500 --- pero diciendo que faltan, no fingiendo ceros (regla 3 del
+    diseno: lo que no se midio se ve distinto de lo que midio cero).
+    """
+    try:
+        return {r[1] for r in _repo._ro_execute(f"PRAGMA table_info({tabla})")}
+    except Exception:
+        return set()
 
 
 def _rows(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
@@ -543,6 +562,65 @@ def correlaciones() -> Dict[str, Any]:
 @app.get("/api/bots")
 def bots() -> Dict[str, Any]:
     rows = _rows("SELECT bot_name, peso, aciertos, fallos, updated_at FROM TBL_PESOS_BOTS ORDER BY bot_name")
+
+    # ── El MARCADOR no es el VOTO (2026-10-08) ──────────────────────────────
+    #
+    # `TBL_PESOS_BOTS.peso` es el paseo multiplicativo, y se alimenta de
+    # `aciertos/fallos`, que estan al 95-100 % en los nueve bots porque el
+    # 98,9 % de los «aciertos» son silencio en calma. Medido tras el rebuild
+    # del 8-oct: beta2 en 1,5 (el techo) con CERO firmas exigibles.
+    #
+    # Lo que el Padre VOTA de verdad sale de `cargar_pesos(por_merito=True)` al
+    # arrancar el launcher, que compara contra callarse siempre. La bitacora del
+    # 25-sep §4 ya lo avisaba: «el castigo diferenciado llega al marcador pero
+    # no llega al voto». El tablero mostraba solo el marcador, que es el que
+    # engana.
+    #
+    # Y hoy el merito esta ENCENDIDO e INERTE: pide >=50 ventanas de fase viva
+    # y hay 36, asi que `meritos_aplicados = 0` y el voto cae al marcador. Eso
+    # tambien se sirve, porque es la mitad que explica el numero.
+    voto: Dict[str, float] = {}
+    voto_meta: Dict[str, Any] = {"disponible": False}
+    try:
+        from sentinel_omega.config.sentinel_config import load_config
+        from sentinel_omega.core.juez.pesos import cargar_pesos
+        _cfg = load_config()
+        _juez = getattr(_cfg, "juez", None)
+        _por_merito = bool(getattr(_juez, "peso_por_merito", False))
+        _minimo = int(getattr(_juez, "minimo_ventanas", 50))
+        _p = cargar_pesos(_repo._conn_safe, por_merito=_por_merito,
+                          minimo_ventanas=_minimo)
+        _aplic = int(_p.pop("_meritos_aplicados", 0) or 0)
+        _comp = int(_p.pop("_competencias_aplicadas", 0) or 0)
+        voto = {str(k).lower(): float(v) for k, v in _p.items()}
+        voto_meta = {
+            "disponible": True,
+            "por_merito_pedido": _por_merito,
+            "meritos_aplicados": _aplic,
+            "competencias_aplicadas": _comp,
+            "minimo_ventanas": _minimo,
+            "origen": ("merito contra el silencio" if _aplic else
+                       ("competencia por clase" if _comp else
+                        "el marcador almacenado --- el merito no tiene evidencia")),
+        }
+    except Exception as e:  # noqa: BLE001 — el tablero sirve igual
+        voto_meta = {"disponible": False, "error": str(e)[:160]}
+
+    # Cuanta memoria de cada bot es EXIGIBLE: consolidada Y que discrimina.
+    exigibles: Dict[str, Dict[str, int]] = {}
+    if "exigible" in _columnas("TBL_FIRMAS"):
+        for r in _rows(
+            "SELECT bot_name, "
+            " SUM(CASE WHEN estado='consolidada' THEN 1 ELSE 0 END) consolidadas, "
+            " SUM(CASE WHEN estado='consolidada' AND COALESCE(exigible,1)=1 "
+            "          THEN 1 ELSE 0 END) exigibles "
+            "FROM TBL_FIRMAS GROUP BY bot_name"
+        ):
+            exigibles[str(r.get("bot_name") or "").lower()] = {
+                "consolidadas": int(r.get("consolidadas") or 0),
+                "exigibles": int(r.get("exigibles") or 0),
+            }
+
     enriched = []
     sum_a = sum_f = 0
     padre = None
@@ -551,7 +629,21 @@ def bots() -> Dict[str, Any]:
         f = int(r.get("fallos") or 0)
         den = a + f
         rate = (a / den) if den else None
-        item = {**r, "asertividad_viva_individual": rate, "n": den}
+        nombre_l = str(r.get("bot_name") or "").lower()
+        mem = exigibles.get(nombre_l) or {}
+        cons = mem.get("consolidadas")
+        exig = mem.get("exigibles")
+        item = {
+            **r,
+            "asertividad_viva_individual": rate,
+            "n": den,
+            # El voto, al lado del marcador. None cuando no se pudo calcular:
+            # no se rellena con el marcador para que no parezcan lo mismo.
+            "peso_voto": voto.get(nombre_l),
+            "firmas_consolidadas": cons,
+            "firmas_exigibles": exig,
+            "pct_exigibles": (exig / cons) if (cons and exig is not None) else None,
+        }
         enriched.append(item)
         sum_a += a
         sum_f += f
@@ -592,11 +684,26 @@ def bots() -> Dict[str, Any]:
     # refuerza cada ventana, así que los bots se pegan al techo (8 de 9 el
     # 2026-09-25) y dejan de informar. `merito` mide lo otro: cuánto ahorra cada
     # bot frente a callarse siempre, en la moneda del Juez.
+    # `_conn_safe` es una @property, asi que SIN parentesis ya devuelve la
+    # conexion. (Nota para quien venga: el 2026-10-08 lo confundi con un metodo,
+    # le puse `()` «arreglandolo» y lo rompi --- `sqlite3.Connection` es
+    # invocable y el error sale raro, `function takes exactly 1 argument`.)
+    #
+    # El merito sale VACIO, y no por un fallo: `pesos_por_merito` pide >=50
+    # ventanas de `fase='viva'` por bot y hay 36, asi que devuelve `{}` con todo
+    # derecho. Lo que cambia aqui es que el `except` ya no es mudo: un fallo de
+    # verdad se distingue de «no hay evidencia todavia», y las dos cosas se
+    # sirven al front en vez de dejar un hueco indistinguible (regla 3 del
+    # diseno del tablero).
+    merito: Dict[str, Dict[str, Any]] = {}
+    merito_error = None
     try:
         from sentinel_omega.core.juez.pesos import pesos_por_merito
         merito = pesos_por_merito(_repo._conn_safe)
-    except Exception:  # noqa: BLE001 — el endpoint responde igual
-        merito = {}
+    except Exception as e:  # noqa: BLE001 — el endpoint responde igual
+        merito_error = f"{type(e).__name__}: {e}"
+        logger.warning("No se pudo calcular el merito de los bots: %s",
+                       merito_error)
     for item in enriched:
         m = merito.get(str(item.get("bot_name") or "").lower())
         if m:
@@ -650,6 +757,24 @@ def bots() -> Dict[str, Any]:
     return _jsonable(
         {
             "source": "TBL_PESOS_BOTS + TBL_JUEZ_AUDITORIA (notificadores)",
+            # El marcador y el voto son DOS cosas, y el tablero mostraba solo
+            # el marcador --- que es el que engana. `voto_meta` dice de donde
+            # sale el voto y, si el merito no se pudo aplicar, por que.
+            "pesos_nota": (
+                "`peso` es el MARCADOR (paseo multiplicativo: refuerzo x1,02 "
+                "topado en 1,0, castigo x0,95). Se alimenta de aciertos/fallos, "
+                "que estan al 95-100 % en los nueve porque el 98,9 % de los "
+                "«aciertos» son silencio en calma. `peso_voto` es lo que el "
+                "Padre aplica de verdad. Si los dos coinciden, el merito no se "
+                "pudo calcular y el voto cayo al marcador."),
+            "voto": voto_meta,
+            "merito_error": merito_error,
+            "firmas_nota": (
+                "`firmas_consolidadas` es recurrencia; `firmas_exigibles` son "
+                "las que emparejan eventos MAS que calma. Son dos cosas "
+                "distintas desde el 2026-10-07: la promocion va por "
+                "recurrencia, asi que un patron que reaparece en calma se "
+                "consolidaba igual."),
             "snapshot": True,
             "caption": "TBL_PESOS_BOTS es un SNAPSHOT (no serie temporal). Curva de aprendizaje: /api/aprendizaje desde TBL_JUEZ_AUDITORIA fase=viva. Los bots con rol=notificador operan sin peso: avisan, no votan.",
             "items": enriched,
@@ -694,14 +819,35 @@ def bots() -> Dict[str, Any]:
 def sesgo() -> Dict[str, Any]:
     if not _table_exists("tbl_sesgo_aprendizaje"):
         return {"present": False, "items": [], "source": "tbl_sesgo_aprendizaje"}
+    # `falsa_alarma` y `ganancia` entraron el 2026-10-07. Sin ellas este
+    # endpoint servia «causal 0,95» como si fuera un logro, cuando la falsa
+    # alarma era 0,945 y la ganancia +0,005: reconocer todo emparejando todo.
+    cols = _columnas("tbl_sesgo_aprendizaje")
+    tiene_ganancia = {"falsa_alarma", "ganancia"} <= cols
+    campos = ["bot", "n", "recon_insample", "recon_causal", "sesgo", "castigos",
+              "evaluada_at"]
+    if tiene_ganancia:
+        campos += ["n_calma", "falsa_alarma", "ganancia"]
     items = _rows(
-        "SELECT bot, n, recon_insample, recon_causal, sesgo, castigos, evaluada_at FROM tbl_sesgo_aprendizaje ORDER BY bot"
+        f"SELECT {', '.join(campos)} FROM tbl_sesgo_aprendizaje ORDER BY bot")
+    caption = (
+        "`causal` son los eventos que la memoria reconoce; `falsa_alarma`, "
+        "cuanta CALMA empareja igual. La GANANCIA es la resta, y es el numero "
+        "que decide: reconocer el 95 % emparejando el 94,5 % es ganancia 0,005, "
+        "o sea alarmismo, no aprendizaje. `sesgo` (insample-causal) solo mide "
+        "memorizacion."
+    ) if tiene_ganancia else (
+        "Asertividad HISTORICA de entrenamiento. insample=dentro del set; "
+        "causal=fuera. sesgo=insample-causal. OJO: esta base no tiene medida la "
+        "falsa alarma, asi que `causal` NO se puede leer como acierto."
     )
     return _jsonable(
         {
             "present": True,
             "source": "tbl_sesgo_aprendizaje",
-            "caption": "Asertividad HISTÓRICA de entrenamiento. insample=dentro del set; causal=fuera. sesgo=insample-causal.",
+            "tiene_ganancia": tiene_ganancia,
+            "umbral_ganancia_sospechosa": 0.02,
+            "caption": caption,
             "items": items,
         }
     )
