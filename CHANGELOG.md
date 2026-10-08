@@ -1,8 +1,16 @@
 # Changelog — Sentinel Omega
 
-## [Unreleased] - 2026-10-07 - La cadencia del digesto dejó de ser decorativa
+## [Unreleased] - 2026-10-07 - La causa de los falsos positivos, la cadencia del digesto, y una revisión de las pruebas
 
-Sin push. Branch `local/recuperacion-datos-2026-09`.
+Sin push. Branch `local/recuperacion-datos-2026-09`, 6 commits.
+Bitácora completa con las mediciones y la forma de reproducirlas:
+**`estado/BITACORA_2026-10-07.md`**.
+
+Resumen de lo que cambió de criterio, porque es lo que más importa de este día:
+el fantasma de `alfa1` **no** había vuelto (la asimetría es 1,016×, no >2×), el
+§20.2 de la bitácora del 26-sep que se citó como vigente es **historia**, y los
+159 falsos positivos tienen **una sola causa común** a los nueve bots --- el
+objetivo del entrenamiento, no los umbrales.
 
 ### El timer de rutinas está ENCENDIDO (corrección de documentación)
 
@@ -86,6 +94,105 @@ credenciales: «enviado» significa **encolado** en la cola del Concilio
 (`~/consensus-expert-agent/alert_queue.py`), que drena su `telegram_bot.py`. Si
 ese bot está caído, Sentinel sigue creyendo que mandó. Es del proyecto
 compartido, no de aquí.
+
+### La causa de los 159 falsos positivos: el objetivo del entrenamiento
+
+Bitácora: `estado/BITACORA_2026-10-07.md` §2. No está en los umbrales ni en el
+consenso, sino en `models/train_onnx_from_db.py`: `y_conf` sale de
+`EVENT_CLASS_LABEL[clase] + ESTADO_BOOST[estado]`, o sea **no es función de
+`X`**. Con el 94 % de las firmas en M4/M5 el objetivo vive en 0,60-0,75 y el
+bosque devuelve la media. Seis de ocho bots salen con el 96-100 % de sus
+muestras etiquetadas como alarma.
+
+**B1 (negativos reales) es viable y no da habilidad.** Hay material --- el
+72,8 % de los pares (hora, nodo real) al azar son calma y el 100 % da vector
+extraíble --- pero con corte **temporal** 70/30 y objetivo real:
+
+| objetivo | alfa1 | beta1 | beta2 | delta | loki | omega |
+|---|---:|---:|---:|---:|---:|---:|
+| por nodo, M≥4.5 en 190 h | 0,467 | 0,470\* | 0,515 | 0,504 | 0,465 | 0,470 |
+| global, M≥6.0 en 24 h | 0,511 | 0,482 | 0,498 | 0,512 | 0,513 | 0,510 |
+
+\* sin sus `sismo_*`. Con ellos, 0,814 --- y **un solo rasgo**,
+`sismo_count_win`, da los mismos 0,814: es agrupamiento de Omori, no un
+precursor, y comparte catálogo y nodo con el objetivo. `alfa2` y `jupiter` no
+tienen cobertura antes de ago-2026, así que B1 no les aplica; `delta` solo desde
+2014.
+
+Tasas base medidas, para no volver a usar una vara degenerada: M≥4.5/72 h
+global = **100,0 %** (inservible), M≥6.0/24 h = 30,6 %, M≥6.5/72 h = 28,8 %,
+M≥7.0/168 h = 23,0 %.
+
+### `alfa1`: el fantasma NO volvió --- corrección de diagnóstico
+
+Se estuvo a punto de apagar su modelo por un motivo inexistente. El fantasma es
+**asimetría**, no «alarmar» (bitácora del 26-sep §22.2): antes 2,3×, después
+1,06×, y medido hoy con el modelo del 4-oct **1,016×** con los huecos de
+densidad de ese ciclo y **1,002×** con densidad real. La fuga de procedencia
+sigue cerrada en los nueve bots y `test_la_asimetria_del_fantasma_desaparecio`
+está en verde.
+
+Lo que sí pasa es nivel: 19 `WATCH` de 28 ciclos vivos, su regla `neutral`
+28/28, y el Juez da **18 falsos positivos contra 1 acierto**. El tramo de más
+confianza (0,70-0,75) es **8 de 8 falsos**, así que ningún corte sobre la
+confianza ayuda --- queda retirada la propuesta de subir el umbral (regla dura
+8: un umbral que deja pasar ~0 % no discrimina). Y no es solo de `alfa1`: en la
+misma ventana `alfa2` 27 FP, `beta1` 24, `delta` 26, `loki` 26, `omega` 27,
+`padre` 26, todos con 1 acierto.
+
+**Corrección a la bitácora del 26-sep §20.2**, que se citó como vigente y es
+historia: `_aplicar_modelos` **ya no** sustituye sin condición. Verificado
+contra el código: `gana_el_modelo = float(conf) >= regla_conf`, puesto el 27-sep
+por decisión del operador. Para `alfa1` da igual, porque su regla emite
+**0,3000 constante** y el modelo gana 29/29 por definición.
+
+### Revisión de las pruebas que gobiernan los modelos
+
+Cinco defectos (bitácora §4). Los dos que más costaron: el mensaje de
+`test_fantasma_alfa1_kp_cero` mandaba a buscar una fuga inexistente, y
+`test_al_bot_callado_no_se_le_pregunta` **se saltaba** desde que
+`RASGOS_CON_FUGA` quedó vacío, dejando a oscuras la rama de silenciado ---
+nadie vigilaba que el tapón desapareciera. Más una **tautología** propia
+(`test_el_corte_cae_en_el_hueco...` comparaba literales del mismo archivo) y
+`_rasgo_requerido_ausente` sin ninguna prueba, estando viva para `beta2`. Y
+`test_producto_en_cache_no_se_vuelve_a_bajar` llevaba once días en rojo por
+**fecha de caducidad**: `copytree` conserva la mtime y `_podar_cache(7)` se
+llevaba la caché que la prueba acababa de montar.
+
+### Higiene de git
+
+`sentinel_omega/data/` **no** está ignorada como carpeta, aunque la regla 3 de
+`AGENTS.md` lo diga: solo `*.db`, `*.pid`, `cache/` y `backups/`. Se ignoran
+`estado_digesto.json` (estado por máquina que crea el arreglo de la cadencia;
+commitearlo silenciaría el digesto una hora en un checkout nuevo),
+`schumann_sos70/`, `reporte_padre_*.txt` y `*.bak_*`. Y `egg-info` sale del
+índice: `*.egg-info/` estaba en `.gitignore` desde el 27-sep pero los archivos
+seguían rastreados de antes de la regla --- existía y nunca se había aplicado.
+
+Entran al repo tres notas que llevaban días fuera, escaneadas por secretos:
+`CANAL_CLAUDE.md`, `PROPUESTA_LEGACY_2026-09-27.md` y
+`estado/MURO_FINANCIERO_2026-10-04.md` (al que el `CHANGELOG` ya hacía
+referencia estando sin rastrear).
+
+### El muro, medido
+
+`FINANCIERO` **0 de 7.830 registros**; los **5 muros nunca simultáneos** (4
+ocurre el 0,3 %); breach del 29 % histórico al **3,8 %** esta semana, efecto
+medible de apagar los seis ONNX. De 712 detecciones, 490 son `SEISMIC_CLUSTER`
+(246) y `SILENT_TRIGGER` (244). Trampa que volvió a morder:
+`TBL_MURO_EVENTOS.timestamp` y `TBL_JUEZ_AUDITORIA.timestamp` son **epoch
+REAL**, así que un `datetime('now','-7 days')` devuelve cero filas sin error.
+
+### Ramas y worktrees: nada pendiente fuera de la rama viva
+
+`/home/deamon/workspaces-dev` **no es un worktree**: es otro repositorio parado
+en `2d7e246` (**2026-08-22**), que **es ancestro** de la rama viva --- 245
+commits por detrás. Sus ~86 entradas «sin commitear» son un árbol de septiembre:
+`layer_runners.py` con 282 líneas y **sin `_aplicar_modelos`**, `onnx_config.py`
+sin una mención de `jupiter`. Commitearlo habría sido una regresión de 245
+commits disfrazada de recuperación. `local/recuperacion-datos-2026-10` es una
+copia paralela que va detrás, y el cambio suelto del worktree de julio ya está
+superado. El registro de worktree de `dev` está roto (`git worktree prune`).
 
 ## [Unreleased] - 2026-10-04/05 - Cortes, rebuild, muro vivo, CSV USGS
 
