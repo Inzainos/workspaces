@@ -965,19 +965,42 @@ def modelos() -> Dict[str, Any]:
                 "ganancia_sobre_nulo": hab.get("ganancia_sobre_nulo"),
                 "aprueba": hab.get("aprueba"),
                 "origen": hab.get("origen"),
-                "motivo": hab.get("motivo"),
+                # Un bot al que la compuerta ni llegó a medir no tiene
+                # `habilidad.motivo`: su razón vive en `source`, donde el
+                # entrenador escribe «NO se reentrena: 38 muestras (<50)».
+                # Leer solo `motivo` perdía la razón de alfa2 y lo dejaba
+                # indistinguible de «nunca evaluado». El respaldo se aplica
+                # SOLO sin AUC: en un bot aprobado, `source` es «db-only
+                # (7000)» y aparecería como un «motivo» que no lo es.
+                "motivo": hab.get("motivo") or (
+                    (por_bot.get(bot) or {}).get("source")
+                    if auc is None else None),
                 "n": (por_bot.get(bot) or {}).get("n"),
                 "reentrenado": (por_bot.get(bot) or {}).get("reentrenado"),
             }
         )
 
     sin_medir = [f["bot"] for f in filas if f["existe"] and not f["medido"]]
+    # Dos razones distintas para no tener AUC, y la nota las confundía: un bot
+    # que PASÓ por la compuerta y no alcanzó la muestra (`motivo` medido) no es
+    # lo mismo que uno que nunca fue evaluado. Corregido el 2026-10-08 al ver
+    # el metadato real: alfa2 (38 muestras) y jupiter (53) son del primer caso.
+    sin_evidencia = [f["bot"] for f in filas
+                     if f["existe"] and not f["medido"] and f["motivo"]]
+    sin_metadato = [b for b in sin_medir if b not in sin_evidencia]
+    partes = []
+    if sin_metadato:
+        partes.append(
+            f"{len(sin_metadato)} no aparecen en el metadato: son anteriores a "
+            f"la compuerta y su AUC nunca se calculó")
+    if sin_evidencia:
+        partes.append(
+            f"{len(sin_evidencia)} pasaron por la compuerta y no hubo muestra "
+            f"suficiente para medirlos: es falta de evidencia, no una mala nota")
     nota = (
-        "Un .onnx en disco no es un modelo que acierte. Los que salen «sin "
-        "medir» son anteriores a la compuerta de habilidad: su AUC nunca se "
-        "calculó, así que no se sabe si aportan. Hasta que el reentrenamiento "
-        "los mida, el sistema los usa con habilidad desconocida."
-        if sin_medir
+        ". ".join(partes) + ". Un .onnx en disco no es un modelo que acierte: "
+        "el sistema los usa con habilidad desconocida."
+        if partes
         else "Todos los modelos en disco traen su AUC medida por la compuerta."
     )
     return _jsonable(

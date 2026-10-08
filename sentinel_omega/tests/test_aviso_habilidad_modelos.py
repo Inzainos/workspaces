@@ -114,6 +114,69 @@ def test_sin_metadato_no_se_cae_ni_inventa(models_dir):
     assert "sin medir" in txt
 
 
+def test_falta_de_MUESTRA_no_se_confunde_con_metadato_VIEJO(models_dir):
+    """Dos razones distintas para no tener AUC, y las confundí yo mismo.
+
+    Escrito el 2026-10-08 por la mañana, la nota del digesto decía de alfa2 y
+    jupiter «son anteriores a la compuerta de habilidad». Dos horas después, el
+    reentrenamiento corrió de verdad y los midió: el metadato pasó a ser **de
+    hoy** y los dos seguían sin AUC, pero por una razón medida y distinta ---
+    38 y 53 muestras, por debajo de los mínimos. La nota los seguía culpando
+    de ser viejos.
+
+    Falta de evidencia no es una mala nota, y tampoco es un metadato rancio.
+    """
+    _onnx(models_dir, "alfa2")
+    _onnx(models_dir, "jupiter")
+    _onnx(models_dir, "loki")        # este no aparece en el metadato
+    (models_dir / "models_meta.json").write_text(json.dumps({
+        "retrained_at": "2026-10-08T19:30:19Z",
+        "bots": {
+            # alfa2: la compuerta ni lo evaluó --- su razón vive en `source`,
+            # NO en `habilidad`, que no existe. Leer solo `motivo` la perdía.
+            "alfa2": {"n": 0, "reentrenado": False,
+                      "source": "NO se reentrena: 38 muestras reales (<50)"},
+            # jupiter: entró en `medir_habilidad` y salió sin AUC con motivo.
+            "jupiter": {"n": 53, "source": "db-only (53)", "habilidad": {
+                "auc": None, "aprueba": False,
+                "motivo": "solo 53 muestras; por debajo de 60 el AUC es ruido"}},
+        },
+    }))
+
+    txt = cv.get_model_status("/no/existe.db")
+
+    # Cada uno con SU razón, no con una genérica
+    assert "38 muestras" in txt, "se perdió la razón que vive en `source`"
+    assert "por debajo de 60 el AUC es ruido" in txt
+    assert "sin habilidad medible" in txt
+    # loki no está en el metadato: ESE sí es el caso «anterior a la compuerta»
+    assert "LOKI" in txt and "habilidad sin medir" in txt
+    assert "anteriores a la compuerta" in txt
+    # …y no se le echa a alfa2/jupiter, que pasaron por ella
+    assert "falta de evidencia, no una mala nota" in txt
+
+
+def test_un_bot_aprobado_no_hereda_el_source_como_motivo(models_dir):
+    """`source` es «db-only (7000)» en todos: no es un motivo de nada.
+
+    El respaldo a `source` solo vale cuando NO hay AUC. Sin acotarlo, un bot
+    aprobado mostraría «db-only (7000)» en la columna Motivo del tablero como
+    si la compuerta hubiera objetado algo.
+    """
+    from sentinel_omega.infrastructure.dashboard import api
+
+    _onnx(models_dir, "beta1")
+    (models_dir / "models_meta.json").write_text(json.dumps({
+        "retrained_at": "2026-10-09T03:00:00Z",
+        "bots": {"beta1": {"n": 7000, "source": "db-only (7000)",
+                           "habilidad": {"auc": 0.61, "aprueba": True,
+                                         "ganancia_sobre_nulo": 0.05}}},
+    }))
+    fila = next(f for f in api.modelos()["modelos"] if f["bot"] == "beta1")
+    assert fila["aprueba"] is True
+    assert fila["motivo"] is None, f"heredó un motivo falso: {fila['motivo']}"
+
+
 # ─── La vara del Juez en el digesto ──────────────────────────────────────────
 
 _VIVA_DDL = """

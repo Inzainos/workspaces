@@ -178,18 +178,34 @@ def get_model_status(db_path: str) -> str:
     try:
         por_bot, medido_at = _habilidad_por_bot()
         lineas: List[str] = []
-        sin_medir = 0
+        # Dos razones DISTINTAS para no tener AUC, y confundirlas fue un defecto
+        # de este mismo archivo (2026-10-08, dos horas después de escribirlo):
+        # la nota decía «son anteriores a la compuerta» de alfa2 y jupiter
+        # cuando acababan de PASAR por ella y no se pudieron medir por falta de
+        # muestras (38 y 53). Un motivo medido no es un metadato viejo.
+        sin_evidencia = 0      # la compuerta los miró y no alcanzó la muestra
+        sin_metadato = 0       # nunca pasaron: el metadato no los menciona
         for bot, nombre in NOMBRES_ONNX.items():
             ruta = MODELS_DIR / nombre
             if not ruta.exists():
                 lineas.append(f"❌ {bot.upper()} — sin modelo en disco")
                 continue
             kb = ruta.stat().st_size // 1024
-            hab = (por_bot.get(bot) or {}).get("habilidad")
-            if not isinstance(hab, dict) or hab.get("auc") is None:
-                sin_medir += 1
-                lineas.append(
-                    f"❔ {bot.upper()} ({kb} KB) — <b>habilidad sin medir</b>")
+            entrada = por_bot.get(bot) or {}
+            hab = entrada.get("habilidad")
+            hab = hab if isinstance(hab, dict) else {}
+            if hab.get("auc") is None:
+                # ¿Hay un motivo medido, o simplemente nadie lo evaluó?
+                motivo = str(hab.get("motivo") or entrada.get("source") or "")
+                if motivo:
+                    sin_evidencia += 1
+                    lineas.append(
+                        f"❔ {bot.upper()} ({kb} KB) — <b>sin habilidad "
+                        f"medible</b>: {motivo[:120]}")
+                else:
+                    sin_metadato += 1
+                    lineas.append(
+                        f"❔ {bot.upper()} ({kb} KB) — <b>habilidad sin medir</b>")
                 continue
             auc = float(hab["auc"])
             gan = hab.get("ganancia_sobre_nulo")
@@ -203,16 +219,21 @@ def get_model_status(db_path: str) -> str:
                     f"⚠️ {bot.upper()} ({kb} KB) — AUC {auc:.3f}{gan_s} · "
                     f"se usa el anterior: {motivo[:120]}")
 
-        if sin_medir:
-            fecha = f" (metadato del {medido_at[:10]})" if medido_at else ""
-            nota = (
-                f"\n<i>{sin_medir} modelo(s) en disco sin habilidad medida{fecha}: "
-                f"son anteriores a la compuerta de habilidad. Un .onnx que existe "
-                f"no es un modelo que acierte --- hasta que el reentrenamiento "
-                f"los mida, trátalos como desconocidos.</i>"
-            )
-        else:
-            nota = ""
+        fecha = f" del {medido_at[:10]}" if medido_at else ""
+        partes = []
+        if sin_metadato:
+            partes.append(
+                f"{sin_metadato} modelo(s) no aparecen en el metadato{fecha}: "
+                f"son anteriores a la compuerta y su habilidad nunca se calculó")
+        if sin_evidencia:
+            partes.append(
+                f"{sin_evidencia} pasaron por la compuerta{fecha} y no hubo "
+                f"muestra suficiente para medirlos --- es falta de evidencia, "
+                f"no una mala nota")
+        nota = (
+            "\n<i>" + ". ".join(partes) + ". Un .onnx que existe no es un "
+            "modelo que acierte: trátalos como desconocidos.</i>"
+        ) if partes else ""
 
         lag_info = ""
         conn = None
