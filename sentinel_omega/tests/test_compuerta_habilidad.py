@@ -149,7 +149,7 @@ def test_el_techo_nombra_la_causa_probable(tmp_path):
 
 # ─── Lo que tiene que dejar pasar ────────────────────────────────────────────
 
-def _conjunto_con_senal_realista(n=400, semilla=1):
+def _conjunto_con_senal_realista(n=1600, semilla=1):
     """Separable pero NO perfecto: el rasgo 0 informa con solape, que es como
     se ve una señal de verdad. Cae dentro de la banda creíble."""
     rng = np.random.RandomState(semilla)
@@ -172,6 +172,99 @@ def test_un_modelo_CON_habilidad_CREIBLE_se_publica(tmp_path):
     assert ruta is not None and hab["aprueba"] is True
     assert hab["escrito"] is True
     assert (tmp_path / ARCHIVO_ALFA1).exists()
+
+
+# ─── La barra de error: un punto suelto por encima del suelo no es habilidad ──
+
+def test_un_AUC_sin_significancia_se_niega(tmp_path):
+    """`delta` dio AUC 0,551 el 2026-10-07 --- 0,001 por encima del suelo, con
+    218 positivas de prueba. Eso es azar con ruido, y pasaba. Lo que tiene que
+    cruzar el suelo es el EXTREMO INFERIOR."""
+    rng = np.random.RandomState(7)
+    n = 260
+    X = rng.normal(0.0, 1.0, (n, 10)).astype(np.float32)
+    p = 1.0 / (1.0 + np.exp(-0.18 * X[:, 0]))       # señal muy débil
+    alarma = (rng.uniform(size=n) < p).astype(int)
+    ys = np.where(alarma == 1, tr.ALERT, tr.NEUTRAL).astype(np.float32)
+    yc = np.where(alarma == 1, 0.70, 0.35).astype(np.float32)
+    ruta, hab = tr.train_export("alfa1", X, yc, ys)
+    assert hab["auc"] is not None, hab["motivo"]
+    assert hab["auc_inferior"] < hab["auc"], "la barra de error no se calculó"
+    if hab["auc"] >= tr.AUC_MINIMA:
+        assert ruta is None, "pasó un AUC cuyo extremo inferior no cruza el suelo"
+        assert "extremo inferior" in hab["motivo"]
+
+
+def test_la_barra_de_error_se_estrecha_con_mas_muestras():
+    """Contrato del número: con la misma señal y más datos, el intervalo
+    aprieta. Si no, el cálculo no depende de n y no sirve de nada."""
+    def _inf(n):
+        rng = np.random.RandomState(3)
+        X = rng.normal(0.0, 1.0, (n, 10)).astype(np.float32)
+        p = 1.0 / (1.0 + np.exp(-0.9 * X[:, 0]))
+        a = (rng.uniform(size=n) < p).astype(int)
+        ys = np.where(a == 1, tr.ALERT, tr.NEUTRAL).astype(np.float32)
+        yc = np.where(a == 1, 0.70, 0.35).astype(np.float32)
+        h = tr.medir_habilidad("alfa1", X, yc, ys)
+        return h["auc"] - h["auc_inferior"]
+
+    assert _inf(2000) < _inf(300), "la barra no se estrecha con más muestras"
+
+
+# ─── Omori: habilidad REAL que no es un precursor ────────────────────────────
+
+def test_la_habilidad_que_sale_de_los_sismo_se_etiqueta_y_se_niega(tmp_path):
+    """Medido el 2026-10-07: `beta1` da AUC 0,802 con sus rasgos `sismo_*` y
+    **0,515 sin ellos**. Eso predice RÉPLICAS --- agrupamiento de Omori ---,
+    comparte catálogo y nodo con el objetivo, y no es un precursor.
+
+    No se niega por ruido: se niega porque venderlo como detección de
+    precursores sería exactamente el error de leer un número alto como
+    habilidad. Si se quiere usar, que sea con su nombre y su propia vara.
+    """
+    from sentinel_omega.core.features_onnx import FEATURE_ORDER
+
+    orden = FEATURE_ORDER["beta1"]
+    cols_sismo = [i for i, k in enumerate(orden) if k.startswith("sismo_")]
+    assert cols_sismo, "beta1 dejó de declarar rasgos sismo_*: revisa la prueba"
+
+    rng = np.random.RandomState(11)
+    n = 1600
+    X = rng.normal(0.0, 1.0, (n, len(orden))).astype(np.float32)
+    alarma = (rng.uniform(size=n) < 0.3).astype(int)
+    # TODA la señal vive en los sismo_*, igual que en el caso real --- y con
+    # SOLAPE, para que caiga en la banda creíble (0,55-0,95) y la negativa
+    # venga de la etiqueta de Omori y no del techo. Con señal limpia salía
+    # AUC 1,000 y lo paraba el techo, que es otra cosa.
+    for c in cols_sismo:
+        X[:, c] = alarma * 1.1 + rng.normal(0.0, 1.0, n)
+    ys = np.where(alarma == 1, tr.ALERT, tr.NEUTRAL).astype(np.float32)
+    yc = np.where(alarma == 1, 0.70, 0.35).astype(np.float32)
+
+    ruta, hab = tr.train_export("beta1", X, yc, ys)
+    assert hab["origen"] == "agrupamiento_omori", hab
+    assert hab["auc_sin_sismo"] is not None
+    assert hab["auc_sin_sismo"] < tr.AUC_MINIMA <= hab["auc"]
+    assert ruta is None and hab["aprueba"] is False
+    assert "Omori" in hab["motivo"] and "RÉPLICAS" in hab["motivo"]
+
+
+def test_una_habilidad_que_NO_depende_de_los_sismo_no_se_etiqueta_de_omori():
+    """La otra cara: si la señal sobrevive sin el catálogo del nodo, es de los
+    rasgos propios del bot y no se marca."""
+    from sentinel_omega.core.features_onnx import FEATURE_ORDER
+
+    orden = FEATURE_ORDER["beta1"]
+    rng = np.random.RandomState(13)
+    n = 600
+    X = rng.normal(0.0, 1.0, (n, len(orden))).astype(np.float32)
+    alarma = (rng.uniform(size=n) < 0.3).astype(int)
+    X[:, 2] = alarma * 3.0 + rng.normal(0.0, 0.5, n)   # schumann_mean, no sismo
+    ys = np.where(alarma == 1, tr.ALERT, tr.NEUTRAL).astype(np.float32)
+    yc = np.where(alarma == 1, 0.70, 0.35).astype(np.float32)
+    hab = tr.medir_habilidad("beta1", X, yc, ys)
+    assert hab["origen"] == "rasgos_propios", hab
+    assert hab["auc_sin_sismo"] >= tr.AUC_MINIMA
 
 
 def test_la_banda_creible_no_esta_vacia():

@@ -209,6 +209,177 @@ def load_firmas_from_db(db_path: str) -> Dict[str, Tuple[np.ndarray, np.ndarray,
     return result
 
 
+# ─── El objetivo sale del DESENLACE, no de una tabla de clases (2026-10-07) ───
+#
+# Lo que había antes, y por qué no se podía arreglar en su sitio:
+#
+#   * los POSITIVOS salían de `TBL_FIRMAS` --- y una firma nace de un evento,
+#     así que el 96-100 % de ellas llevaba etiqueta de alarma;
+#   * los NEGATIVOS salían de `TBL_JUEZ_AUDITORIA` fase viva --- 28 filas por
+#     bot, el 3,6 % de alarma;
+#   * y `y_conf` se leía de `EVENT_CLASS_LABEL[clase] + ESTADO_BOOST[estado]`,
+#     o sea **no era función de `X`**.
+#
+# Medido el 2026-10-07, el golpe de gracia: **AUC de «¿esta fila es una firma o
+# una fila del Juez?» = 1,0000**. Las dos clases venían de tablas que se
+# distinguen perfectamente, así que cualquier bosque sacaba 0,99 aprendiendo la
+# procedencia. Es la fuga del 27-sep a nivel de DISTRIBUCIÓN: allí un rasgo
+# valía 0 en toda la mitad de alarma y se cerró declarándolo; aquí todos los
+# rasgos están declarados y llenos, y lo que difiere es de dónde salen.
+#
+# Un rasgo no se puede «declarar» para arreglar esto. La única salida es que
+# las dos clases salgan de la MISMA extracción, y eso es lo que hace esto:
+# se muestrean ventanas (hora, nodo) de la historia, se extraen con
+# `extraer_features_ventana` --- la misma función que construye las firmas --- y
+# la etiqueta es el DESENLACE: si hubo un sismo exigible en ese nodo dentro del
+# horizonte aprendido. La calma no es «la otra tabla»: es una ventana igual que
+# no fue seguida de nada.
+#
+# Medido sobre 7.000 pares al azar: el 72,8 % son calma y el 100 % da vector
+# extraíble, así que el objetivo sale con una tasa base del ~29 % --- dos clases
+# de verdad, sin inventar una sola fila (regla 2).
+HORIZONTE_H = 190          # lag aprendido de SISMO_M6 en `tbl_lag_anticipacion`
+MAG_OBJETIVO = 4.5         # MIN_MAGNITUD_FIRMA: el piso de lo exigible
+N_VENTANAS = 7000
+
+# La señal y la confianza del positivo salen de la magnitud que DE VERDAD
+# ocurrió en esa ventana, no de la clase que llevaba pegada una firma. Sigue
+# siendo una banda, pero ahora está indexada por el desenlace.
+BANDAS_DESENLACE = (
+    (7.0, ALERT, 0.90),
+    (6.0, ALERT, 0.80),
+    (5.0, WATCH, 0.65),
+    (0.0, WATCH, 0.50),
+)
+CALMA_LABEL = (NEUTRAL, 0.30)
+
+
+def _label_desde_desenlace(mag: Optional[float]) -> Tuple[float, float]:
+    """(conf, señal) de una ventana, según lo que pasó DESPUÉS de ella."""
+    if mag is None:
+        sig, conf = CALMA_LABEL
+        return float(conf), float(sig)
+    for piso, sig, conf in BANDAS_DESENLACE:
+        if float(mag) >= piso:
+            return float(conf), float(sig)
+    sig, conf = CALMA_LABEL
+    return float(conf), float(sig)
+
+
+def _eventos_por_nodo(conn: sqlite3.Connection, mag_min: float) -> Dict[int, list]:
+    filas = conn.execute(
+        "SELECT id_nodo, timestamp_blk, sismo_max_mag FROM tbl_historico_sismico_raw "
+        "WHERE sismo_max_mag >= ? ORDER BY id_nodo, timestamp_blk", (mag_min,)
+    ).fetchall()
+    por_nodo: Dict[int, list] = {}
+    for nodo, ts, mag in filas:
+        por_nodo.setdefault(int(nodo), []).append((str(ts), float(mag)))
+    return por_nodo
+
+
+def _desenlace(por_nodo, nodo: int, ts: str, horizonte_h: int) -> Optional[float]:
+    """La magnitud del primer sismo exigible en el horizonte, o None si calma."""
+    import bisect
+    from datetime import datetime, timedelta
+
+    lista = por_nodo.get(int(nodo))
+    if not lista:
+        return None
+    i = bisect.bisect_right([t for t, _ in lista], ts)
+    if i >= len(lista):
+        return None
+    try:
+        t0 = datetime.strptime(ts[:16], "%Y-%m-%d %H:%M")
+    except ValueError:
+        return None
+    tope = (t0 + timedelta(hours=horizonte_h)).strftime("%Y-%m-%d %H:%M")
+    ts_ev, mag = lista[i]
+    return mag if ts_ev <= tope else None
+
+
+def construir_ventanas_etiquetadas(
+    db_path: str,
+    n: int = N_VENTANAS,
+    horizonte_h: int = HORIZONTE_H,
+    mag_min: float = MAG_OBJETIVO,
+    semilla: int = RANDOM_SEED,
+) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    """bot -> (X, y_conf, y_sig, pesos, ts). Positivos y negativos de la MISMA
+    extracción, etiquetados por lo que pasó después de cada ventana."""
+    import random
+
+    from sentinel_omega.core.firmas.signature_engine import extraer_features_ventana
+    from sentinel_omega.core.shared.geometria_uvg import MATRIZ_UVG_125
+    from sentinel_omega.infrastructure.pipeline.entrenamiento import (
+        BOT_FEATURES, MIN_FEATURES_POR_BOT,
+    )
+
+    path = Path(db_path)
+    if not path.exists():
+        logger.warning("DB no existe: %s", db_path)
+        return {}
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        por_nodo = _eventos_por_nodo(conn, mag_min)
+        horas = [r[0] for r in conn.execute(
+            "SELECT timestamp_blk FROM tbl_clima_espacial_raw ORDER BY timestamp_blk")]
+        if not horas:
+            logger.warning("sin horas en tbl_clima_espacial_raw: no hay ventanas")
+            return {}
+        reales = [int(nd["id"]) for nd in MATRIZ_UVG_125 if nd["tipo"] == "real"]
+        rng = random.Random(semilla)
+
+        acc: Dict[str, list] = {b: [] for b in BOT_DIMS}
+        vistos = positivos = 0
+        for _ in range(n):
+            ts = horas[rng.randrange(len(horas))]
+            nodo = reales[rng.randrange(len(reales))]
+            rasgos = extraer_features_ventana(conn, ts, nodo)
+            if not rasgos:
+                continue
+            rasgos = purgar_no_medidos(rasgos)
+            if not rasgos:
+                continue
+            vistos += 1
+            mag = _desenlace(por_nodo, nodo, ts, horizonte_h)
+            if mag is not None:
+                positivos += 1
+            conf, sig = _label_desde_desenlace(mag)
+            # El peso es el coste de EQUIVOCARSE en esa ventana, igual que en la
+            # ruta del Juez: si hubo evento, equivocarse es perderlo (10); si
+            # hubo calma, es una falsa alarma (1).
+            peso = _SEV_EVENTO if mag is not None else _SEV_CALMA
+            for bot, claves in BOT_FEATURES.items():
+                if bot not in BOT_DIMS or not claves:
+                    continue
+                if sum(1 for k in claves if k in rasgos) < MIN_FEATURES_POR_BOT.get(bot, 4):
+                    continue
+                vec = _features_to_vector(rasgos, bot)
+                if not np.any(np.abs(vec) > 1e-12):
+                    continue
+                acc[bot].append((vec, conf, sig, peso, ts))
+    finally:
+        conn.close()
+
+    base = 100.0 * positivos / vistos if vistos else 0.0
+    logger.info("Ventanas etiquetadas: %d muestreadas, %d con vector, "
+                "%d positivas (tasa base %.1f %%, horizonte %d h, M>=%.1f)",
+                n, vistos, positivos, base, horizonte_h, mag_min)
+    salida = {}
+    for bot, filas in acc.items():
+        if not filas:
+            continue
+        X = np.stack([f[0] for f in filas]).astype(np.float32)
+        yc = np.array([f[1] for f in filas], dtype=np.float32)
+        ys = np.array([f[2] for f in filas], dtype=np.float32)
+        w = np.array([f[3] for f in filas], dtype=np.float32)
+        ts = np.array([f[4] for f in filas])
+        salida[bot] = (X, yc, ys, w, ts)
+        logger.info("  %s: %d ventanas · %.1f %% positivas",
+                    bot, len(filas), 100.0 * float((ys >= WATCH).mean()))
+    return salida
+
+
 def _filtro_juez_en_vivo(conn: sqlite3.Connection) -> str:
     """``" AND COALESCE(en_vivo,1)=1"`` si TBL_JUEZ_AUDITORIA tiene la columna.
 
@@ -587,16 +758,55 @@ def medir_habilidad(
                 "motivo": ("el corte deja una sola clase a un lado: con este "
                            "reparto no se puede medir")}
 
-    rf = RandomForestRegressor(
-        n_estimators=80, max_depth=10, min_samples_leaf=3,
-        random_state=RANDOM_SEED, n_jobs=-1,
-    )
-    w = None if pesos is None else np.asarray(pesos)[tr]
-    rf.fit(X[tr], y_conf[tr], sample_weight=w)
-    auc = float(roc_auc_score(alarma[te], rf.predict(X[te])))
-    return {"auc": auc, "n_train": int(len(tr)), "n_test": int(len(te)),
-            "base_test": float(alarma[te].mean()), "corte": corte_tipo,
-            "motivo": None}
+    def _auc(cols=None):
+        Xt = X if cols is None else X[:, cols]
+        rf = RandomForestRegressor(
+            n_estimators=80, max_depth=10, min_samples_leaf=3,
+            random_state=RANDOM_SEED, n_jobs=-1,
+        )
+        w = None if pesos is None else np.asarray(pesos)[tr]
+        rf.fit(Xt[tr], y_conf[tr], sample_weight=w)
+        return float(roc_auc_score(alarma[te], rf.predict(Xt[te])))
+
+    auc = _auc()
+
+    # ── El AUC va con su barra de error, no suelto (regla dura 8) ────────────
+    #
+    # Un 0,551 con 729 muestras de prueba NO es «mejor que el azar»: es azar con
+    # ruido. `delta` dio exactamente eso el 2026-10-07 y habría pasado el suelo
+    # por 0,001. Lo que tiene que cruzar el suelo es el EXTREMO INFERIOR, que es
+    # la forma honesta de poner un umbral sobre una estimación.
+    n1 = int(alarma[te].sum())
+    n0 = int(len(te) - n1)
+    se = float(np.sqrt(max(auc * (1.0 - auc), 1e-9) / max(min(n1, n0), 1)))
+    auc_inf = auc - 1.96 * se
+
+    # ── ¿La habilidad es un precursor o es Omori? ────────────────────────────
+    #
+    # Medido el 2026-10-07: `beta1` da AUC 0,814 con sus 16 rasgos `sismo_*`, y
+    # **un solo rasgo** ---`sismo_count_win`, cuántos sismos hubo ya en ese
+    # nodo--- da los mismos 0,814. Sin ellos: 0,470. Eso es agrupamiento de
+    # Omori (réplicas), que es real y predice, pero NO es un precursor y además
+    # comparte catálogo y nodo con el objetivo.
+    #
+    # Es habilidad de verdad, así que no se puede negar como si fuera ruido ---
+    # pero tampoco se puede vender como detección de precursores. Se mide por
+    # separado y queda ETIQUETADA, para que el que lea el metadato sepa qué
+    # compró.
+    from sentinel_omega.core.features_onnx import FEATURE_ORDER
+    orden = FEATURE_ORDER.get(bot, ())
+    cols_sin_sismo = [i for i, k in enumerate(orden) if not k.startswith("sismo_")]
+    auc_sin_sismo = None
+    origen = "rasgos_propios"
+    if cols_sin_sismo and len(cols_sin_sismo) < len(orden) and len(cols_sin_sismo) >= 2:
+        auc_sin_sismo = _auc(cols_sin_sismo)
+        if auc >= AUC_MINIMA and auc_sin_sismo < AUC_MINIMA:
+            origen = "agrupamiento_omori"
+
+    return {"auc": auc, "auc_inferior": auc_inf, "auc_sin_sismo": auc_sin_sismo,
+            "origen": origen, "n_train": int(len(tr)), "n_test": int(len(te)),
+            "n_pos_test": n1, "base_test": float(alarma[te].mean()),
+            "corte": corte_tipo, "motivo": None}
 
 
 def train_export(
@@ -628,6 +838,7 @@ def train_export(
         logger.info("  %s: AUC de prueba %.3f (corte %s, n_test=%d, base %.1f %%)",
                     bot, auc, habilidad["corte"], habilidad["n_test"],
                     100 * habilidad["base_test"])
+    inf = habilidad.get("auc_inferior")
     if auc is not None and auc > AUC_MAXIMA_CREIBLE:
         habilidad["motivo"] = (
             f"AUC {auc:.3f} es DEMASIADO BUENO para este problema: predecir un "
@@ -636,8 +847,25 @@ def train_export(
             "2026-10-07 la clase alarma eran las firmas y la calma las filas "
             "vivas del Juez, y adivinar la tabla daba AUC 1,0000. Las muestras "
             "positivas y negativas tienen que salir de la MISMA extracción.")
+    elif auc is not None and inf is not None and inf < AUC_MINIMA:
+        habilidad["motivo"] = (
+            f"AUC {auc:.3f} pero su extremo inferior es {inf:.3f}, por debajo "
+            f"de {AUC_MINIMA}: con {habilidad.get('n_pos_test')} positivas de "
+            f"prueba no se distingue del azar. Un punto suelto por encima del "
+            "suelo no es habilidad --- lo que tiene que cruzarlo es la barra de "
+            "error (regla dura 8).")
+    elif habilidad.get("origen") == "agrupamiento_omori":
+        habilidad["motivo"] = (
+            f"la habilidad es REAL (AUC {auc:.3f}) pero sale de los rasgos "
+            f"`sismo_*` del propio nodo: sin ellos cae a "
+            f"{habilidad.get('auc_sin_sismo'):.3f}. Eso es agrupamiento de "
+            "Omori --- predice RÉPLICAS, comparte catálogo y nodo con el "
+            "objetivo, y no es un precursor. Si se quiere usar, que sea con ese "
+            "nombre y con su propia vara, no como detección de precursores.")
     aprueba = (auc is not None
-               and AUC_MINIMA <= auc <= AUC_MAXIMA_CREIBLE)
+               and inf is not None and inf >= AUC_MINIMA
+               and auc <= AUC_MAXIMA_CREIBLE
+               and habilidad.get("origen") != "agrupamiento_omori")
     habilidad["aprueba"] = bool(aprueba)
     habilidad["auc_minima"] = AUC_MINIMA
     habilidad["auc_maxima_creible"] = AUC_MAXIMA_CREIBLE
@@ -708,13 +936,40 @@ def train_export(
 
 def retrain(db_path: str, min_samples: int = MIN_SAMPLES,
             bots: Optional[List[str]] = None,
-            con_compuerta: bool = True) -> dict:
+            con_compuerta: bool = True,
+            fuente: str = "ventanas",
+            n_ventanas: int = N_VENTANAS) -> dict:
+    """Reentrena los ONNX.
+
+    `fuente="ventanas"` (por defecto, desde el 2026-10-07) construye el
+    conjunto con `construir_ventanas_etiquetadas`: positivos y negativos de la
+    MISMA extracción, etiquetados por desenlace.
+
+    `fuente="firmas"` es la ruta vieja ---firmas como positivos, filas del Juez
+    como negativos--- y está **demostrada contaminada**: adivinar de qué tabla
+    viene una fila daba AUC 1,0000, así que el modelo aprendía la procedencia.
+    Se conserva para poder reproducir el defecto, no para entrenar con ella.
+    """
     bots = bots or list(BOT_DIMS.keys())
-    firmas = load_firmas_from_db(db_path)
-    juez = load_juez_feedback(db_path)
-    for bot, xy in juez.items():
-        firmas[bot] = _merge_xy(firmas.get(bot), xy)
-        logger.info(f"  merge juez→{bot}: n={len(firmas[bot][0])}")
+    tss: Dict[str, np.ndarray] = {}
+    if fuente == "ventanas":
+        datos = construir_ventanas_etiquetadas(db_path, n=n_ventanas)
+        firmas = {b: (v[0], v[1], v[2]) for b, v in datos.items()}
+        pesos_por_bot = {b: v[3] for b, v in datos.items()}
+        tss = {b: v[4] for b, v in datos.items()}
+    elif fuente == "firmas":
+        logger.warning(
+            "fuente='firmas': conjunto DEMOSTRADO CONTAMINADO (AUC 1,0000 para "
+            "adivinar la tabla de origen). Solo para reproducir el defecto.")
+        firmas = load_firmas_from_db(db_path)
+        juez = load_juez_feedback(db_path)
+        for bot, xy in juez.items():
+            firmas[bot] = _merge_xy(firmas.get(bot), xy)
+            logger.info(f"  merge juez→{bot}: n={len(firmas[bot][0])}")
+        pesos_por_bot = {}
+    else:
+        raise ValueError(f"fuente desconocida: {fuente!r} (ventanas|firmas)")
+
     results = {}
     for bot in bots:
         X, yc, ys, w, source = merge_or_bootstrap(bot, firmas, min_samples)
@@ -723,13 +978,22 @@ def retrain(db_path: str, min_samples: int = MIN_SAMPLES,
             results[bot] = {"path": None, "n": 0, "source": source,
                             "reentrenado": False}
             continue
+        # Los pesos de la ruta de ventanas vienen del propio desenlace; solo se
+        # usan si el conjunto NO se rellenó con el prior sintético, porque el
+        # bootstrap cambia el número de filas.
+        if bot in pesos_por_bot and len(pesos_por_bot[bot]) == len(X):
+            w = pesos_por_bot[bot]
+        ts = tss.get(bot)
+        if ts is not None and len(ts) != len(X):
+            ts = None          # el bootstrap desalineó: mejor sin corte temporal
         logger.info(f"=== {bot}: {source} ===")
-        path, habilidad = train_export(bot, X, yc, ys, w,
+        path, habilidad = train_export(bot, X, yc, ys, w, ts=ts,
                                        con_compuerta=con_compuerta)
         results[bot] = {
             "path": str(path) if path else None,
             "n": int(len(X)),
             "source": source,
+            "fuente": fuente,
             "reentrenado": path is not None,
             # La habilidad va al metadato SIEMPRE, también cuando la compuerta
             # niega: así «no se escribió» viene con el motivo al lado y no hay
@@ -745,7 +1009,12 @@ def retrain(db_path: str, min_samples: int = MIN_SAMPLES,
     meta = {
         "retrained_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
         "db_path": str(db_path),
-        "compuerta": {"auc_minima": AUC_MINIMA, "activa": bool(con_compuerta),
+        "fuente": fuente,
+        "objetivo": {"horizonte_h": HORIZONTE_H, "mag_min": MAG_OBJETIVO,
+                     "n_ventanas": n_ventanas} if fuente == "ventanas" else None,
+        "compuerta": {"auc_minima": AUC_MINIMA,
+                      "auc_maxima_creible": AUC_MAXIMA_CREIBLE,
+                      "activa": bool(con_compuerta),
                       "aprueban": aprobados, "niega": negados},
         "bots": results,
     }
@@ -763,9 +1032,17 @@ def main():
         help=("escribe el .onnx aunque no se pueda medir su habilidad o esté "
               f"por debajo de AUC {AUC_MINIMA}. Queda en el log y en "
               "models_meta.json; no es un atajo, es una decisión que se firma"))
+    ap.add_argument(
+        "--fuente", choices=("ventanas", "firmas"), default="ventanas",
+        help=("ventanas (por defecto): positivos y negativos de la MISMA "
+              "extracción, etiqueta por desenlace. firmas: la ruta vieja, "
+              "DEMOSTRADA CONTAMINADA (AUC 1,0000 para adivinar la tabla de "
+              "origen) --- solo para reproducir el defecto"))
+    ap.add_argument("--n-ventanas", type=int, default=N_VENTANAS)
     args = ap.parse_args()
     res = retrain(args.db_path, min_samples=args.min_samples, bots=args.bots,
-                  con_compuerta=not args.sin_compuerta)
+                  con_compuerta=not args.sin_compuerta,
+                  fuente=args.fuente, n_ventanas=args.n_ventanas)
     print(json.dumps(res, indent=2))
 
 
