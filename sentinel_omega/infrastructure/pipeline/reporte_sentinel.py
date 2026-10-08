@@ -113,6 +113,21 @@ def _safe_query(conn, query, params=()):
         return []
 
 
+def _columnas(conn, tabla: str) -> set:
+    """Las columnas que una tabla tiene de verdad.
+
+    Hace falta porque `_safe_query` traga `OperationalError` y devuelve `[]`:
+    pedir una columna que no existe NO da error visible, borra el bloque
+    entero del reporte en silencio. Las mediciones del 2026-10-07/08 anadieron
+    `falsa_alarma`/`ganancia` a `tbl_sesgo_aprendizaje` y `exigible` a
+    `TBL_FIRMAS`, asi que hay que preguntar antes de pedirlas.
+    """
+    try:
+        return {r[1] for r in conn.execute(f"PRAGMA table_info({tabla})")}
+    except sqlite3.OperationalError:
+        return set()
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Bloque reutilizable: auditoría Juez para cualquier bot
 # ──────────────────────────────────────────────────────────────────────────────
@@ -164,10 +179,14 @@ def _bloque_juez_bot(conn, bot_name: str, lines: list) -> dict:
 
 def _bloque_sesgo_bot(conn, bot_name: str, lines: list) -> dict:
     """Imprime y devuelve el sesgo de un bot específico."""
+    cols = _columnas(conn, "tbl_sesgo_aprendizaje")
+    hay_ganancia = {"falsa_alarma", "ganancia"} <= cols
+    campos = "n, recon_insample, recon_causal, sesgo, castigos"
+    if hay_ganancia:
+        campos += ", n_calma, falsa_alarma, ganancia"
     sesgo = _safe_query(
         conn,
-        "SELECT n, recon_insample, recon_causal, sesgo, castigos "
-        "FROM tbl_sesgo_aprendizaje WHERE bot = ?",
+        f"SELECT {campos} FROM tbl_sesgo_aprendizaje WHERE bot = ?",
         (bot_name,)
     )
     if not sesgo:
@@ -177,17 +196,41 @@ def _bloque_sesgo_bot(conn, bot_name: str, lines: list) -> dict:
     insample = r["recon_insample"]
     causal = r["recon_causal"]
     sesgo_v = r["sesgo"]
+    falsa = r["falsa_alarma"] if hay_ganancia else None
+    ganancia = r["ganancia"] if hay_ganancia else None
     lines.append(f"  Eventos evaluados:         {r['n']}")
     lines.append(f"  Reconocimiento in-sample:  {_pct_bar(insample, 30)}")
     lines.append(f"  Reconocimiento causal:     {_pct_bar(causal, 30)}")
-    lines.append(f"  Sesgo (dif):               {sesgo_v * 100:.1f}%")
+    if falsa is not None:
+        lines.append(f"  Empareja CALMA:            {_pct_bar(falsa, 30)}")
+    lines.append(f"  Sesgo (memorizacion):      {sesgo_v * 100:.1f}%")
+    if ganancia is not None:
+        lines.append(f"  GANANCIA (causal-calma):   {ganancia * 100:+.1f}%")
     lines.append(f"  Castigos aplicados:        {r['castigos']}")
-    if sesgo_v < 0.10:
-        lines.append(f"  ✓ {bot_name.upper()} SANO: reconoce con memoria anterior.")
-    elif sesgo_v < 0.30:
-        lines.append(f"  ⚠ {bot_name.upper()} SESGO MODERADO: parte in-sample.")
+
+    # ── El veredicto va sobre la GANANCIA, no sobre el sesgo ────────────────
+    #
+    # Hasta el 2026-10-08 decia «✓ SANO: reconoce con memoria anterior» en
+    # cuanto el sesgo (in-sample menos causal) bajaba de 0,10. Medido ese dia,
+    # `alfa1` reconocia el 95,0 % de los eventos Y emparejaba el 94,5 % de la
+    # CALMA: sesgo 0,003, o sea «SANO» --- con ganancia +0,005. El sesgo mide
+    # memorizacion; no dice nada de si la memoria distingue.
+    if ganancia is None:
+        lines.append(f"  … {bot_name.upper()}: sin falsa alarma medida, el "
+                     "reconocimiento NO se puede leer como acierto. Corre "
+                     "`evaluar_sesgo_aprendizaje`.")
+    elif ganancia <= 0.02:
+        lines.append(f"  ✗ {bot_name.upper()} NO DISCRIMINA: empareja la calma "
+                     f"casi igual que los eventos (ganancia {ganancia*100:+.1f} %). "
+                     "El reconocimiento alto es alarmismo, no aprendizaje.")
+    elif ganancia < 0.20:
+        lines.append(f"  ⚠ {bot_name.upper()} DISCRIMINA POCO: "
+                     f"ganancia {ganancia*100:+.1f} %.")
     else:
-        lines.append(f"  ✗ {bot_name.upper()} SESGO ALTO: principalmente in-sample.")
+        lines.append(f"  ✓ {bot_name.upper()} DISCRIMINA: reconoce eventos muy "
+                     f"por encima de la calma (ganancia {ganancia*100:+.1f} %).")
+    if sesgo_v >= 0.30:
+        lines.append(f"  ⚠ y ademas memoriza: sesgo {sesgo_v*100:.1f} %.")
     return dict(r)
 
 
@@ -232,13 +275,37 @@ def reporte_general(db_path: str) -> Dict:
         "SELECT bot_name, estado, COUNT(*) as n "
         "FROM TBL_FIRMAS GROUP BY bot_name, estado ORDER BY bot_name, estado"
     )
-    bots_order = ["alfa1", "alfa2", "beta1", "beta2", "delta", "jupiter", "padre", "omega"]
+    # ── La lista fija se quedo sin `loki` (hallado 2026-10-08) ──────────────
+    #
+    # Era `["alfa1","alfa2","beta1","beta2","delta","jupiter","padre","omega"]`
+    # --- ocho de los nueve --- y el `if b in pivot` de abajo descartaba las
+    # 1.824 firmas de loki SIN DECIR NADA. El total salia 38.871 con 40.695 en
+    # la tabla, y la tabla parecia completa. Regla dura 10: un descarte
+    # silencioso esconde el fallo indefinidamente.
+    #
+    # Se conserva el orden canonico, pero cualquier bot que aparezca en los
+    # datos y no este en la lista se anade al final en vez de desaparecer: asi
+    # un bot nuevo no se puede volver a caer en silencio.
+    ORDEN_CANONICO = ["alfa1", "alfa2", "beta1", "beta2", "delta", "jupiter",
+                      "loki", "padre", "omega"]
+    en_datos = {str(r["bot_name"]) for r in firma_rows if r["bot_name"]}
+    extra = sorted(en_datos - set(ORDEN_CANONICO))
+    if extra:
+        lines.append(f"  (bots fuera del orden canonico, incluidos igual: "
+                     f"{', '.join(extra)})")
+    bots_order = ORDEN_CANONICO + extra
     estados_order = ["nueva", "observada", "recurrente", "consolidada"]
     pivot: Dict[str, Dict[str, int]] = {b: {e: 0 for e in estados_order} for b in bots_order}
+    descartadas = 0
     for row in firma_rows:
         b, e, n = row["bot_name"], row["estado"], row["n"]
         if b in pivot and e in pivot[b]:
             pivot[b][e] = n
+        else:
+            descartadas += int(n or 0)
+    if descartadas:
+        lines.append(f"  ⚠ {descartadas} firmas con un ESTADO desconocido no "
+                     "entran en esta tabla --- revisa `ESTADO_POR_RECURRENCIA`.")
     headers = ["Bot", "Nueva", "Observada", "Recurrente", "Consolidada", "Total", "Barra"]
     trows = []
     for b in bots_order:
@@ -251,19 +318,85 @@ def reporte_general(db_path: str) -> Dict:
     n_total = sum(sum(d.values()) for d in pivot.values())
     n_cons = sum(d["consolidada"] for d in pivot.values())
     lines.append(f"\n  Total firmas: {n_total}  |  Consolidadas: {n_cons}  ({n_cons/max(1,n_total)*100:.1f}%)")
-    data["firmas"] = {"total": n_total, "consolidadas": n_cons, "por_bot": dict(pivot)}
+    # ── Consolidada NO es exigible (2026-10-07) ──────────────────────────────
+    #
+    # La promocion `nueva -> observada -> recurrente -> consolidada` va solo por
+    # RECURRENCIA, asi que un patron que reaparece en CALMA se consolida igual
+    # que uno que precede eventos. `exigible` es el hecho medido de que la firma
+    # empareje eventos MAS que calma. Medido el 8-oct: de 23.248 consolidadas,
+    # **982 exigibles (4,2 %)**, y `padre` 0 de 14.958.
+    n_exig = None
+    if "exigible" in _columnas(conn, "TBL_FIRMAS"):
+        fila = _safe_query(
+            conn,
+            "SELECT COUNT(*) FROM TBL_FIRMAS WHERE estado='consolidada' "
+            "AND COALESCE(exigible,1)=1")
+        n_exig = int(fila[0][0]) if fila else None
+    if n_exig is None:
+        lines.append("  Exigibles: sin medir --- corre "
+                     "`medir_discriminacion_firmas`. Mientras no se mida, TODA "
+                     "consolidada cuenta como exigible.")
+    else:
+        pct_e = n_exig / max(1, n_cons) * 100
+        lines.append(f"  Exigibles (consolidada Y que discrimina): {n_exig}  "
+                     f"({pct_e:.1f}% de las consolidadas)")
+        if pct_e < 25.0:
+            lines.append("  ✗ La memoria exigible es una fraccion minima: la "
+                         "mayoria recurre pero no distingue evento de calma.")
+    data["firmas"] = {"total": n_total, "consolidadas": n_cons,
+                      "exigibles": n_exig, "por_bot": dict(pivot)}
 
     # ── 3. Pesos Disciplinarios ──────────────────────────────────────────────
-    lines.append(_section("3. Pesos Disciplinarios (credibilidad)"))
+    lines.append(_section("3. Pesos — el MARCADOR y el VOTO"))
     pesos_rows = _safe_query(conn, "SELECT bot_name, peso FROM TBL_PESOS_BOTS ORDER BY peso DESC")
     if not pesos_rows:
         lines.append("  Sin pesos en TBL_PESOS_BOTS aún.")
     else:
+        # ── Son DOS numeros distintos y este reporte mostraba uno ────────────
+        #
+        # `TBL_PESOS_BOTS.peso` es el paseo multiplicativo (refuerzo x1,02
+        # topado en 1,0, castigo x0,95), alimentado de `aciertos/fallos`, que
+        # estan al 95-100 % en los nueve porque el 98,9 % de los «aciertos» son
+        # silencio en calma. La bitacora del 25-sep §4 ya lo avisaba: «el
+        # castigo diferenciado llega al marcador pero no llega al voto».
+        #
+        # Lo que el Padre APLICA sale de `cargar_pesos(por_merito=...)`. Si los
+        # dos coinciden, el merito no se pudo calcular y el voto cayo al
+        # marcador --- y eso hay que verlo, no deducirlo.
+        voto, origen = {}, None
+        try:
+            from sentinel_omega.config.sentinel_config import load_config
+            from sentinel_omega.core.juez.pesos import cargar_pesos
+            _j = getattr(load_config(), "juez", None)
+            _pm = bool(getattr(_j, "peso_por_merito", False))
+            _mv = int(getattr(_j, "minimo_ventanas", 50))
+            _p = cargar_pesos(conn, por_merito=_pm, minimo_ventanas=_mv)
+            _ap = int(_p.pop("_meritos_aplicados", 0) or 0)
+            _co = int(_p.pop("_competencias_aplicadas", 0) or 0)
+            voto = {str(k).lower(): float(v) for k, v in _p.items()}
+            origen = (f"merito contra el silencio ({_ap} bots)" if _ap else
+                      (f"competencia por clase ({_co} bots); el merito pide "
+                       f">={_mv} ventanas vivas y no las hay" if _co else
+                       "el marcador almacenado --- el merito no tiene evidencia"))
+        except Exception as e:  # noqa: BLE001 — el reporte sale igual
+            origen = f"no se pudo calcular ({type(e).__name__})"
         max_peso = max(r["peso"] for r in pesos_rows) or 1.0
-        p_rows = [[r["bot_name"], f"{r['peso']:.4f}", _bar(r["peso"], max_peso, 30)]
-                  for r in pesos_rows]
-        lines.append(_tabla(["Bot", "Peso", "Barra de credibilidad"], p_rows))
+        p_rows = []
+        for r in pesos_rows:
+            v = voto.get(str(r["bot_name"]).lower())
+            p_rows.append([
+                r["bot_name"], f"{r['peso']:.4f}",
+                "—" if v is None else f"{v:.4f}",
+                "" if (v is None or abs(v - r["peso"]) < 1e-4) else "≠",
+                _bar(r["peso"], max_peso, 24),
+            ])
+        lines.append(_tabla(["Bot", "Marcador", "Voto", "", "Barra (marcador)"], p_rows))
+        lines.append(f"  Origen del voto: {origen}")
+        lines.append("  El MARCADOR es el paseo multiplicativo y se satura "
+                     "arriba con la calma; el VOTO es lo que el Padre aplica. "
+                     "Si coinciden, el voto cayo al marcador.")
     data["pesos"] = {r["bot_name"]: r["peso"] for r in pesos_rows}
+    data["pesos_voto"] = voto if pesos_rows else {}
 
     # ── 4. Auditoría del Juez ────────────────────────────────────────────────
     lines.append(_section("4. Auditoría del Juez — Asertividad por Bot"))
@@ -291,26 +424,64 @@ def reporte_general(db_path: str) -> Dict:
     data["juez"] = juez_pivot
 
     # ── 5. Sesgo de Aprendizaje ──────────────────────────────────────────────
-    lines.append(_section("5. Sesgo de Aprendizaje — In-Sample vs Causal"))
+    lines.append(_section("5. Reconocimiento, falsa alarma y GANANCIA"))
+    _cs = _columnas(conn, "tbl_sesgo_aprendizaje")
+    _hay_g = {"falsa_alarma", "ganancia"} <= _cs
+    _campos = "bot, n, recon_insample, recon_causal, sesgo, castigos"
+    if _hay_g:
+        _campos += ", falsa_alarma, ganancia"
     sesgo_rows = _safe_query(
-        conn, "SELECT bot, n, recon_insample, recon_causal, sesgo, castigos "
-              "FROM tbl_sesgo_aprendizaje ORDER BY sesgo DESC"
+        conn, f"SELECT {_campos} FROM tbl_sesgo_aprendizaje "
+              f"ORDER BY {'ganancia' if _hay_g else 'sesgo'} DESC"
     )
     if not sesgo_rows:
         lines.append("  Sin datos. Ejecutar barrido_diario().")
     else:
-        lines.append(
-            "  In-sample = el bot reconoce con lo que se entrenó (favorecido).\n"
-            "  Causal    = solo reconoce con memoria anterior al evento (honesto).\n"
-            "  Sesgo alto → el bot 'recuerda el futuro'.\n"
-        )
+        if _hay_g:
+            lines.append(
+                "  Causal   = eventos que su memoria reconoce con memoria anterior.\n"
+                "  Calma    = cuanta CALMA empareja igual.\n"
+                "  GANANCIA = la resta, y es el numero que decide: reconocer el\n"
+                "             95 % emparejando el 94,5 % es ganancia 0,005, o sea\n"
+                "             alarmismo, no aprendizaje.\n"
+                "  Sesgo    = in-sample menos causal; solo mide MEMORIZACION.\n"
+            )
+        else:
+            lines.append(
+                "  OJO: esta base no tiene medida la falsa alarma, asi que\n"
+                "  `Causal` NO se puede leer como acierto. Corre\n"
+                "  `evaluar_sesgo_aprendizaje` para tener la ganancia.\n"
+            )
         s_rows = []
         for r in sesgo_rows:
-            calidad = "✓ SANO" if r["sesgo"] < 0.15 else ("⚠ SOBREFIT" if r["sesgo"] < 0.4 else "✗ CRÍTICO")
-            s_rows.append([r["bot"], r["n"], f"{r['recon_insample']*100:.1f}%",
-                           f"{r['recon_causal']*100:.1f}%", f"{r['sesgo']*100:.1f}%",
-                           r["castigos"], calidad])
-        lines.append(_tabla(["Bot", "N", "In-Sample", "Causal", "Sesgo", "Castigos", "Calidad"], s_rows))
+            g = r["ganancia"] if _hay_g else None
+            # La calidad va sobre la GANANCIA. Hasta el 2026-10-08 decia
+            # «✓ SANO» con sesgo < 0,15, asi que `alfa1` ---95,0 % de eventos y
+            # 94,5 % de la calma--- salia SANO.
+            if g is None:
+                calidad = "… sin medir"
+            elif g <= 0.02:
+                calidad = "✗ NO DISCRIMINA"
+            elif g < 0.20:
+                calidad = "⚠ POCO"
+            else:
+                calidad = "✓ DISCRIMINA"
+            if r["sesgo"] is not None and r["sesgo"] >= 0.30:
+                calidad += " +memoriza"
+            fila = [r["bot"], r["n"],
+                    "—" if r["recon_insample"] is None else f"{r['recon_insample']*100:.1f}%",
+                    "—" if r["recon_causal"] is None else f"{r['recon_causal']*100:.1f}%"]
+            if _hay_g:
+                fila.append("—" if r["falsa_alarma"] is None else f"{r['falsa_alarma']*100:.1f}%")
+                fila.append("—" if g is None else f"{g*100:+.1f}%")
+            fila += ["—" if r["sesgo"] is None else f"{r['sesgo']*100:.1f}%",
+                     r["castigos"], calidad]
+            s_rows.append(fila)
+        cab = ["Bot", "N", "In-Sample", "Causal"]
+        if _hay_g:
+            cab += ["Calma", "GANANCIA"]
+        cab += ["Sesgo", "Castigos", "Calidad"]
+        lines.append(_tabla(cab, s_rows))
     data["sesgo"] = [dict(r) for r in sesgo_rows]
 
     # ── 6. Lags de Anticipación ──────────────────────────────────────────────
@@ -376,9 +547,25 @@ def reporte_general(db_path: str) -> Dict:
     lines.append(f"  ▸ Eventos M4.5+ en catálogo:   {n_ev}")
     lines.append(f"  ▸ Total firmas registradas:    {n_total}")
     lines.append(f"  ▸ Firmas consolidadas:         {n_cons}  ({n_cons/max(1,n_total)*100:.1f}%)")
+    if n_exig is not None:
+        lines.append(f"  ▸ …y EXIGIBLES (discriminan):  {n_exig}  "
+                     f"({n_exig/max(1,n_cons)*100:.1f}% de las consolidadas)")
     if pesos_rows:
         top = pesos_rows[0]
-        lines.append(f"  ▸ Bot más confiable (peso):    {top['bot_name']}  ({top['peso']:.4f})")
+        # Ya no se llama «el mas confiable»: el marcador se satura con la calma,
+        # asi que el de arriba puede ser el que menos discrimina --- medido el
+        # 8-oct, beta2 estaba en el techo (1,5) con CERO firmas exigibles.
+        lines.append(f"  ▸ Marcador mas alto:           {top['bot_name']}  "
+                     f"({top['peso']:.4f}) — marcador, NO merito")
+    if sesgo_rows and _hay_g:
+        _cong = [r for r in sesgo_rows if r["ganancia"] is not None]
+        if _cong:
+            _mejor = max(_cong, key=lambda r: r["ganancia"])
+            _malos = [r["bot"] for r in _cong if r["ganancia"] <= 0.02]
+            lines.append(f"  ▸ Mejor GANANCIA:              {_mejor['bot']}  "
+                         f"({_mejor['ganancia']*100:+.1f}%)")
+            if _malos:
+                lines.append(f"  ▸ Sin discriminar (gan<=2%):   {', '.join(_malos)}")
     if juez_pivot:
         mejor = max(juez_pivot.items(),
                     key=lambda x: x[1]["ACIERTO"] / max(1, x[1]["ACIERTO"] + x[1]["FALLO"]))
