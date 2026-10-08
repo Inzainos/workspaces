@@ -45,7 +45,26 @@ from sentinel_omega.core.shared.agent_base import valor_medido as _primero
 # que ve `_aplicar_modelos` y que guarda el Juez) y aquí se aceptan los alias.
 # El primer nombre de cada tupla es el canónico.
 CLAVES_BZ = ("bz_mean", "bz_gsm", "bz", "bz_nT")
-CLAVES_KP_REGLA = ("kp_max", "kp", "kp_mean")   # umbral de tormenta: el máximo
+CLAVES_KP_REGLA = ("kp_max", "kp", "kp_mean")   # ventana: para el VECTOR
+
+# ─── El umbral de tormenta mira el Kp RECIENTE, no el máximo de la ventana ───
+#
+# `CLAVES_KP_REGLA` empieza por `kp_max`, que es **el máximo de 336 horas**, y
+# la regla le aplicaba un umbral de tormenta instantánea (`kp >= 6`). Medido el
+# 2026-10-08: omega dijo `WATCH` en 27 de 27 ciclos con confianza 0,4900 exacta
+# ---`stress = 0.35`, una sola condición--- porque el máximo de la quincena
+# valía 6.0 por una tormenta pasada, con el Kp real de esas horas en 0,2-2,0.
+#
+# Un umbral de tormenta sobre el máximo de catorce días dice «hay tormenta»
+# mientras la hubo alguna vez en la quincena. Y omega es su PROPIA familia en
+# el `FAMILY_MAP` del Padre, así que ese watch permanente mantenía una familia
+# activa sola y dejaba al consenso a un solo watch de alarmar.
+#
+# `kp_reciente` lo pone `layer_runners._datos_omega` desde la serie viva de Kp
+# ---la misma cantidad con la que se calcula el Fantasma--- y **no tiene
+# respaldo a `kp_max`** a propósito: caer al agregado de ventana es justo el
+# defecto. Sin lectura, la ausencia se nombra y no se suma estrés.
+CLAVES_KP_TORMENTA = ("kp_reciente",)
 CLAVES_KP_MEDIA = ("kp_mean", "kp")
 CLAVES_VIENTO = ("viento_avg", "plasma_speed", "viento", "wind_kms")
 CLAVES_FASE = ("fase_lunar", "moon_phase")
@@ -138,7 +157,9 @@ class OmegaAgent(BaseAgent):
     def analyze(self) -> AgentSignal:
         d = self._data
         bz = _primero(d, *CLAVES_BZ)
-        kp = _primero(d, *CLAVES_KP_REGLA)
+        # El Kp del UMBRAL DE TORMENTA, que es el reciente --- ver
+        # `CLAVES_KP_TORMENTA`. Sin respaldo al máximo de la ventana.
+        kp = _primero(d, *CLAVES_KP_TORMENTA)
         sch = _primero(d, *CLAVES_SCHUMANN)
         reasoning_parts = []
 
@@ -159,7 +180,18 @@ class OmegaAgent(BaseAgent):
             # de «no lo sé».
             reasoning_parts.append(f"Bz={bz:.2f}")
         if kp is None:
-            reasoning_parts.append("Kp=sin dato")
+            # Sin Kp reciente no se suma estrés --- pero tampoco se finge no
+            # tener dato si el ciclo trae el agregado de ventana: eso sería el
+            # defecto del 2026-09-27 al revés. Se nombran los dos, cada uno con
+            # lo que es, para que el parte no confunda «no medí» con «no sirve
+            # para este umbral».
+            kp_ventana = _primero(d, "kp_max", "kp_mean")
+            if kp_ventana is None:
+                reasoning_parts.append("Kp=sin dato")
+            else:
+                reasoning_parts.append(
+                    f"Kp reciente=sin dato (máx. 336 h={kp_ventana:.1f}, "
+                    "no vale de umbral)")
         elif kp >= 6:
             stress += 0.35
             reasoning_parts.append(f"Kp={kp:.1f}")

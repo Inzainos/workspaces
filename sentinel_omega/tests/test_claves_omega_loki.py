@@ -210,8 +210,14 @@ def _omni(bz=-0.93, viento=415.0):
 
 def test_omega_recibe_los_rasgos_del_ciclo_y_lee_el_bz(monkeypatch):
     runner = _runner(monkeypatch, CICLO_REAL)
+    # `kp_series` es la serie VIVA de Kp, y en producción siempre está --- de
+    # ella sale el Kp del Fantasma y, desde el 2026-10-08, el `kp_reciente` que
+    # usa el umbral de tormenta de omega. El fixture no la traía y omega se
+    # quedaba sin Kp para el umbral; se añade con la forma de producción, sin
+    # aflojar nada de lo que esta prueba vigila.
     datos = runner._datos_omega({"omni_dataframe": _omni()},
-                                {"schumann_frequency": None})
+                                {"schumann_frequency": None,
+                                 "kp_series": [1.0, 1.0, 1.0]})
     assert "schumann_mean" not in datos and "schumann_std" not in datos
     ag = OmegaAgent()
     ag.ingest(datos)

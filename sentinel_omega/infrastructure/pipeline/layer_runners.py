@@ -584,6 +584,41 @@ class GeodynamicLayerRunner:
             logger.debug("omega sin rasgos del ciclo: %s", e)
         omega_data["schumann_hz"] = valor_medido(
             beta1_data or {}, "schumann_frequency", "schumann_hz")
+
+        # ── El Kp RECIENTE, para el umbral de tormenta de su regla ──────────
+        #
+        # Medido el 2026-10-08: la regla de omega decía `WATCH` en 27 de 27
+        # ciclos con confianza 0,4900 EXACTA --- o sea `stress = 0.35`, que solo
+        # sale de una condición. Era `kp >= 6`, y el Kp que leía venía de
+        # `CLAVES_KP_REGLA = ("kp_max", ...)`: **el máximo de la ventana de
+        # 336 h**, que valía 6.0 porque hubo una tormenta en las dos semanas
+        # anteriores. El Kp real de esas horas era 0,2-2,0.
+        #
+        # O sea: un umbral de tormenta instantánea aplicado al máximo de
+        # catorce días dice «hay tormenta» mientras la hubo alguna vez en la
+        # quincena. Y no se quedaba en omega --- en el `FAMILY_MAP` del Padre
+        # omega es su PROPIA familia, así que ese watch permanente mantenía una
+        # familia activa sola y dejaba al consenso a un solo watch de su rama
+        # de alarma (`active_families >= 2 and (alertas >= 1 or watches >= 2)`).
+        #
+        # La ironía: el arreglo del 2026-09-27 ---que omega dejara de escribir
+        # «Kp=sin dato» teniendo el ciclo Kp 1--- fue el que le metió los
+        # agregados de ventana, porque añadió los rasgos canónicos enteros.
+        #
+        # Se le pasa el Kp reciente con nombre PROPIO e inequívoco, y es la
+        # MISMA cantidad con la que se calcula el Fantasma (media de la serie
+        # viva de Kp, ~6 h a resolución de minuto), para que las dos ramas no
+        # midan cosas distintas. Sin serie va None: la regla nombra la ausencia
+        # en vez de caer al máximo de la ventana, que es lo que la rompió.
+        kp_reciente = None
+        serie_kp = (beta1_data or {}).get("kp_series")
+        if serie_kp is not None and len(serie_kp) > 0:
+            import numpy as _np
+            v = _np.asarray(serie_kp, dtype=float)
+            v = v[_np.isfinite(v)]
+            if v.size:
+                kp_reciente = float(v.mean())
+        omega_data["kp_reciente"] = kp_reciente
         return omega_data
 
     @staticmethod

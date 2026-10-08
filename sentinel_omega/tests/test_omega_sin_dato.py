@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 
 from sentinel_omega.core.features_onnx import BOT_DIMS, vector_para
+from sentinel_omega.core.shared.agent_base import SignalType
 from sentinel_omega.layers.geodynamic.omega.agent import (
     SCHUMANN_DESVIACION_MINIMA_HZ,
     SCHUMANN_FUNDAMENTAL_HZ,
@@ -117,3 +118,109 @@ def test_el_vector_sigue_el_orden_canonico():
     ag = OmegaAgent()
     ag.ingest({"bz_nT": -4.0})
     assert np.asarray(ag._feature_vector()).shape == (BOT_DIMS["omega"],)
+
+
+# ─── El umbral de tormenta mira el Kp RECIENTE, no el máximo de 336 h ────────
+#
+# Medido el 2026-10-08: la regla de omega decía `WATCH` en **27 de 27** ciclos
+# vivos con confianza **0,4900 exacta** --- o sea `stress = 0.35`, que solo sale
+# de una condición. Era `kp >= 6`, y el Kp que leía venía de `CLAVES_KP_REGLA`,
+# que empieza por `kp_max`: **el máximo de la ventana de 336 h**, que valía 6.0
+# por una tormenta de la quincena anterior. El Kp real de esas horas: 0,2-2,0.
+#
+#     máximo de kp_max en 336 h   6.0   -> dispara «kp>=6»
+#     Kp real de ahora            2.0
+#
+# Un umbral de tormenta instantánea aplicado al máximo de catorce días dice
+# «hay tormenta» mientras la hubo alguna vez en la quincena.
+#
+# Y no se quedaba en omega: en el `FAMILY_MAP` del Padre omega es su PROPIA
+# familia (`cosmic_correlation`), así que ese watch permanente mantenía una
+# familia activa por sí sola y dejaba al consenso **a un solo watch** de su
+# rama de alarma --- `active_families >= 2 and (alertas >= 1 or watches >= 2)`.
+#
+# La ironía: el arreglo del 2026-09-27, que omega dejara de escribir «Kp=sin
+# dato» teniendo el ciclo Kp 1, fue el que le metió los agregados de ventana,
+# porque le añadió los rasgos canónicos enteros.
+
+_CICLO_REAL = {"bz_mean": -1.5, "kp_max": 6.0, "schumann_hz": 7.96}
+
+
+def _senal(**extra):
+    a = OmegaAgent()
+    a.ingest({**_CICLO_REAL, **extra})
+    return a.analyze()
+
+
+def test_el_maximo_de_la_ventana_NO_dispara_el_umbral_de_tormenta():
+    """El caso exacto de producción: kp_max 6.0 de la quincena, Kp real 0,96."""
+    s = _senal(kp_reciente=0.96)
+    assert s.signal_type is not SignalType.WATCH, (
+        f"volvió el watch permanente: {s.signal_type.value} {s.confidence:.4f}")
+    assert s.signal_type is SignalType.NEUTRAL
+    assert s.data.get("stress", 0.0) < 0.30
+
+
+def test_una_tormenta_DE_VERDAD_sigue_alarmando():
+    """El arreglo no puede volverlo sordo: con Kp 6,2 AHORA, watch."""
+    s = _senal(kp_reciente=6.2)
+    assert s.signal_type is SignalType.WATCH
+    assert s.data.get("stress", 0.0) >= 0.30
+
+
+def test_sin_Kp_reciente_se_NOMBRA_la_ausencia_y_no_se_cae_al_maximo():
+    """El respaldo a `kp_max` es justo el defecto: no existe a propósito.
+
+    Pero tampoco se finge no tener dato cuando el ciclo trae el agregado ---
+    eso sería el defecto del 2026-09-27 al revés, cuando omega escribía «Kp=sin
+    dato» con el ciclo trayendo Kp 1. Se nombran los dos, cada uno con lo que
+    es.
+    """
+    s = _senal()
+    assert s.signal_type is SignalType.NEUTRAL
+    assert "Kp reciente=sin dato" in s.reasoning, s.reasoning
+    assert "336 h=6.0" in s.reasoning, (
+        "no se reporta el agregado que sí hay: el parte parece una no-medición")
+    assert "no vale de umbral" in s.reasoning
+    assert s.data.get("kp") is None, "el umbral no puede haber usado el máximo"
+
+
+def test_sin_NINGUN_Kp_lo_dice_sin_adornos():
+    a = OmegaAgent()
+    a.ingest({"bz_mean": -1.5, "schumann_hz": 7.96})
+    s = a.analyze()
+    assert "Kp=sin dato" in s.reasoning, s.reasoning
+
+
+def test_el_umbral_de_tormenta_no_declara_kp_max_entre_sus_claves():
+    """Que no vuelva por la puerta de las constantes."""
+    from sentinel_omega.layers.geodynamic.omega.agent import CLAVES_KP_TORMENTA
+    assert "kp_max" not in CLAVES_KP_TORMENTA
+    assert "kp_max_72h" not in CLAVES_KP_TORMENTA
+    assert "kp_reciente" in CLAVES_KP_TORMENTA
+
+
+def test_el_VECTOR_sigue_usando_los_agregados_de_ventana():
+    """La otra mitad, y es la que hace quirúrgico el arreglo: el modelo de
+    omega aprendió con `kp_max` de 336 h, así que el VECTOR tiene que seguir
+    llevándolo. Solo cambió la entrada de la REGLA."""
+    from sentinel_omega.core.features_onnx import FEATURE_ORDER
+
+    a = OmegaAgent()
+    a.ingest({**_CICLO_REAL, "kp_reciente": 0.96, "kp_mean": 1.7})
+    vec = a._feature_vector()
+    i = FEATURE_ORDER["omega"].index("kp_max")
+    assert vec[i] == 6.0, (
+        f"el vector perdió el máximo de ventana que el modelo aprendió: "
+        f"posición {i} vale {vec[i]}")
+
+
+def test_el_runner_le_pasa_el_Kp_reciente_de_la_serie_viva():
+    """Y que sea la MISMA cantidad con la que se calcula el Fantasma: si las
+    dos ramas midieran cosas distintas, volveríamos al desajuste del Kp."""
+    import inspect
+
+    from sentinel_omega.infrastructure.pipeline import layer_runners
+    fuente = inspect.getsource(layer_runners.GeodynamicLayerRunner._datos_omega)
+    assert 'omega_data["kp_reciente"]' in fuente
+    assert 'kp_series' in fuente

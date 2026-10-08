@@ -1345,3 +1345,52 @@ def test_features_excluyen_schumann_congelado(db):
     f = extraer_features_ventana(conn, "2026-09-21 00:00", 45)
     assert f is not None
     assert f["schumann_mean"] == pytest.approx(7.9)
+
+
+class TestDiscriminacionEnElRebuild:
+    """La discriminación tiene que medirse DENTRO del entrenamiento, antes del
+    sesgo POST.
+
+    Dos razones de orden, las dos medidas el 2026-10-07/08:
+
+    1. El sesgo POST es el que CASTIGA, y castiga sobre la ganancia
+       (`causal - falsa_alarma`), que se mide sobre las firmas EXIGIBLES. Si la
+       discriminación se midiera después, el castigo saldría de un conjunto que
+       el sistema ya no consulta --- 23.244 consolidadas en vez de las 982 que
+       discriminan.
+    2. El rebuild hace `DELETE FROM TBL_FIRMAS`, así que las marcas de una
+       medición anterior se van con las filas. Cada reconstrucción tiene que
+       volver a medir o todo vuelve a contar como exigible, porque NULL cuenta
+       como exigible --- a propósito, para no demotar en silencio lo que nadie
+       ha mirado.
+    """
+
+    def test_el_entrenamiento_mide_la_discriminacion_antes_del_sesgo_post(self):
+        import inspect
+
+        from sentinel_omega.infrastructure.pipeline import entrenamiento as en
+        fuente = inspect.getsource(en.entrenar)
+        assert "medir_discriminacion_firmas" in fuente, (
+            "el entrenamiento ya no mide la discriminación: el rebuild borraría "
+            "las marcas y todo volvería a contar como exigible")
+        i = fuente.index("medir_discriminacion_firmas")
+        j = fuente.index("evaluar_sesgo_aprendizaje(db_path, aplicar_castigo=True)")
+        assert i < j, (
+            "la discriminación se mide DESPUÉS del sesgo POST: el castigo "
+            "saldría de un conjunto que el sistema ya no consulta")
+
+    def test_se_aplica_de_verdad_no_solo_se_mide(self):
+        import inspect
+
+        from sentinel_omega.infrastructure.pipeline import entrenamiento as en
+        fuente = inspect.getsource(en.entrenar)
+        assert "medir_discriminacion_firmas(db_path, aplicar=True)" in fuente
+
+    def test_el_resultado_del_entrenamiento_lo_reporta(self):
+        """Si no sale en el resumen, el reporte del rebuild no puede decir
+        cuánta memoria quedó exigible --- y eso es lo que hay que mirar."""
+        import inspect
+
+        from sentinel_omega.infrastructure.pipeline import entrenamiento as en
+        fuente = inspect.getsource(en.entrenar)
+        assert '"discriminacion": discriminacion' in fuente

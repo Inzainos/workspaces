@@ -946,6 +946,35 @@ def entrenar(
     except Exception as e:
         logger.warning(f"Entrenamiento cimático no disponible: {e}")
 
+    # ── Qué memoria es EXIGIBLE, antes de medir el sesgo ────────────────────
+    #
+    # Va aquí y no al final del rebuild por una razón de orden: el sesgo POST
+    # es el que CASTIGA, y desde el 2026-10-07 castiga sobre la ganancia
+    # (`causal - falsa_alarma`), que se mide sobre las firmas EXIGIBLES. Si la
+    # discriminación se midiera después, el castigo saldría de un conjunto que
+    # el sistema ya no consulta --- las 23.244 consolidadas en vez de las que
+    # discriminan.
+    #
+    # Y hace falta aquí dentro porque el rebuild hace `DELETE FROM TBL_FIRMAS`:
+    # las marcas de una medición anterior se van con las filas, así que cada
+    # reconstrucción tiene que volver a medir o todo vuelve a contar como
+    # exigible (NULL = exigible, para no demotar en silencio lo no mirado).
+    #
+    # Medido el 2026-10-07 sobre produccion: de 30.367 firmas con recurrencia
+    # >= 3, solo 1.023 (3,4 %) emparejan eventos mas que calma. `padre`: 0 de
+    # 21.076.
+    discriminacion = {}
+    try:
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            medir_discriminacion_firmas,
+        )
+        discriminacion = medir_discriminacion_firmas(db_path, aplicar=True)
+        logger.info("Discriminación de firmas: %s exigibles de %s (umbral %s)",
+                    discriminacion.get("exigibles"), discriminacion.get("firmas"),
+                    discriminacion.get("umbral"))
+    except Exception as e:  # noqa: BLE001 — el rebuild sigue
+        logger.warning("Discriminación de firmas no disponible: %s", e)
+
     # POST: medición disciplinaria (castiga al Padre/Omega si lo real no mejora)
     sesgo_post = {}
     mejora = {}
@@ -967,6 +996,7 @@ def entrenar(
             "sesgo_pre": sesgo_pre.get("por_bot", {}),
             "sesgo_post": sesgo_post.get("por_bot", {}),
             "mejora_causal": mejora,
+            "discriminacion": discriminacion,
             "umbral_muro": umbral_muro}
 
 
