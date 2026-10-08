@@ -480,17 +480,182 @@ def merge_or_bootstrap(
     return X, yc, ys, w, f"hybrid real={len(Xf)}+boot={len(Xb)} → {len(X)}"
 
 
+# ─── La compuerta de habilidad (2026-10-07) ───────────────────────────────────
+#
+# Hasta hoy el ÚNICO control de calidad de este archivo era:
+#
+#     pred = model.predict(X)        # las MISMAS X del entrenamiento
+#     mae  = np.mean(np.abs(pred[:,0] - y_conf))
+#
+# Error EN MUESTRA. Un bosque que memoriza saca MAE ~0 y se publica igual, y
+# `models_meta.json` no guardaba ni un número de calidad --- solo `{path, n,
+# source, reentrenado}`. Por eso el 2026-10-05 se publicaron OCHO modelos sin
+# habilidad sin que nada chistara, y costó: cinco bots alarmando el 100 % de
+# los ciclos, ganancia de Molchan 0,81x (peor que el azar) y 159 falsos
+# positivos.
+#
+# Medido el 2026-10-07 con corte TEMPORAL sobre los rasgos de cada bot, contra
+# el objetivo real (hubo evento en el horizonte aprendido): AUC 0,465-0,515 ---
+# azar --- en los seis bots con material. Lo único que separaba era
+# `sismo_count_win` (0,814), que es agrupamiento de Omori, no un precursor.
+#
+# Así que la compuerta no es una cortesía: es la diferencia entre un modelo y
+# una alarma fija. Y niega el envío en los DOS casos que importan:
+#
+#   * objetivo degenerado --- una sola clase, o casi: no se PUEDE medir
+#     habilidad, y es exactamente el estado de hoy (96-100 % de las muestras
+#     etiquetadas como alarma, porque las firmas nacen de eventos);
+#   * habilidad medida por debajo del azar útil.
+#
+# Se puede saltar con `--sin-compuerta`, que lo deja escrito en el log y en el
+# metadato. Nunca en silencio.
+AUC_MINIMA = 0.55          # por debajo de esto no hay nada que aprovechar
+
+# Y un TECHO, que es la mitad que faltaba (medido el 2026-10-07).
+#
+# La primera versión de esta compuerta aprobó a los seis bots con AUC
+# 0,989-0,999 --- o sea que habría dejado pasar exactamente los modelos que
+# costaron 159 falsos positivos. La causa, comprobada:
+#
+#     AUC de «¿esta fila es una firma o una fila del Juez?» = 1,0000
+#
+# La clase ALARMA son las firmas (96-100 % de ellas llevan etiqueta de alarma,
+# porque nacen de eventos) y la clase CALMA son las 28 filas vivas del Juez
+# (3,6 %). Las dos tablas se distinguen PERFECTAMENTE, así que cualquier bosque
+# saca 0,99 aprendiendo de qué tabla vino la fila, no física.
+#
+# Es la fuga de procedencia otra vez, pero a nivel de DISTRIBUCIÓN, no de
+# ceros. La del 2026-09-27 era «este rasgo vale 0 en toda la mitad etiquetada
+# como alarma» y se cerró declarando los rasgos; `test_fuga_de_procedencia.py`
+# la vigila rasgo por rasgo y **no puede ver esta**, porque aquí todos los
+# rasgos están declarados y llenos: lo que difiere es de dónde salen.
+#
+# Predecir un sismo con 0,99 de AUC no es un buen modelo, es una fuga. El techo
+# lo dice con ese nombre, porque el número alto es lo que engaña.
+AUC_MAXIMA_CREIBLE = 0.95
+
+FRACCION_PRUEBA = 0.30
+MIN_PARA_MEDIR = 60        # con menos, el AUC de prueba es ruido
+
+
+def medir_habilidad(
+    bot: str,
+    X: np.ndarray,
+    y_conf: np.ndarray,
+    y_sig: np.ndarray,
+    pesos: Optional[np.ndarray] = None,
+    ts: Optional[np.ndarray] = None,
+) -> dict:
+    """AUC sobre un holdout, con corte TEMPORAL si hay marcas de tiempo.
+
+    Devuelve `{'auc', 'n_train', 'n_test', 'base_test', 'corte', 'motivo'}`.
+    `auc` es None cuando no se puede medir, y entonces `motivo` dice por qué ---
+    que es la mitad útil del resultado.
+    """
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.metrics import roc_auc_score
+
+    # El objetivo binario es «¿esta ventana merecía alarma?». Es lo que el
+    # sistema hace con la salida, así que es lo que hay que medir.
+    alarma = (np.asarray(y_sig) >= WATCH).astype(int)
+    n = len(X)
+    clases = set(np.unique(alarma).tolist())
+    if len(clases) < 2:
+        return {"auc": None, "n_train": 0, "n_test": 0, "base_test": None,
+                "corte": None,
+                "motivo": (f"objetivo degenerado: las {n} muestras son de una "
+                           f"sola clase ({'alarma' if 1 in clases else 'calma'}), "
+                           "así que no hay nada que discriminar")}
+    if n < MIN_PARA_MEDIR:
+        return {"auc": None, "n_train": 0, "n_test": 0, "base_test": None,
+                "corte": None,
+                "motivo": f"solo {n} muestras; por debajo de {MIN_PARA_MEDIR} el AUC es ruido"}
+
+    if ts is not None and len(ts) == n:
+        orden = np.argsort(np.asarray(ts, dtype="U"))
+        corte_tipo = "temporal"
+    else:
+        rng = np.random.RandomState(RANDOM_SEED)
+        orden = rng.permutation(n)
+        corte_tipo = "aleatorio (sin marcas de tiempo --- puede sobrestimar)"
+    k = int(n * (1.0 - FRACCION_PRUEBA))
+    tr, te = orden[:k], orden[k:]
+    if len(set(alarma[tr].tolist())) < 2 or len(set(alarma[te].tolist())) < 2:
+        return {"auc": None, "n_train": len(tr), "n_test": len(te),
+                "base_test": float(alarma[te].mean()) if len(te) else None,
+                "corte": corte_tipo,
+                "motivo": ("el corte deja una sola clase a un lado: con este "
+                           "reparto no se puede medir")}
+
+    rf = RandomForestRegressor(
+        n_estimators=80, max_depth=10, min_samples_leaf=3,
+        random_state=RANDOM_SEED, n_jobs=-1,
+    )
+    w = None if pesos is None else np.asarray(pesos)[tr]
+    rf.fit(X[tr], y_conf[tr], sample_weight=w)
+    auc = float(roc_auc_score(alarma[te], rf.predict(X[te])))
+    return {"auc": auc, "n_train": int(len(tr)), "n_test": int(len(te)),
+            "base_test": float(alarma[te].mean()), "corte": corte_tipo,
+            "motivo": None}
+
+
 def train_export(
     bot: str,
     X: np.ndarray,
     y_conf: np.ndarray,
     y_sig: np.ndarray,
     pesos: Optional[np.ndarray] = None,
-) -> Path:
+    ts: Optional[np.ndarray] = None,
+    con_compuerta: bool = True,
+) -> Tuple[Optional[Path], dict]:
+    """Entrena y escribe el `.onnx` **solo si pasa la compuerta de habilidad**.
+
+    Devuelve `(ruta_o_None, habilidad)`. Cuando la compuerta niega, el modelo
+    anterior se queda en disco intacto: preferimos el de ayer, cuya habilidad
+    al menos es conocida, a uno nuevo del que no sabemos nada.
+    """
     from sklearn.ensemble import RandomForestRegressor
     from sklearn.multioutput import MultiOutputRegressor
     from skl2onnx import convert_sklearn
     from skl2onnx.common.data_types import FloatTensorType
+
+    habilidad = medir_habilidad(bot, X, y_conf, y_sig, pesos, ts)
+    auc = habilidad["auc"]
+    if auc is None:
+        logger.warning("  %s: NO se puede medir la habilidad --- %s",
+                       bot, habilidad["motivo"])
+    else:
+        logger.info("  %s: AUC de prueba %.3f (corte %s, n_test=%d, base %.1f %%)",
+                    bot, auc, habilidad["corte"], habilidad["n_test"],
+                    100 * habilidad["base_test"])
+    if auc is not None and auc > AUC_MAXIMA_CREIBLE:
+        habilidad["motivo"] = (
+            f"AUC {auc:.3f} es DEMASIADO BUENO para este problema: predecir un "
+            "sismo así no pasa. Casi seguro las dos clases vienen de fuentes "
+            "distintas y el bosque está aprendiendo la procedencia --- el "
+            "2026-10-07 la clase alarma eran las firmas y la calma las filas "
+            "vivas del Juez, y adivinar la tabla daba AUC 1,0000. Las muestras "
+            "positivas y negativas tienen que salir de la MISMA extracción.")
+    aprueba = (auc is not None
+               and AUC_MINIMA <= auc <= AUC_MAXIMA_CREIBLE)
+    habilidad["aprueba"] = bool(aprueba)
+    habilidad["auc_minima"] = AUC_MINIMA
+    habilidad["auc_maxima_creible"] = AUC_MAXIMA_CREIBLE
+    if not aprueba:
+        if con_compuerta:
+            logger.error(
+                "  %s: NO se escribe el modelo. %s. El `.onnx` anterior se "
+                "queda: preferimos el de ayer, cuya habilidad al menos es "
+                "conocida, a uno nuevo del que no sabemos nada. Para forzarlo, "
+                "`--sin-compuerta`.",
+                bot,
+                habilidad["motivo"] or f"AUC {auc:.3f} < {AUC_MINIMA}")
+            habilidad["escrito"] = False
+            return None, habilidad
+        logger.warning("  %s: la compuerta lo habría negado y se fuerza "
+                       "(--sin-compuerta): %s", bot,
+                       habilidad["motivo"] or f"AUC {auc:.3f} < {AUC_MINIMA}")
+        habilidad["forzado"] = True
 
     y = np.column_stack([y_conf, y_sig])
     model = MultiOutputRegressor(
@@ -512,7 +677,11 @@ def train_export(
     if pesos is not None:
         peso_info = (f"  pesos: min={pesos.min():.0f} max={pesos.max():.0f} "
                      f"suma={pesos.sum():.0f}")
-    logger.info(f"  {bot}: train MAE conf={mae:.4f}  n={len(X)}{peso_info}")
+    # EN MUESTRA, y se dice: durante meses este número fue el único control de
+    # calidad y no mide generalización. Lo que decide es `medir_habilidad`.
+    logger.info(f"  {bot}: MAE EN MUESTRA conf={mae:.4f} (no mide "
+                f"generalización)  n={len(X)}{peso_info}")
+    habilidad["mae_en_muestra"] = mae
 
     onnx_model = convert_sklearn(
         model,
@@ -533,10 +702,13 @@ def train_export(
     with open(out, "wb") as f:
         f.write(onnx_model.SerializeToString())
     logger.info(f"  wrote {out.name} ({out.stat().st_size} bytes)")
-    return out
+    habilidad["escrito"] = True
+    return out, habilidad
 
 
-def retrain(db_path: str, min_samples: int = MIN_SAMPLES, bots: Optional[List[str]] = None) -> dict:
+def retrain(db_path: str, min_samples: int = MIN_SAMPLES,
+            bots: Optional[List[str]] = None,
+            con_compuerta: bool = True) -> dict:
     bots = bots or list(BOT_DIMS.keys())
     firmas = load_firmas_from_db(db_path)
     juez = load_juez_feedback(db_path)
@@ -552,12 +724,29 @@ def retrain(db_path: str, min_samples: int = MIN_SAMPLES, bots: Optional[List[st
                             "reentrenado": False}
             continue
         logger.info(f"=== {bot}: {source} ===")
-        path = train_export(bot, X, yc, ys, w)
-        results[bot] = {"path": str(path), "n": int(len(X)), "source": source,
-                        "reentrenado": True}
+        path, habilidad = train_export(bot, X, yc, ys, w,
+                                       con_compuerta=con_compuerta)
+        results[bot] = {
+            "path": str(path) if path else None,
+            "n": int(len(X)),
+            "source": source,
+            "reentrenado": path is not None,
+            # La habilidad va al metadato SIEMPRE, también cuando la compuerta
+            # niega: así «no se escribió» viene con el motivo al lado y no hay
+            # que adivinarlo después (regla dura 10).
+            "habilidad": habilidad,
+        }
+    aprobados = [b for b, r in results.items()
+                 if (r.get("habilidad") or {}).get("aprueba")]
+    negados = [b for b, r in results.items()
+               if r.get("n") and not (r.get("habilidad") or {}).get("aprueba")]
+    logger.info("Compuerta de habilidad: aprueban %s · niega %s",
+                aprobados or "ninguno", negados or "ninguno")
     meta = {
         "retrained_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
         "db_path": str(db_path),
+        "compuerta": {"auc_minima": AUC_MINIMA, "activa": bool(con_compuerta),
+                      "aprueban": aprobados, "niega": negados},
         "bots": results,
     }
     (MODELS_DIR / "models_meta.json").write_text(json.dumps(meta, indent=2))
@@ -569,8 +758,14 @@ def main():
     ap.add_argument("--db-path", required=True)
     ap.add_argument("--min-samples", type=int, default=MIN_SAMPLES)
     ap.add_argument("--bots", nargs="*", default=None)
+    ap.add_argument(
+        "--sin-compuerta", action="store_true",
+        help=("escribe el .onnx aunque no se pueda medir su habilidad o esté "
+              f"por debajo de AUC {AUC_MINIMA}. Queda en el log y en "
+              "models_meta.json; no es un atajo, es una decisión que se firma"))
     args = ap.parse_args()
-    res = retrain(args.db_path, min_samples=args.min_samples, bots=args.bots)
+    res = retrain(args.db_path, min_samples=args.min_samples, bots=args.bots,
+                  con_compuerta=not args.sin_compuerta)
     print(json.dumps(res, indent=2))
 
 

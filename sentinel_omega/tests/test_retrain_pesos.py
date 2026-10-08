@@ -137,7 +137,15 @@ def test_con_pesos_el_modelo_se_moja_mas(tmp_path, monkeypatch):
     import onnxruntime as ort
 
     def _senal(pesos):
-        ruta = tr.train_export("alfa1", X, yc, ys, pesos)
+        # `train_export` devuelve (ruta, habilidad) desde el 2026-10-07, cuando
+        # entró la compuerta de habilidad. Este conjunto es separable a
+        # propósito (X[:,0] distingue calma de evento sin solape), así que da
+        # AUC 1,0 y el TECHO de la compuerta lo niega --- con razón: un 1,0 en
+        # este problema sería una fuga. Aquí se mide si los pesos cambian la
+        # salida, no la habilidad, así que se fuerza el envío.
+        ruta, hab = tr.train_export("alfa1", X, yc, ys, pesos,
+                                    con_compuerta=False)
+        assert ruta is not None, f"no se escribió el modelo: {hab}"
         sesion = ort.InferenceSession(str(ruta), providers=["CPUExecutionProvider"])
         salida = sesion.run(None, {"input": sonda})[0]
         return float(np.ravel(salida)[1])
@@ -153,8 +161,13 @@ def test_el_entrenamiento_no_escribe_en_los_modelos_reales(tmp_path, monkeypatch
     # Guarda explícito: un test que exporte a MODELS_DIR pisaría producción.
     monkeypatch.setattr(tr, "MODELS_DIR", tmp_path)
     X, yc, ys, w = _conjunto_desbalanceado(n_calma=30, n_evento=5)
-    ruta = tr.train_export("alfa1", X, yc, ys, w)
+    # 35 muestras quedan por debajo de `MIN_PARA_MEDIR`, así que la compuerta
+    # no puede medir y negaría el envío. Aquí lo que se vigila es la RUTA, no
+    # la habilidad, así que se fuerza --- y de paso queda ejercitada la salida
+    # de emergencia.
+    ruta, hab = tr.train_export("alfa1", X, yc, ys, w, con_compuerta=False)
     assert tmp_path in ruta.parents
+    assert hab.get("forzado") is True
 
 
 # ─── Faltante es faltante: nada de rasgos fabricados ─────────────────────────
