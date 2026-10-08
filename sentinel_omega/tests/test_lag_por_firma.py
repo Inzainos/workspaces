@@ -209,3 +209,25 @@ def test_una_firma_MEDIDA_SIN_anticipacion_no_hereda_la_ventana_de_su_clase():
     assert i_marca < i_clase, (
         "la comprobación tiene que ir ANTES de consultar el promedio de clase")
     assert "SIN anticipación" in b
+
+
+def test_un_nulo_SIN_MEDIR_no_se_cuenta_como_especifico():
+    """`lag_calma_n` tiene tres valores, no dos.
+
+    `>0` el patrón también vive en calma · `=0` es específico · `NULL` es que
+    el nulo no se midió para esa firma. Pasa de verdad: una firma con lag de
+    una corrida vieja que se promueve a exigible antes del siguiente
+    entrenamiento llega con `NULL`.
+
+    Lo escribí primero como `(lag_firma[3] or 0) > 0`, que mete ese `NULL` en
+    el saco de «específico» --- el default benigno de la regla 7 justo en la
+    línea que le dice al operador cuánto tiempo tiene.
+    """
+    b = _bloque_matches()
+    assert "_calma_n is None" in b, (
+        "el nulo sin medir vuelve a confundirse con «específico»")
+    assert "SIN comparar contra calma" in b
+    # y el orden importa: la rama del NULL va ANTES de la comparación numérica
+    i_null = b.index("_calma_n is None")
+    i_num = b.index("(_calma_n or 0) > 0")
+    assert i_null < i_num

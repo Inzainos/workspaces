@@ -1115,7 +1115,27 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                     # igual o mayor. Para esas, imprimir «~272 h antes» es
                     # vender como anticipación lo que es la duración del
                     # patrón. Se dicen las dos cifras y que el operador juzgue.
-                    if lag_firma and (lag_firma[3] or 0) > 0:
+                    # `lag_calma_n` tiene TRES valores y hay que tratarlos como
+                    # tres: >0 el patrón también vive en calma, =0 es
+                    # específico, y NULL es que el nulo NO SE MIDIÓ para esta
+                    # firma --- pasa con una que ya tenía lag de una corrida
+                    # vieja y se promueve a exigible antes del siguiente
+                    # entrenamiento. Escribir `(x or 0) > 0` metía ese NULL en
+                    # el saco de «específico»: el default benigno de la regla 7
+                    # justo donde más caro sale.
+                    _calma_n = lag_firma[3] if lag_firma else None
+                    if lag_firma and _calma_n is None:
+                        m["ventana_tipica_h"] = round(lag_firma[0], 1)
+                        m["ventana_tipica_dias"] = round(lag_firma[0] / 24, 1)
+                        m["lag_n"] = lag_firma[1]
+                        m["lag_especifico"] = None
+                        ventana = (
+                            f" — el patrón se reconoce ~{lag_firma[0]:.0f} h "
+                            f"antes del evento, pero SIN comparar contra calma: "
+                            f"no se sabe si eso es anticipación o solo cuánto "
+                            f"dura el patrón (falta medirle el nulo)"
+                        )
+                    elif lag_firma and (_calma_n or 0) > 0:
                         m["ventana_tipica_h"] = round(lag_firma[0], 1)
                         m["ventana_tipica_dias"] = round(lag_firma[0] / 24, 1)
                         m["lag_n"] = lag_firma[1]
