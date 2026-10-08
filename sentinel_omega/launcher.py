@@ -1114,11 +1114,36 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                             f"({lag_firma[0]/24:.1f} d, n={lag_firma[1]})"
                         )
                     else:
-                        lag = conn.execute(
-                            "SELECT lag_promedio_h, lag_max_h FROM "
-                            "tbl_lag_anticipacion WHERE event_class = ?",
-                            (m["event_class"],),
-                        ).fetchone()
+                        # ¿Se MIDIÓ esta firma y salió sin anticipación? Desde
+                        # el 2026-10-08 eso se puede saber (`lag_medido_at`), y
+                        # entonces caer al promedio de la clase sería afirmar
+                        # una ventana que nuestra propia medición niega: el
+                        # patrón no se ve antes de SU evento. Se dice.
+                        medida_sin_lag = False
+                        try:
+                            medida_sin_lag = bool(conn.execute(
+                                "SELECT 1 FROM TBL_FIRMAS WHERE firma_id = ? "
+                                "AND lag_medido_at IS NOT NULL "
+                                "AND lag_promedio_h IS NULL",
+                                (m["firma_id"],)).fetchone())
+                        except Exception:
+                            pass          # sin la columna, el camino de antes
+                        if medida_sin_lag:
+                            m["lag_n"] = 0
+                            ventana = (
+                                " — medida y SIN anticipación: este patrón no "
+                                "se reconoce antes de su evento, así que no "
+                                "da tiempo de aviso"
+                            )
+                            m["ventana_tipica_h"] = None
+                            m["ventana_tipica_dias"] = None
+                            lag = None
+                        else:
+                            lag = conn.execute(
+                                "SELECT lag_promedio_h, lag_max_h FROM "
+                                "tbl_lag_anticipacion WHERE event_class = ?",
+                                (m["event_class"],),
+                            ).fetchone()
                         if lag:
                             # Promedio de la CLASE: la firma no tiene el suyo.
                             m["ventana_tipica_h"] = round(lag[0], 1)

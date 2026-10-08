@@ -135,12 +135,23 @@ def test_el_tope_de_muestra_es_por_bot_y_clase():
 # ─── El lag tiene que LLEGAR al aviso, y en horas ───────────────────────────
 
 def _bloque_matches() -> str:
-    """El trozo del launcher que anota la ventana típica en cada match."""
+    """El trozo del launcher que anota la ventana típica en cada match.
+
+    Antes esto cortaba una ventana FIJA de caracteres (`i-600 : i+2000`) y era
+    una trampa: el 2026-10-08 se añadió al mismo bloque la rama de «medida y
+    sin anticipación» (~1.100 caracteres) y la consulta del promedio de clase
+    salió del recorte. El test se puso rojo sin que el comportamiento hubiera
+    cambiado --- la firma seguía ganándole a la clase.
+
+    Ahora se ancla a la FUNCIÓN que contiene el bloque, así que crece con ella.
+    """
     import inspect
     from sentinel_omega import launcher
-    fuente = inspect.getsource(launcher)
-    i = fuente.index('"SELECT lag_promedio_h, lag_n FROM TBL_FIRMAS "')
-    return fuente[i - 600: i + 2000]
+    fuente = inspect.getsource(launcher._auditar_ciclo)
+    assert '"SELECT lag_promedio_h, lag_n FROM TBL_FIRMAS "' in fuente, (
+        "el bloque de la ventana típica ya no vive en `_auditar_ciclo`: "
+        "actualiza este ancla")
+    return fuente
 
 
 def test_el_lag_de_la_firma_gana_al_promedio_de_su_clase():
@@ -169,3 +180,26 @@ def test_el_texto_del_aviso_dice_horas_antes_que_dias():
     b = _bloque_matches()
     texto = b[b.index("ESTA firma"): b.index("ESTA firma") + 220]
     assert " h " in texto or " h\\n" in texto or "h antes" in texto, texto
+
+
+def test_una_firma_MEDIDA_SIN_anticipacion_no_hereda_la_ventana_de_su_clase():
+    """El tercer caso, que existe desde el 2026-10-08.
+
+    Con `lag_medido_at` se puede saber que una firma SÍ se midió y que su
+    patrón no se reconoce antes de su propio evento. Caer entonces al promedio
+    de la clase sería imprimir «ventana típica ~211 h» sobre una firma de la
+    que acabamos de medir que no da tiempo de aviso: una afirmación que
+    contradice nuestra propia medición.
+
+    Son 4 de las 982 exigibles en producción. Pocas, y aun así es el patrón que
+    este proyecto persigue: un respaldo genérico tapando una medición concreta.
+    """
+    b = _bloque_matches()
+    assert "lag_medido_at IS NOT NULL" in b, (
+        "el aviso no distingue «medida sin anticipación» de «sin medir», así "
+        "que vuelve a caer al promedio de la clase")
+    i_marca = b.index("lag_medido_at IS NOT NULL")
+    i_clase = b.index("tbl_lag_anticipacion")
+    assert i_marca < i_clase, (
+        "la comprobación tiene que ir ANTES de consultar el promedio de clase")
+    assert "SIN anticipación" in b
