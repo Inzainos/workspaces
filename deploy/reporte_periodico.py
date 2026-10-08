@@ -25,6 +25,7 @@ from deploy.aciertos_reporte import obtener_estadisticas_aciertos
 from sentinel_omega.core.precursor.baseline import (
     BLANCO_REPORTE_MAGNITUD,
     BLANCO_REPORTE_VENTANA_H,
+    evaluar_veredictos,
 )
 
 DB_DEFAULT = str(RAIZ / "sentinel_omega" / "data" / "SENTINEL_OMEGA_PRO.db")
@@ -70,12 +71,42 @@ def _dias_resumen(conn, n_dias: int):
 
 
 def _viva_en_rango(conn, desde_ts: float, hasta_ts: float):
-    t = dict(conn.execute(
-        "SELECT resultado, COUNT(*) FROM viva_real "
-        "WHERE resultado != 'PENDIENTE' AND timestamp >= ? AND timestamp < ? "
-        "GROUP BY resultado", (desde_ts, hasta_ts)).fetchall())
-    tot = sum(t.values())
-    return (t.get("ACIERTO", 0) / tot if tot else None), tot
+    """Asertividad viva del rango, Y SU GANANCIA. Nunca una sin la otra.
+
+    Dos cosas que faltaban (2026-10-08):
+
+    1. **El filtro `en_vivo`.** `CLAUDE.md` lo dice como trampa de dato: la
+       vista `viva_real` es solo `fase='viva'`, no filtra `en_vivo`, y arrastra
+       los 603 veredictos duplicados del 27-sep. Hoy no cambia el numero ---
+       medido: 324 filas, todas con `en_vivo=1` --- pero es el seguro para
+       cuando vuelvan, y la regla pide el filtro en TODA metrica de
+       asertividad.
+    2. **La ganancia.** `CLAUDE.md`: «La asertividad nunca se muestra sola:
+       cuenta como acierto cada silencio en calma y excluye los falsos
+       positivos del denominador. Va siempre junto a `ganancia_real`
+       (Molchan)». Este reporte la ponia SOLA en la «Lectura rapida», que es
+       la primera linea que alguien lee.
+    """
+    filas = conn.execute(
+        "SELECT verdad, resultado FROM viva_real "
+        "WHERE resultado != 'PENDIENTE' AND COALESCE(en_vivo, 1) = 1 "
+        "AND timestamp >= ? AND timestamp < ?", (desde_ts, hasta_ts)).fetchall()
+    tot = len(filas)
+    if not tot:
+        return None, 0, None
+    aciertos = sum(1 for _, r in filas if r == "ACIERTO")
+    ganancia = muda = None
+    con_evento = None
+    try:
+        m = evaluar_veredictos([(v or "", r or "") for v, r in filas])
+        if m is not None:
+            ganancia = m.ganancia
+            muda = m.asertividad_muda
+            con_evento = m.con_evento
+    except Exception:  # noqa: BLE001 — el reporte sale igual, sin ganancia
+        pass
+    return aciertos / tot, tot, {"ganancia": ganancia, "muda": muda,
+                                 "con_evento": con_evento}
 
 
 def _grafica_serie(dias, campo, titulo, ylabel, nombre, resalta_max=False):
@@ -169,15 +200,51 @@ GLOSARIO = f"""## ℹ️ Cómo leer este reporte
 """
 
 
-def _lectura_rapida(fant_media, breaches, viva) -> str:
-    """Una línea en lenguaje llano que resume el estado del periodo."""
+def _gan_txt(m) -> str:
+    """La ganancia, o el comparador que la sustituye cuando no hay eventos."""
+    if not isinstance(m, dict):
+        return "—" if m is None else f"{m:.2f}×"
+    g, muda, con_ev = m.get("ganancia"), m.get("muda"), m.get("con_evento")
+    if g is not None:
+        return f"{g:.2f}×"
+    if con_ev == 0:
+        return ("sin eventos" if muda is None
+                else f"sin eventos (callarse: {muda:.0%})")
+    return "—"
+
+
+def _lectura_rapida(fant_media, breaches, viva, ganancia=None) -> str:
+    """Una línea en lenguaje llano que resume el estado del periodo.
+
+    La asertividad va SIEMPRE con su ganancia. Sola es engañosa: cuenta como
+    acierto cada silencio en calma, que es casi todo el tiempo. Una ganancia
+    <= 1x significa que alarmar a ciegas lo habría hecho igual de bien.
+    """
     tranquilo = (fant_media or 0) < 15 and not breaches
     partes = [f"el sistema estuvo **{'en calma' if tranquilo else 'inquieto'}**"]
     if fant_media is not None:
         partes.append(f"Fantasma medio **{fant_media:.1f}** ({_nivel_fantasma(fant_media)})")
     partes.append("Muro **sin roturas**" if not breaches else f"Muro con **{breaches} breach(es)**")
+    m = ganancia if isinstance(ganancia, dict) else {"ganancia": ganancia}
+    g, muda, con_ev = m.get("ganancia"), m.get("muda"), m.get("con_evento")
     if viva is not None:
-        partes.append(f"asertividad viva **{viva:.0%}**")
+        if g is not None:
+            juicio = "no supera al azar" if g <= 1.0 else "aporta"
+            partes.append(f"asertividad viva **{viva:.0%}** con ganancia "
+                          f"**{g:.2f}×** ({juicio})")
+        elif con_ev == 0:
+            # La ganancia es indefinida con todo derecho: sin un solo evento en
+            # la ventana no hay nada que detectar, asi que «mejor que el azar»
+            # no significa nada. Pero el comparador honesto SI existe, y es
+            # devastador: `asertividad_muda` es lo que habria sacado un bot que
+            # se calla. Medido el 2026-10-08: el sistema 56 %, callarse 100 %.
+            extra = "" if muda is None else f"; **callarse habría dado {muda:.0%}**"
+            partes.append(f"asertividad viva **{viva:.0%}** — pero **no hubo "
+                          f"ningún evento que detectar** en el periodo, así que "
+                          f"la ganancia es indefinida{extra}")
+        else:
+            partes.append(f"asertividad viva **{viva:.0%}** (sin ganancia "
+                          "medida: no se puede leer sola)")
     return "> **Lectura rápida:** " + " · ".join(partes) + "."
 
 
@@ -332,8 +399,8 @@ def comparativo(conn) -> tuple:
 
     ts_hoy0 = datetime(ahora.year, ahora.month, ahora.day,
                        tzinfo=timezone.utc).timestamp() - MX_UTC_OFFSET * 3600
-    viva_hoy, n_hoy = _viva_en_rango(conn, ts_hoy0, ts_hoy0 + 86400)
-    viva_ayer, n_ayer = _viva_en_rango(conn, ts_hoy0 - 86400, ts_hoy0)
+    viva_hoy, n_hoy, gan_hoy = _viva_en_rango(conn, ts_hoy0, ts_hoy0 + 86400)
+    viva_ayer, n_ayer, gan_ayer = _viva_en_rango(conn, ts_hoy0 - 86400, ts_hoy0)
 
     cim = conn.execute(
         "SELECT COUNT(*), SUM(primera_vez >= datetime('now','-1 day')) "
@@ -363,10 +430,17 @@ def comparativo(conn) -> tuple:
         f"{f'{viva_hoy:.0%} (n={n_hoy})' if viva_hoy is not None else '—'} | "
         f"{f'{viva_ayer:.0%} (n={n_ayer})' if viva_ayer is not None else '—'} | "
         f"{_delta_txt(viva_hoy, viva_ayer, '{:+.0%}') if None not in (viva_hoy, viva_ayer) else '—'} |",
+        # La ganancia va PEGADA a la asertividad, nunca en otra parte del
+        # reporte: leer el 97 % sin el 1,04x es lo que sostuvo la idea de que
+        # el sistema acertaba.
+        f"| …y su ganancia (Molchan) | {_gan_txt(gan_hoy)} | "
+        f"{_gan_txt(gan_ayer)} | "
+        f"{_delta_txt(gan_hoy.get('ganancia'), gan_ayer.get('ganancia'), '{:+.2f}') if None not in (gan_hoy.get('ganancia'), gan_ayer.get('ganancia')) else '—'} |",
         f"| Patrones cimáticos (total / nuevos 24h) | "
         f"{cim[0]} | — | +{cim[1] or 0} |",
         "",
-        _lectura_rapida(_v(hoy, "fantasma_media"), _v(hoy, "breaches"), viva_hoy), "",
+        _lectura_rapida(_v(hoy, "fantasma_media"), _v(hoy, "breaches"), viva_hoy,
+                        gan_hoy), "",
     ]
 
     aciertos_sec, aciertos_imgs = _seccion_aciertos(DB_DEFAULT, 1, "Aciertos — Últimas 24 horas")
@@ -392,7 +466,7 @@ def _resumen_rango(conn, n_dias, titulo, archivo, prefijo_grafica):
     ahora = _ahora_mx()
     dias = _dias_resumen(conn, n_dias)
     ahora_ts = datetime.now(timezone.utc).timestamp()
-    viva, n_viva = _viva_en_rango(conn, ahora_ts - n_dias * 86400, ahora_ts)
+    viva, n_viva, gan_viva = _viva_en_rango(conn, ahora_ts - n_dias * 86400, ahora_ts)
 
     cim = conn.execute(
         "SELECT ambito, COUNT(*), MAX(frecuencia) FROM tbl_cimatica_patrones "
@@ -411,7 +485,7 @@ def _resumen_rango(conn, n_dias, titulo, archivo, prefijo_grafica):
         f"# {titulo}",
         f"*Generado {ahora.strftime('%Y-%m-%d %H:%M')} hora MX — "
         f"ventana {n_dias} días*", "",
-        _lectura_rapida(fant_media_val, tot_breach, viva), "",
+        _lectura_rapida(fant_media_val, tot_breach, viva, gan_viva), "",
         "## Resumen",
         f"- Ciclos corridos: **{tot_ciclos}**",
         f"- Fantasma medio del periodo: "
