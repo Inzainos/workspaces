@@ -660,22 +660,34 @@ def evaluar_sesgo_aprendizaje(
         # Padre y Omega se castigan si su reconocimiento causal es bajo
         # (solo en evaluaciones disciplinarias, no en líneas base 'pre')
         #
-        # OJO --- esta fórmula está MUERTA en la práctica, y es parte del mismo
-        # defecto (medido el 2026-10-07). `castigos = round((1 - causal) * 3)`:
-        # con el causal de padre en 0,99 sale `round(0,03) = 0`, y con el de
-        # omega en 0,9975 sale 0. Los nueve bots tenían `castigos = 0`.
+        # El castigo va sobre la GANANCIA, no sobre el recall (2026-10-07, por
+        # orden del operador).
         #
-        # O sea que el castigo solo puede caer si el bot NO reconoce, nunca si
-        # alarma de más --- y como la memoria empareja el 100 % de la calma, el
-        # reconocimiento es alto por alarmismo y el castigo es inalcanzable. La
-        # disciplina está cableada contra el fallo opuesto al que hay.
+        # La fórmula anterior era `round((1 - causal) * 3)` y estaba MUERTA: con
+        # el causal de padre en 0,99 daba `round(0,03) = 0`, y con el de omega
+        # en 0,9975, 0. Los nueve bots tenían `castigos = 0` en la tabla.
         #
-        # Lo honesto sería castigar sobre la GANANCIA (`causal - falsa_alarma`),
-        # que ya se mide arriba. NO se cambia aquí: mueve los pesos de
-        # producción y eso es decisión del operador.
+        # Y no era un ajuste de constante: solo podía castigar al que NO
+        # reconoce, nunca al que alarma de más. Como la memoria empareja el
+        # 100 % de la calma, el reconocimiento es alto POR alarmismo, así que la
+        # disciplina estaba cableada contra el fallo opuesto al que hay.
+        #
+        # `ganancia = causal - falsa_alarma` sí paga el alarmismo: reconocer el
+        # 99,75 % de los eventos emparejando el 100 % de la calma es ganancia 0
+        # y se lleva el castigo entero. Con la calma sin medir se cae a la
+        # fórmula vieja, diciéndolo --- es mejor el castigo inalcanzable que uno
+        # inventado sobre un dato que no se tomó.
         if aplicar_castigo and bot in ("padre", "omega"):
             max_cast = SESGO_MAX_CASTIGOS_PADRE if bot == "padre" else SESGO_MAX_CASTIGOS_OMEGA
-            castigos = min(max_cast, round((1.0 - causal) * max_cast))
+            if ganancia is None:
+                logger.warning(
+                    "%s: sin ventanas de calma medidas, el castigo cae a la "
+                    "fórmula vieja sobre el recall --- que con causal %.3f es "
+                    "practicamente inalcanzable", bot, causal)
+                base_castigo = causal
+            else:
+                base_castigo = max(0.0, ganancia)
+            castigos = min(max_cast, round((1.0 - base_castigo) * max_cast))
             for _ in range(castigos):
                 castigar(conn, bot, es_padre=(bot == "padre"), gravedad=1.0)
         conn.execute(

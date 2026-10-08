@@ -123,6 +123,81 @@ SUBVENTANA_HORAS = 72
 SIMILARITY_MATCH = 0.85     # same firma family
 SIMILARITY_ALERT = 0.80     # operational "looks like" threshold
 
+# ─── Pesos de discriminación por rasgo (2026-10-07) ──────────────────────────
+#
+# Las tres funciones de similitud promediaban la penalización sobre TODAS las
+# dimensiones comparables, con el mismo peso. Medido ese día, eso era el techo
+# de todo el sistema:
+#
+#     similitud en EVENTO (mediana)   0,896-0,941
+#     similitud en CALMA  (mediana)   0,877-0,965
+#
+# Idénticas. En `beta1` la calma puntuaba MÁS alto (0,965) que los eventos
+# (0,927) teniendo declaradas 16 columnas sísmicas de nodo. La razón es la
+# media: los rasgos que discriminan quedan diluidos entre los que son casi
+# iguales en todo el planeta a cualquier hora (Kp, Schumann, fase lunar). Y
+# como `diff` es relativa, dos valores del mismo orden de magnitud dan
+# penalización ~0 y EMPUJAN la similitud hacia arriba. Así el umbral vigente de
+# 0,80 quedaba por debajo del percentil 5 de la calma (0,903): disparaba
+# siempre, y `recon_causal` salía 99,75 % sin aprender nada.
+#
+# Añadir columnas a una media no la hace discriminar. Lo que cambia la media es
+# PONDERAR: cada rasgo pesa lo que separa evento de calma, medido ---
+# `mantenimiento.medir_discriminacion_rasgos` lo calcula y lo guarda en
+# `tbl_discriminacion_rasgos`. Un rasgo sin poder separador deja de poder subir
+# la similitud.
+#
+# Mientras no haya pesos medidos se promedia como siempre: un peso inventado
+# sería peor que la media honesta, y un checkout limpio no tiene la tabla.
+_PESOS_DISCRIMINACION: Optional[np.ndarray] = None
+TABLA_DISCRIMINACION = "tbl_discriminacion_rasgos"
+
+
+def fijar_pesos_discriminacion(mapa: Optional[Dict[str, float]]) -> int:
+    """Fija los pesos por NOMBRE de rasgo. `None` vuelve a la media uniforme.
+
+    Devuelve cuántos rasgos quedaron con peso > 0. Alinea con `FEATURE_KEYS`,
+    que es el orden de `_vector`: un rasgo que no esté en la lista se ignora, y
+    uno de la lista que no venga en el mapa pesa 0 --- no se le inventa un peso.
+    """
+    global _PESOS_DISCRIMINACION
+    if not mapa:
+        _PESOS_DISCRIMINACION = None
+        return 0
+    w = np.array([float(mapa.get(k, 0.0) or 0.0) for k in FEATURE_KEYS],
+                 dtype=float)
+    w[~np.isfinite(w)] = 0.0
+    w[w < 0.0] = 0.0
+    if float(w.sum()) <= 1e-9:
+        logger.warning(
+            "pesos de discriminación todos en cero: se vuelve a la media "
+            "uniforme en vez de dejar la similitud indefinida")
+        _PESOS_DISCRIMINACION = None
+        return 0
+    _PESOS_DISCRIMINACION = w
+    return int((w > 0.0).sum())
+
+
+def cargar_pesos_discriminacion(conn) -> int:
+    """Carga los pesos de `tbl_discriminacion_rasgos`, si la tabla existe.
+
+    Sin tabla o sin filas no es un fallo --- es una base que todavía no los ha
+    medido --- pero se dice, porque la alternativa (promediar en silencio) es
+    justo lo que escondió el defecto durante meses.
+    """
+    try:
+        filas = conn.execute(
+            f"SELECT rasgo, poder FROM {TABLA_DISCRIMINACION}").fetchall()
+    except Exception as exc:  # noqa: BLE001 — tabla ausente en base nueva
+        logger.info("sin pesos de discriminación (%s): similitud por media "
+                    "uniforme", exc)
+        fijar_pesos_discriminacion(None)
+        return 0
+    n = fijar_pesos_discriminacion({r[0]: r[1] for r in filas})
+    logger.info("pesos de discriminación cargados: %d rasgos con poder > 0 "
+                "de %d en la tabla", n, len(filas))
+    return n
+
 # Cuántos avistamientos concretos se guardan por firma. Una firma que se
 # repite 24,719 veces son 24,719 eventos CASI IDÉNTICOS (por eso matchean la
 # misma firma) — guardarlos todos es puro bulto. Nos quedamos con una MUESTRA
@@ -573,10 +648,25 @@ def similitud_vec(va: np.ndarray, vb: np.ndarray) -> float:
     mask = ~(np.isnan(va) | np.isnan(vb))
     if mask.sum() < MIN_DIMENSIONES_COMPARABLES:
         return 0.0
-    va, vb = va[mask], vb[mask]
-    scale = np.maximum(np.abs(va) + np.abs(vb), 1e-9) / 2.0
-    diff = np.abs(va - vb) / scale
-    return float(max(0.0, 1.0 - np.mean(np.minimum(diff, 2.0)) / 2.0))
+    vam, vbm = va[mask], vb[mask]
+    scale = np.maximum(np.abs(vam) + np.abs(vbm), 1e-9) / 2.0
+    pen = np.minimum(np.abs(vam - vbm) / scale, 2.0)
+    return _desde_penalizacion(pen, mask)
+
+
+def _desde_penalizacion(pen: np.ndarray, mask: np.ndarray) -> float:
+    """La similitud a partir de la penalizacion por dimension.
+
+    Una sola fuente para las tres funciones: ponderada por discriminacion
+    cuando hay pesos medidos, media uniforme cuando no. Si las tres no calculan
+    lo mismo, entrenar y servir se separan.
+    """
+    w = _PESOS_DISCRIMINACION
+    if w is not None:
+        wm = w[mask]
+        if float(wm.sum()) > 1e-9:
+            return float(max(0.0, 1.0 - float(np.average(pen, weights=wm)) / 2.0))
+    return float(max(0.0, 1.0 - float(np.mean(pen)) / 2.0))
 
 
 def similitudes_contra(va: np.ndarray, matriz: np.ndarray) -> np.ndarray:
@@ -597,10 +687,27 @@ def similitudes_contra(va: np.ndarray, matriz: np.ndarray) -> np.ndarray:
         escala = np.maximum(np.abs(va)[None, :] + np.abs(matriz), 1e-9) / 2.0
         diff = np.abs(va[None, :] - matriz) / escala
     # Solo las dimensiones comparables entran en la media.
-    aporte = np.where(mask, np.minimum(diff, 2.0), 0.0).sum(axis=1)
+    pen = np.where(mask, np.minimum(diff, 2.0), 0.0)
     sim = np.zeros(matriz.shape[0], dtype=float)
     ok = cuenta >= MIN_DIMENSIONES_COMPARABLES
-    sim[ok] = np.maximum(0.0, 1.0 - (aporte[ok] / cuenta[ok]) / 2.0)
+    # Mismos pesos que las otras dos: si entrenar y servir no usan la MISMA
+    # cuenta, el modelo responde a una magnitud que no es la que aprendio ---
+    # el defecto que costo 792 falsas alarmas con el Kp.
+    w = _PESOS_DISCRIMINACION
+    if w is not None:
+        wm = np.where(mask, w[None, :], 0.0)
+        suma = wm.sum(axis=1)
+        pond = ok & (suma > 1e-9)
+        if pond.any():
+            sim[pond] = np.maximum(
+                0.0, 1.0 - ((pen[pond] * wm[pond]).sum(axis=1) / suma[pond]) / 2.0)
+        # Las filas sin peso comparable caen a la media uniforme, no a cero.
+        resto = ok & ~pond
+        if resto.any():
+            sim[resto] = np.maximum(
+                0.0, 1.0 - (pen[resto].sum(axis=1) / cuenta[resto]) / 2.0)
+        return sim
+    sim[ok] = np.maximum(0.0, 1.0 - (pen[ok].sum(axis=1) / cuenta[ok]) / 2.0)
     return sim
 
 
@@ -610,14 +717,7 @@ def similitud(a: Dict[str, float], b: Dict[str, float]) -> float:
     Normalized inverse mean absolute z-difference. Missing (NaN) dimensions
     are excluded — never imputed (zero-synthetic rule).
     """
-    va, vb = _vector(a), _vector(b)
-    mask = ~(np.isnan(va) | np.isnan(vb))
-    if mask.sum() < MIN_DIMENSIONES_COMPARABLES:
-        return 0.0
-    va, vb = va[mask], vb[mask]
-    scale = np.maximum(np.abs(va) + np.abs(vb), 1e-9) / 2.0
-    diff = np.abs(va - vb) / scale
-    return float(max(0.0, 1.0 - np.mean(np.minimum(diff, 2.0)) / 2.0))
+    return similitud_vec(_vector(a), _vector(b))
 
 
 class _ClaseEnMemoria:

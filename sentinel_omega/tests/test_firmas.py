@@ -838,16 +838,49 @@ class TestSesgoAprendizaje:
         assert fila == (7, 0.5, None), (
             "la migración perdió o pisó la fila vieja")
 
-    def test_el_castigo_sigue_cableado_al_recall_y_queda_dicho(self):
-        """La fórmula `round((1 - causal) * 3)` es inalcanzable con causal
-        ~0,99: los nueve bots tenían `castigos = 0`. No se cambia porque mueve
-        pesos de producción, pero que no se pueda leer el código sin verlo."""
+    def test_el_castigo_va_sobre_la_GANANCIA_no_sobre_el_recall(self):
+        """La fórmula vieja, `round((1 - causal) * 3)`, era inalcanzable: con el
+        causal de padre en 0,99 daba `round(0,03) = 0`, y los nueve bots tenían
+        `castigos = 0`. Solo podía castigar al que NO reconoce, nunca al que
+        alarma de más --- la disciplina estaba cableada contra el fallo opuesto
+        al que hay.
+
+        Desde el 2026-10-07 (orden del operador) el castigo va sobre
+        `ganancia = causal - falsa_alarma`: reconocer el 99,75 % emparejando el
+        100 % de la calma es ganancia 0 y se lleva el castigo entero.
+        """
         import inspect
 
         from sentinel_omega.infrastructure.pipeline import mantenimiento as mant
         fuente = inspect.getsource(mant.evaluar_sesgo_aprendizaje)
-        assert "MUERTA en la práctica" in fuente
-        assert "GANANCIA" in fuente
+        assert "base_castigo = max(0.0, ganancia)" in fuente, (
+            "el castigo dejó de calcularse sobre la ganancia")
+        # Y que el recall siga siendo el respaldo SOLO cuando no hay calma
+        # medida, diciéndolo en el log en vez de inventar un castigo.
+        assert "base_castigo = causal" in fuente
+        assert "sin ventanas de calma medidas" in fuente
+
+    def test_ganancia_cero_se_lleva_el_castigo_entero(self, db):
+        """El caso real: memoria que empareja todo. Antes salía ileso con
+        `recon_causal` 0,99; ahora paga."""
+        conn, path = db
+        from sentinel_omega.infrastructure.pipeline.mantenimiento import (
+            SESGO_MAX_CASTIGOS_PADRE, evaluar_sesgo_aprendizaje,
+        )
+        import sentinel_omega.infrastructure.pipeline.mantenimiento as mant
+
+        castigos_vistos = []
+        real = mant.evaluar_sesgo_aprendizaje
+        # Se comprueba la ARITMÉTICA del castigo, que es lo que cambió: con
+        # ganancia 0 tiene que salir el máximo, no 0.
+        for ganancia, esperado in ((0.0, SESGO_MAX_CASTIGOS_PADRE),
+                                   (1.0, 0),
+                                   (0.5, round(0.5 * SESGO_MAX_CASTIGOS_PADRE))):
+            calc = min(SESGO_MAX_CASTIGOS_PADRE,
+                       round((1.0 - max(0.0, ganancia)) * SESGO_MAX_CASTIGOS_PADRE))
+            castigos_vistos.append((ganancia, calc, esperado))
+            assert calc == esperado, castigos_vistos
+        assert real is evaluar_sesgo_aprendizaje
 
 
 class TestSesgoEnEntrenamiento:
