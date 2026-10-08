@@ -10,4 +10,4 @@ ExecStart=__REPO_DIR__/.venv/bin/python -m sentinel_omega.launcher --barrido
 Nice=10
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

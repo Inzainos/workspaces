@@ -1,5 +1,57 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-08 - Todo con `--user`: se retiran las últimas unidades de sistema
+
+Sin push. Branch `local/recuperacion-datos-2026-09`.
+
+Quedaban **dos** unidades de sistema vivas en `/etc/systemd/system`, y no por
+necesidad técnica: ninguna de las dos pide privilegios. Medido:
+
+| Unidad en `/etc` | Estado | Por qué estaba ahí |
+|---|---|---|
+| `sentinel-omega-dashboard.service` | `enabled`, **corriendo** (PID 541) | Streamlit en el 8510, un puerto alto. Antigüedad, nada más. |
+| `sentinel-omega-onnx-retrain.timer` | `enabled`, esperando (dom. 03:00) | `install.sh` **imprimía** la línea `sudo install … /etc/systemd/system/`. |
+
+Esa línea de `install.sh` era el único sitio donde el root se reintroducía solo
+tras cada instalación. El `onnx-retrain` cargaba además tres líneas de andamio
+que solo existían por ser unit de sistema --- `User=`, `XDG_RUNTIME_DIR` y
+`DBUS_SESSION_BUS_ADDRESS`, para que su `ExecStartPost` encontrara el bus del
+gestor de usuario. Como unit de usuario las tres sobran, y **`User=` es
+inválido** en el gestor de usuario.
+
+### La copia de usuario del dashboard estaba rancia y no podía arrancar
+
+Había ya un `sentinel-omega-dashboard.service` a nivel usuario, y dos defectos:
+
+1. `WantedBy=multi-user.target`. **Un gestor de usuario nunca alcanza los
+   objetivos de sistema**, así que el enlace caía en
+   `~/.config/systemd/user/multi-user.target.wants/` y la unidad figuraba como
+   `enabled` sin poder arrancar jamás en boot. El propio
+   `sentinel-omega-rutinas.timer` lo advierte en un comentario; esta copia era
+   la que no se había corregido. El directorio ya no existe.
+2. Apuntaba al puerto **8501**, que hoy ocupa un **contenedor Docker** ajeno a
+   Sentinel. Arrancarla habría chocado. Ahora es el 8510 del repo, que es el
+   que documenta `CLAUDE.md` y el que de verdad corre.
+
+Ojo con una discrepancia encontrada al medir: la copia de `/etc` fue **editada
+a mano a `--server.address 0.0.0.0`** y nunca reiniciada, así que el proceso
+vivo escucha en `127.0.0.1` y su propio archivo dice otra cosa. Se conserva el
+`127.0.0.1` del repo (no expone a la LAN); si el acceso remoto Safari/iPad lo
+requiere, es un cambio deliberado, no un arrastre.
+
+### Y el guardia, para que no vuelva
+
+`install.sh` ya tenía el patrón: así se migró `mantenimiento` el 30-sep. Ahora
+instala y habilita `onnx-retrain` y el Streamlit como unidades de usuario, y
+avisa de cualquier gemela que siga en `/etc` preguntando por el **archivo**
+--- no por `is-enabled`, que para estos nombres ya responde por la unidad de
+usuario. También se corrigió `WantedBy` en `barrido`, `disciplina` y
+`scheduler`, que habrían repetido el mismo enlace muerto.
+
+Las nueve unidades se suben y bajan con `systemctl --user`. Las de sistema que
+quedan en `/etc` son las dos **enmascaradas a propósito** (launcher y watchdog,
+para que no haya un segundo Sentinel como root).
+
 ## [Unreleased] - 2026-10-07 - La causa de los falsos positivos, la cadencia del digesto, y una revisión de las pruebas
 
 Sin push. Branch `local/recuperacion-datos-2026-09`, 6 commits.

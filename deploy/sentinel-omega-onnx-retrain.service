@@ -5,13 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# Unit de SISTEMA disparada por su timer, pero corre como el usuario del repo:
-# sus archivos (DB, modelos, logs) son de ese usuario, y sentinel-omega es unit
-# de USUARIO (la de sistema esta enmascarada). XDG_RUNTIME_DIR/DBUS permiten
-# `systemctl --user` desde aqui. install.sh sustituye los placeholders (usuario/uid).
-User=__RUN_USER__
-Environment=XDG_RUNTIME_DIR=/run/user/__RUN_UID__
-Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/__RUN_UID__/bus
+# Unit de USUARIO desde el 2026-10-08. Antes era de SISTEMA y necesitaba tres
+# líneas de andamio para poder hablar con el gestor de usuario: `User=` para
+# correr como el dueño de los archivos (DB, modelos, logs), y XDG_RUNTIME_DIR +
+# DBUS_SESSION_BUS_ADDRESS para que el `systemctl --user restart` del
+# ExecStartPost encontrara el bus. Como unit de usuario las tres sobran --- y
+# `User=` además es INVÁLIDO en el gestor de usuario, que rechaza la unit ---
+# porque ya corre como el usuario y ya tiene su bus.
 WorkingDirectory=__REPO_DIR__
 EnvironmentFile=-__REPO_DIR__/deploy/.env
 ExecStart=__REPO_DIR__/.venv/bin/python -m sentinel_omega.models.train_onnx_from_db --db-path sentinel_omega/data/SENTINEL_OMEGA_PRO.db --min-samples 50
@@ -21,4 +21,4 @@ IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

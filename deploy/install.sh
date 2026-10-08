@@ -64,12 +64,26 @@ USER_UNITS=(
     sentinel-omega.service
     sentinel-omega-watchdog.service
     sentinel-omega-dashboard-api.service
-    # sentinel-omega-dashboard-web.service  # fuera por ahora: la viva usa el npm de Windows
+    sentinel-omega-dashboard-web.service
+    # Streamlit (legacy, 11 pestañas): unit de USUARIO desde el 2026-10-08.
+    # Vivía en /etc/systemd/system sin más razón que la antigüedad --- escucha
+    # en el 8510, un puerto alto, así que nunca necesitó privilegios.
+    sentinel-omega-dashboard.service
 )
 # Units de SISTEMA que deben estar enmascaradas (si no, habria doble launcher)
 MASKED_SYSTEM_UNITS=(
     sentinel-omega.service
     sentinel-omega-watchdog.service
+)
+# Units de SISTEMA ya migradas a usuario: si siguen vivas en /etc, DUPLICAN el
+# trabajo (dos Streamlit peleando el 8510, dos reentrenamientos escribiendo el
+# mismo .onnx el domingo). No se enmascaran como las de arriba porque el nombre
+# lo ocupa ahora la unit de usuario: se deshabilitan y se borran.
+MIGRATED_SYSTEM_UNITS=(
+    sentinel-omega-dashboard.service
+    sentinel-omega-onnx-retrain.service
+    sentinel-omega-onnx-retrain.timer
+    sentinel-omega-mantenimiento.timer
 )
 
 # --- Guardia: las units de sistema deben seguir enmascaradas ---------------
@@ -195,30 +209,52 @@ else
         || echo "!! fallo enable sentinel-omega-mantenimiento.timer"
 fi
 
-# --- Guardia: el timer de mantenimiento de SISTEMA legado debe desaparecer --
-# Si sigue habilitado dispara una SEGUNDA corrida a medianoche. Con el --dry-run
-# del ExecStart viejo (que desde 2026-09-30 es REAL) esa segunda corrida no
-# escribiría, pero es un desperdicio y una fuente de confusión eterna.
-if systemctl is-enabled --quiet sentinel-omega-mantenimiento.timer 2>/dev/null; then
-    echo "!! AVISO: el timer de SISTEMA (legacy) sigue habilitado y duplica la"
-    echo "   medianoche. Deshabilitálolo UNA VEZ (requiere sudo, manual):"
-    echo "     sudo systemctl disable --now sentinel-omega-mantenimiento.timer"
-    echo "   Y si quieres limpiar del todo:"
-    echo "     sudo rm -rf /etc/systemd/system/sentinel-omega-mantenimiento.service*"
-fi
-
-# --- Units de SISTEMA (timers): solo se RENDERIZAN; instalarlas es manual --
-# Mantenimiento ya NO está aquí (es unit de usuario desde 2026-09-30).
-SYSTEM_UNITS=(
+# --- Reentrenamiento ONNX semanal: unit de USUARIO (migración 2026-10-08) ---
+# Antes vivía en /etc (system) y se instalaba A MANO con sudo --- este script
+# literalmente imprimía la línea `sudo install ... /etc/systemd/system/`, que
+# era el único sitio donde el root se reintroducía solo. No hacía falta: el
+# reentrenamiento escribe en los archivos del usuario (DB, modelos) y el único
+# motivo del `User=` era que la unit de sistema corriera como él. La dispara su
+# timer los domingos a las 03:00.
+RETRAIN_UNITS=(
     sentinel-omega-onnx-retrain.service
     sentinel-omega-onnx-retrain.timer
 )
-RENDER_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/sentinel-omega/system-units"
-mkdir -p "$RENDER_DIR"
-for u in "${SYSTEM_UNITS[@]}"; do
-    render_unit "deploy/$u" "$RENDER_DIR/$u"
+for u in "${RETRAIN_UNITS[@]}"; do
+    install_user_unit "$u"
 done
-echo ">> Units de sistema renderizadas (User=$RUN_USER, uid $RUN_UID) en $RENDER_DIR"
+systemctl --user daemon-reload
+if [ "$DO_START" -eq 1 ]; then
+    systemctl --user enable --now sentinel-omega-onnx-retrain.timer \
+        && echo "   enable --now sentinel-omega-onnx-retrain.timer (domingos 03:00)" \
+        || echo "!! fallo enable --now sentinel-omega-onnx-retrain.timer"
+else
+    systemctl --user enable sentinel-omega-onnx-retrain.timer \
+        && echo "   enable sentinel-omega-onnx-retrain.timer (sin arrancar)" \
+        || echo "!! fallo enable sentinel-omega-onnx-retrain.timer"
+fi
+
+# --- Guardia: las units de SISTEMA ya migradas deben desaparecer ------------
+# Cada una que siga viva en /etc duplica trabajo con su gemela de usuario. No
+# basta `is-enabled`: el nombre ahora lo ocupa la unit de usuario, así que se
+# pregunta por el ARCHIVO en /etc, que es la evidencia directa.
+legacy=()
+for u in "${MIGRATED_SYSTEM_UNITS[@]}"; do
+    if [ -e "/etc/systemd/system/$u" ] || [ -L "/etc/systemd/system/$u" ]; then
+        [ "${#legacy[@]}" -eq 0 ] && echo "!! AVISO: units de SISTEMA ya migradas a usuario siguen en /etc:"
+        legacy+=("$u")
+        # `is-enabled` SALE 1 cuando dice «disabled», así que un `|| echo ?`
+        # pega el signo detrás de una respuesta perfectamente válida.
+        st="$(systemctl is-enabled "$u" 2>/dev/null)" || true
+        echo "     /etc/systemd/system/$u   (estado sistema: ${st:-?})"
+    fi
+done
+if [ "${#legacy[@]}" -gt 0 ]; then
+    echo "   Duplican el trabajo de las de usuario. Retíralas UNA VEZ (sudo, manual):"
+    echo "     sudo systemctl disable --now ${legacy[*]}"
+    echo "     sudo rm -f ${legacy[*]/#//etc/systemd/system/}"
+    echo "     sudo systemctl daemon-reload"
+fi
 
 echo ""
 echo "═══════════════════════════════════════════════════════════"
@@ -231,13 +267,14 @@ echo "    systemctl --user status sentinel-omega sentinel-omega-watchdog"
 echo "    systemctl --user restart sentinel-omega"
 echo "    journalctl --user -u sentinel-omega -f"
 echo ""
-echo "  UNITS DE SISTEMA (timers; corren como User=$RUN_USER; instalacion manual con sudo):"
-echo "    # ya renderizadas (sin placeholders) en $RENDER_DIR"
-echo "    sudo install -m 0644 $RENDER_DIR/sentinel-omega-onnx-retrain.{service,timer} /etc/systemd/system/"
-echo "    sudo systemctl daemon-reload"
-echo "    sudo systemctl enable --now sentinel-omega-onnx-retrain.timer    # domingos 03:00"
-echo "    # NUNCA instalar deploy/sentinel-omega{,-watchdog}.service en /etc/systemd/system"
-echo "    # mantenimiento es de USUARIO desde 2026-09-30: install.sh ya lo instala y habilita"
+echo "  TODO ES DE USUARIO: no queda nada que instalar con sudo."
+echo "    # launcher, watchdog, dashboard API/web, Streamlit, mantenimiento y"
+echo "    # reentrenamiento ONNX: las nueve se suben y bajan con --user."
+echo "    systemctl --user stop  'sentinel-omega*'      # bajar todo"
+echo "    systemctl --user start 'sentinel-omega*'      # subir todo"
+echo "    # NUNCA instalar nada de deploy/*.service en /etc/systemd/system:"
+echo "    # launcher y watchdog están enmascarados ahí, y el resto se migró"
+echo "    # (mantenimiento 2026-09-30; Streamlit y onnx-retrain 2026-10-08)."
 echo ""
 echo "  VER TIMERS / LOGS:"
 echo "    systemctl --user list-timers 'sentinel-omega*'"
