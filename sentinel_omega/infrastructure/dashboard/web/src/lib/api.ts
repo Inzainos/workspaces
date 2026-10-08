@@ -130,6 +130,30 @@ export const api = {
     }>("/api/correlaciones"),
   bots: () => getJson<Record<string, unknown>>("/api/bots"),
   sesgo: () => getJson<Record<string, unknown>>("/api/sesgo"),
+  /** ONNX con su habilidad MEDIDA: `medido: false` no es lo mismo que negado. */
+  modelos: () =>
+    getJson<{
+      medido_at: string | null;
+      sin_medir: string[];
+      nota: string;
+      modelos: {
+        bot: string;
+        archivo: string;
+        existe: boolean;
+        kb: number | null;
+        mtime: string | null;
+        medido: boolean;
+        auc: number | null;
+        auc_inferior: number | null;
+        auc_nulo_por_nodo: number | null;
+        ganancia_sobre_nulo: number | null;
+        aprueba: boolean | null;
+        origen: string | null;
+        motivo: string | null;
+        n: number | null;
+        reentrenado: boolean | null;
+      }[];
+    }>("/api/modelos"),
   aprendizaje: () =>
     getJson<{
       present: boolean;

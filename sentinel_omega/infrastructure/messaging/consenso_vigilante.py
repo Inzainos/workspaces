@@ -123,50 +123,180 @@ def webapp_reply_markup() -> Optional[Dict[str, Any]]:
     }
 
 
-def get_model_status(db_path: str) -> str:
-    """Generate model status info for Telegram reports."""
+# ─── El ✅ del digesto era «el archivo existe» ────────────────────────────────
+#
+# Medido el 2026-10-08, leyendo lo que de verdad llega al teléfono: el digesto
+# horario decía «🤖 Modelos ONNX activos: ✅ ALFA1 (791KB) ✅ BETA1 …» con la
+# única comprobación de `os.path.exists`. Un `.onnx` en disco no es un modelo
+# que sirva, y el operador leía seis palomas verdes como «seis modelos
+# funcionando».
+#
+# Lo que había en disco ese día:
+#
+#     seis .onnx del 2 al 4 de octubre      la compuerta se escribió el día 7
+#     models_meta.json SIN clave «habilidad» ni «compuerta»
+#
+# O sea: ninguno de los seis ha pasado por `medir_habilidad`, y el aviso los
+# presentaba aprobados. Es el vicio de siempre --- un número (aquí, un icono)
+# que no mide lo que su nombre promete --- y en la superficie que más se lee.
+#
+# Ahora el estado sale del METADATO que escribe el reentrenamiento
+# (`models/models_meta.json`, con `habilidad.auc` / `ganancia_sobre_nulo` /
+# `aprueba` por bot), y cuando el metadato no lo trae se DICE que no está
+# medido en vez de pintar una paloma. La ruta ya no se arma con ocho ternarios
+# y un prefijo absoluto: viene del mismo diccionario `NOMBRES_ONNX` que usa el
+# entrenador.
+NOMBRES_ONNX = {
+    "alfa1": "alfa1_spaceweather_rf.onnx",
+    "alfa2": "alfa2_satellite_cnn.onnx",
+    "beta1": "beta1_schumann_fft.onnx",
+    "beta2": "beta2_atmospheric_cnn.onnx",
+    "delta": "delta_financial_lstm.onnx",
+    "omega": "omega_espacial_rf.onnx",
+    "loki": "loki_unificado_rf.onnx",
+    "jupiter": "jupiter_attention_rf.onnx",
+}
+
+MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
+
+
+def _habilidad_por_bot() -> tuple[Dict[str, Dict[str, Any]], Optional[str]]:
+    """Lee `models_meta.json`. Devuelve (por_bot, fecha_del_metadato)."""
+    meta_path = MODELS_DIR / "models_meta.json"
     try:
-        import sqlite3
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0)
-        conn.row_factory = sqlite3.Row
-        
-        # Check ONNX models
-        models = ["alfa1", "alfa2", "beta1", "beta2", "delta", "omega", "loki", "jupiter"]
-        model_status = []
-        for m in models:
-            path = f"/home/deamon/workspaces/sentinel_omega/models/{m}_spaceweather_rf.onnx" if m == "alfa1" else \
-                   f"/home/deamon/workspaces/sentinel_omega/models/{m}_satellite_cnn.onnx" if m == "alfa2" else \
-                   f"/home/deamon/workspaces/sentinel_omega/models/{m}_schumann_fft.onnx" if m == "beta1" else \
-                   f"/home/deamon/workspaces/sentinel_omega/models/{m}_atmospheric_cnn.onnx" if m == "beta2" else \
-                   f"/home/deamon/workspaces/sentinel_omega/models/{m}_financial_lstm.onnx" if m == "delta" else \
-                   f"/home/deamon/workspaces/sentinel_omega/models/{m}_espacial_rf.onnx" if m == "omega" else \
-                   f"/home/deamon/workspaces/sentinel_omega/models/{m}_unificado_rf.onnx" if m == "loki" else \
-                   f"/home/deamon/workspaces/sentinel_omega/models/{m}_attention_rf.onnx"
-            import os
-            if os.path.exists(path):
-                size = os.path.getsize(path)
-                model_status.append(f"✅ {m.upper()} ({size//1024}KB)")
+        meta = json.loads(meta_path.read_text())
+    except Exception:
+        return {}, None
+    bots = meta.get("bots")
+    if not isinstance(bots, dict):
+        return {}, None
+    return bots, meta.get("retrained_at")
+
+
+def get_model_status(db_path: str) -> str:
+    """Estado de los ONNX para el digesto: habilidad MEDIDA, no existencia."""
+    try:
+        por_bot, medido_at = _habilidad_por_bot()
+        lineas: List[str] = []
+        sin_medir = 0
+        for bot, nombre in NOMBRES_ONNX.items():
+            ruta = MODELS_DIR / nombre
+            if not ruta.exists():
+                lineas.append(f"❌ {bot.upper()} — sin modelo en disco")
+                continue
+            kb = ruta.stat().st_size // 1024
+            hab = (por_bot.get(bot) or {}).get("habilidad")
+            if not isinstance(hab, dict) or hab.get("auc") is None:
+                sin_medir += 1
+                lineas.append(
+                    f"❔ {bot.upper()} ({kb} KB) — <b>habilidad sin medir</b>")
+                continue
+            auc = float(hab["auc"])
+            gan = hab.get("ganancia_sobre_nulo")
+            gan_s = f" · ganancia {float(gan):+.3f}" if gan is not None else ""
+            if hab.get("aprueba"):
+                lineas.append(
+                    f"✅ {bot.upper()} ({kb} KB) — AUC {auc:.3f}{gan_s}")
             else:
-                model_status.append(f"❌ {m.upper()}")
-        
-        # Get lag info
+                motivo = str(hab.get("motivo") or "la compuerta lo negó")
+                lineas.append(
+                    f"⚠️ {bot.upper()} ({kb} KB) — AUC {auc:.3f}{gan_s} · "
+                    f"se usa el anterior: {motivo[:120]}")
+
+        if sin_medir:
+            fecha = f" (metadato del {medido_at[:10]})" if medido_at else ""
+            nota = (
+                f"\n<i>{sin_medir} modelo(s) en disco sin habilidad medida{fecha}: "
+                f"son anteriores a la compuerta de habilidad. Un .onnx que existe "
+                f"no es un modelo que acierte --- hasta que el reentrenamiento "
+                f"los mida, trátalos como desconocidos.</i>"
+            )
+        else:
+            nota = ""
+
         lag_info = ""
+        conn = None
         try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0)
+            conn.row_factory = sqlite3.Row
             lags = conn.execute(
                 "SELECT event_class, lag_promedio_h FROM tbl_lag_anticipacion "
                 "WHERE event_class LIKE 'SISMO_M%' ORDER BY event_class"
             ).fetchall()
             if lags:
-                lag_lines = [f"   {r['event_class']}: ~{r['lag_promedio_h']:.0f}h" for r in lags]
-                lag_info = "📉 <b>Lag de anticipación:</b>\n" + "\n".join(lag_lines)
-        except Exception:
-            pass
-        
-        conn.close()
-        
-        return "🤖 <b>Modelos ONNX activos:</b>\n" + "\n".join(model_status) + "\n" + lag_info
+                lag_lines = [
+                    f"   {r['event_class']}: ~{r['lag_promedio_h']:.0f}h"
+                    for r in lags if r["lag_promedio_h"] is not None
+                ]
+                if lag_lines:
+                    lag_info = "\n📉 <b>Lag de anticipación:</b>\n" + "\n".join(lag_lines)
+        except Exception as exc:
+            logger.warning("digesto: no se pudo leer el lag de anticipación: %s", exc)
+        finally:
+            if conn is not None:
+                conn.close()
+
+        return (
+            "🤖 <b>Modelos ONNX (habilidad medida):</b>\n"
+            + "\n".join(lineas) + nota + lag_info
+        )
     except Exception as e:
+        logger.warning("digesto: error armando el estado de modelos: %s", e)
         return f"🤖 Modelos: error leyendo estado ({e})"
+
+
+def get_vara_juez(db_path: str) -> str:
+    """La vara del Juez para el digesto: asertividad JUNTO a su ganancia.
+
+    `CLAUDE.md` lo pide como regla del tablero --- «la asertividad nunca se
+    muestra sola» --- y el digesto horario era la última superficie donde no
+    aparecía NINGUNA de las dos. El operador leía Fantasma, muro, telemetría y
+    seis palomas verdes, y nada le decía si las alarmas del sistema superan a
+    alarmar a ciegas.
+
+    Medido el 2026-10-08 sobre `viva_real` (306 filas): asertividad 0,353 con
+    **0,971 de un bot mudo** y ganancia 1,172×. Que la asertividad esté POR
+    DEBAJO del silencio es el dato: el sistema alarmó en 203 de 306 ventanas.
+    """
+    conn = None
+    try:
+        from sentinel_omega.core.precursor.baseline import evaluar_veredictos
+
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0)
+        # `COALESCE(en_vivo,1)=1`: la vista `viva_real` NO filtra `en_vivo` y
+        # arrastra los veredictos duplicados del 27-sep (trampa 3 del tablero).
+        filas = conn.execute(
+            "SELECT verdad, resultado FROM viva_real "
+            "WHERE resultado != 'PENDIENTE' AND COALESCE(en_vivo, 1) = 1"
+        ).fetchall()
+        if not filas:
+            return (
+                "⚖️ <b>Vara del Juez:</b> <code>sin veredictos cerrados</code> — "
+                "aún no hay con qué medir si las alarmas aportan."
+            )
+        m = evaluar_veredictos([(v or "", r or "") for v, r in filas])
+        if m is None or m.ganancia is None:
+            return (
+                "⚖️ <b>Vara del Juez:</b> "
+                f"{len(filas)} ventanas, <code>ganancia indefinida</code> — "
+                "sin alarmas o sin eventos en el tramo."
+            )
+        icono = "✅" if m.ganancia > 1.5 else "⚠️" if m.ganancia > 1.0 else "🔴"
+        return (
+            f"⚖️ <b>Vara del Juez:</b> ganancia <code>{m.ganancia:.2f}×</code> {icono} "
+            f"· asertividad <code>{m.asertividad * 100:.1f}%</code> contra "
+            f"<code>{m.asertividad_muda * 100:.1f}%</code> de un bot que nunca "
+            f"alarma ({m.alarmas} alarmas en {m.ventanas} ventanas, "
+            f"{m.con_evento} con evento).\n"
+            f"<i>{m.veredicto}. La ganancia es la que manda: 1× significa que "
+            f"alertar a ciegas habría rendido lo mismo.</i>"
+        )
+    except Exception as exc:
+        logger.warning("digesto: no se pudo medir la vara del Juez: %s", exc)
+        return (
+            "⚖️ <b>Vara del Juez:</b> <code>error de lectura</code> — "
+            "no se midió la ganancia en esta hora."
+        )
 
 
 def _now_utc() -> datetime:
@@ -779,6 +909,7 @@ class ConsensoVigilante:
             )
 
         model_status = get_model_status(self.db_path)
+        vara = get_vara_juez(self.db_path)
 
         html = (
             f"<b>SENTINEL OMEGA — REPORTE HORARIO</b>\n"
@@ -788,6 +919,7 @@ class ConsensoVigilante:
             f"{tel_line}\n"
             f"{prec_block}\n"
             f"{alive_txt}\n\n"
+            f"{vara}\n\n"
             f"{model_status}\n\n"
             f"{buf_note}\n"
             f"{dash}\n\n"

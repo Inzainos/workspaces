@@ -915,6 +915,81 @@ def firmas() -> Dict[str, Any]:
     return _jsonable({"present": True, "source": "TBL_FIRMAS", "total": total, "by_clase": by_clase})
 
 
+@app.get("/api/modelos")
+def modelos() -> Dict[str, Any]:
+    """Los ONNX con su HABILIDAD MEDIDA, no con un ✅ por existir el archivo.
+
+    Hasta el 2026-10-08 ninguna superficie del tablero decía si un modelo pasó
+    la compuerta (`models/train_onnx_from_db.py: medir_habilidad`). El digesto
+    de Telegram ponía una paloma verde por `os.path.exists`, y aquí no había
+    nada. Medido ese día: los ocho `.onnx` en disco son del 2 al 4 de octubre y
+    `models_meta.json` no trae la clave `habilidad` --- son anteriores a la
+    compuerta, así que su habilidad es DESCONOCIDA, no buena.
+
+    `medido: false` es por tanto un estado de primera clase: el tablero lo
+    pinta distinto de aprobado y distinto de negado (regla de diseño 3, «lo que
+    no se midió se ve distinto de lo que midió cero»).
+    """
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    from sentinel_omega.infrastructure.messaging.consenso_vigilante import (
+        MODELS_DIR,
+        NOMBRES_ONNX,
+        _habilidad_por_bot,
+    )
+
+    por_bot, medido_at = _habilidad_por_bot()
+    filas: List[Dict[str, Any]] = []
+    for bot, nombre in NOMBRES_ONNX.items():
+        ruta = MODELS_DIR / nombre
+        existe = ruta.exists()
+        hab = (por_bot.get(bot) or {}).get("habilidad")
+        hab = hab if isinstance(hab, dict) else {}
+        auc = hab.get("auc")
+        filas.append(
+            {
+                "bot": bot,
+                "archivo": nombre,
+                "existe": existe,
+                "kb": (ruta.stat().st_size // 1024) if existe else None,
+                "mtime": (
+                    _dt.fromtimestamp(ruta.stat().st_mtime, tz=_tz.utc).isoformat()
+                    if existe
+                    else None
+                ),
+                "medido": auc is not None,
+                "auc": auc,
+                "auc_inferior": hab.get("auc_inferior"),
+                "auc_nulo_por_nodo": hab.get("auc_nulo_por_nodo"),
+                "ganancia_sobre_nulo": hab.get("ganancia_sobre_nulo"),
+                "aprueba": hab.get("aprueba"),
+                "origen": hab.get("origen"),
+                "motivo": hab.get("motivo"),
+                "n": (por_bot.get(bot) or {}).get("n"),
+                "reentrenado": (por_bot.get(bot) or {}).get("reentrenado"),
+            }
+        )
+
+    sin_medir = [f["bot"] for f in filas if f["existe"] and not f["medido"]]
+    nota = (
+        "Un .onnx en disco no es un modelo que acierte. Los que salen «sin "
+        "medir» son anteriores a la compuerta de habilidad: su AUC nunca se "
+        "calculó, así que no se sabe si aportan. Hasta que el reentrenamiento "
+        "los mida, el sistema los usa con habilidad desconocida."
+        if sin_medir
+        else "Todos los modelos en disco traen su AUC medida por la compuerta."
+    )
+    return _jsonable(
+        {
+            "medido_at": medido_at,
+            "modelos": filas,
+            "sin_medir": sin_medir,
+            "nota": nota,
+        }
+    )
+
+
 @app.get("/api/lag")
 def lag() -> Dict[str, Any]:
     return _jsonable(

@@ -42,6 +42,7 @@ export function ModelosTab() {
   const firmas = usePoll(useCallback(() => api.firmas(), []), 60000);
   const ac = usePoll(useCallback(() => api.aciertos(200), []), 30000);
   const juez = usePoll(useCallback(() => api.juez(200, "viva"), []), 20000);
+  const modelos = usePoll(useCallback(() => api.modelos(), []), 60000);
 
   if (bots.error) return <BannerError mensaje={bots.error} />;
   if (bots.loading && !bots.data) return <SinDatos titulo="Leyendo pesos y veredictos…" />;
@@ -260,6 +261,87 @@ export function ModelosTab() {
             },
           ]}
         />
+      </Panel>
+
+      {/* ---------- La compuerta de habilidad de los ONNX ---------- */}
+      {/* Hasta el 2026-10-08 ninguna superficie decía si un modelo pasó la
+          compuerta: el digesto de Telegram ponía ✅ por `os.path.exists` y el
+          tablero no lo mencionaba. Tres estados DISTINTOS, y por eso tres
+          colores: aprobado, negado, y SIN MEDIR --- que no es ninguno de los
+          dos (regla de diseño 3). */}
+      <Panel
+        titulo="Compuerta de habilidad (ONNX)"
+        meta={
+          modelos.data?.medido_at
+            ? `models_meta.json · medido ${String(modelos.data.medido_at).slice(0, 10)}`
+            : "models_meta.json"
+        }
+        nota={
+          <>
+            <b className="text-body">AUC</b> es la habilidad medida fuera de muestra y{" "}
+            <b className="text-body">Ganancia</b> lo que añade sobre el modelo nulo por nodo
+            (la propia historia sísmica del nodo). Un <b className="text-body">.onnx</b> en
+            disco no es un modelo que acierte: «sin medir» significa que su AUC nunca se
+            calculó, no que esté bien. {modelos.data?.nota || ""}
+          </>
+        }
+      >
+        {modelos.error ? (
+          <BannerError mensaje={modelos.error} />
+        ) : !modelos.data?.modelos?.length ? (
+          <SinDatos titulo="Sin metadato de modelos" />
+        ) : (
+          <DataTable
+            rows={modelos.data.modelos as unknown as Record<string, unknown>[]}
+            pageSize={9}
+            columns={[
+              { key: "bot", label: "Bot" },
+              {
+                key: "estado",
+                label: "Estado",
+                render: (r) =>
+                  !r.existe ? (
+                    <span className="dato-ausente">sin modelo</span>
+                  ) : !r.medido ? (
+                    <span style={{ color: "var(--color-aviso)" }}>sin medir</span>
+                  ) : r.aprueba ? (
+                    <span style={{ color: "var(--color-calma)" }}>aprobado</span>
+                  ) : (
+                    <span style={{ color: "var(--color-critico)" }}>negado</span>
+                  ),
+              },
+              { key: "auc", label: "AUC", num: true, render: (r) => <Cifra valor={r.auc} digits={3} /> },
+              {
+                key: "ganancia_sobre_nulo",
+                label: "Ganancia",
+                num: true,
+                render: (r) => <Cifra valor={r.ganancia_sobre_nulo} digits={3} />,
+              },
+              { key: "n", label: "Muestras", num: true, render: (r) => <Cifra valor={r.n} digits={0} /> },
+              {
+                key: "kb",
+                label: "Tamaño",
+                num: true,
+                render: (r) => (r.kb == null ? <Cifra valor={null} /> : `${r.kb} KB`),
+              },
+              {
+                key: "mtime",
+                label: "Escrito",
+                render: (r) => (r.mtime ? String(r.mtime).slice(0, 10) : <Cifra valor={null} />),
+              },
+              {
+                key: "motivo",
+                label: "Motivo",
+                render: (r) =>
+                  r.motivo ? (
+                    <span className="text-muted">{String(r.motivo).slice(0, 90)}</span>
+                  ) : (
+                    <span className="text-muted">—</span>
+                  ),
+              },
+            ]}
+          />
+        )}
       </Panel>
 
       {/* ---------- Sesgo ---------- */}
