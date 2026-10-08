@@ -1178,8 +1178,10 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
     sin_eventos = 0
     no_especificas = 0     # tienen lag, pero también emparejan en calma
 
-    # `lag_n` nace en 0 por esquema (`lag_n INTEGER DEFAULT 0`, medido: 39.094
-    # filas en 0), así que escribir un 0 NO distingue «la medí y este patrón no
+    # `lag_n` nace en 0 por esquema (`lag_n INTEGER DEFAULT 0`; al hallarlo,
+    # 39.094 de 40.695 filas lo tenían sin medición ninguna --- el conteo baja
+    # a medida que se miden, pero el DEFAULT no cambia y es lo que importa),
+    # así que escribir un 0 NO distingue «la medí y este patrón no
     # se ve antes del evento» de «nunca la medí». Hace falta una marca propia:
     # migración forward-only (regla 5), igual que las columnas de
     # discriminación.

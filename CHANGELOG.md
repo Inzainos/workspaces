@@ -1,5 +1,96 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-08 - El modelo nulo, en todas las capas
+
+Sin push. Branch `local/recuperacion-datos-2026-09`, 14 commits.
+
+El día entero gira sobre una sola idea: **un número medido solo sobre eventos no
+mide nada**, porque la calma es el ~97 % del tiempo. Apareció en cuatro capas
+distintas y en las cuatro el arreglo fue el mismo —poner el modelo nulo al
+lado—, así que quedó como **regla dura 11** en `AGENTS.md`.
+
+| Capa | El número viejo | Su nulo | Resultado medido |
+|---|---|---|---|
+| Juez | asertividad 35,3 % | callarse siempre: **97,1 %** | ganancia 1,17× |
+| Firmas | 23.248 consolidadas | ventanas de calma | **982 exigibles** (4,2 %) |
+| Lag | 978 firmas «anticipan» | calma **del mismo nodo** | **315** (32 %) |
+| ONNX | AUC contra 0,5 | tasa base **por nodo** (0,899) | **0 de 7 aprueban** |
+
+### La compuerta de habilidad de los ONNX: niega a los siete
+
+Primera corrida con la compuerta activa. No se escribió un solo `.onnx` —los de
+octubre siguen en disco intactos, que es lo que promete— y el reparto dice todo:
+
+```
+alfa1  AUC 0,490   ganancia -0,409      beta1  AUC 0,800   ganancia -0,099
+beta2  AUC 0,502   ganancia -0,398      delta  AUC 0,551   ganancia -0,350
+omega  AUC 0,493   ganancia -0,406      loki   AUC 0,494   ganancia -0,405
+alfa2  38 muestras (<50)                jupiter  53 muestras (<60)
+```
+
+El caso de `beta1` es el que hay que entender: **AUC 0,800 negado** porque la
+tasa base del propio nodo da 0,899. En palabras del motivo, *«el modelo dice QUÉ
+nodo, no CUÁNDO — eso es un mapa de peligrosidad, no detección de
+precursores»*. Y confirma por otra vía el diagnóstico que lleva escrito
+`test_fantasma_alfa1_kp_cero` sobre el `.onnx` del 4-oct.
+
+### El lag: el tiempo no se perdía al calcularse, se perdía sin calcularse
+
+El operador preguntó dónde se pierde el tiempo de anticipación. La huella estaba
+en los datos y era del revés de lo que haría un muestreo: cubos pequeños
+completos y grandes vacíos.
+
+```
+beta1 SISMO_M4       417 exigibles ->  9 con lag    <- topado
+beta1 SISMO_M4_obs    20 exigibles -> 20 con lag    <- cabe entero
+```
+
+Dos defectos en el mismo bucle: el tope se contaba en **sondeos de evento** y
+cada firma gasta hasta 3, así que «150» eran **50 firmas** por (bot, clase) y el
+resto se saltaba con un `continue` **sin log**; y la rejilla **paraba en 24 h**
+cuando el emparejamiento no cae al acercarse al evento, sube (33 % a 336 h,
+58 % a 24 h, 80 % a 1 h). Cobertura: **159/982 → 978/982**.
+
+Después vino el nulo, y cambió la lectura: solo **315 de 978 (32 %)** no
+emparejan en ventanas de calma **del mismo nodo**. El nodo es la clave —con un
+nodo al azar daba 69 %, porque medía «otro nodo» y no «no antes del evento»— y
+encaja con la compuerta: la firma codifica sobre todo QUÉ nodo, no CUÁNDO.
+
+### Los avisos: el ✅ era «el archivo existe»
+
+El digesto horario cerraba con `✅ ALFA1 (791KB)` y la única comprobación era
+`os.path.exists`. Los ocho `.onnx` en disco no habían pasado nunca por la
+compuerta. Ahora enseña la habilidad **medida** en tres estados —aprobado,
+negado con su motivo, y **sin medir**— y lleva la vara del Juez, que era la
+última superficie donde no aparecía ninguna de las dos cifras.
+
+### Todo con `--user`
+
+Las dos unidades de sistema que quedaban se migraron (abajo el detalle). En
+`/etc` solo quedan launcher y watchdog **enmascarados a propósito**.
+
+### Reportes y tablero
+
+Las cuatro superficies que pintan el lag por clase se actualizaron, porque
+`tbl_lag_anticipacion` **cambió de significado** sin cambiar de nombre
+(`SISMO_M4` 8,8 d n=1.402 → 8,4 d n=448) y ninguna lo decía. Quedó como regla
+de dato 5 del tablero. Panel nuevo «Compuerta de habilidad» en MODELOS y los
+cuatro KPI del nulo en PADRE+JUEZ.
+
+### Dos lecciones de proceso
+
+**Cinco tests se pusieron rojos DOS VECES sin que el comportamiento cambiara**,
+por estar anclados a cadenas literales del código fuente —una ventana fija
+`fuente[i-600:i+2000]` y un `SELECT` que se partió en líneas al añadirle
+columnas—. Es buena parte de la sensación de «arreglo algo y se descompone otra
+cosa»: no era el código, era el instrumento. Regla dura 12.
+
+**Y un `(x or 0) > 0` que escribí yo** metía el `NULL` de «no se midió el nulo»
+en el saco de «específico», justo en la línea que le dice al operador cuánto
+tiempo tiene. La regla 7 muerde también al que la escribió.
+
+---
+
 ## [Unreleased] - 2026-10-08 - Todo con `--user`: se retiran las últimas unidades de sistema
 
 Sin push. Branch `local/recuperacion-datos-2026-09`.

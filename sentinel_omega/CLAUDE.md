@@ -101,11 +101,39 @@ familia: un default benigno haciendo pasar «no hay dato» por un número.
    contada una vez por cada bot que opinó). No es comparable con los conteos de
    `viva_real` (21.400/1.651/313). Para proporciones usar `veredictos_sistema`.
 
+5. **Un número puede cambiar de SIGNIFICADO sin cambiar de nombre.** El
+   2026-10-08 `tbl_lag_anticipacion` pasó de promediar todas las firmas con lag
+   a promediar solo las específicas (`SISMO_M4`: 8,8 d con n=1.402 → 8,4 d con
+   n=448) y las **cuatro** superficies que lo pintan siguieron igual. Al tocar
+   el significado de un agregado, busca sus consumidores: `grep` del nombre de
+   la tabla en `infrastructure/dashboard/`, `deploy/` y `pipeline/`.
+6. **El universo de un porcentaje es el que CONSUME el número.** El reparto del
+   nulo del lag salía 13 % dividiendo entre todas las filas con un valor de lag
+   y 32 % dividiendo entre las exigibles --- y el aviso solo empareja
+   exigibles (`match_estado_actual` itera `consolidadas()`). Las 1.442 firmas
+   con lag rancio fuera de ese universo van nombradas aparte, no en el
+   denominador.
+
 La **asertividad nunca se muestra sola**: cuenta como acierto cada silencio en
 calma y excluye los falsos positivos del denominador. Va siempre junto a
-`ganancia_real` (Molchan). Hoy: 97,7 % con ganancia 0,84× — el sistema acierta
-porque casi siempre está en calma, y sus alarmas aún no superan a alertar a
-ciegas. El tablero debe hacer esa contradicción imposible de ignorar.
+`ganancia_real` (Molchan). Medido el 2026-10-08 sobre `viva_real`: **ganancia
+1,17× con asertividad 35,3 % contra 97,1 % de un bot que nunca alarma** --- el
+sistema alarmó en 203 de 306 ventanas, así que su asertividad quedó POR DEBAJO
+del silencio. Enseñar una sin la otra miente en los dos sentidos. El tablero
+debe hacer esa contradicción imposible de ignorar.
+
+### Superficies nuevas del tablero (2026-10-08)
+
+- **`/api/modelos` + panel «Compuerta de habilidad» en MODELOS.** Los ocho ONNX
+  con su AUC y su ganancia sobre el modelo nulo POR NODO. Tres estados, y
+  `medido: false` se pinta distinto de aprobado y de negado (regla de diseño 3).
+  Estado real tras el primer reentrenamiento con compuerta: **aprueban ninguno,
+  niega los siete**; el caso de `beta1` es el que hay que entender --- AUC
+  0,800 negado porque la tasa base del nodo sola da 0,899, así que el modelo
+  dice QUÉ nodo y no CUÁNDO.
+- **El nulo del lag en PADRE+JUEZ y PREDICCIONES.** Cuatro KPI (anticipan /
+  solo persisten / sin nulo medido / medidas sin lag) puestos ANTES de la tabla
+  de horas, porque deciden si esas horas significan algo.
 
 - Troubleshooting: `ERR_CONNECTION_REFUSED` en 5173 = host 127.0.0.1 en WSL; fix
   host 0.0.0.0. DB desconectada falso = health sin wrapper `db.connected`; fix
@@ -293,8 +321,29 @@ sentinel_omega/
     reprueba sus eventos con la ventana desplazada atrás y se queda con el
     desplazamiento más temprano en que aún emparejaba. Escribe
     `TBL_FIRMAS.lag_promedio_h`/`lag_n` (por firma) y `tbl_lag_anticipacion`
-    (por clase). Los nueve bots y resolución de 1 h desde el 2026-09-27; corre
-    en ~21 s, así que se puede repoblar sin rebuild completo.
+    (por clase). Los nueve bots y resolución de 1 h desde el 2026-09-27.
+    **Tres cosas que cambiaron el 2026-10-08 y hay que saber antes de tocarlo**
+    (corre en ~240 s, no en 21 s; se puede repoblar sin rebuild):
+    * **El presupuesto se cuenta en FIRMAS, no en sondeos de evento.** Se
+      contaba por evento y cada firma gasta hasta 3 (`LIMIT 3`), así que
+      `LAG_MUESTRA_POR_CLASE = 150` eran **50 firmas** por (bot, clase) y el
+      resto se saltaba con un `continue` sin log. La huella en los datos era
+      del revés de un muestreo: cubos pequeños completos (`SISMO_M4_obs` 20/20)
+      y grandes vacíos (`beta1 SISMO_M4` 417 exigibles → **9** con lag).
+      Cobertura arreglada: **159/982 → 978/982**.
+    * **La rejilla mira por debajo de 24 h.** Paraba ahí, y el emparejamiento
+      no cae al acercarse al evento, SUBE: 33 % a 336 h, 58 % a 24 h, 80 % a
+      1 h. Todo lo que anticipaba menos de un día salía como `None`.
+    * **El lag tiene su MODELO NULO** (`lag_calma_h`/`lag_calma_n`): la misma
+      firma sondeada en ventanas de calma **del mismo nodo**. Solo **315 de
+      978 (32 %)** no emparejan en calma --- ahí el lag es tiempo de aviso; las
+      663 restantes miden cuánto DURA el patrón. El promedio por clase cuenta
+      solo las específicas. El nodo es la clave: con un nodo al azar daba 69 %,
+      porque medía «otro nodo» y no «no antes del evento». `lag_calma_n` tiene
+      TRES valores (`0`, `>0`, `NULL`) y un `(x or 0) > 0` mete el `NULL` en el
+      saco de «específico» --- regla 7 en la línea que dice cuánto tiempo hay.
+      Consulta compartida: `signature_engine.resumen_nulo_lag(conn)`, usada por
+      `/api/lag` y los tres reportes para que no vuelvan a desincronizarse.
   - `infrastructure/pipeline/mantenimiento.py` — barrido diario/correlaciones/sesgo/poda.
 - Reporting:
   - `infrastructure/pipeline/reporte_sentinel.py` — reportes general/padre/omega.

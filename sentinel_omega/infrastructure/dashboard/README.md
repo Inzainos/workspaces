@@ -150,3 +150,34 @@ que no tener semáforo.
 - **Radix Tabs ignora `.click()` sintético** (escucha pointer events). Para
   automatizar la navegación hay que despachar `Input.dispatchMouseEvent` por
   CDP, o parecerá que todas las pestañas muestran lo mismo.
+- **Un número puede cambiar de SIGNIFICADO sin cambiar de nombre**, y entonces
+  la pantalla miente sin que nadie toque el front. El 2026-10-08
+  `tbl_lag_anticipacion` pasó de promediar todas las firmas con lag a promediar
+  solo las específicas (`SISMO_M4`: 8,8 d con n=1.402 → **8,4 d con n=448**) y
+  las cuatro superficies que lo pintan siguieron igual. Al tocar el significado
+  de un agregado, `grep` del nombre de la tabla en `dashboard/`, `deploy/` y
+  `pipeline/` para encontrar a sus consumidores.
+- **El universo de un porcentaje es el que CONSUME el número.** El reparto del
+  nulo del lag daba **13 %** dividiendo entre todas las filas con un valor de
+  lag y **32 %** dividiendo entre las exigibles --- y el aviso solo empareja
+  exigibles. Las 1.442 firmas con lag rancio fuera de ese universo van
+  nombradas aparte, nunca en el denominador. La consulta vive una sola vez, en
+  `signature_engine.resumen_nulo_lag(conn)`.
+- **`consolidada` no es `exigible`.** `estado` es promoción por recurrencia;
+  `exigible` es el hecho medido de discriminar eventos frente a calma (982 de
+  23.248). Una cifra de «conocimiento del sistema» que use `estado` cuenta
+  22.266 patrones que no distinguen nada.
+
+## Superficies del nulo (2026-10-08)
+
+Dos paneles nuevos, y los dos comparten la misma regla de composición: **el
+comparador va ANTES del número que califica**, porque decide si ese número
+significa algo.
+
+| Panel | Pestaña | Qué enseña |
+|---|---|---|
+| Compuerta de habilidad | Modelos | los 8 ONNX con su AUC y su ganancia sobre el nulo **por nodo**; tres estados, y `medido: false` distinto de aprobado y de negado (regla 3) |
+| Nulo del lag | Padre+Juez | 4 KPI (anticipan / solo persisten / sin nulo medido / medidas sin lag) **arriba** de la tabla de horas |
+
+El reparto también va en la nota del panel de anticipación de **Predicciones**,
+que es donde alguien lee «avisa con 8 días» y se lo cree.

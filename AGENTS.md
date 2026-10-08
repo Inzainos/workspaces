@@ -48,6 +48,28 @@ herramientas; `sentinel_omega/CLAUDE.md` tiene detalle adicional y
     saltaba el entrenamiento con un `continue` sin log y consumió dos rebuilds
     completos de ~16 h sin registrar una sola firma. Todo `continue` que
     descarte trabajo lleva un log que lo diga.
+11. **Un número medido SOLO sobre eventos no mide nada.** Es el vicio central
+    del proyecto y reaparece en cada capa: la calma es el ~97 % del tiempo, así
+    que cualquier métrica que solo mire eventos se queda en el 95-100 % y no
+    ordena nada. Todo número que juzgue al sistema necesita su **modelo nulo**
+    al lado, y el nulo tiene que ser el bueno:
+    * asertividad → contra **callarse siempre** (97,7 % contra 97,1 %: el
+      sistema acierta porque casi siempre hay calma);
+    * firma consolidada → contra **ventanas de calma** (`exigible`: 982 de
+      23.248);
+    * lag de una firma → contra **calma DEL MISMO NODO** (315 de 978; con un
+      nodo al azar daba 69 % en vez de 32 %, porque medía «otro nodo», no
+      «no antes del evento»);
+    * AUC de un modelo → contra **la tasa base del nodo**, no contra 0,5 (el
+      nodo solo predice a 0,899 y ningún rasgo global se le acerca).
+12. **Un test anclado a una cadena literal del código fuente es una trampa.**
+    El 2026-10-08 se pusieron rojos cinco tests DOS VECES sin que el
+    comportamiento cambiara: uno cortaba una ventana fija de caracteres
+    (`fuente[i-600:i+2000]`) y los otros buscaban un `SELECT` que se partió en
+    varias líneas al añadirle columnas. Eso es buena parte de la sensación de
+    «arreglo algo y se descompone otra cosa»: no era el código, era el
+    instrumento. Ancla a la FUNCIÓN (`inspect.getsource(f)`) y a nombres de
+    columna o de símbolo, nunca a la ortografía de una cadena.
 
 
 ## Arquitectura (para ubicarte rápido)
@@ -83,8 +105,22 @@ tiempo operativo.
   `financial_sentiment` (delta). Consenso: ≥2 familias + ≥2 alertas +
   correlación Schumann > 0.3.
 - **Firmas:** memoria de patrones por bot de la ventana de 14 días previa a cada
-  evento. Estados `nueva → observada → recurrente → consolidada`; solo las
-  consolidadas son exigibles.
+  evento. Estados `nueva → observada → recurrente → consolidada`.
+  **`consolidada` NO es lo mismo que `exigible`** (separado el 2026-10-07): la
+  promoción va solo por RECURRENCIA (`ESTADO_POR_RECURRENCIA`), así que un
+  patrón que reaparece en calma se consolidaba igual que uno que precede
+  eventos. `exigible` es el hecho MEDIDO de que la firma empareja eventos más
+  que calma (`discriminacion > 0,05`). Medido: de **23.248 consolidadas solo
+  982 son exigibles (4,2 %)**. `consolidadas()` devuelve las exigibles.
+- **El lag de una firma anticipa o solo persiste**, y son cosas distintas
+  (medido el 2026-10-08). `_lag_detectado` barre hacia atrás desde el evento y
+  toma el offset más lejano donde el patrón aún se reconoce; sondeado también
+  en ventanas de CALMA del mismo nodo, **315 de 978 firmas con lag (32 %) no
+  emparejan en calma** --- ahí el lag es tiempo de aviso --- y 663 sí, con vida
+  igual o mayor: su número mide cuánto DURA el patrón. El promedio por clase
+  (`tbl_lag_anticipacion`) cuenta **solo las específicas**, y `lag_calma_n`
+  tiene tres valores (`0` específica, `>0` persiste, `NULL` sin medir) que hay
+  que tratar como tres.
 - **Entrenamiento en 3 fases:** Fase 1 reconocimiento sísmico (sin castigo) → Fase 1b reconocimiento no sísmico (erupciones VEI≥3 + tormentas solares Kp≥6) → Fase 2
   disciplina (el Padre castiga; el Juez audita con severidad asimétrica —
   omitir un evento pesa 10× más que una falsa alarma). Tras las fases calcula la
@@ -220,7 +256,22 @@ dispara la revisión del Padre y, si amerita, aviso por Telegram.
 
 ## Telegram — consenso Padre (2026-09-03)
 
-- **Digest horario SIEMPRE** (`TG_DIGEST_MINUTES=60`): concentrado Fantasma, muro, telemetría, precursores, loop. No saltar la hora.
+- **Digest horario SIEMPRE** (`TG_DIGEST_MINUTES=60`): concentrado Fantasma,
+  muro, telemetría, precursores, loop, **la vara del Juez** y **la habilidad
+  medida de los ONNX**. No saltar la hora.
+- **La cadencia se cumple ENTRE PROCESOS** (2026-10-07): la marca del último
+  envío vive en `data/estado_digesto.json`, no en memoria. El despacho real es
+  un `Type=oneshot` cada 15 min, así que con la marca en memoria nacía en `0.0`
+  en cada proceso y salían **4 digestos por hora** con el `60` declarado.
+  Verificado el 2026-10-08 sobreviviendo a un apagado COMPLETO del sistema.
+- **Lo que el digesto dice de los modelos es su habilidad MEDIDA**, no que el
+  archivo exista (2026-10-08). Antes ponía `✅ ALFA1 (791KB)` por
+  `os.path.exists` y los ocho `.onnx` en disco no habían pasado nunca por la
+  compuerta. Tres estados: aprobado con su AUC, negado con el motivo, y **sin
+  medir** --- que no es ninguno de los dos. Sale de `models/models_meta.json`.
+- **La vara del Juez va en el digesto** (`get_vara_juez`): asertividad JUNTO a
+  su ganancia, nunca una sola. Medido: ganancia 1,17× con asertividad 35,3 %
+  contra **97,1 % de un bot que nunca alarma**.
 - **Inmediato SOLO sin precedentes** (`is_unprecedented`): cimática NUEVO, firma nueva, muro kind nuevo, SYSTEM_DEAD. Precursores/firmas recurrentes → digest.
 - Mini App: `TELEGRAM_WEBAPP_URL` = HTTPS público de `/mini` en el FastAPI del dashboard. No inventar túneles.
 - Código: `infrastructure/messaging/consenso_vigilante.py`. `SENTINEL_DRY_RUN=1` no llama a la API de Telegram. No imprimir tokens.

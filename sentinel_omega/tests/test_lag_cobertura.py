@@ -88,7 +88,8 @@ def test_el_tope_ya_no_muerde_al_conjunto_exigible():
 
 
 def test_lag_n_cero_NO_puede_ser_la_marca_de_medido():
-    """`lag_n INTEGER DEFAULT 0`: 39.094 filas lo tienen sin haberse medido.
+    """`lag_n INTEGER DEFAULT 0`: al hallarlo, 39.094 de 40.695 filas lo
+    tenían sin haberse medido nunca.
 
     Lo escribí primero como `lag_n = 0` y no distinguía nada. La marca tiene
     que ser una columna propia, y se añade forward-only (regla 5).

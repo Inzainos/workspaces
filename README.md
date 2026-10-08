@@ -5,7 +5,37 @@ Actualmente contiene como proyecto principal **Sentinel Omega** y su operación
 completa (código, despliegue, reportes y automatizaciones).
 
 
-## Estado reciente (2026-09-03)
+## Estado reciente (2026-10-08) — el modelo nulo
+
+El sistema **mide ahora contra su comparador**, y lo que sale no es cómodo pero
+es lo primero que no está inflado. La idea única: un número medido solo sobre
+eventos no mide nada, porque la calma es el ~97 % del tiempo.
+
+| Capa | Número viejo | Su nulo | Medido |
+|---|---|---|---|
+| Juez | asertividad 35,3 % | callarse siempre: **97,1 %** | ganancia **1,17×** |
+| Firmas | 23.248 consolidadas | ventanas de calma | **982 exigibles** (4,2 %) |
+| Lag | 978 «anticipan» | calma **del mismo nodo** | **315** (32 %) |
+| ONNX | AUC contra 0,5 | tasa base **por nodo** (0,899) | **0 de 7 aprueban** |
+
+Tres consecuencias que conviene saber antes de leer cualquier cifra del sistema:
+
+- **`consolidada` no es `exigible`.** La promoción va por recurrencia; que una
+  firma discrimine eventos frente a calma es un hecho **medido** aparte.
+- **El lag de una firma puede anticipar o solo persistir.** Dos de cada tres dan
+  su número también en ventanas de calma del mismo nodo.
+- **Un `.onnx` en disco no es un modelo que acierte.** La compuerta de habilidad
+  niega a los siete; `beta1`, con AUC 0,800, porque la tasa base del nodo sola
+  da 0,899: el modelo dice *qué* nodo, no *cuándo*.
+
+**Operación: todo con `systemctl --user`**, sin `sudo`. Puertos en `127.0.0.1`
+— **5173** el tablero React (el que se trabaja), **8787** su API, **8510** el
+Streamlit legado.
+
+Detalle reproducible en [`estado/BITACORA_2026-10-08.md`](estado/BITACORA_2026-10-08.md)
+y el resumen en [`CHANGELOG.md`](CHANGELOG.md).
+
+## Estado anterior (2026-09-03)
 
 Sesión de cableado para llevar el pipeline a operación completa:
 
