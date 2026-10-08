@@ -85,6 +85,23 @@ MIGRATED_SYSTEM_UNITS=(
     sentinel-omega-onnx-retrain.timer
     sentinel-omega-mantenimiento.timer
 )
+# Lo que hay que arrancar, EN ORDEN, para levantar el sistema entero. Existe
+# porque `systemctl --user start 'sentinel-omega*'` NO sirve: systemd expande
+# los globs solo contra units CARGADAS, y las inactivas no lo están (medido el
+# 2026-10-08: el glob veía 9 de 12). Para BAJAR el glob sí vale, porque lo que
+# está encendido está cargado por definición.
+# El orden no es decorativo: el launcher antes del watchdog, que si no lo
+# reinicia creyéndolo caído; y los timers al final.
+ARRANQUE=(
+    sentinel-omega.service
+    sentinel-omega-dashboard-api.service
+    sentinel-omega-dashboard-web.service
+    sentinel-omega-dashboard.service
+    sentinel-omega-watchdog.service
+    sentinel-omega-rutinas.timer
+    sentinel-omega-mantenimiento.timer
+    sentinel-omega-onnx-retrain.timer
+)
 
 # --- Guardia: las units de sistema deben seguir enmascaradas ---------------
 check_system_units_masked() {
@@ -269,9 +286,15 @@ echo "    journalctl --user -u sentinel-omega -f"
 echo ""
 echo "  TODO ES DE USUARIO: no queda nada que instalar con sudo."
 echo "    # launcher, watchdog, dashboard API/web, Streamlit, mantenimiento y"
-echo "    # reentrenamiento ONNX: las nueve se suben y bajan con --user."
-echo "    systemctl --user stop  'sentinel-omega*'      # bajar todo"
-echo "    systemctl --user start 'sentinel-omega*'      # subir todo"
+echo "    # reentrenamiento ONNX: todas se suben y bajan con --user."
+echo "    # OJO: systemd expande los globs SOLO contra units CARGADAS, así que"
+echo "    # 'sentinel-omega*' sirve para BAJAR (están activas) pero se salta"
+echo "    # las inactivas al SUBIR --- medido: matchea 9 de 12. Nómbralas."
+echo "    systemctl --user stop 'sentinel-omega*'   # bajar todo"
+echo "    systemctl --user start ${ARRANQUE[*]}"
+echo ""
+echo "    # Y el orden importa al subir: el launcher primero, el watchdog"
+echo "    # después (si no, lo reinicia creyendo que está caído)."
 echo "    # NUNCA instalar nada de deploy/*.service en /etc/systemd/system:"
 echo "    # launcher y watchdog están enmascarados ahí, y el resto se migró"
 echo "    # (mantenimiento 2026-09-30; Streamlit y onnx-retrain 2026-10-08)."
