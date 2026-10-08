@@ -851,6 +851,63 @@ def _filtro_exigible(conn: sqlite3.Connection) -> str:
     return ""
 
 
+def resumen_nulo_lag(conn: sqlite3.Connection) -> Optional[Dict[str, Any]]:
+    """El reparto del nulo del lag, o ``None`` si esta base no lo tiene medido.
+
+    Existe como función compartida porque el mismo número lo pintan cuatro
+    superficies --- `/api/lag`, `deploy/generar_reporte.py`,
+    `deploy/reporte_ejecutivo.py` y `reporte_sentinel.py` --- y el 2026-10-08
+    el significado de `tbl_lag_anticipacion` cambió sin que ninguna lo dijera:
+    antes promediaba TODAS las firmas con lag, ahora solo las específicas.
+    Cuatro copias de la consulta serían cuatro sitios donde volver a
+    desincronizarse.
+
+    El universo es el que CONSUME el número: el aviso solo empareja firmas
+    exigibles (`match_estado_actual` itera `consolidadas()`), así que el
+    porcentaje se saca sobre esas. Medirlo sobre todas las filas con un valor
+    de lag daba 13 % en vez de 32 %, porque arrastraba 1.442 firmas no
+    exigibles con lag rancio de una corrida anterior.
+    """
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(TBL_FIRMAS)")}
+    except sqlite3.Error:
+        return None
+    if not {"lag_calma_n", "lag_medido_at"} <= cols:
+        return None
+    donde = "estado = 'consolidada'" + _filtro_exigible(conn)
+    try:
+        fila = conn.execute(
+            "SELECT COUNT(*),"
+            " SUM(lag_promedio_h IS NOT NULL),"
+            " SUM(lag_promedio_h IS NOT NULL AND lag_calma_n = 0),"
+            " SUM(lag_promedio_h IS NOT NULL AND lag_calma_n > 0),"
+            " SUM(lag_promedio_h IS NOT NULL AND lag_calma_n IS NULL),"
+            " SUM(lag_medido_at IS NOT NULL AND lag_promedio_h IS NULL)"
+            f" FROM TBL_FIRMAS WHERE {donde}").fetchone()
+        fuera = conn.execute(
+            "SELECT SUM(lag_promedio_h IS NOT NULL) FROM TBL_FIRMAS "
+            f"WHERE NOT ({donde})").fetchone()
+    except sqlite3.Error as exc:
+        logger.warning("no se pudo resumir el nulo del lag: %s", exc)
+        return None
+    if fila is None:
+        return None
+    exigibles, con_lag, especificas, persisten, sin_nulo, medidas_sin_lag = (
+        int(v or 0) for v in fila)
+    return {
+        "exigibles": exigibles,
+        "con_lag": con_lag,
+        "especificas": especificas,
+        "persisten": persisten,
+        "sin_nulo": sin_nulo,
+        "medidas_sin_lag": medidas_sin_lag,
+        "con_lag_fuera_del_universo": int((fuera[0] if fuera else 0) or 0),
+        "pct_especificas": (round(100.0 * especificas / con_lag, 1)
+                            if con_lag else None),
+        "universo": "firmas exigibles (las que el aviso empareja)",
+    }
+
+
 class FirmaMemoria:
     """CRUD + promotion over TBL_FIRMAS. One instance per database."""
 

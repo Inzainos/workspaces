@@ -58,6 +58,7 @@ export function PadreJuezTab() {
   const summary = ac.data?.summary || {};
   const ant = lag.data?.anticipacion || [];
   const fac = lag.data?.factores || [];
+  const nulo = lag.data?.nulo;
 
   const corrPadre = corr.data?.padre;
   const corrMap = useMemo(() => {
@@ -162,6 +163,49 @@ export function PadreJuezTab() {
             { key: "diferencia_norm", label: "Δ norm", render: (r) => fmtNum(r.diferencia_norm) },
           ]}
         />
+        {/* El nulo del lag va ANTES de las horas, porque decide si esas horas
+            significan algo. Sin esto el tablero pintaba «SISMO_M4 ~211 h» sin
+            decir que dos de cada tres firmas dan ese número también en calma. */}
+        {nulo?.disponible ? (
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">
+              ¿El lag ANTICIPA o el patrón solo PERSISTE?
+            </h4>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Kpi
+                label="ANTICIPAN DE VERDAD"
+                value={
+                  nulo.pct_especificas != null
+                    ? `${nulo.pct_especificas.toFixed(1)}%`
+                    : "—"
+                }
+                hint={`${nulo.especificas ?? "—"} de ${nulo.con_lag ?? "—"} firmas con lag`}
+                accent="#10b981"
+              />
+              <Kpi
+                label="SOLO PERSISTEN"
+                value={String(nulo.persisten ?? "—")}
+                hint="también emparejan en calma del mismo nodo"
+                accent="#ff9100"
+              />
+              <Kpi
+                label="SIN NULO MEDIDO"
+                value={String(nulo.sin_nulo ?? "—")}
+                hint="lag de una corrida anterior, sin comparador"
+              />
+              <Kpi
+                label="MEDIDAS SIN LAG"
+                value={String(nulo.medidas_sin_lag ?? "—")}
+                hint="el patrón no se ve antes de su evento"
+              />
+            </div>
+            <Caption>
+              {nulo.nota} Universo: {nulo.universo}. Fuera de él hay{" "}
+              {nulo.con_lag_fuera_del_universo ?? 0} firmas con lag de corridas
+              anteriores que ya no son exigibles, así que el aviso no las empareja.
+            </Caption>
+          </div>
+        ) : null}
         {ant.length ? (
           <SimpleBars
             data={ant.map((r) => ({ name: r.event_class, h: Number(r.lag_promedio_h || 0) }))}
@@ -180,6 +224,7 @@ export function PadreJuezTab() {
             { key: "n_eventos", label: "n" },
           ]}
         />
+        <Caption>{lag.data?.anticipacion_nota}</Caption>
         <DataTable
           rows={fac.slice(0, 25)}
           empty="Sin tbl_factores_lag"

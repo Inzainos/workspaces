@@ -229,6 +229,16 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             ventana_ini = (ahora + timedelta(hours=lag_h * 0.5)).strftime("%Y-%m-%d")
             ventana_fin = (ahora + timedelta(hours=lag_h * 1.5)).strftime("%Y-%m-%d")
             base_vent = f"FIRMA DOMINANTE ({clase})"
+            # Proyectar fechas desde el lag de una firma que también aparece en
+            # calma es poner una ventana de calendario sobre un número que mide
+            # la duración del patrón, no su anticipación. Se rotula.
+            # `lag_especifico` lo escribe el launcher desde el 2026-10-08; en
+            # filas anteriores no existe y entonces no se afirma nada.
+            _esp = matches[0].get("lag_especifico")
+            if _esp is False:
+                base_vent += " · ⚠ lag NO ESPECÍFICO (el patrón también aparece en calma)"
+            elif _esp is None:
+                base_vent += " · lag sin comparar contra calma"
         else:
             ventana_ini = ventana_fin = base_vent = "—"
     else:

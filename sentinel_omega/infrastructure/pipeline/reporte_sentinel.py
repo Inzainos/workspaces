@@ -493,6 +493,25 @@ def reporte_general(db_path: str) -> Dict:
     if not lag_rows:
         lines.append("  Sin lags calculados.")
     else:
+        # Desde el 2026-10-08 el agregado cuenta SOLO las firmas específicas
+        # (las que no emparejan en calma del mismo nodo). Sin decirlo, estas
+        # horas se leen como anticipación cuando pueden ser la duración del
+        # patrón --- y el número cambió de significado sin avisar.
+        from sentinel_omega.core.firmas.signature_engine import resumen_nulo_lag
+        _nl = resumen_nulo_lag(conn)
+        if _nl and _nl.get("con_lag"):
+            lines.append(
+                f"  Solo firmas que ANTICIPAN: {_nl['especificas']} de "
+                f"{_nl['con_lag']} exigibles con lag ({_nl['pct_especificas']} %). "
+                f"Las otras {_nl['persisten']} tambien emparejan en calma del "
+                f"mismo nodo --- su lag mide cuanto DURA el patron, no cuanto "
+                f"avisa, y no entra en estos promedios.")
+        elif _nl is None:
+            lines.append(
+                "  AVISO: esta base no tiene medido el comparador contra calma, "
+                "asi que estas horas pueden ser duracion del patron y no "
+                "anticipacion.")
+        lines.append("")
         max_lag = max(r["lag_promedio_h"] for r in lag_rows) or 1
         l_rows = [[r["event_class"], f"{r['lag_promedio_h']/24:.1f}",
                    f"{r['lag_max_h']/24:.1f}", f"{r['lag_min_h']/24:.1f}",

@@ -662,6 +662,13 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             "n_eventos FROM tbl_lag_anticipacion ORDER BY event_class"
         ).fetchall()
         if lags:
+            # El nulo primero: sin él estas horas pueden ser la duración del
+            # patrón en vez de su anticipación, y hasta el 2026-10-08 el
+            # reporte no distinguía las dos cosas.
+            from sentinel_omega.core.firmas.signature_engine import (
+                resumen_nulo_lag,
+            )
+            _nl = resumen_nulo_lag(conn)
             lineas += [
                 "## ⏱ Anticipación — con cuánto tiempo suele avisar",
                 "",
@@ -671,6 +678,31 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 "contraintuitivo: **los eventos más grandes avisan con más "
                 "tiempo**. Un M7 se 'carga' durante más días que un M5.",
                 "",
+            ]
+            if _nl and _nl.get("con_lag"):
+                lineas += [
+                    f"> **El promedio cuenta solo las firmas que anticipan de "
+                    f"verdad.** De {_nl['con_lag']} firmas exigibles con lag, "
+                    f"**{_nl['especificas']}** ({_nl['pct_especificas']} %) no "
+                    f"aparecen también en ventanas de calma del mismo nodo. Las "
+                    f"otras **{_nl['persisten']}** sí, con vida igual o mayor: "
+                    f"su «lag» mide cuánto *dura* el patrón, no cuánto avisa, y "
+                    f"quedan **fuera** de esta tabla."
+                    + (f" Otras {_nl['con_lag_fuera_del_universo']} firmas "
+                       f"conservan lag de corridas anteriores pero ya no son "
+                       f"exigibles, así que el aviso no las empareja."
+                       if _nl.get("con_lag_fuera_del_universo") else ""),
+                    "",
+                ]
+            elif _nl is None:
+                lineas += [
+                    "> ⚠ Esta base aún **no tiene medido el comparador contra "
+                    "calma**, así que estas horas pueden ser la duración del "
+                    "patrón y no su anticipación. Se mide al entrenar "
+                    "(`calcular_lags_anticipacion`).",
+                    "",
+                ]
+            lineas += [
                 "| Evento | Aviso promedio | Máximo | Mínimo | Casos medidos |",
                 "|---|---|---|---|---|",
             ]

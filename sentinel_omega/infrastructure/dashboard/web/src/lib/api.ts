@@ -163,7 +163,26 @@ export const api = {
     }>("/api/aprendizaje"),
   firmas: () => getJson<Record<string, unknown>>("/api/firmas"),
   lag: () =>
-    getJson<{ factores: Record<string, unknown>[]; anticipacion: Record<string, unknown>[] }>("/api/lag"),
+    getJson<{
+      factores: Record<string, unknown>[];
+      anticipacion: Record<string, unknown>[];
+      anticipacion_solo_especificas?: boolean;
+      anticipacion_nota?: string;
+      /** El nulo del lag: anticipar no es lo mismo que persistir. */
+      nulo?: {
+        disponible?: boolean;
+        universo?: string;
+        exigibles?: number;
+        con_lag?: number;
+        especificas?: number;
+        persisten?: number;
+        sin_nulo?: number;
+        medidas_sin_lag?: number;
+        pct_especificas?: number | null;
+        con_lag_fuera_del_universo?: number;
+        nota?: string;
+      };
+    }>("/api/lag"),
   muroLags: () =>
     getJson<{
       activo: boolean;

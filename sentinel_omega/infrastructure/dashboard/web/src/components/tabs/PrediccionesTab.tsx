@@ -226,8 +226,28 @@ export function PrediccionesTab() {
       {/* ---------- Anticipación ---------- */}
       <Panel
         titulo="Anticipación — con cuánto tiempo suele avisar"
-        meta="medido sobre 32 años"
-        nota="Cuántos días antes del evento su firma ya era reconocible. Los eventos mayores avisan con más margen; esto es estadística histórica, no una promesa sobre el próximo."
+        meta={
+          lag.data?.anticipacion_solo_especificas
+            ? "32 años · solo firmas que no aparecen en calma"
+            : "medido sobre 32 años"
+        }
+        nota={
+          <>
+            Cuántos días antes del evento su firma ya era reconocible. Los eventos
+            mayores avisan con más margen; esto es estadística histórica, no una
+            promesa sobre el próximo.{" "}
+            {lag.data?.nulo?.disponible ? (
+              <>
+                Y el promedio cuenta <b className="text-body">solo las firmas que
+                anticipan de verdad</b>: de {lag.data.nulo.con_lag} con lag, apenas{" "}
+                <b className="text-body">{lag.data.nulo.especificas}</b> no aparecen
+                también en ventanas de calma del mismo nodo. Las otras{" "}
+                {lag.data.nulo.persisten} miden cuánto <i>dura</i> el patrón, no
+                cuánto avisa, y quedan fuera de estas barras.
+              </>
+            ) : null}
+          </>
+        }
       >
         {antBars.length ? (
           <>

@@ -1015,6 +1015,37 @@ def modelos() -> Dict[str, Any]:
 
 @app.get("/api/lag")
 def lag() -> Dict[str, Any]:
+    """Anticipación por clase, Y EL NULO que decide si significa algo.
+
+    El agregado de `tbl_lag_anticipacion` cambió de significado el 2026-10-08
+    y el tablero lo seguía pintando igual --- que es el vicio exacto que este
+    proyecto persigue. Antes promediaba el lag de TODAS las firmas; ahora solo
+    el de las ESPECÍFICAS, las que no emparejan en ventanas de calma de su
+    propio nodo. `SISMO_M4` pasó de 8,8 d (n=1.402) a 8,4 d (n=448) sin que
+    nada en la pantalla lo dijera.
+
+    El reparto va al lado porque es la cifra que manda: de 982 firmas
+    exigibles, 315 anticipan de verdad y 663 solo persisten --- su «lag» mide
+    cuánto DURA el patrón, no cuánto avisa.
+    """
+    from sentinel_omega.core.firmas.signature_engine import resumen_nulo_lag
+
+    # La consulta vive en `signature_engine` porque este mismo número lo pintan
+    # cuatro superficies; cuatro copias serían cuatro sitios donde volver a
+    # desincronizarse, que es justo lo que pasó hoy.
+    _res = resumen_nulo_lag(_repo._conn_safe)
+    nulo: Dict[str, Any] = {"disponible": False}
+    if _res is not None:
+        nulo = dict(_res)
+        nulo["disponible"] = True
+        nulo["nota"] = (
+            "«Específica» = el patrón NO se reconoce en ventanas de calma del "
+            "mismo nodo, así que su lag es tiempo de aviso. «Persiste» = "
+            "también aparece en calma, con vida igual o mayor: su lag mide "
+            "cuánto DURA el patrón, no cuánto anticipa. «Sin nulo» = tiene lag "
+            "de una corrida anterior y aún no se le midió el comparador."
+        )
+
     return _jsonable(
         {
             "factores": _rows("SELECT feature, media_rapidas, media_lentas, diferencia_norm, updated_at FROM tbl_factores_lag ORDER BY ABS(diferencia_norm) DESC")
@@ -1025,6 +1056,16 @@ def lag() -> Dict[str, Any]:
             )
             if _table_exists("tbl_lag_anticipacion")
             else [],
+            "nulo": nulo,
+            "anticipacion_solo_especificas": nulo.get("disponible", False),
+            "anticipacion_nota": (
+                "Promedio SOLO de las firmas específicas: las que también "
+                "emparejan en calma quedan fuera, porque contaminarían el "
+                "número al que cae el aviso cuando una firma no tiene el suyo."
+                if nulo.get("disponible")
+                else "Promedio de todas las firmas con lag: esta base aún no "
+                     "tiene medido el comparador contra calma."
+            ),
         }
     )
 
