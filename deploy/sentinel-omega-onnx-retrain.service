@@ -20,5 +20,6 @@ Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 
-[Install]
-WantedBy=default.target
+# Sin [Install]: la dispara su timer. Con un [Install] un `enable` accidental
+# lanzaría un reentrenamiento ONNX completo en cada arranque de sesión. Es la
+# misma forma que `sentinel-omega-mantenimiento.service`, que lleva la nota.

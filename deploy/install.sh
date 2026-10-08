@@ -84,6 +84,15 @@ MIGRATED_SYSTEM_UNITS=(
     sentinel-omega-onnx-retrain.service
     sentinel-omega-onnx-retrain.timer
     sentinel-omega-mantenimiento.timer
+    # Estas tres aparecieron al retirar las de arriba (2026-10-08). Están
+    # `disabled`, así que hoy no duplican nada --- pero el PRESET de
+    # `rutinas.timer` es **enabled**, y un `systemctl preset-all` lo
+    # encendería: volverían las rutinas corriendo DOS veces (root y usuario),
+    # que es el bicho de los cuatro digestos por hora del 7-oct por otra
+    # puerta. Un archivo inerte con preset a favor no es un archivo inofensivo.
+    sentinel-omega-rutinas.timer
+    sentinel-omega-rutinas.service
+    sentinel-omega-scheduler.service
 )
 # Lo que hay que arrancar, EN ORDEN, para levantar el sistema entero. Existe
 # porque `systemctl --user start 'sentinel-omega*'` NO sirve: systemd expande

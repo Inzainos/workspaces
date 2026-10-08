@@ -9,5 +9,5 @@ EnvironmentFile=-__REPO_DIR__/deploy/.env
 ExecStart=__REPO_DIR__/.venv/bin/python -m sentinel_omega.launcher --barrido
 Nice=10
 
-[Install]
-WantedBy=default.target
+# Sin [Install]: es una tarea que se corre a mano o desde el barrido diario.
+# Un `enable` la lanzaría en cada arranque de sesión.

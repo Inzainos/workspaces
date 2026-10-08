@@ -33,11 +33,31 @@ Había ya un `sentinel-omega-dashboard.service` a nivel usuario, y dos defectos:
    Sentinel. Arrancarla habría chocado. Ahora es el 8510 del repo, que es el
    que documenta `CLAUDE.md` y el que de verdad corre.
 
-Ojo con una discrepancia encontrada al medir: la copia de `/etc` fue **editada
-a mano a `--server.address 0.0.0.0`** y nunca reiniciada, así que el proceso
-vivo escucha en `127.0.0.1` y su propio archivo dice otra cosa. Se conserva el
-`127.0.0.1` del repo (no expone a la LAN); si el acceso remoto Safari/iPad lo
-requiere, es un cambio deliberado, no un arrastre.
+### La discrepancia del `0.0.0.0`, resuelta
+
+Al medir salió que el archivo de `/etc` decía `--server.address 0.0.0.0` pero
+el proceso vivo escuchaba en `127.0.0.1`. No era un archivo rancio: había un
+**drop-in de endurecimiento deliberado**,
+`/etc/systemd/system/sentinel-omega-dashboard.service.d/localhost.conf`
+(14-sep), que anulaba el `ExecStart` entero —
+
+> `# Harden: bind Streamlit to loopback only (was 0.0.0.0)`
+> `# Remote access: SSH tunnel or existing cloudflared — not open LAN bind`
+
+— así que el `127.0.0.1` que conserva la unit de usuario no es una elección
+nueva: es esa decisión, ya tomada, y el repo la tenía bien desde entonces. El
+directorio `.d` queda huérfano (su unidad vive ahora en el nivel de usuario) y
+es redundante, porque el `127.0.0.1` va escrito en la unit.
+
+### Tres restos que salieron al retirar las dos primeras
+
+`rutinas.timer`, `rutinas.service` y `scheduler.service` siguen en `/etc`.
+Están `disabled`, así que hoy no duplican nada, **pero el preset de
+`rutinas.timer` es `enabled`**: un `systemctl preset-all` lo encendería y
+volverían las rutinas corriendo dos veces —root y usuario—, que es el bicho de
+los cuatro digestos por hora del 7-oct entrando por otra puerta. Un archivo
+inerte con el preset a favor no es un archivo inofensivo. El guardia de
+`install.sh` ya los nombra.
 
 ### Y el guardia, para que no vuelva
 
