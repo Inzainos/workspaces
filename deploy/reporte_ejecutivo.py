@@ -34,7 +34,11 @@ DB_DEFAULT = str(
 OUT_DEFAULT = str(Path(__file__).parent.parent / "estado" / "REPORTE_EJECUTIVO.md")
 
 VERSION_REPORTE = "1.0-omega"
-BOTS_ORDEN = ["alfa1", "beta1", "alfa2", "beta2", "delta", "jupiter", "omega", "padre"]
+# `loki` faltaba (hallado 2026-10-08, el mismo descuido que en
+# `reporte_sentinel.bots_order`): son NUEVE bots y la lista tenia ocho, asi que
+# sus 1.824 firmas no salian en «Desempeno por bot» y la tabla parecia completa.
+BOTS_ORDEN = ["alfa1", "beta1", "alfa2", "beta2", "delta", "jupiter", "loki",
+              "omega", "padre"]
 
 # Región de la malla → agrupación operativa de la plantilla
 REGIONES_PLANTILLA = {
@@ -134,9 +138,47 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
 
     pesos = {r[0]: (r[1], r[2], r[3]) for r in _q(
         conn, "SELECT bot_name, peso, aciertos, fallos FROM TBL_PESOS_BOTS")}
-    sesgo = {r[0]: (r[1], r[2], r[3]) for r in _q(
-        conn, "SELECT bot, recon_insample, recon_causal, sesgo "
-              "FROM tbl_sesgo_aprendizaje")}
+    # `falsa_alarma`/`ganancia` entraron el 2026-10-07; hay que preguntar antes
+    # de pedirlas o `_q` devuelve vacio y la columna desaparece sin avisar.
+    _cs = {r[1] for r in _q(conn, "PRAGMA table_info(tbl_sesgo_aprendizaje)")}
+    HAY_GANANCIA = {"falsa_alarma", "ganancia"} <= _cs
+    if HAY_GANANCIA:
+        sesgo = {r[0]: (r[1], r[2], r[3], r[4], r[5]) for r in _q(
+            conn, "SELECT bot, recon_insample, recon_causal, sesgo, "
+                  "falsa_alarma, ganancia FROM tbl_sesgo_aprendizaje")}
+    else:
+        sesgo = {r[0]: (r[1], r[2], r[3], None, None) for r in _q(
+            conn, "SELECT bot, recon_insample, recon_causal, sesgo "
+                  "FROM tbl_sesgo_aprendizaje")}
+    # Consolidada no es exigible: la promocion va por recurrencia, asi que un
+    # patron que reaparece en calma se consolida igual.
+    exig = {}
+    _cf = {r[1] for r in _q(conn, "PRAGMA table_info(TBL_FIRMAS)")}
+    if "exigible" in _cf:
+        exig = {str(r[0]).lower(): (int(r[1] or 0), int(r[2] or 0)) for r in _q(
+            conn,
+            "SELECT bot_name, "
+            " SUM(CASE WHEN estado='consolidada' THEN 1 ELSE 0 END), "
+            " SUM(CASE WHEN estado='consolidada' AND COALESCE(exigible,1)=1 "
+            "          THEN 1 ELSE 0 END) "
+            "FROM TBL_FIRMAS GROUP BY bot_name")}
+    # El VOTO, que no es el marcador de TBL_PESOS_BOTS.
+    voto, voto_origen = {}, None
+    try:
+        from sentinel_omega.config.sentinel_config import load_config
+        from sentinel_omega.core.juez.pesos import cargar_pesos
+        _j = getattr(load_config(), "juez", None)
+        _pv = cargar_pesos(conn,
+                           por_merito=bool(getattr(_j, "peso_por_merito", False)),
+                           minimo_ventanas=int(getattr(_j, "minimo_ventanas", 50)))
+        _ap = int(_pv.pop("_meritos_aplicados", 0) or 0)
+        _co = int(_pv.pop("_competencias_aplicadas", 0) or 0)
+        voto = {str(k).lower(): float(v) for k, v in _pv.items()}
+        voto_origen = ("mérito contra el silencio" if _ap else
+                       ("competencia por clase; el mérito no tiene evidencia"
+                        if _co else "el marcador — el mérito no tiene evidencia"))
+    except Exception as e:  # noqa: BLE001 — el reporte sale igual
+        voto_origen = f"no se pudo calcular ({type(e).__name__})"
     firmas_bot = {r[0]: r[1] for r in _q(
         conn, "SELECT bot_name, COUNT(*) FROM TBL_FIRMAS GROUP BY bot_name")}
 
@@ -541,26 +583,60 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     A("")
     A("### Desempeño por bot")
     A("")
-    A("| Bot | Histórica | Causal (real) | Sesgo | Credibilidad | Firmas | Comentario |")
-    A("|---|---:|---:|---:|---:|---:|---|")
+    A("| Bot | Histórica | Causal | Calma | **Ganancia** | Marcador | Voto | Exigibles | Lectura |")
+    A("|---|---:|---:|---:|---:|---:|---:|---:|---|")
     for bot in BOTS_ORDEN:
-        p = pesos.get(bot)
-        s = sesgo.get(bot)
-        hist_b = (p[1] / (p[1] + p[2])) if p and (p[1] + p[2]) else None
-        comentario = {
-            "alfa1": "clima espacial — generaliza",
-            "beta1": "el latido Schumann — generaliza",
-            "alfa2": "memoria satelital acumulándose en vivo",
-            "beta2": "desgasificación — sesgo alto, en disciplina",
-            "delta": "humor de los mercados",
-            "jupiter": "atención colectiva sobre tormentas solares — en vivo",
-            "omega": "ritmo cósmico — recién mapeado, memoria creciendo",
-            "padre": "árbitro — decisión real sólida",
-        }.get(bot, "")
-        A(f"| {bot} | {_pct(hist_b)} | {_pct(s[1]) if s and s[1] is not None else '—'} | "
-          f"{f'{s[2]:+.1%}' if s and s[2] is not None else '—'} | "
-          f"{_num(p[0], 2) if p else '—'} | {firmas_bot.get(bot, 0):,} | "
-          f"{comentario} |")
+        pb = pesos.get(bot)
+        sb = sesgo.get(bot)
+        hist_b = (pb[1] / (pb[1] + pb[2])) if pb and (pb[1] + pb[2]) else None
+        gan = sb[4] if sb else None
+        falsa = sb[3] if sb else None
+        ex = exig.get(bot.lower())
+        vt = voto.get(bot.lower())
+
+        # ── El comentario sale de la MEDICION, no de un diccionario ──────────
+        #
+        # Hasta el 2026-10-08 esta columna era prosa fija: «alfa1: clima
+        # espacial — generaliza», «padre: árbitro — decisión real sólida». La
+        # medicion del 7-oct dice que alfa1 tiene ganancia +0,5 % (no
+        # discrimina) y que padre tiene 0 firmas exigibles de 14.958. Un
+        # veredicto escrito a mano que ninguna medicion puede contradecir es
+        # peor que no tener columna.
+        trozos = []
+        if gan is None:
+            trozos.append("sin falsa alarma medida: su reconocimiento no se "
+                          "puede leer como acierto")
+        elif gan <= 0.02:
+            trozos.append(f"**no discrimina** (ganancia {gan:+.1%}): empareja "
+                          "la calma casi igual que los eventos")
+        elif gan < 0.20:
+            trozos.append(f"discrimina poco (ganancia {gan:+.1%})")
+        else:
+            trozos.append(f"**discrimina** (ganancia {gan:+.1%})")
+        if ex:
+            if ex[1] == 0 and ex[0]:
+                trozos.append(f"ninguna de sus {ex[0]:,} consolidadas es exigible")
+            elif ex[0]:
+                trozos.append(f"{ex[1]}/{ex[0]} consolidadas exigibles")
+        if sb and sb[2] is not None and sb[2] >= 0.30:
+            trozos.append(f"y memoriza (sesgo {sb[2]:+.1%})")
+        lectura = "; ".join(trozos)
+
+        A(f"| {bot} | {_pct(hist_b)} | "
+          f"{_pct(sb[1]) if sb and sb[1] is not None else '—'} | "
+          f"{_pct(falsa) if falsa is not None else '—'} | "
+          f"{f'{gan:+.1%}' if gan is not None else '—'} | "
+          f"{_num(pb[0], 2) if pb else '—'} | "
+          f"{_num(vt, 2) if vt is not None else '—'}"
+          f"{'' if (vt is None or not pb or abs(vt - pb[0]) < 1e-4) else ' ≠'} | "
+          f"{f'{ex[1]}/{ex[0]}' if ex else '—'} | {lectura} |")
+    A("")
+    A(f"> **Marcador** es `TBL_PESOS_BOTS`, un paseo multiplicativo que la calma "
+      f"refuerza cada ventana y se satura arriba; **Voto** es lo que el Padre "
+      f"aplica de verdad, y si coinciden el mérito no se pudo calcular. Origen "
+      f"del voto ahora: {voto_origen}. **Ganancia** = causal − calma, y es el "
+      f"número que decide: reconocer mucho emparejando otro tanto de calma no "
+      f"es aprendizaje. **Exigibles** son las consolidadas que discriminan.")
     A("")
     A("### Fallos y pendientes")
     A("")

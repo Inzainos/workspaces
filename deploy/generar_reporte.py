@@ -861,8 +861,8 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             "",
             "### Por bot",
             "",
-            "| Bot | Histórica | Viva | Viva 7d | Credibilidad |",
-            "|---|---|---|---|---|",
+            "| Bot | Histórica | Viva | Viva 7d | Marcador | Voto | Exigibles |",
+            "|---|---|---|---|---|---|---|",
         ]
         pesos_tbl = {
             r[0]: r[1]
@@ -870,12 +870,63 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 "SELECT bot_name, peso FROM TBL_PESOS_BOTS"
             ).fetchall()
         }
+        # ── El MARCADOR no es el VOTO, y «Credibilidad» era el marcador ──────
+        #
+        # `TBL_PESOS_BOTS.peso` es el paseo multiplicativo, alimentado de
+        # aciertos/fallos, que estan al 95-100 % en los nueve porque el 98,9 %
+        # de los «aciertos» son silencio en calma --- asi que se satura arriba.
+        # La bitacora del 25-sep §4: «el castigo diferenciado llega al marcador
+        # pero no llega al voto». Medido el 8-oct: beta2 en el techo (1,5) con
+        # CERO firmas exigibles. Llamar a eso «Credibilidad» era el titulo mas
+        # equivocado del reporte.
+        voto_tbl, voto_origen = {}, None
+        try:
+            from sentinel_omega.config.sentinel_config import load_config
+            from sentinel_omega.core.juez.pesos import cargar_pesos
+            _j = getattr(load_config(), "juez", None)
+            _pm = bool(getattr(_j, "peso_por_merito", False))
+            _mv = int(getattr(_j, "minimo_ventanas", 50))
+            _pv = cargar_pesos(conn, por_merito=_pm, minimo_ventanas=_mv)
+            _ap = int(_pv.pop("_meritos_aplicados", 0) or 0)
+            _co = int(_pv.pop("_competencias_aplicadas", 0) or 0)
+            voto_tbl = {str(k).lower(): float(v) for k, v in _pv.items()}
+            voto_origen = (f"mérito contra el silencio ({_ap} bots)" if _ap else
+                           (f"competencia por clase ({_co} bots); el mérito pide "
+                            f"≥{_mv} ventanas vivas y no las hay" if _co else
+                            "el marcador almacenado — el mérito no tiene evidencia"))
+        except Exception as e:  # noqa: BLE001 — el reporte sale igual
+            voto_origen = f"no se pudo calcular ({type(e).__name__})"
+        # Consolidada no es exigible: la promocion va por recurrencia.
+        exig_tbl = {}
+        try:
+            _cf = {r[1] for r in conn.execute("PRAGMA table_info(TBL_FIRMAS)")}
+            if "exigible" in _cf:
+                for r in conn.execute(
+                    "SELECT bot_name, "
+                    " SUM(CASE WHEN estado='consolidada' THEN 1 ELSE 0 END), "
+                    " SUM(CASE WHEN estado='consolidada' AND "
+                    "          COALESCE(exigible,1)=1 THEN 1 ELSE 0 END) "
+                    "FROM TBL_FIRMAS GROUP BY bot_name"
+                ).fetchall():
+                    exig_tbl[str(r[0]).lower()] = (int(r[1] or 0), int(r[2] or 0))
+        except sqlite3.OperationalError:
+            pass
+
         for bot in sorted(set(hist) | set(viva) | set(pesos_tbl)):
             h = hist.get(bot)
+            bl = str(bot).lower()
+            # Un bot sin peso ya NO sale con 1.00: eso le daba credibilidad
+            # plena por no tener medicion (regla 7, el default benigno).
+            marc = pesos_tbl.get(bot)
+            vot = voto_tbl.get(bl)
+            ex = exig_tbl.get(bl)
             lineas.append(
                 f"| {bot} | {_pct(h[0], h[1]) if h else '—'} | "
                 f"{_viva_pct(viva, bot)} | {_viva_pct(viva7, bot)} | "
-                f"{pesos_tbl.get(bot, 1.0):.2f} |"
+                f"{'—' if marc is None else f'{marc:.2f}'} | "
+                f"{'—' if vot is None else f'{vot:.2f}'}"
+                f"{'' if (vot is None or marc is None or abs(vot - marc) < 1e-4) else ' ≠'} | "
+                f"{'—' if not ex else f'{ex[1]}/{ex[0]}'} |"
             )
         lineas += [
             "",
@@ -884,52 +935,117 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             "es la prueba honesta: predicciones a futuro calificadas contra "
             "la realidad.*",
             "",
+            f"***Marcador** es `TBL_PESOS_BOTS`: un paseo multiplicativo que la "
+            f"calma refuerza cada ventana, así que se satura arriba y deja de "
+            f"informar. **Voto** es lo que el Padre aplica de verdad; si "
+            f"coinciden, el mérito no se pudo calcular y el voto cayó al "
+            f"marcador. Origen del voto ahora: {voto_origen}. **Exigibles** son "
+            f"las firmas consolidadas que emparejan eventos MÁS que calma, de "
+            f"las consolidadas totales — consolidar va por recurrencia, así que "
+            f"un patrón que reaparece en calma se consolida igual.*",
+            "",
         ]
     except sqlite3.OperationalError:
         pass
 
-    # ── Sesgo de aprendizaje: realidad vs fantasía ──
+    # ── Reconocimiento, falsa alarma y GANANCIA ──
+    #
+    # Hasta el 2026-10-08 esta seccion mostraba solo in-sample / causal / sesgo
+    # y ponia un ✅ verde con «sesgo < 5% = el bot generaliza de verdad». Medido
+    # ese dia, `alfa1` reconocia el 95,0 % de los eventos Y emparejaba el
+    # 94,5 % de la CALMA: sesgo 0,003, o sea ✅ --- con ganancia +0,005. El
+    # sesgo mide MEMORIZACION; no dice nada de si la memoria distingue.
+    #
+    # Las columnas `falsa_alarma`/`ganancia` entraron el 2026-10-07. Hay que
+    # preguntar si existen antes de pedirlas: el `except OperationalError: pass`
+    # de abajo borraria la seccion entera en silencio.
     try:
+        _cols_s = {r[1] for r in conn.execute(
+            "PRAGMA table_info(tbl_sesgo_aprendizaje)")}
+        _hay_g = {"falsa_alarma", "ganancia"} <= _cols_s
+        _campos = "bot, recon_insample, recon_causal, sesgo"
+        if _hay_g:
+            _campos += ", falsa_alarma, ganancia, castigos"
         sesgo = conn.execute(
-            "SELECT bot, recon_insample, recon_causal, sesgo FROM "
-            "tbl_sesgo_aprendizaje ORDER BY sesgo DESC"
+            f"SELECT {_campos} FROM tbl_sesgo_aprendizaje "
+            f"ORDER BY {'ganancia' if _hay_g else 'sesgo'} DESC"
         ).fetchall()
-        if sesgo:
+        if sesgo and _hay_g:
+            lineas += [
+                "## 🪞 Reconocimiento, falsa alarma y **ganancia**",
+                "",
+                "> **Causal** son los eventos que su memoria reconoce con lo que "
+                "ya tenía **antes** de que ocurrieran. **Calma** es cuánta "
+                "calma empareja igual. La **ganancia** es la resta, y es el "
+                "número que decide: reconocer el 95 % emparejando el 94,5 % es "
+                "ganancia 0,005 — eso es alarmismo, no aprendizaje. El "
+                "**sesgo** (in-sample − causal) solo mide memorización, y era "
+                "lo único que esta sección mostraba hasta el 2026-10-07.",
+                "",
+                "| Bot | In-sample | Causal | Calma | **Ganancia** | Sesgo | Castigos |",
+                "|---|---|---|---|---|---|---|",
+            ]
+        elif sesgo:
             lineas += [
                 "## 🪞 Realidad vs fantasía — el sesgo de aprendizaje",
                 "",
-                "> La asertividad histórica alta es *in-sample*: el bot reconoce "
-                "las firmas con las que se entrenó (comodidad). La columna "
-                "**Causal (real)** mide lo honesto: ¿reconoció el evento con la "
-                "memoria que ya tenía **antes** de que ocurriera? El **sesgo** "
-                "es la diferencia — cuánto de esa competencia era fantasía. "
-                "Aunque el número real sea más bajo, es la verdad.",
+                "> ⚠️ Esta base **no tiene medida la falsa alarma**, así que "
+                "`Causal` NO se puede leer como acierto: un bot cuya memoria "
+                "empareje también la calma sale con causal alto sin aprender "
+                "nada. Corre `evaluar_sesgo_aprendizaje` para tener la "
+                "ganancia. Mientras tanto, el **sesgo** solo dice cuánto de la "
+                "competencia era memorización.",
                 "",
                 "| Bot | In-sample | **Causal (real)** | Sesgo (fantasía) |",
                 "|---|---|---|---|",
             ]
-            def _p(v):
-                # Los bots que no entrenan (BOTS_LIVE_ONLY) no tienen sesgo:
-                # sus valores llegan en None y reventaban el formateo.
-                return "—" if v is None else f"{v:.1%}"
+        def _p(v):
+            # Los bots que no entrenan (BOTS_LIVE_ONLY) no tienen sesgo:
+            # sus valores llegan en None y reventaban el formateo.
+            return "—" if v is None else f"{v:.1%}"
 
-            def _sp(v):
-                return "—" if v is None else f"{v:+.1%}"
+        def _sp(v):
+            return "—" if v is None else f"{v:+.1%}"
 
-            for b in sesgo:
-                if b[3] is None:
+        for b in sesgo:
+            if _hay_g:
+                g = b[5]
+                # El semaforo va sobre la GANANCIA, no sobre el sesgo.
+                if g is None:
                     flag = ""
+                elif g <= 0.02:
+                    flag = " ⚠️ no discrimina"
+                elif g < 0.20:
+                    flag = " ⚠️"
                 else:
-                    flag = " ⚠️" if b[3] > 0.20 else (" ✅" if b[3] < 0.05 else "")
+                    flag = " ✅"
+                lineas.append(
+                    f"| {b[0]} | {_p(b[1])} | {_p(b[2])} | {_p(b[4])} | "
+                    f"**{_sp(g)}**{flag} | {_sp(b[3])} | "
+                    f"{'—' if b[6] is None else b[6]} |"
+                )
+            else:
+                flag = "" if b[3] is None else (
+                    " ⚠️" if b[3] > 0.20 else "")
                 lineas.append(
                     f"| {b[0]} | {_p(b[1])} | **{_p(b[2])}** | "
                     f"{_sp(b[3])}{flag} |"
                 )
+        if _hay_g:
             lineas += [
                 "",
-                "*Sesgo < 5% = el bot generaliza de verdad. Sesgo alto = su "
-                "competencia era comodidad in-sample; su decisión real es más "
-                "floja de lo que aparentaba.*",
+                "*Ganancia ≤ 2 % = su memoria empareja la calma casi igual "
+                "que los eventos, así que el reconocimiento alto no es "
+                "aprendizaje. Ganancia alta = distingue de verdad. El sesgo "
+                "se queda al lado porque mide otra cosa: memorización.*",
+                "",
+            ]
+        else:
+            lineas += [
+                "",
+                "*Sesgo alto = su competencia era comodidad in-sample. Y sin "
+                "la falsa alarma medida, un sesgo bajo NO significa que el "
+                "bot acierte: puede estar emparejando todo.*",
                 "",
             ]
     except sqlite3.OperationalError:
