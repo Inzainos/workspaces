@@ -1092,12 +1092,47 @@ def _auditar_ciclo(geo, repo, runner) -> None:
             for m in matches[:3]:
                 ventana = ""
                 try:
-                    lag_firma = conn.execute(
-                        "SELECT lag_promedio_h, lag_n FROM TBL_FIRMAS "
-                        "WHERE firma_id = ? AND lag_promedio_h IS NOT NULL",
-                        (m["firma_id"],),
-                    ).fetchone()
-                    if lag_firma:
+                    try:
+                        lag_firma = conn.execute(
+                            "SELECT lag_promedio_h, lag_n, lag_calma_h, "
+                            "lag_calma_n FROM TBL_FIRMAS WHERE firma_id = ? "
+                            "AND lag_promedio_h IS NOT NULL",
+                            (m["firma_id"],),
+                        ).fetchone()
+                    except Exception:
+                        # Base sin las columnas del nulo (antes del 2026-10-08):
+                        # se lee lo de siempre y se trata como no medido.
+                        lag_firma = conn.execute(
+                            "SELECT lag_promedio_h, lag_n, NULL, NULL "
+                            "FROM TBL_FIRMAS WHERE firma_id = ? "
+                            "AND lag_promedio_h IS NOT NULL",
+                            (m["firma_id"],),
+                        ).fetchone()
+                    # ¿El lag ANTICIPA o el patrón solo PERSISTE? Medido el
+                    # 2026-10-08 sondeando cada firma en ventanas de calma de
+                    # SU PROPIO nodo: 315 de 982 no emparejan nunca en calma
+                    # ---ahí el lag es tiempo de aviso--- y 663 sí, con vida
+                    # igual o mayor. Para esas, imprimir «~272 h antes» es
+                    # vender como anticipación lo que es la duración del
+                    # patrón. Se dicen las dos cifras y que el operador juzgue.
+                    if lag_firma and (lag_firma[3] or 0) > 0:
+                        m["ventana_tipica_h"] = round(lag_firma[0], 1)
+                        m["ventana_tipica_dias"] = round(lag_firma[0] / 24, 1)
+                        m["lag_n"] = lag_firma[1]
+                        m["lag_calma_h"] = (round(lag_firma[2], 1)
+                                            if lag_firma[2] is not None else None)
+                        m["lag_especifico"] = False
+                        _cal = (f"~{lag_firma[2]:.0f} h" if lag_firma[2] is not None
+                                else "también")
+                        ventana = (
+                            f" — NO es tiempo de aviso: el patrón se reconoce "
+                            f"~{lag_firma[0]:.0f} h antes del evento, pero "
+                            f"{_cal} en ventanas de calma del mismo nodo "
+                            f"(n={lag_firma[3]}), así que mide cuánto DURA el "
+                            f"patrón, no cuánto anticipa"
+                        )
+                    elif lag_firma:
+                        m["lag_especifico"] = True
                         # En HORAS, que es la resolución que el entrenamiento
                         # mide desde el 2026-09-27 (antes la rejilla era de 48 a
                         # 96 h, así que dividir por 24 no perdía nada; ahora sí:

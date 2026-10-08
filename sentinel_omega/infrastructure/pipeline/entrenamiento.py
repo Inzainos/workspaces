@@ -1050,6 +1050,18 @@ LAG_RESOLUCION_H = 1
 # conjunto exigible vuelve a crecer.
 LAG_MUESTRA_POR_CLASE = 2000
 
+# Sondeos de CALMA por firma, para el modelo nulo del lag. Tres, los mismos que
+# eventos (`LIMIT 3`), para que las dos cifras salgan de muestras comparables.
+LAG_MUESTRA_CALMA = 3
+
+# Semilla fija: dos corridas sobre la misma base tienen que dar el mismo nulo,
+# o la cifra se mueve sin que nada haya cambiado y no hay forma de comparar.
+LAG_SEMILLA_CALMA = 20261008
+
+# Horizonte que define «calma»: ninguna hora con evento en las siguientes N h
+# en ESE nodo. Es el mismo que usa `medir_discriminacion_firmas`.
+LAG_HORIZONTE_CALMA_H = 190
+
 
 def _lag_detectado(conn, firma_features, t0, id_nodo) -> Optional[float]:
     """El offset MÁS GRANDE (en horas) en que la firma todavía se reconocía.
@@ -1140,6 +1152,8 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
     evento» en vez de «cuánto avisa el padre». Es lo que el digest de Telegram
     imprime como `SISMO_M4: ~152h`.
     """
+    import bisect as _bisect
+    import random as _random
     from datetime import datetime as _dt, timedelta as _td
     from sentinel_omega.core.firmas.signature_engine import similitud
 
@@ -1162,6 +1176,7 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
     saltadas: Dict[tuple, int] = {}
     sin_anticipacion = 0
     sin_eventos = 0
+    no_especificas = 0     # tienen lag, pero también emparejan en calma
 
     # `lag_n` nace en 0 por esquema (`lag_n INTEGER DEFAULT 0`, medido: 39.094
     # filas en 0), así que escribir un 0 NO distingue «la medí y este patrón no
@@ -1170,12 +1185,66 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
     # discriminación.
     try:
         _cols = {r[1] for r in conn.execute("PRAGMA table_info(TBL_FIRMAS)")}
-        if _cols and "lag_medido_at" not in _cols:
-            conn.execute("ALTER TABLE TBL_FIRMAS ADD COLUMN lag_medido_at TEXT")
+        if _cols:
+            for _nom, _tipo in (("lag_medido_at", "TEXT"),
+                                ("lag_calma_h", "REAL"),
+                                ("lag_calma_n", "INTEGER")):
+                if _nom not in _cols:
+                    conn.execute(
+                        f"ALTER TABLE TBL_FIRMAS ADD COLUMN {_nom} {_tipo}")
+                    logger.info("TBL_FIRMAS: columna %s añadida", _nom)
             conn.commit()
-            logger.info("TBL_FIRMAS: columna lag_medido_at añadida")
     except sqlite3.Error as exc:
-        logger.warning("no se pudo asegurar lag_medido_at: %s", exc)
+        logger.warning("no se pudieron asegurar las columnas de lag: %s", exc)
+
+    # ─── El MODELO NULO del lag ──────────────────────────────────────────────
+    #
+    # Hasta el 2026-10-08 este barrido solo iba hacia atrás DESDE EVENTOS, así
+    # que medía «cuánto tiempo atrás se sigue reconociendo el patrón» y lo
+    # llamaba anticipación. Medido a mano ese día sobre 120 firmas exigibles:
+    #
+    #     antes de evento   media 219 h   mediana 228 h
+    #     antes de CALMA    media 242 h   mediana 273 h   <- MÁS LARGO
+    #
+    # O sea que, condicionado a que empareje, el patrón vive igual o más en
+    # calma. La mitad buena: el **69,2 %** de las firmas exigibles no empareja
+    # en NINGUNA ventana de calma (con dato presente en las 120, cero
+    # artefacto), y para esas el lag sí es tiempo de aviso.
+    #
+    # Así que el lag no es un número, son dos: el del evento y el del nulo. Se
+    # sondea la misma firma en ventanas de calma de SUS PROPIOS NODOS --- mismo
+    # nodo, para que la disponibilidad de dato sea comparable y la diferencia no
+    # sea un artefacto de cobertura.
+    eventos_por_nodo: Dict[int, List[str]] = {}
+    for _ts, _nd in conn.execute(
+            "SELECT timestamp_blk, id_nodo FROM tbl_historico_sismico_raw "
+            "WHERE sismo_max_mag >= ? ORDER BY timestamp_blk",
+            (MIN_MAGNITUD_FIRMA,)):
+        eventos_por_nodo.setdefault(int(_nd), []).append(str(_ts))
+    horas_clima = [r[0] for r in conn.execute(
+        "SELECT timestamp_blk FROM tbl_clima_espacial_raw ORDER BY timestamp_blk")]
+    _rng_calma = _random.Random(LAG_SEMILLA_CALMA)
+
+    def _t0_calma(id_nodo: int) -> Optional["_dt"]:
+        """Una hora de ese nodo SIN evento en el horizonte siguiente."""
+        if not horas_clima:
+            return None
+        lista = eventos_por_nodo.get(id_nodo)
+        for _ in range(60):
+            ts = horas_clima[_rng_calma.randrange(len(horas_clima))]
+            try:
+                t = _dt.strptime(str(ts)[:16], "%Y-%m-%d %H:%M")
+            except ValueError:
+                continue
+            if lista:
+                i = _bisect.bisect_right(lista, str(ts))
+                if i < len(lista):
+                    tope = (t + _td(hours=LAG_HORIZONTE_CALMA_H)
+                            ).strftime("%Y-%m-%d %H:%M")
+                    if lista[i] <= tope:
+                        continue          # hubo evento: no es calma
+            return t
+        return None
 
     for firma in consolidadas:
         clase = firma["event_class"]
@@ -1205,6 +1274,7 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
         evaluados[cupo] = evaluados.get(cupo, 0) + 1
 
         lags_firma: List[float] = []
+        nodos_firma: List[int] = []
         for ref in eventos:  # muestra por firma (ya viene limitada a 3)
             try:
                 ts_evento, nodo_part, _ = ref.split("|")
@@ -1212,19 +1282,44 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
                 t0 = _dt.strptime(ts_evento, "%Y-%m-%d %H:%M")
             except ValueError:
                 continue
+            nodos_firma.append(id_nodo)
 
             lag_detectado = _lag_detectado(conn, firma["features"], t0, id_nodo)
             if lag_detectado is not None:
-                lags_por_clase.setdefault(clase, []).append(lag_detectado)
                 lags_firma.append(lag_detectado)
-                lags_por_bot[bot] = lags_por_bot.get(bot, 0) + 1
+
+        # El NULO: la misma firma sondeada en ventanas de calma de sus propios
+        # nodos. Si no empareja en ninguna, el lag del evento es tiempo de
+        # aviso; si empareja con vida igual o mayor, el número mide persistencia
+        # del patrón y NO anticipa nada.
+        lags_calma: List[float] = []
+        for id_nodo in (nodos_firma or [])[:LAG_MUESTRA_CALMA]:
+            t_cal = _t0_calma(id_nodo)
+            if t_cal is None:
+                continue
+            l_cal = _lag_detectado(conn, firma["features"], t_cal, id_nodo)
+            if l_cal is not None:
+                lags_calma.append(l_cal)
+
+        # El agregado por clase solo admite firmas ESPECÍFICAS: si entraran las
+        # que también emparejan en calma, el promedio de clase ---que es el
+        # respaldo del aviso--- quedaría contaminado con patrones que no avisan.
+        if lags_firma and not lags_calma:
+            for v in lags_firma:
+                lags_por_clase.setdefault(clase, []).append(v)
+            lags_por_bot[bot] = lags_por_bot.get(bot, 0) + len(lags_firma)
+        elif lags_firma:
+            no_especificas += 1
 
         # Per-signature lead time: THIS firma's own typical window
         if lags_firma:
             conn.execute(
                 "UPDATE TBL_FIRMAS SET lag_promedio_h = ?, lag_n = ?, "
+                "lag_calma_h = ?, lag_calma_n = ?, "
                 "lag_medido_at = datetime('now') WHERE firma_id = ?",
                 (sum(lags_firma) / len(lags_firma), len(lags_firma),
+                 (sum(lags_calma) / len(lags_calma)) if lags_calma else None,
+                 len(lags_calma),
                  firma["firma_id"]),
             )
         else:
@@ -1234,8 +1329,10 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
             sin_anticipacion += 1
             conn.execute(
                 "UPDATE TBL_FIRMAS SET lag_promedio_h = NULL, lag_n = 0, "
+                "lag_calma_h = ?, lag_calma_n = ?, "
                 "lag_medido_at = datetime('now') WHERE firma_id = ?",
-                (firma["firma_id"],))
+                ((sum(lags_calma) / len(lags_calma)) if lags_calma else None,
+                 len(lags_calma), firma["firma_id"]))
 
     resultado = {}
     for clase, lags in lags_por_clase.items():
@@ -1265,6 +1362,15 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
         "anticipación (lag_n=0) · %d sin eventos hijos · %d SALTADAS por tope",
         sum(evaluados.values()), sin_anticipacion, sin_eventos,
         sum(saltadas.values()))
+    # El nulo, que es lo que separa anticipar de persistir.
+    especificas = sum(evaluados.values()) - sin_anticipacion - no_especificas
+    logger.info(
+        "Nulo del lag: %d firmas con lag ESPECÍFICO (no emparejan en calma) · "
+        "%d con lag pero TAMBIÉN en calma --- su número mide persistencia, no "
+        "anticipación, y queda FUERA del promedio por clase · %d sondeos de "
+        "evento alimentan ese promedio",
+        especificas, no_especificas,
+        sum(len(v) for v in lags_por_clase.values()))
     if saltadas:
         logger.warning(
             "El tope de %d firmas por (bot,clase) MORDIÓ y dejó firmas sin "

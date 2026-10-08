@@ -97,8 +97,14 @@ def test_lag_n_cero_NO_puede_ser_la_marca_de_medido():
 
     fuente = inspect.getsource(ent.calcular_lags_anticipacion)
     assert "lag_medido_at" in fuente
-    assert "ADD COLUMN lag_medido_at" in fuente, (
+    # La columna se crea sola --- la DB de producción ya existe ---, y da igual
+    # si el ALTER va literal o por un bucle de (nombre, tipo): lo que importa
+    # es que el nombre esté junto a un ADD COLUMN.
+    assert "ADD COLUMN" in fuente, (
         "la columna tiene que crearse sola: la DB de producción ya existe")
+    assert '("lag_medido_at", "TEXT")' in fuente or \
+           "ADD COLUMN lag_medido_at" in fuente, (
+        "lag_medido_at ya no está entre las columnas que se aseguran")
     # las dos ramas la escriben: con y sin anticipación
     assert fuente.count("lag_medido_at = datetime('now')") >= 2
 
@@ -127,3 +133,58 @@ def test_los_tres_estados_se_distinguen_en_la_tabla():
     # y la trampa: `lag_n = 0` NO separa la 2 de la 3
     assert n("lag_n = 0") == 2, (
         "si esto cambia, alguien volvió a creer que lag_n distingue")
+
+
+# ─── El NULO del lag: anticipar no es persistir ──────────────────────────────
+
+
+def test_el_lag_se_mide_TAMBIEN_en_calma():
+    """Sin nulo, el barrido mide cuánto DURA el patrón y lo llama anticipación.
+
+    Medido el 2026-10-08 sondeando cada firma exigible en ventanas de calma de
+    SU PROPIO nodo (tres sondeos, los mismos que eventos):
+
+        315 de 982   no emparejan en calma  -> el lag ES tiempo de aviso
+        663 de 982   sí emparejan           -> el número mide persistencia
+
+    El detalle del nodo no es menor: una medición anterior sorteaba un nodo
+    CUALQUIERA y daba el resultado casi invertido (69 % «específicas»), porque
+    confundía «antes del evento» con «otro nodo». La firma se parece a su
+    propio nodo en calma, y eso es justo lo que hay que descontar.
+    """
+    import inspect
+
+    fuente = inspect.getsource(ent.calcular_lags_anticipacion)
+    assert "_t0_calma" in fuente, "volvió el barrido que solo mira eventos"
+    assert "lag_calma_h" in fuente and "lag_calma_n" in fuente
+    # el sondeo de calma va sobre los nodos DE LA FIRMA, no sobre uno al azar
+    assert "nodos_firma" in fuente, (
+        "si el nodo de calma no es el de la firma, la diferencia es un "
+        "artefacto de nodo y no mide anticipación")
+
+
+def test_el_promedio_por_clase_excluye_las_NO_especificas():
+    """El promedio de clase es el respaldo del aviso: no puede contaminarse.
+
+    Si entraran las firmas que también emparejan en calma, el número al que
+    cae el aviso cuando una firma no tiene el suyo vendría mezclado con
+    patrones que no anticipan nada.
+    """
+    import inspect
+
+    fuente = inspect.getsource(ent.calcular_lags_anticipacion)
+    assert "if lags_firma and not lags_calma:" in fuente, (
+        "el agregado por clase volvió a admitir firmas no específicas")
+    assert "no_especificas" in fuente
+    assert "ESPECÍFICO" in fuente, "el log no reporta el reparto del nulo"
+
+
+def test_la_semilla_de_calma_es_fija():
+    """Dos corridas sobre la misma base tienen que dar el mismo nulo.
+
+    Con semilla al azar el número se mueve sin que nada haya cambiado, y no
+    hay forma de saber si una diferencia entre corridas es señal o ruido.
+    """
+    assert isinstance(ent.LAG_SEMILLA_CALMA, int)
+    assert ent.LAG_MUESTRA_CALMA >= 3, (
+        "con uno o dos sondeos de calma la decisión por firma es una moneda")

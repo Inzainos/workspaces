@@ -144,11 +144,17 @@ def _bloque_matches() -> str:
     cambiado --- la firma seguía ganándole a la clase.
 
     Ahora se ancla a la FUNCIÓN que contiene el bloque, así que crece con ella.
+
+    Y el ancla es la COLUMNA, no la ortografía del SELECT: el mismo día el SQL
+    pasó a leer también `lag_calma_h`/`lag_calma_n` y se partió en varias
+    líneas, así que buscar la consulta literal volvió a poner rojos cuatro
+    tests sin que nada se hubiera roto. Un test no puede depender de dónde
+    caen los saltos de línea de una cadena.
     """
     import inspect
     from sentinel_omega import launcher
     fuente = inspect.getsource(launcher._auditar_ciclo)
-    assert '"SELECT lag_promedio_h, lag_n FROM TBL_FIRMAS "' in fuente, (
+    assert "lag_promedio_h" in fuente, (
         "el bloque de la ventana típica ya no vive en `_auditar_ciclo`: "
         "actualiza este ancla")
     return fuente
