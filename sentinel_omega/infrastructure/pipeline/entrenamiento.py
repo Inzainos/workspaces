@@ -1009,16 +1009,46 @@ def entrenar(
 # de dos o tres puntos. Y como el barrido va de lejos a cerca y para en el primer
 # emparejamiento, SIEMPRE REDONDEA HACIA ABAJO: una firma que empieza a emparejar
 # a las 100 h se registra como 72.
-LAG_OFFSETS_H = [336, 240, 168, 120, 72, 24]
+#
+# El extremo CERCANO se añadió el 2026-10-08. La rejilla paraba en 24 h, y una
+# firma cuyo patrón solo es visible en las últimas horas devolvía `None` --- o
+# sea «sin anticipación medida», indistinguible de «no se midió». Medido sobre
+# 40 firmas exigibles de beta1/SISMO_M4, el porcentaje que empareja NO se
+# derrumba al acercarse al evento, sube:
+#
+#     offset   336   240   168   120    72    48    24    12     6     3     1     0
+#     empareja  33%   38%   40%   35%   53%   45%   58%   65%   73%   70%   80%   80%
+#
+# Así que por debajo de 24 h hay más de la mitad de la señal, y se estaba
+# tirando. Doce puntos en vez de seis: el coste sube ~2x y la bisección sigue
+# acotando el tramo.
+LAG_OFFSETS_H = [336, 240, 168, 120, 72, 48, 24, 12, 6, 3, 1]
 
 # Resolución del refinamiento por bisección dentro del tramo acotado.
 LAG_RESOLUCION_H = 1
 
-# Tope de evaluaciones POR BOT Y CLASE, no por clase. Con el tope por clase,
-# quitar el filtro de `padre` no habría servido de nada: padre tiene 14.289 de
-# las 19.578 firmas, así que se habría comido el presupuesto entero y los otros
-# ocho bots seguirían sin lag.
-LAG_MUESTRA_POR_CLASE = 150
+# Tope POR BOT Y CLASE, y se cuenta en FIRMAS. Hasta el 2026-10-08 el contador
+# (`evaluados`) se incrementaba por EVENTO SONDEADO y cada firma gasta hasta 3
+# (`LIMIT 3`), así que un «tope de 150» eran **50 firmas** --- y el resto se
+# saltaba con un `continue` SIN LOG (regla dura 10). El efecto medido ese día,
+# y la huella estaba a la vista en los datos:
+#
+#     beta1 SISMO_M4   417 exigibles -> 9 con lag     <- topado
+#     beta1 SISMO_M5   260 exigibles -> 12 con lag    <- topado
+#     beta1 SISMO_M4_obs 20 exigibles -> 20 con lag   <- cabe entero
+#     beta1 SISMO_M7     19 exigibles -> 19 con lag   <- cabe entero
+#
+# Los cubos PEQUEÑOS con cobertura total y los GRANDES casi vacíos es el revés
+# de lo que haría un muestreo: era el presupuesto, no la física. De las 367
+# firmas saltadas en beta1/SISMO_M4 se midió a mano que entre el 33 % y el 80 %
+# SÍ dan lag según el offset. Se perdía el tiempo de aviso de la mayoría de las
+# firmas con las que el sistema alerta.
+#
+# El tope existe porque esto corría sobre 19.578 firmas. Hoy `consolidadas()`
+# devuelve solo las EXIGIBLES (982 el 8-oct), así que cabe medirlas TODAS y el
+# tope deja de morder; se conserva alto como malla de seguridad por si el
+# conjunto exigible vuelve a crecer.
+LAG_MUESTRA_POR_CLASE = 2000
 
 
 def _lag_detectado(conn, firma_features, t0, id_nodo) -> Optional[float]:
@@ -1129,11 +1159,33 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
     evaluados: Dict[tuple, int] = {}
     lags_por_bot: Dict[str, int] = {}
 
+    saltadas: Dict[tuple, int] = {}
+    sin_anticipacion = 0
+    sin_eventos = 0
+
+    # `lag_n` nace en 0 por esquema (`lag_n INTEGER DEFAULT 0`, medido: 39.094
+    # filas en 0), así que escribir un 0 NO distingue «la medí y este patrón no
+    # se ve antes del evento» de «nunca la medí». Hace falta una marca propia:
+    # migración forward-only (regla 5), igual que las columnas de
+    # discriminación.
+    try:
+        _cols = {r[1] for r in conn.execute("PRAGMA table_info(TBL_FIRMAS)")}
+        if _cols and "lag_medido_at" not in _cols:
+            conn.execute("ALTER TABLE TBL_FIRMAS ADD COLUMN lag_medido_at TEXT")
+            conn.commit()
+            logger.info("TBL_FIRMAS: columna lag_medido_at añadida")
+    except sqlite3.Error as exc:
+        logger.warning("no se pudo asegurar lag_medido_at: %s", exc)
+
     for firma in consolidadas:
         clase = firma["event_class"]
         bot = firma["bot_name"]
         cupo = (bot, clase)
         if evaluados.get(cupo, 0) >= LAG_MUESTRA_POR_CLASE:
+            # Regla dura 10: el `continue` que descarta trabajo lleva cuenta.
+            # Sin esto, 367 de 417 firmas de beta1/SISMO_M4 se saltaban en
+            # silencio y el resultado parecía «estas firmas no anticipan».
+            saltadas[cupo] = saltadas.get(cupo, 0) + 1
             continue
         # Muestra de 3 eventos desde la tabla hija (no cargamos el array entero).
         eventos = [
@@ -1144,10 +1196,16 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
             )
         ]
 
+        if not eventos:
+            sin_eventos += 1
+            continue
+
+        # El presupuesto se gasta POR FIRMA, no por evento sondeado: una firma
+        # con tres eventos no vale el triple que una con uno.
+        evaluados[cupo] = evaluados.get(cupo, 0) + 1
+
         lags_firma: List[float] = []
         for ref in eventos:  # muestra por firma (ya viene limitada a 3)
-            if evaluados.get(cupo, 0) >= LAG_MUESTRA_POR_CLASE:
-                break
             try:
                 ts_evento, nodo_part, _ = ref.split("|")
                 id_nodo = int(nodo_part.replace("nodo", ""))
@@ -1155,7 +1213,6 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
             except ValueError:
                 continue
 
-            evaluados[cupo] = evaluados.get(cupo, 0) + 1
             lag_detectado = _lag_detectado(conn, firma["features"], t0, id_nodo)
             if lag_detectado is not None:
                 lags_por_clase.setdefault(clase, []).append(lag_detectado)
@@ -1165,11 +1222,20 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
         # Per-signature lead time: THIS firma's own typical window
         if lags_firma:
             conn.execute(
-                "UPDATE TBL_FIRMAS SET lag_promedio_h = ?, lag_n = ? "
-                "WHERE firma_id = ?",
+                "UPDATE TBL_FIRMAS SET lag_promedio_h = ?, lag_n = ?, "
+                "lag_medido_at = datetime('now') WHERE firma_id = ?",
                 (sum(lags_firma) / len(lags_firma), len(lags_firma),
                  firma["firma_id"]),
             )
+        else:
+            # MEDIDA Y SIN ANTICIPACIÓN no es lo mismo que SIN MEDIR (regla
+            # dura 10). La marca va en `lag_medido_at`, no en `lag_n`, porque
+            # `lag_n` ya vale 0 en toda la tabla por defecto de esquema.
+            sin_anticipacion += 1
+            conn.execute(
+                "UPDATE TBL_FIRMAS SET lag_promedio_h = NULL, lag_n = 0, "
+                "lag_medido_at = datetime('now') WHERE firma_id = ?",
+                (firma["firma_id"],))
 
     resultado = {}
     for clase, lags in lags_por_clase.items():
@@ -1192,6 +1258,19 @@ def calcular_lags_anticipacion(db_path: str) -> Dict:
     # era «padre: todo, el resto: nada» y no había forma de notarlo desde el log.
     logger.info("Lags por bot (firmas con anticipación medida): %s",
                 dict(sorted(lags_por_bot.items(), key=lambda kv: -kv[1])) or "NINGUNO")
+    # Las tres cuentas que faltaban. Sin ellas, «esta firma no tiene lag» podía
+    # significar tres cosas distintas y no había forma de saber cuál.
+    logger.info(
+        "Cobertura del lag: %d firmas evaluadas · %d medidas y SIN "
+        "anticipación (lag_n=0) · %d sin eventos hijos · %d SALTADAS por tope",
+        sum(evaluados.values()), sin_anticipacion, sin_eventos,
+        sum(saltadas.values()))
+    if saltadas:
+        logger.warning(
+            "El tope de %d firmas por (bot,clase) MORDIÓ y dejó firmas sin "
+            "medir: %s. Esas firmas alertan sin poder decir cuánto anticipan; "
+            "sube LAG_MUESTRA_POR_CLASE.", LAG_MUESTRA_POR_CLASE,
+            dict(sorted(saltadas.items(), key=lambda kv: -kv[1])[:8]))
 
     factores = analizar_factores_lag(db_path)
     resultado["factores"] = factores
