@@ -357,7 +357,7 @@ def construir_ventanas_etiquetadas(
                 vec = _features_to_vector(rasgos, bot)
                 if not np.any(np.abs(vec) > 1e-12):
                     continue
-                acc[bot].append((vec, conf, sig, peso, ts))
+                acc[bot].append((vec, conf, sig, peso, ts, nodo))
     finally:
         conn.close()
 
@@ -374,7 +374,8 @@ def construir_ventanas_etiquetadas(
         ys = np.array([f[2] for f in filas], dtype=np.float32)
         w = np.array([f[3] for f in filas], dtype=np.float32)
         ts = np.array([f[4] for f in filas])
-        salida[bot] = (X, yc, ys, w, ts)
+        nd = np.array([f[5] for f in filas])
+        salida[bot] = (X, yc, ys, w, ts, nd)
         logger.info("  %s: %d ventanas · %.1f %% positivas",
                     bot, len(filas), 100.0 * float((ys >= WATCH).mean()))
     return salida
@@ -709,6 +710,35 @@ FRACCION_PRUEBA = 0.30
 MIN_PARA_MEDIR = 60        # con menos, el AUC de prueba es ruido
 
 
+# ─── El modelo nulo NO es 0,5: es la tasa base del nodo (2026-10-07) ─────────
+#
+# La segunda cosa que esta compuerta no veía, y es peor que la primera porque
+# el número sale bonito. Medido:
+#
+#     tasa base por nodo, SOLA                     AUC 0,899
+#     los 3 rasgos del nodo (conductividad, saturación, energía)  0,897
+#     conductividad telúrica SOLA (es estática)    0,786
+#
+# El nodo 26 es 100 % positivo a 190 h y los nodos 8, 47, 11, 48 y 43 son 0 %.
+# Así que un rasgo que simplemente IDENTIFIQUE el nodo ---y uno estático lo
+# hace--- saca AUC 0,89 sin pronosticar nada: dice QUÉ nodo, no CUÁNDO. Es un
+# mapa de peligrosidad, que es útil, pero no es detección de precursores.
+#
+# Y la prueba anidada cierra el caso: puestos ENCIMA de la tasa base del nodo,
+# los rasgos de los seis bots dan ganancia **negativa** (-0,002 a -0,009), y
+# los `sismo_*` de beta1 ---su 0,80 de Omori--- dan -0,003. O sea que aquel
+# 0,80 también era, en el fondo, saber qué nodo es.
+#
+# Por eso lo que se exige es GANANCIA sobre el modelo nulo correcto, que es la
+# misma lógica de Molchan que el resto del sistema ya usa: «ganancia <= 1 = sin
+# habilidad real» (`core/precursor/baseline.py`). Un AUC alto contra 0,5 no
+# dice nada cuando las clases se reparten por nodo.
+#
+# El margen es pragmático y está calibrado contra la banda de ruido medida ese
+# día (-0,009 a -0,002): 0,02 queda por encima de ella.
+GANANCIA_MINIMA = 0.02
+
+
 def medir_habilidad(
     bot: str,
     X: np.ndarray,
@@ -716,6 +746,7 @@ def medir_habilidad(
     y_sig: np.ndarray,
     pesos: Optional[np.ndarray] = None,
     ts: Optional[np.ndarray] = None,
+    nodos: Optional[np.ndarray] = None,
 ) -> dict:
     """AUC sobre un holdout, con corte TEMPORAL si hay marcas de tiempo.
 
@@ -803,7 +834,26 @@ def medir_habilidad(
         if auc >= AUC_MINIMA and auc_sin_sismo < AUC_MINIMA:
             origen = "agrupamiento_omori"
 
+    # ── El modelo nulo: la tasa base del nodo, calculada SOLO con el tramo de
+    # entrenamiento (si se calculara con todo, se filtraría el futuro).
+    auc_nulo = None
+    ganancia = None
+    if nodos is not None and len(nodos) == len(X):
+        from collections import defaultdict
+        p, t = defaultdict(int), defaultdict(int)
+        for i in tr:
+            t[nodos[i]] += 1
+            p[nodos[i]] += int(alarma[i])
+        glob = float(alarma[tr].mean())
+        pred_nulo = np.array([
+            (p[nodos[i]] / t[nodos[i]]) if t[nodos[i]] >= 5 else glob
+            for i in te])
+        if len(set(pred_nulo.tolist())) > 1:
+            auc_nulo = float(roc_auc_score(alarma[te], pred_nulo))
+            ganancia = auc - auc_nulo
+
     return {"auc": auc, "auc_inferior": auc_inf, "auc_sin_sismo": auc_sin_sismo,
+            "auc_nulo_por_nodo": auc_nulo, "ganancia_sobre_nulo": ganancia,
             "origen": origen, "n_train": int(len(tr)), "n_test": int(len(te)),
             "n_pos_test": n1, "base_test": float(alarma[te].mean()),
             "corte": corte_tipo, "motivo": None}
@@ -816,6 +866,7 @@ def train_export(
     y_sig: np.ndarray,
     pesos: Optional[np.ndarray] = None,
     ts: Optional[np.ndarray] = None,
+    nodos: Optional[np.ndarray] = None,
     con_compuerta: bool = True,
 ) -> Tuple[Optional[Path], dict]:
     """Entrena y escribe el `.onnx` **solo si pasa la compuerta de habilidad**.
@@ -829,7 +880,7 @@ def train_export(
     from skl2onnx import convert_sklearn
     from skl2onnx.common.data_types import FloatTensorType
 
-    habilidad = medir_habilidad(bot, X, y_conf, y_sig, pesos, ts)
+    habilidad = medir_habilidad(bot, X, y_conf, y_sig, pesos, ts, nodos)
     auc = habilidad["auc"]
     if auc is None:
         logger.warning("  %s: NO se puede medir la habilidad --- %s",
@@ -854,6 +905,16 @@ def train_export(
             f"prueba no se distingue del azar. Un punto suelto por encima del "
             "suelo no es habilidad --- lo que tiene que cruzarlo es la barra de "
             "error (regla dura 8).")
+    elif (habilidad.get("ganancia_sobre_nulo") is not None
+          and habilidad["ganancia_sobre_nulo"] < GANANCIA_MINIMA):
+        habilidad["motivo"] = (
+            f"AUC {auc:.3f} pero la tasa base POR NODO sola da "
+            f"{habilidad['auc_nulo_por_nodo']:.3f}: la ganancia es "
+            f"{habilidad['ganancia_sobre_nulo']:+.3f}, por debajo de "
+            f"{GANANCIA_MINIMA}. El modelo dice QUÉ nodo, no CUÁNDO --- eso es "
+            "un mapa de peligrosidad, no detección de precursores. El modelo "
+            "nulo de este problema es la tasa base del nodo, no 0,5 (misma "
+            "lógica de Molchan que `core/precursor/baseline.py`).")
     elif habilidad.get("origen") == "agrupamiento_omori":
         habilidad["motivo"] = (
             f"la habilidad es REAL (AUC {auc:.3f}) pero sale de los rasgos "
@@ -862,13 +923,16 @@ def train_export(
             "Omori --- predice RÉPLICAS, comparte catálogo y nodo con el "
             "objetivo, y no es un precursor. Si se quiere usar, que sea con ese "
             "nombre y con su propia vara, no como detección de precursores.")
+    gan = habilidad.get("ganancia_sobre_nulo")
     aprueba = (auc is not None
                and inf is not None and inf >= AUC_MINIMA
                and auc <= AUC_MAXIMA_CREIBLE
+               and (gan is None or gan >= GANANCIA_MINIMA)
                and habilidad.get("origen") != "agrupamiento_omori")
     habilidad["aprueba"] = bool(aprueba)
     habilidad["auc_minima"] = AUC_MINIMA
     habilidad["auc_maxima_creible"] = AUC_MAXIMA_CREIBLE
+    habilidad["ganancia_minima"] = GANANCIA_MINIMA
     if not aprueba:
         if con_compuerta:
             logger.error(
@@ -952,15 +1016,18 @@ def retrain(db_path: str, min_samples: int = MIN_SAMPLES,
     """
     bots = bots or list(BOT_DIMS.keys())
     tss: Dict[str, np.ndarray] = {}
+    nds: Dict[str, np.ndarray] = {}
     if fuente == "ventanas":
         datos = construir_ventanas_etiquetadas(db_path, n=n_ventanas)
         firmas = {b: (v[0], v[1], v[2]) for b, v in datos.items()}
         pesos_por_bot = {b: v[3] for b, v in datos.items()}
         tss = {b: v[4] for b, v in datos.items()}
+        nds = {b: v[5] for b, v in datos.items()}
     elif fuente == "firmas":
         logger.warning(
             "fuente='firmas': conjunto DEMOSTRADO CONTAMINADO (AUC 1,0000 para "
             "adivinar la tabla de origen). Solo para reproducir el defecto.")
+        nds = {}
         firmas = load_firmas_from_db(db_path)
         juez = load_juez_feedback(db_path)
         for bot, xy in juez.items():
@@ -987,7 +1054,10 @@ def retrain(db_path: str, min_samples: int = MIN_SAMPLES,
         if ts is not None and len(ts) != len(X):
             ts = None          # el bootstrap desalineó: mejor sin corte temporal
         logger.info(f"=== {bot}: {source} ===")
-        path, habilidad = train_export(bot, X, yc, ys, w, ts=ts,
+        nd = nds.get(bot)
+        if nd is not None and len(nd) != len(X):
+            nd = None          # el bootstrap desalineo: sin modelo nulo por nodo
+        path, habilidad = train_export(bot, X, yc, ys, w, ts=ts, nodos=nd,
                                        con_compuerta=con_compuerta)
         results[bot] = {
             "path": str(path) if path else None,

@@ -267,6 +267,79 @@ def test_una_habilidad_que_NO_depende_de_los_sismo_no_se_etiqueta_de_omori():
     assert hab["auc_sin_sismo"] >= tr.AUC_MINIMA
 
 
+# ─── El modelo nulo no es 0,5: es la tasa base del nodo ──────────────────────
+#
+# La trampa más fina de todas, porque el número sale bonito. Medido el
+# 2026-10-07: la tasa base POR NODO, sola, da AUC 0,899 --- el nodo 26 es 100 %
+# positivo a 190 h y los nodos 8, 47, 11, 48 y 43 son 0 %. Así que un rasgo que
+# solo IDENTIFIQUE el nodo (y uno estático como `conductividad_telurica` lo
+# hace: 0,786 por sí solo) saca 0,89 sin pronosticar nada.
+#
+# Y la prueba anidada cierra el caso: encima de la tasa base, los rasgos de los
+# seis bots dan ganancia NEGATIVA (-0,002 a -0,009) y los `sismo_*` de beta1
+# dan -0,003. Por eso lo que se exige es ganancia sobre el modelo nulo
+# correcto, que es la misma lógica de Molchan del resto del sistema.
+
+def _datos_por_nodo(n=1200, senal_extra=0.0, semilla=5):
+    """Dos nodos con tasas base muy distintas. `senal_extra` añade información
+    que SÍ depende del tiempo, encima de la identidad del nodo."""
+    rng = np.random.RandomState(semilla)
+    nodos = rng.choice([7, 26], size=n)
+    base = np.where(nodos == 26, 0.85, 0.08)
+    X = rng.normal(0.0, 1.0, (n, 10)).astype(np.float32)
+    p = base + senal_extra * X[:, 0]
+    alarma = (rng.uniform(size=n) < np.clip(p, 0.01, 0.99)).astype(int)
+    ys = np.where(alarma == 1, tr.ALERT, tr.NEUTRAL).astype(np.float32)
+    yc = np.where(alarma == 1, 0.70, 0.35).astype(np.float32)
+    # el rasgo 1 delata el nodo, como haría una propiedad estática
+    X[:, 1] = np.where(nodos == 26, 1.0, 0.0) + rng.normal(0.0, 0.05, n)
+    return X, yc, ys, nodos
+
+
+def test_un_modelo_que_solo_sabe_QUE_nodo_es_se_niega(tmp_path):
+    """Es el caso de los rasgos del nodo: AUC alto y ganancia ~0."""
+    X, yc, ys, nodos = _datos_por_nodo(senal_extra=0.0)
+    ruta, hab = tr.train_export("alfa1", X, yc, ys, nodos=nodos)
+    assert hab["auc_nulo_por_nodo"] is not None, "no se midió el modelo nulo"
+    assert hab["auc"] > 0.7, f"el conjunto no separa por nodo: {hab['auc']}"
+    assert hab["ganancia_sobre_nulo"] < tr.GANANCIA_MINIMA, hab
+    assert ruta is None and hab["aprueba"] is False
+    assert "QUÉ nodo, no CUÁNDO" in hab["motivo"]
+    assert "peligrosidad" in hab["motivo"]
+    assert not (tmp_path / ARCHIVO_ALFA1).exists()
+
+
+def test_si_los_rasgos_SI_aportan_sobre_el_nodo_se_publica(tmp_path):
+    """La otra cara: señal que depende del tiempo, no solo del nodo."""
+    X, yc, ys, nodos = _datos_por_nodo(senal_extra=0.12)
+    hab = tr.medir_habilidad("alfa1", X, yc, ys, nodos=nodos)
+    assert hab["ganancia_sobre_nulo"] is not None
+    assert hab["ganancia_sobre_nulo"] > 0, (
+        f"la señal temporal no aportó nada sobre el nodo: {hab}")
+
+
+def test_sin_nodos_no_se_inventa_un_modelo_nulo():
+    """Si no se pasan los nodos, la ganancia es None y la compuerta no la
+    exige --- pero tampoco finge haberla medido."""
+    X, yc, ys, _ = _datos_por_nodo()
+    hab = tr.medir_habilidad("alfa1", X, yc, ys)
+    assert hab["auc_nulo_por_nodo"] is None
+    assert hab["ganancia_sobre_nulo"] is None
+
+
+def test_el_nulo_se_calcula_solo_con_el_tramo_de_entrenamiento():
+    """Calcularlo con todo filtraría el futuro al modelo nulo y la ganancia
+    saldría falsamente baja. Se fija leyendo la fuente, que es donde vive el
+    contrato."""
+    import inspect
+
+    fuente = inspect.getsource(tr.medir_habilidad)
+    i = fuente.index("auc_nulo = None")
+    bloque = fuente[i:]
+    assert "for i in tr:" in bloque, (
+        "el modelo nulo dejó de calcularse solo con el tramo de entrenamiento")
+
+
 def test_la_banda_creible_no_esta_vacia():
     """Regla dura 8 --- un umbral se calibra. Suelo 0,55 y techo 0,95 dejan una
     banda útil: por debajo no hay señal, por encima no es creíble."""
