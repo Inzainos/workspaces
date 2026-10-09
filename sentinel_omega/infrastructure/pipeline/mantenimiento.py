@@ -453,11 +453,32 @@ SESGO_MAX_CASTIGOS_OMEGA = 3  # mismo límite; Omega también se castiga si no a
 #     delta                   88,61 %              33,0 %
 #
 # `loki` empareja el 99,2 % de la calma y solo el 44,9 % de los eventos: su
-# memoria responde MÁS a la calma. Y las distribuciones de similitud son
-# idénticas --- en eventos la mediana va de 0,896 a 0,941 y en calma de 0,877 a
-# 0,965 ---, así que **no hay umbral que separe**: subir `SIMILARITY_ALERT`
-# dispararía menos en los dos lados por igual. El umbral vigente, 0,8, está por
-# debajo del percentil 5 de la calma (0,903).
+# memoria responde MÁS a la calma. Y las distribuciones de similitud eran
+# idénticas --- en eventos la mediana iba de 0,896 a 0,941 y en calma de 0,877 a
+# 0,965 ---, así que se concluyó que **no había umbral que separe**.
+#
+# ⚠ ESA CONCLUSIÓN YA NO ES CIERTA, y hay que decirlo donde se escribió porque
+# se lee como un hecho vigente. Las cifras de arriba son de ANTES del rebuild
+# del 2026-10-08 y con la fuga de procedencia abierta. Vueltas a medir el
+# 2026-10-09, con las mismas firmas consolidadas y la misma función:
+#
+#     bot      med EVENTO   med CALMA   p5 calma   p95 calma
+#     alfa1        0,733       0,733      0,617      0,840
+#     beta1        0,618       0,510      0,349      0,691
+#     omega        0,689       0,683      0,468      0,851
+#     loki         0,631       0,623      0,453      0,790
+#     padre        0,644       0,603      0,501      0,710
+#
+# Las distribuciones bajaron 0,25-0,35 y **beta1 y el padre SÍ separan** ahora
+# (0,618 contra 0,510 y 0,644 contra 0,603). Lo que no separa a ningún umbral
+# es alfa1, con las dos medianas en 0,733 --- coherente con su AUC de 0,490.
+#
+# Por eso `SIMILARITY_ALERT` pasó de 0,80 a **0,75**: con las distribuciones
+# donde están hoy, 0,80 cae en la cola y 0,75 justo por encima del p95 de la
+# calma de los bots con señal. La calibración entera está en la constante.
+#
+# La lección de proceso: una medición con fecha sigue siendo verdad SOBRE SUS
+# DATOS, y deja de serlo cuando los datos cambian. El rebuild movió los datos.
 #
 # La causa está en `similitud`: es una media sobre todas las dimensiones, y los
 # rasgos que discriminan quedan diluidos entre los que son casi iguales en todo

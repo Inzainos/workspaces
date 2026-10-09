@@ -121,7 +121,30 @@ VENTANA_HORAS = 336  # 14 days
 SUBVENTANA_HORAS = 72
 
 SIMILARITY_MATCH = 0.85     # same firma family
-SIMILARITY_ALERT = 0.80     # operational "looks like" threshold
+# Umbral operativo de «se parece». **0,75 desde el 2026-10-09**, calibrado
+# (regla dura 8) --- el 0,80 anterior nunca se midió y estaba PASADO el óptimo.
+#
+# `similitud` es `1 - media|Δz|/2`, un PROMEDIO, así que al crecer las
+# dimensiones se concentra y un corte fijo captura una cola que se desvanece.
+# Barrido sobre 250 ventanas de evento y 250 de calma, eligiendo por LIFT
+# (`deploy/calibrar_umbral_similitud.py`):
+#
+#     bot     dims   0,80 (antes)        0,75 (ahora)
+#     padre     47   pe 0,0049  1,52x    pe 0,0424  2,61x
+#     beta1     23   pe 0,0454  3,82x    pe 0,1248  5,01x
+#     alfa1     11   pe 0,1660  1,02x    pe 0,3859  1,02x
+#
+# A 0,85 y 0,90 el lift se derrumba para todos: 0,80 ya estaba en la cola mala.
+# Y no es un número ajustado a mano --- 0,75 cae justo por ENCIMA del p95 de la
+# distribución de calma de los bots que tienen señal (padre 0,710, beta1 0,691)
+# y por DEBAJO del de alfa1 (0,840), que es precisamente por qué alfa1 no
+# discrimina a ningún umbral.
+#
+# Mover este número toca NUEVE consumidores: la discriminación (`exigible`), el
+# sesgo de aprendizaje, el lag (`_lag_detectado`), las fases de entrenamiento y
+# `match_estado_actual`, que es el aviso en vivo. Volver a medir antes de
+# tocarlo.
+SIMILARITY_ALERT = 0.75
 
 # ─── Pesos de discriminación por rasgo (2026-10-07) ──────────────────────────
 #

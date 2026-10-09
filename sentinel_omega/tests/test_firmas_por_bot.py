@@ -92,8 +92,17 @@ def test_solo_las_consolidadas_son_exigibles(memoria):
 
 
 def test_el_umbral_sigue_mandando(memoria):
+    """Que el umbral se honre. Su VALOR lo verifica `test_umbral_calibrado`.
+
+    Aquí vivía `assert SIMILARITY_ALERT == 0.8`, que es una tautología: repite
+    la constante sin comprobar que valga para algo, y se puso roja al
+    recalibrarla a 0,75 sin haber detectado nunca nada. Un número que gobierna
+    nueve consumidores se defiende midiéndolo contra los datos, no copiándolo
+    en un `assert`.
+    """
     assert memoria.match_estado_actual(_RASGOS, bot="beta2", umbral=1.01) == []
-    assert SIMILARITY_ALERT == 0.8
+    # sigue siendo un umbral operativo utilizable, no un 0 ni un 1
+    assert 0.5 < SIMILARITY_ALERT < 0.95
 
 
 def test_la_comparacion_sigue_siendo_post_decision():
