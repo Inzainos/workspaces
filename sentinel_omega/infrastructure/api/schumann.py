@@ -92,12 +92,32 @@ def fetch_schumann_spectrogram(
         return None
 
 
-def analyze_spectrogram(image_path: str) -> Optional[Tuple[float, float]]:
-    """
-    Analyze Tomsk spectrogram via WPC (White Pixel Count).
+def analyze_spectrogram(image_path: str) -> Optional[Tuple[Optional[float], float]]:
+    """Cuenta de pixeles claros del espectrograma de Tomsk (WPC).
 
-    Returns:
-        (schumann_hz, activity_pct) or None on failure / missing opencv.
+    Devuelve `(None, activity_pct)`: la ACTIVIDAD es una medicion real ---la
+    fraccion de pixeles brillantes en la region de interes--- y la FRECUENCIA es
+    `None` porque **de un conteo de pixeles no sale una frecuencia**.
+
+    Hasta el 2026-10-09 esta funcion devolvia
+
+        schumann_hz = round(FUNDAMENTAL_HZ + (activity_pct * 0.02), 2)
+
+    o sea una RECTA sobre la actividad, guardada en una columna llamada `_hz` y
+    comparada despues contra 7,83 como si fuera la fundamental medida. Medido
+    ese dia: la formula se cumple exacto en **583 de 743 filas** de
+    `TBL_PRECURSORES_COSMICOS`, asi que actividad y «frecuencia» eran **un
+    numero con dos nombres**. Es la regla dura 2 ---un derivado etiquetado como
+    dato de sensor--- en el eje del proyecto: la resonancia Schumann es el
+    latido contra el que todo se correlaciona.
+
+    Consecuencia medida de haberlo fabricado: de 4.000 firmas de beta1/padre,
+    **86 llevan un rasgo de Schumann (2,2 %)** y su recorrido entero es de
+    **0,03 Hz** (7,860 a 7,891). El latido nunca entro a la memoria.
+
+    La frecuencia de verdad SI se puede tener, pero no de aqui: hace falta la
+    serie calibrada de una estacion ELF (ajuste lorentziano sobre la banda
+    6-25 Hz). Ver `docs/SCHUMANN_FUENTES.md`.
     """
     try:
         import cv2
@@ -127,12 +147,14 @@ def analyze_spectrogram(image_path: str) -> Optional[Tuple[float, float]]:
         active_pixels = cv2.countNonZero(mask)
         activity_pct = round((active_pixels / total_pixels) * 100, 2)
 
-        schumann_hz = round(FUNDAMENTAL_HZ + (activity_pct * 0.02), 2)
-
-        logger.info(
-            f"Schumann WPC: {schumann_hz} Hz, activity={activity_pct}%"
-        )
-        return schumann_hz, activity_pct
+        # La frecuencia NO se fabrica. Un conteo de pixeles mide intensidad,
+        # no frecuencia: devolver `7.83 + actividad*0.02` era inventar la
+        # fundamental a partir del brillo. `None` = sin dato, y los consumidores
+        # ya lo tratan como tal (`valor_medido`, `_es_dato`, «sin dato»).
+        logger.info("Schumann WPC: actividad=%s%% (frecuencia: sin medir --- "
+                    "de un conteo de pixeles no sale una frecuencia)",
+                    activity_pct)
+        return None, activity_pct
     except Exception as e:
         logger.error(f"Spectrogram analysis failed: {e}")
         return None
