@@ -148,7 +148,7 @@ debe hacer esa contradicción imposible de ignorar.
 # From the workspace root (/home/deamon/workspaces), with THE venv the service
 # uses --- `sentinel_omega/.venv` is an orphan without eodag/pytrends and adds
 # 4 failures of its own (measured 2026-10-08):
-.venv/bin/python -m pytest sentinel_omega/tests/ -q      # 1.308 tests, 2 red on purpose
+.venv/bin/python -m pytest sentinel_omega/tests/ -q      # 1.309 tests, 2 red on purpose
 
 # Single test file:
 python -m pytest sentinel_omega/tests/test_precursor.py -v
@@ -261,7 +261,7 @@ sentinel_omega/
 │   ├── database/                # SQLite schema, repository, 125-node seed
 │   └── dashboard/               # Streamlit + Plotly dashboard (9 tabs)
 ├── data/                        # SQLite databases
-└── tests/                       # 1.308 tests (medido 2026-10-08; 2 fallan)
+└── tests/                       # 1.309 tests (medido 2026-10-08; 2 fallan)
 ```
 
 ### Pipeline scripts (operational map)

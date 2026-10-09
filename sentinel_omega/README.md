@@ -565,9 +565,9 @@ python-dotenv>=1.0   # .env para secrets (no hardcode)
 ## Ejecución
 
 ```bash
-# Tests — 1.308 recolectados, 2 fallan (medido 2026-10-08), y las dos están
+# Tests — 1.309 recolectados, 2 fallan (medido 2026-10-08), y las dos están
 # rojas a propósito. Dos cosas deciden el resultado: el DIRECTORIO (desde
-# dentro de sentinel_omega/ fallan 15, nueve leen rutas relativas) y el
+# dentro de sentinel_omega/ fallan 11, leen rutas relativas) y el
 # INTÉRPRETE (`sentinel_omega/.venv` es un resto huérfano sin eodag ni
 # pytrends: 4 fallos más que son suyos). El servicio usa `workspaces/.venv`.
 .venv/bin/python -m pytest sentinel_omega/tests/ -q

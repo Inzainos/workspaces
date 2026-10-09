@@ -18,8 +18,8 @@ pytrends>=4.9        # Google Trends (Júpiter — atención colectiva sobre tor
 # ni scripts, ni docs) y le faltan eodag y pytrends.
 #
 # Medido el 2026-10-08, la misma suite con los dos: con el venv bueno fallan
-# **2** (las de `alfa1`, rojas a propósito) y con el huérfano **6**. Los cuatro
-# de diferencia eran dependencias que faltan ahí, no defectos: me costaron una
+# **2** (las de `alfa1`, rojas a propósito) y con el huérfano, cuatro más. Esos
+# cuatro eran dependencias que faltan ahí, no defectos: me costaron una
 # tarde y una conclusión falsa sobre la fuga de la marea. Si un test falla por
 # un `ModuleNotFoundError`, mira el intérprete ANTES que el código.
 # ───────────────────────────────────────────────────────────────────────────────

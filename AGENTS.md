@@ -164,7 +164,7 @@ estado/             Reportes publicados: REPORTE.md (último) + historial/AAAA/M
 
 ```bash
 # Tests — SIEMPRE desde la raíz del workspace, nunca desde dentro de sentinel_omega/
-.venv/bin/python -m pytest sentinel_omega/tests/ -q   # 1.308 tests; 2 fallan (2026-10-08)
+.venv/bin/python -m pytest sentinel_omega/tests/ -q   # 1.309 tests; 2 fallan (2026-10-08)
 # El intérprete importa: `sentinel_omega/.venv` es un resto huérfano sin eodag
 # ni pytrends y da 4 fallos que son suyos. El servicio usa `workspaces/.venv`.
 

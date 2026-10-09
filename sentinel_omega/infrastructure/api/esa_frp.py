@@ -150,6 +150,17 @@ _HTTP_FATAL = re.compile(r"\b40[13]\b")
 # reloj 5 s atrasado todo vale recién emitido nace «en el futuro». **El arreglo
 # de fondo es sincronizar el reloj**, no código de aquí.
 #
+#   5. Y ese arreglo NO es `hwclock -s`, que es lo que decía esta nota y el log
+#      hasta las 20:30 del 8-oct. Lo corrigió la sesión que trabaja Sentinel en
+#      paralelo, lo verifiqué yo: esto es **WSL2** (`/proc/version` dice
+#      `microsoft`), no hay RTC propio y la hora la pone el host --- que es el
+#      que va atrasado. `hwclock -s` copia justo ese reloj, así que no cambia
+#      nada: el Capitán lo corrió y el desfase seguía en −6/−7 s medido contra
+#      la cabecera `Date` de Cloudflare y de Copernicus. Y `timedatectl` dice
+#      `NTP service: inactive`.
+#      El arreglo está en **Windows**: `w32tm /resync` como administrador. Si se
+#      quiere independencia del host, levantar `systemd-timesyncd` dentro de WSL.
+#
 # Lo que sí toca aquí es no hacer daño colateral: eodag lo envuelve en
 # `AuthenticationError`, que era fatal, y eso CORTABA LAS DESCARGAS DEL CICLO
 # ENTERO por un producto. Ahora no es fatal y el ciclo sigue con las demás
@@ -549,12 +560,15 @@ def medir_frp(
                 leidos += 1
             except Exception as e:  # noqa: BLE001
                 if _es_transitorio(e):
-                    # Que el log diga DÓNDE está el defecto: PyJWT compara el
-                    # `iat` del vale con el reloj local y sin margen.
+                    # Que el log diga DÓNDE está el defecto y CÓMO se arregla:
+                    # PyJWT compara el `iat` del vale con el reloj local y sin
+                    # margen. Y el arreglo es en WINDOWS --- ver la nota de
+                    # `_TEXTO_TRANSITORIO`: aquí `hwclock -s` no sirve.
                     logger.warning(
                         "FRP: vale rechazado por la hora (%s) en %s --- es el "
-                        "RELOJ local, no la credencial: sincronízalo "
-                        "(`sudo hwclock -s`). El ciclo sigue con las demás zonas",
+                        "RELOJ local (va ~5 s por detrás), no la credencial. "
+                        "Arreglo en Windows: `w32tm /resync` como admin. El "
+                        "ciclo sigue con las demás zonas",
                         e, pid[:40])
                 else:
                     logger.warning("producto de FRP no legible (%s): %s",
