@@ -253,7 +253,40 @@ def get_model_status(db_path: str) -> str:
                     for r in lags if r["lag_promedio_h"] is not None
                 ]
                 if lag_lines:
-                    lag_info = "\n📉 <b>Lag de anticipación:</b>\n" + "\n".join(lag_lines)
+                    # La QUINTA superficie del cambio de significado del
+                    # 2026-10-08, y se me escapó al barrer las otras cuatro: la
+                    # encontró la sesión del Concilio. `tbl_lag_anticipacion`
+                    # ahora promedia SOLO las firmas específicas ---las que no
+                    # emparejan en ventanas de calma de su propio nodo--- y este
+                    # bloque lo imprimía como si siguiera siendo el promedio de
+                    # todas. Dos de cada tres firmas dan su número también en
+                    # calma, así que sin la nota estas horas se leen como
+                    # anticipación garantizada.
+                    from sentinel_omega.core.firmas.signature_engine import (
+                        resumen_nulo_lag,
+                    )
+                    nota_nulo = ""
+                    try:
+                        nl = resumen_nulo_lag(conn)
+                    except Exception:
+                        nl = None
+                    if nl and nl.get("con_lag"):
+                        nota_nulo = (
+                            f"\n   <i>Solo firmas que ANTICIPAN: "
+                            f"{nl['especificas']} de {nl['con_lag']} "
+                            f"({nl['pct_especificas']} %). Las otras "
+                            f"{nl['persisten']} emparejan también en calma del "
+                            f"mismo nodo --- su lag mide cuánto DURA el patrón, "
+                            f"no cuánto avisa, y no entra aquí.</i>"
+                        )
+                    elif nl is None:
+                        nota_nulo = (
+                            "\n   <i>Sin comparador contra calma medido: estas "
+                            "horas pueden ser duración del patrón y no "
+                            "anticipación.</i>"
+                        )
+                    lag_info = ("\n📉 <b>Lag de anticipación:</b>\n"
+                                + "\n".join(lag_lines) + nota_nulo)
         except Exception as exc:
             logger.warning("digesto: no se pudo leer el lag de anticipación: %s", exc)
         finally:

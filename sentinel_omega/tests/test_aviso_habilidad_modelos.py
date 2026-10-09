@@ -263,3 +263,69 @@ def test_el_digesto_LLEVA_las_dos_cosas(tmp_path, models_dir):
     assert "Modelos ONNX" in html
     assert "habilidad" in html.lower()
     assert "✅ ALFA1" not in html
+
+
+def test_el_bloque_del_LAG_dice_que_son_solo_las_especificas(tmp_path, models_dir):
+    """La QUINTA superficie del cambio de significado, y la encontró el vecino.
+
+    El 2026-10-08 `tbl_lag_anticipacion` pasó a promediar solo las firmas
+    específicas --- las que no emparejan en ventanas de calma de su propio
+    nodo. Barrí cuatro superficies (`/api/lag`, los tres reportes) y declaré el
+    trabajo hecho; el bloque «Lag de anticipación» del digesto seguía
+    imprimiendo las horas como si fueran el promedio de todas. Dos de cada tres
+    firmas dan ese número también en calma.
+
+    Lo encontró la sesión del Concilio leyendo mi propio cambio. Declarar «las
+    cuatro superficies» sin haber hecho el `grep` era la suposición, otra vez.
+    """
+    _onnx(models_dir, "beta1")
+    (models_dir / "models_meta.json").write_text(json.dumps({"bots": {}}))
+
+    db = tmp_path / "lag.db"
+    c = sqlite3.connect(db)
+    c.executescript(
+        "CREATE TABLE tbl_lag_anticipacion ("
+        "  event_class TEXT PRIMARY KEY, lag_promedio_h REAL);"
+        "CREATE TABLE TBL_FIRMAS ("
+        "  firma_id INTEGER PRIMARY KEY, estado TEXT, exigible INTEGER,"
+        "  lag_promedio_h REAL, lag_n INTEGER DEFAULT 0,"
+        "  lag_calma_h REAL, lag_calma_n INTEGER, lag_medido_at TEXT);"
+    )
+    c.execute("INSERT INTO tbl_lag_anticipacion VALUES ('SISMO_M4', 201.0)")
+    # dos específicas y tres que persisten: 40 % anticipan
+    filas = [(i, "consolidada", 1, 100.0, 3, None, 0, "2026-10-08") for i in range(2)]
+    filas += [(i + 2, "consolidada", 1, 100.0, 3, 180.0, 2, "2026-10-08") for i in range(3)]
+    c.executemany("INSERT INTO TBL_FIRMAS VALUES (?,?,?,?,?,?,?,?)", filas)
+    c.commit()
+    c.close()
+
+    txt = cv.get_model_status(str(db))
+
+    assert "SISMO_M4: ~201h" in txt, "se perdió el bloque del lag"
+    assert "Solo firmas que ANTICIPAN" in txt, (
+        "el bloque del lag volvió a dar las horas por anticipación sin decir "
+        "que son solo las específicas")
+    assert "2 de 5" in txt and "40.0 %" in txt
+    assert "no cuánto avisa" in txt
+
+
+def test_el_bloque_del_LAG_pasa_el_saneador_de_telegram(tmp_path, models_dir):
+    """La lección del `(<50)`: que aparezca no basta, tiene que PARSEAR.
+
+    Un test que solo comprobara el texto habría pasado el 2026-10-08 mientras
+    Telegram rechazaba el mensaje entero y se perdían 17 avisos.
+    """
+    from sentinel_omega.infrastructure.api.telegram import sanear_html_telegram
+
+    _onnx(models_dir, "beta1")
+    (models_dir / "models_meta.json").write_text(json.dumps({
+        "bots": {"beta1": {"n": 0, "source": "NO se reentrena: 38 (<50) y sin prior"}},
+    }))
+    db = tmp_path / "vacia.db"
+    sqlite3.connect(db).close()
+
+    txt = cv.get_model_status(str(db))
+    assert "(&lt;50)" in txt or "&lt;50" in txt, (
+        "el `(<50)` volvió sin escapar: Telegram rechaza el mensaje COMPLETO")
+    assert sanear_html_telegram(txt) == txt, (
+        "el saneador tuvo que corregir la salida, o sea que iba mal formada")
