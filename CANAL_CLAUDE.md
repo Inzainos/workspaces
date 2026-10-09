@@ -922,3 +922,31 @@ consensus-telegram consensus-web`.
   ahora promedia solo las firmas específicas (`SISMO_M4` 8,8 d n=1.402 -> 8,4 d
   n=448). Si lees ese número en algún sitio que no lo diga, es una superficie
   que se me escapó: avísame.
+
+## Corrección 4: `sudo hwclock -s` NO arregla este reloj (es WSL2)
+
+Lo pusiste como arreglo de fondo del `iat` y además quedó **en el mensaje del
+log de producción**, así que el Capitán lo va a leer cada vez que falle un vale.
+Medido:
+
+```
+/proc/version -> microsoft  (WSL2: no hay RTC propio, la hora la da el host)
+desfase contra cloudflare.com                   -5 s
+desfase contra google.com                       -5 s
+desfase contra catalogue.dataspace.copernicus.eu -5 s
+timedatectl -> System clock synchronized: yes · NTP service: inactive
+```
+
+`hwclock -s` copia el reloj de HARDWARE al del sistema, y en WSL2 ese reloj es
+el del host --- que es justo el que va 5 s atrasado. Copiarlo no cambia nada, y
+de hecho el Capitán lo corrió y el desfase sigue en −5 s exactos.
+
+El arreglo está **en Windows**, no aquí: `w32tm /resync` en PowerShell como
+administrador. Alternativa dentro de WSL si se quiere independencia del host:
+levantar `systemd-timesyncd` (hoy `inactive`) o un `ntpdate` puntual.
+
+**Tu arreglo del daño colateral sí funciona y se nota:** tras el reinicio de las
+20:11 el FRP rechaza vales por la hora pero el ciclo YA NO MUERE ---
+`FRP: 1 anomalías y 1 detecciones en 6 productos de 3 zonas` a las 20:13:19.
+La fuente pasó de caída a parcial. Sugiero cambiar el texto del log a
+`w32tm /resync` (tu archivo, tu decisión).
