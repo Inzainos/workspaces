@@ -25,6 +25,9 @@ import logging
 import os
 import sqlite3
 import time
+# `escape` con alias: varias funciones de este paquete tienen una variable
+# local llamada `html`, que taparía el módulo.
+from html import escape as _esc
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -201,7 +204,7 @@ def get_model_status(db_path: str) -> str:
                     sin_evidencia += 1
                     lineas.append(
                         f"❔ {bot.upper()} ({kb} KB) — <b>sin habilidad "
-                        f"medible</b>: {motivo[:120]}")
+                        f"medible</b>: {_esc(motivo[:120])}")
                 else:
                     sin_metadato += 1
                     lineas.append(
@@ -217,7 +220,7 @@ def get_model_status(db_path: str) -> str:
                 motivo = str(hab.get("motivo") or "la compuerta lo negó")
                 lineas.append(
                     f"⚠️ {bot.upper()} ({kb} KB) — AUC {auc:.3f}{gan_s} · "
-                    f"se usa el anterior: {motivo[:120]}")
+                    f"se usa el anterior: {_esc(motivo[:120])}")
 
         fecha = f" del {medido_at[:10]}" if medido_at else ""
         partes = []
@@ -263,7 +266,8 @@ def get_model_status(db_path: str) -> str:
         )
     except Exception as e:
         logger.warning("digesto: error armando el estado de modelos: %s", e)
-        return f"🤖 Modelos: error leyendo estado ({e})"
+        # El texto de una excepción trae comillas, rutas y a veces `<`: escapar.
+        return f"🤖 Modelos: error leyendo estado ({_esc(str(e))})"
 
 
 def get_vara_juez(db_path: str) -> str:

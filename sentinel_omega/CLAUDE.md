@@ -259,7 +259,7 @@ sentinel_omega/
 │   ├── database/                # SQLite schema, repository, 125-node seed
 │   └── dashboard/               # Streamlit + Plotly dashboard (9 tabs)
 ├── data/                        # SQLite databases
-└── tests/                       # 396 tests
+└── tests/                       # 1.285 tests (medido 2026-10-08; 6 fallan)
 ```
 
 ### Pipeline scripts (operational map)
@@ -477,7 +477,10 @@ Five walls of cross-correlation. Breach when >= 3 walls active:
 
 ## Branch
 
-All development on: `claude/sentinel-omega-architecture-j3c2kn`
+Rama viva: **`local/recuperacion-datos-2026-09`** (verificado contra `git branch --show-current`
+el 2026-10-08; sin push). `claude/sentinel-omega-architecture-j3c2kn` fue la rama de
+los PR de Claude y este archivo la citaba como si siguiera siendo la de trabajo.
+Nunca push a `main`.
 
 ## Telegram (consenso Padre, 2026-09-03)
 

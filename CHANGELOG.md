@@ -89,6 +89,50 @@ cosa»: no era el código, era el instrumento. Regla dura 12.
 en el saco de «específico», justo en la línea que le dice al operador cuánto
 tiempo tiene. La regla 7 muerde también al que la escribió.
 
+### (Noche) El digesto no llegaba: 16 avisos rechazados por un `(<50)`
+
+El log del Concilio —que es quien despacha la cola— llevaba desde las **13:49**
+repitiendo `Can't parse entities: unsupported start tag "50)"` y, tras cinco
+reintentos, `aviso descartado`. **16 mensajes del Sentinel perdidos** hasta las
+18:25, digesto horario incluido. La causa se escribió hoy mismo: el entrenador
+pone `NO se reentrena: 38 muestras reales (<50) y sin prior` en
+`models_meta.json` y `get_model_status` lo interpolaba en HTML sin escapar, así
+que Telegram leía `<50)` como etiqueta y devolvía 400 sobre el mensaje
+**completo**. No llegaba mal formateado: no llegaba.
+
+Y había un test con ese texto exacto (`test_aviso_habilidad_modelos`, línea 138)
+que pasaba, porque comprobaba que el motivo apareciera y nunca que la salida se
+pudiera parsear. Regla 12 en la superficie que más se lee.
+
+- **`sanear_html_telegram()`** en `infrastructure/api/telegram.py`, el único
+  punto de salida del repo: deja intactas las etiquetas que el Bot API admite,
+  traduce `<br>` a salto de línea —`br` **no** está entre ellas— y escapa
+  cualquier otro `<` o `&` suelto. Lo que entra sano sale idéntico.
+- **`_esc()` en el origen**: `motivo`, `source` y el texto de la excepción en
+  `consenso_vigilante`. La puerta es la red, no la excusa.
+- **Barrido de hermanas**: `cimatica_consistente` usaba `<br>` ×4, que habría
+  muerto igual, y `event_class`/`clave`/`ambito`/`bot_name` entraban sin escapar
+  en cuatro plantillas. `_strip_tags` deshace las entidades, porque `plain`
+  significa «sin marcado».
+- **El recorte iba después del saneo** y podía partir un `<b` por la mitad:
+  ahora recorta primero y sanea al final. Y cubría solo la rama legada, cuando
+  por la cola va todo: un mensaje de más de 4.096 lo rechaza Telegram con el
+  mismo final que el `(<50)`.
+- 14 tests nuevos (`test_html_telegram_parseable.py`) con un validador que
+  aplica la regla del parser, no la ortografía. 4 mutaciones, 4 pruebas caídas.
+
+Verificado de punta a punta: el digesto muerto de las 18:25, pasado por el
+saneador y enviado por `send_alert`, lo registró el bot como `Alert sent` a las
+**18:40:21**. El despacho es un `Type=oneshot`, así que el arreglo quedó vivo sin
+reiniciar nada.
+
+**Y el recuento de tests de esta misma entrada estaba mal**: decía 2 rojos y son
+6. La invocación decide --- 6 desde `/home/deamon/workspaces`, **15** desde
+dentro de `sentinel_omega/` con `PYTHONPATH=.`, nueve fantasmas de rutas
+relativas --- y el `AGENTS.md` del home prescribía la de los 15. Corregido ahí,
+en `workspaces/AGENTS.md` y en `CLAUDE.md`. Los cuatro rojos reales, con su
+evidencia, en `estado/BITACORA_2026-10-08.md` §9.
+
 ---
 
 ## [Unreleased] - 2026-10-08 - Todo con `--user`: se retiran las últimas unidades de sistema

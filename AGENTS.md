@@ -164,7 +164,7 @@ estado/             Reportes publicados: REPORTE.md (último) + historial/AAAA/M
 
 ```bash
 # Tests — SIEMPRE desde la raíz del workspace, nunca desde dentro de sentinel_omega/
-python -m pytest sentinel_omega/tests/ -q          # ~420 tests
+python -m pytest sentinel_omega/tests/ -q          # 1.285 tests; 6 fallan (2026-10-08)
 
 # Un solo archivo
 python -m pytest sentinel_omega/tests/test_firmas.py -v
@@ -209,7 +209,10 @@ con los conteos del sistema.
 
 ## Git y PRs
 
-- Rama de desarrollo: **`claude/sentinel-omega-architecture-j3c2kn`**.
+- Rama de desarrollo: **`local/recuperacion-datos-2026-09`** (verificado el 2026-10-08 contra
+  `git branch --show-current`; sin push). La vieja
+  `claude/sentinel-omega-architecture-j3c2kn` era la de los PR y figuraba aquí como
+  si fuera la viva.
 - No pushear a otra rama sin permiso explícito.
 - Los PRs se abren como **draft**. Si un PR ya fue mergeado, no apiles trabajo
   nuevo encima: reinicia la rama desde `origin/main` y abre un PR nuevo.

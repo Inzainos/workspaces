@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
@@ -63,6 +64,76 @@ from sentinel_omega.infrastructure.api._http import get_session
 logger = logging.getLogger(__name__)
 
 TELEGRAM_API = "https://api.telegram.org"
+
+# ─── El digesto que Telegram rechazaba entero ────────────────────────────────
+#
+# Medido el 2026-10-08 en el log del Concilio, que es quien despacha la cola:
+#
+#     ERROR Failed to send alert to …: Can't parse entities:
+#           unsupported start tag "50)" at byte offset 1499
+#     ERROR Cola: aviso «Direct Alert» descartado tras 5 intentos
+#
+# Quince digestos seguidos (13:49 → 18:25) muertos por un `(<50)` dentro del
+# mensaje: el entrenador escribe «NO se reentrena: 38 muestras reales (<50) y
+# sin prior» en `models_meta.json` y el digesto lo interpolaba en HTML sin
+# escapar, así que el parser de Telegram leía `<50)` como una etiqueta de
+# apertura y tiraba el mensaje COMPLETO con 400. No es que llegara mal
+# formateado: no llegaba.
+#
+# El arreglo va en los dos sitios a propósito. En el constructor del texto
+# (`consenso_vigilante`), porque ahí está el defecto; y aquí, en la única
+# puerta de salida del repo hacia Telegram, porque hay quince constructores
+# más y el siguiente texto libre que alguien interpole no puede volver a
+# costar un día de avisos. Cada etiqueta permitida pasa intacta; cualquier
+# otro `<` se escapa.
+#
+# Las etiquetas que Telegram admite (Bot API, modo HTML). `br` NO está entre
+# ellas --- `cimatica_consistente` la usaba y ese aviso habría muerto igual ---
+# así que se traduce al salto de línea que significa.
+_TAGS_TELEGRAM = (
+    "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+    "a", "code", "pre", "span", "tg-spoiler", "tg-emoji", "blockquote",
+)
+_TAG_PERMITIDA = re.compile(
+    r"</?(?:" + "|".join(_TAGS_TELEGRAM) + r")(?:\s[^<>]*)?>", re.IGNORECASE
+)
+_SALTO_HTML = re.compile(r"<br\s*/?>", re.IGNORECASE)
+# `&` suelta también rompe el parser; una entidad válida no.
+_ENTIDAD = re.compile(r"&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#\d{1,7}|#[xX][0-9a-fA-F]{1,6});")
+
+
+def sanear_html_telegram(texto: str) -> str:
+    """Deja el texto parseable por Telegram sin perder su formato.
+
+    Recorre una sola vez: las etiquetas permitidas se copian tal cual, `<br>`
+    pasa a salto de línea, y cualquier otro `<` o `&` se escapa. Lo que entra
+    ya sano sale idéntico.
+    """
+    if not texto:
+        return texto
+    texto = _SALTO_HTML.sub("\n", texto)
+    salida = []
+    i, n = 0, len(texto)
+    while i < n:
+        c = texto[i]
+        if c == "<":
+            m = _TAG_PERMITIDA.match(texto, i)
+            if m:
+                salida.append(m.group(0))
+                i = m.end()
+                continue
+            salida.append("&lt;")
+        elif c == "&":
+            m = _ENTIDAD.match(texto, i)
+            if m:
+                salida.append(m.group(0))
+                i = m.end()
+                continue
+            salida.append("&amp;")
+        else:
+            salida.append(c)
+        i += 1
+    return "".join(salida)
 
 
 def sin_token(texto: object) -> str:
@@ -187,19 +258,31 @@ def send_alert(message: str, parse_mode: str = "HTML", reply_markup: Optional[di
     
     NUEVO: Si alert queue está disponible, escribe a cola en lugar de enviar directo.
     """
+    # Recortar ANTES de sanear, y sanear en los DOS caminos.
+    #
+    # El orden importa: un recorte después del saneo puede partir una etiqueta
+    # o una entidad por la mitad (`<b`, `&l`) y eso rompe el parser igual que
+    # el `(<50)` --- mensaje entero rechazado. Saneando al final, lo que quede
+    # cortado se escapa y el aviso llega, feo pero entero.
+    #
+    # El recorte cubría solo la rama legada, y por la cola va TODO desde que
+    # existe: un mensaje de más de 4.096 lo rechaza Telegram («message is too
+    # long»), y el Concilio no recorta --- cinco reintentos y al archivo de
+    # descartados, el mismo final que los quince digestos de hoy.
+    if len(message) > 4000:
+        message = message[:3990] + "…"
+    if (parse_mode or "").upper() == "HTML":
+        message = sanear_html_telegram(message)
     if ALERT_QUEUE_AVAILABLE:
         queue_alert("Direct Alert", message, AlertPriority.MEDIUM, parse_mode)
         return True
-    
+
     # Fallback: envío directo legacy
     creds = _get_credentials()
     if not creds:
         return False
     token, chat_id = creds
     url = f"{TELEGRAM_API}/bot{token}/sendMessage"
-    # Telegram max ~4096 chars
-    if len(message) > 4000:
-        message = message[:3990] + "…"
     payload = {
         "chat_id": chat_id,
         "text": message,
@@ -247,6 +330,8 @@ def send_photo(photo_path: str, caption: str = "", parse_mode: str = "HTML") -> 
     url = f"{TELEGRAM_API}/bot{token}/sendPhoto"
     if len(caption) > 1000:
         caption = caption[:998] + "…"
+    if (parse_mode or "").upper() == "HTML":
+        caption = sanear_html_telegram(caption)
     try:
         with open(photo_path, "rb") as f:
             files = {"photo": f}

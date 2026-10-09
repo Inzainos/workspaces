@@ -15,6 +15,7 @@ import logging, os
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from enum import Enum
+from html import escape as _esc, unescape as _unesc
 from typing import Optional, Dict, List, Any
 from pathlib import Path
 logger = logging.getLogger(__name__)
@@ -37,7 +38,10 @@ def _now_utc_str() -> str:
 def _window_str(hours: int) -> str:
     return (datetime.now(timezone.utc) + timedelta(hours=hours)).strftime("%d/%m %H:%M UTC")
 def _strip_tags(html: str) -> str:
-    return (
+    """Versión sin marcado. `_unesc` al final porque «sin marcado» incluye las
+    entidades: desde que el texto de la DB se escapa, sin esto el panel de
+    Streamlit mostraría `&lt;50)` en vez de `(<50)`."""
+    return _unesc(
         html.replace("<b>", "").replace("</b>", "")
         .replace("<i>", "").replace("</i>", "")
         .replace("<code>", "").replace("</code>", "")
@@ -216,17 +220,20 @@ class AlertTemplates:
     def cimatica_consistente(patron_id: int, clave: str, frecuencia: int, event_class=None, ambito: str = "general", id_nodo=None) -> FormattedMessage:
         subj = f"[SENTINEL] CIMATICA CONSISTENTE - patron {patron_id} x{frecuencia}"
         nodo = f" · nodo #{id_nodo}" if id_nodo is not None else ""
-        ec = f" asoc. {event_class}" if event_class else " (sin clase aun)"
+        ec = f" asoc. {_esc(str(event_class))}" if event_class else " (sin clase aun)"
         desc = (
             "Patrón repetido 3+ veces — deja de ser coincidencia y se vuelve firma. "
             "Revisar entrenamiento del Padre. Como ya hay registro, va al reporte horario; no pagina."
         )
+        # Saltos de línea, no `<br>`: Telegram no admite esa etiqueta y
+        # rechazaba el mensaje entero («unsupported start tag»). Su hermana
+        # `cimatica_nuevo` ya usaba `\n`; esta se quedó atrás.
         html = (
-            f"<b>CIMATICA CONSISTENTE</b><br>"
-            f"<b>Patron:</b> <code>{patron_id}</code>{nodo} ({ambito})<br>"
-            f"<b>Frecuencia:</b> <code>{frecuencia} veces</code>{ec}<br>"
-            f"<b>Clave:</b> <code>{clave[:64]}</code><br>"
-            f"<b>Que significa:</b> {desc}<br>"
+            f"<b>CIMATICA CONSISTENTE</b>\n"
+            f"<b>Patron:</b> <code>{patron_id}</code>{nodo} ({_esc(str(ambito))})\n"
+            f"<b>Frecuencia:</b> <code>{frecuencia} veces</code>{ec}\n"
+            f"<b>Clave:</b> <code>{_esc(str(clave)[:64])}</code>\n"
+            f"<b>Que significa:</b> {desc}\n"
             f"<i>{_now_utc_str()}</i>"
         )
         md = f"**CIMATICA CONSISTENTE** Patron {patron_id}{nodo} x{frecuencia}{ec}"
@@ -236,11 +243,11 @@ class AlertTemplates:
     def cimatica_nuevo(patron_id: int, clave: str, ambito: str = "general", id_nodo=None, event_class=None) -> FormattedMessage:
         subj = f"[SENTINEL] CIMATICA NUEVO — patron {patron_id}"
         nodo = f" · nodo #{id_nodo}" if id_nodo is not None else ""
-        ec = f" asoc. {event_class}" if event_class else ""
+        ec = f" asoc. {_esc(str(event_class))}" if event_class else ""
         html = (
             f"🆕 <b>CIMATICA SIN PRECEDENTES</b>\n\n"
-            f"<b>Patrón:</b> <code>{patron_id}</code>{nodo} ({ambito}){ec}\n"
-            f"<b>Clave:</b> <code>{(clave or '')[:64]}</code>\n"
+            f"<b>Patrón:</b> <code>{patron_id}</code>{nodo} ({_esc(str(ambito))}){ec}\n"
+            f"<b>Clave:</b> <code>{_esc(str(clave or '')[:64])}</code>\n"
             f"<b>Qué significa:</b> esta combinación de telemetría no estaba en "
             f"<code>tbl_cimatica_patrones</code> (frecuencia=1, NUEVO). "
             f"No es un sismo ni un pronóstico — es un patrón que el sistema no había visto.\n"
@@ -255,7 +262,7 @@ class AlertTemplates:
         fid = f" id={firma_id}" if firma_id else ""
         html = (
             f"🆕 <b>FIRMA SIN PRECEDENTES</b>\n\n"
-            f"<b>Bot:</b> <code>{bot_name}</code>  <b>Clase:</b> <code>{event_class}</code>{fid}\n"
+            f"<b>Bot:</b> <code>{_esc(str(bot_name))}</code>  <b>Clase:</b> <code>{_esc(str(event_class))}</code>{fid}\n"
             f"<b>Recurrencia:</b> <code>{recurrencia}</code> (estado <code>nueva</code>)\n"
             f"<b>Qué significa:</b> TBL_FIRMAS no tenía este patrón. Las firmas recurrentes "
             f"ya no pagan — van al reporte horario.\n"

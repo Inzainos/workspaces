@@ -47,8 +47,13 @@ RESTORE_UNITS = [u.strip() for u in os.environ.get(
     'sentinel-omega,sentinel-omega-dashboard-api,sentinel-omega-dashboard-web'
 ).split(',') if u.strip()]
 
-# El Streamlit legacy es unit de SISTEMA (root, /etc/systemd/system): solo
-# detectable por puerto. Desactivable con WATCHDOG_STREAMLIT_CHECK=0.
+# El Streamlit legacy (8510) se vigila por PUERTO. Desde el 2026-10-08 ya es
+# unit de USUARIO --- antes vivia en /etc/systemd/system y por eso solo se
+# podia mirar el puerto---, asi que `systemctl --user restart` sobre
+# STREAMLIT_UNIT ya funciona. Se deja fuera de RESTORE_UNITS a proposito: el
+# chequeo por puerto distingue «no escucha» de «la unit esta activa», que es
+# justo lo que falla en un Streamlit colgado. Desactivable con
+# WATCHDOG_STREAMLIT_CHECK=0.
 STREAMLIT_CHECK = os.environ.get('WATCHDOG_STREAMLIT_CHECK', '1') == '1'
 STREAMLIT_HOST = os.environ.get('WATCHDOG_STREAMLIT_HOST', '127.0.0.1')
 STREAMLIT_PORT = int(os.environ.get('WATCHDOG_STREAMLIT_PORT', '8510'))
