@@ -491,9 +491,14 @@ Canal Telegram ya no dispara cada ciclo. El Padre (`consenso_vigilante.py`):
 1. **Reporte horario siempre** (`TG_DIGEST_MINUTES=60`) — Fantasma+nivel, muro n/5, telemetría, top precursores, loop, botón Mini App (`TELEGRAM_WEBAPP_URL` HTTPS público a `/mini`). No se omite la hora en calma. No es un pile de "precursores revisar".
    **La cadencia se cumple entre procesos** desde el 2026-10-07: la marca del
    último envío vive en `data/estado_digesto.json`, no en memoria. Hasta
-   entonces el despacho real (`enviar_correos.py`, un `Type=oneshot` cada 15
-   min) mandaba **4 digestos por hora** con el `60` declarado, porque la marca
-   nacía en `0.0` en cada proceso nuevo y `force=True` saltaba el temporizador.
+   entonces el oneshot de rutinas (`enviar_correos.py`, cada 15 min) mandaba
+   **4 digestos por hora** con el `60` declarado, porque la marca nacía en
+   `0.0` en cada proceso nuevo y `force=True` saltaba el temporizador.
+   **Ojo: son DOS las rutas que despachan, no una.** Medido sobre los 18
+   envíos del 2026-10-08: **11 del launcher** (cada ciclo) y **7 del oneshot**.
+   Gana quien llegue primero a la hora, y la marca compartida es justo lo que
+   lo hace posible. Antes de afirmar cuál envía, míralo:
+   `journalctl --user -u sentinel-omega.service -u sentinel-omega-rutinas.service | grep "digest horario (sent"`.
    Dos cosas que NO hay que hacer al tocar esto: poner la compuerta de minuto
    en `rutinas_locales.sh` (sería una segunda fuente de verdad) y dejar que un
    test escriba la marca de producción — lo impide el fixture de sesión de

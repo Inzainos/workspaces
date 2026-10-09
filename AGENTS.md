@@ -264,11 +264,17 @@ dispara la revisión del Padre y, si amerita, aviso por Telegram.
 - **Digest horario SIEMPRE** (`TG_DIGEST_MINUTES=60`): concentrado Fantasma,
   muro, telemetría, precursores, loop, **la vara del Juez** y **la habilidad
   medida de los ONNX**. No saltar la hora.
-- **La cadencia se cumple ENTRE PROCESOS** (2026-10-07): la marca del último
-  envío vive en `data/estado_digesto.json`, no en memoria. El despacho real es
-  un `Type=oneshot` cada 15 min, así que con la marca en memoria nacía en `0.0`
-  en cada proceso y salían **4 digestos por hora** con el `60` declarado.
-  Verificado el 2026-10-08 sobreviviendo a un apagado COMPLETO del sistema.
+- **DOS rutas despachan el digesto, y comparten la marca.** Medido sobre los 18
+  envíos reales del 2026-10-08: **11 del launcher** (`sentinel-omega.service`,
+  cada ciclo) y **7 del oneshot de rutinas** (`deploy/enviar_correos.py`, cada
+  15 min). Gana quien llegue primero a la hora, y por eso la marca compartida
+  en `data/estado_digesto.json` es lo que hace cumplir la cadencia: con la
+  marca en memoria, el oneshot la estrenaba en `0.0` en cada proceso y salían
+  **4 digestos por hora** con el `60` declarado (2026-10-07). Al tocar esto,
+  **no supongas cuál de las dos envía**: `journalctl --user -u
+  sentinel-omega.service -u sentinel-omega-rutinas.service | grep "digest
+  horario (sent"`. Verificado el 2026-10-08 sobreviviendo a un apagado COMPLETO
+  del sistema.
 - **Lo que el digesto dice de los modelos es su habilidad MEDIDA**, no que el
   archivo exista (2026-10-08). Antes ponía `✅ ALFA1 (791KB)` por
   `os.path.exists` y los ocho `.onnx` en disco no habían pasado nunca por la

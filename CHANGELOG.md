@@ -159,11 +159,22 @@ escrita la trampa de los dos venv. Regla 12 un piso más abajo: ancla el
 instrumento antes de anclar el test.
 
 **El recuento de tests de esta entrada era correcto** (2 rojos); lo que estaba mal
-era mi medición. La invocación decide --- 6 desde `/home/deamon/workspaces`, **15** desde
-dentro de `sentinel_omega/` con `PYTHONPATH=.`, nueve fantasmas de rutas
-relativas --- y el `AGENTS.md` del home prescribía la de los 15. Corregido ahí,
-en `workspaces/AGENTS.md` y en `CLAUDE.md`. Los cuatro rojos reales, con su
-evidencia, en `estado/BITACORA_2026-10-08.md` §9.
+era mi medición. **La invocación decide**, y las cifras intermedias de esta
+entrada (6 y 15) eran de un árbol a medio arreglar. Vuelto a medir al cierre
+del día, con el árbol limpio en `a7f6c1b`:
+
+```
+cd /home/deamon/workspaces && .venv/bin/python -m pytest sentinel_omega/tests/ -q
+  -> 1.309 recolectados, 2 rojos          <- LA BUENA (el venv del servicio)
+
+cd sentinel_omega && PYTHONPATH=. ../.venv/bin/python -m pytest tests/ -q
+  -> 11 rojos                             <- nueve fantasmas de rutas relativas
+```
+
+El `AGENTS.md` del home prescribía la segunda y daba por roto lo que no lo
+estaba. Corregido ahí, en `workspaces/AGENTS.md` y en `CLAUDE.md`. La lección
+dura es la del instrumento (regla 12) y no el número: **si un test cae con
+`ModuleNotFoundError`, mira el intérprete antes que el código.**
 
 ---
 
