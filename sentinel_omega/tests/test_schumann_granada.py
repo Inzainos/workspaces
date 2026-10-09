@@ -95,3 +95,97 @@ def test_faltan_archivos_y_lo_dice_en_vez_de_devolver_ceros(tmp_path):
     d = tmp_path / "S_N_FD" / "2015" / "1503"
     d.mkdir(parents=True)
     assert sg.leer_mes(d, "1503", 0) == []
+
+
+# ─── La ruta de los `.npz` procesados ────────────────────────────────────────
+
+
+def _npz_sintetico(path, n=6, sensor=0, f1=7.9, err=0.05, sat=0.0):
+    """Un `SN_YYMM_s.npz` con la estructura real de `Packaging.py`.
+
+    `sal = (sat, fre, freajus, rs, rs_LO, parLO, parLOC, parLOE, pr, tiempo)`
+    -> claves `arr_0` .. `arr_9`.
+    """
+    import numpy as np
+    parlo = np.zeros((n, sg.N_COLS_LO), dtype=float)
+    for i in range(n):
+        parlo[i, sg.COL_AMPLITUD[0]] = 0.37
+        parlo[i, sg.COL_FRECUENCIA[0]] = f1 + i * 0.01
+        parlo[i, sg.COL_FRECUENCIA[1]] = 14.33
+        parlo[i, sg.COL_FRECUENCIA[2]] = 20.43
+        parlo[i, sg.COL_ANCHURA[0]] = 1.2
+        parlo[i, sg.COL_ANCHURA[1]] = 1.28
+        parlo[i, sg.COL_ANCHURA[2]] = 1.49
+    tiempo = np.array(
+        [f"2014-06-0{1 + i // 144} {i % 24:02d}:{(i * 10) % 60:02d}:00.000000"
+         for i in range(n)], dtype=str)
+    import numpy as _np
+    _np.savez(path,
+              _np.full(n, sat),              # arr_0 sat
+              _np.arange(6.0, 25.1, 0.1),    # arr_1 fre
+              _np.arange(6.35, 23.8, 0.1),   # arr_2 freajus
+              _np.zeros((n, 5)),             # arr_3 rs
+              _np.zeros((n, 5)),             # arr_4 rs_LO
+              parlo,                         # arr_5 parLO
+              _np.full(n, err),              # arr_6 parLOC
+              _np.zeros((n, sg.N_COLS_LOE)), # arr_7 parLOE
+              _np.zeros((n, 6)),             # arr_8 pr
+              tiempo)                        # arr_9 tiempo
+
+
+def test_el_npz_trae_su_PROPIO_eje_de_tiempo(tmp_path):
+    """`arr_9` son las marcas del instrumento, no una reconstruccion.
+
+    Es la razon de preferir la ruta `.npz`: `Packaging.py` las lee de los
+    `_info.txt` del equipo. Una hora cierta es la diferencia entre poder
+    emparejar con un sismo y no poder.
+    """
+    p = tmp_path / "SN_1406_0.npz"
+    _npz_sintetico(p, n=6)
+    filas = sg.leer_npz(p)
+    assert len(filas) == 6
+    assert filas[0]["ts"].startswith("2014-06-01")
+    assert len(filas[0]["ts"]) == 16          # "AAAA-MM-DD HH:MM"
+    assert filas[0]["sensor"] == 0
+
+
+def test_el_npz_respeta_el_rango_fisico(tmp_path):
+    """Un f1 en 23 Hz es un fallo del ajuste: NULL, no un dato."""
+    p = tmp_path / "SN_1406_1.npz"
+    _npz_sintetico(p, n=4, sensor=1, f1=23.0)
+    filas = sg.leer_npz(p)
+    assert len(filas) == 4
+    assert all(f["sr1_hz"] is None for f in filas), (
+        "se guardo una SR1 fuera del rango fisico")
+    # SR2 y SR3 sí están en rango y se conservan
+    assert all(f["sr2_hz"] is not None for f in filas)
+
+
+def test_el_npz_descarta_lo_SATURADO(tmp_path):
+    p = tmp_path / "SN_1406_0.npz"
+    _npz_sintetico(p, n=3, sat=50.0)
+    filas = sg.leer_npz(p)
+    assert all(f["sr1_hz"] is None for f in filas)
+    assert all(f["saturacion_pct"] == 50.0 for f in filas), (
+        "la saturacion medida tiene que quedar registrada aunque invalide")
+
+
+def test_el_sensor_sale_del_NOMBRE_y_un_nombre_raro_no_pasa(tmp_path):
+    p = tmp_path / "SN_1406_1.npz"
+    _npz_sintetico(p, n=2, sensor=1)
+    assert sg.leer_npz(p)[0]["sensor"] == 1
+    malo = tmp_path / "cualquiera.npz"
+    _npz_sintetico(malo, n=2)
+    assert sg.leer_npz(malo) == []
+
+
+def test_un_npz_desalineado_se_rechaza_entero(tmp_path):
+    """Si sat, parLO y tiempo no tienen el mismo n, no se adivina."""
+    import numpy as np
+    p = tmp_path / "SN_1406_0.npz"
+    np.savez(p, np.zeros(10), np.zeros(5), np.zeros(5),
+             np.zeros((10, 5)), np.zeros((10, 5)),
+             np.zeros((7, sg.N_COLS_LO)),      # parLO con 7 en vez de 10
+             np.zeros(10), np.zeros((10, 11)), np.zeros((10, 6)),
+             np.array(["2014-06-01 00:00:00.0"] * 10, dtype=str))
+    assert sg.leer_npz(p) == []

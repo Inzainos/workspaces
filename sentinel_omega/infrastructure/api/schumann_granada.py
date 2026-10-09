@@ -257,3 +257,125 @@ def ingerir(conn: sqlite3.Connection, dir_fd: Path, yymm: str,
                 total["descartadas"] += 1
     conn.commit()
     return total
+
+
+# ─── La ruta buena: los `.npz` ya procesados ─────────────────────────────────
+#
+# `Packaging.py` guarda, por mes y sensor, `np.savez(..., *sal)` con
+#
+#     sal = (sat, fre, freajus, rs, rs_LO, parLO, parLOC, parLOE, pr, tiempo)
+#
+# o sea las claves `arr_0` .. `arr_9`:
+#
+#     arr_0  sat       % de saturacion por intervalo
+#     arr_1  fre       eje de frecuencia de calibracion (6-25 Hz)
+#     arr_2  freajus   eje de frecuencia del ajuste (6,35-23,75)
+#     arr_3  rs        espectro medio por intervalo
+#     arr_4  rs_LO     curva lorentziana ajustada
+#     arr_5  parLO     (n, 14) parametros --- esto es lo que se usa
+#     arr_6  parLOC    error de ajuste por intervalo
+#     arr_7  parLOE    (n, 11) incertidumbre por parametro
+#     arr_8  pr        amplitud y frecuencia de pico leidas de la curva
+#     arr_9  tiempo    MARCAS DE TIEMPO, como texto
+#
+# `arr_9` es la razon de preferir esta ruta: las horas salen de los `_info.txt`
+# del instrumento (`Packaging.py` las lee del archivo, caracteres 22-45), asi
+# que **no hay que reconstruir el eje de tiempo desde los nombres de archivo**.
+# Una hora cierta es la diferencia entre poder emparejar con un sismo y no.
+NPZ_SAT, NPZ_PARLO, NPZ_PARLOC, NPZ_TIEMPO = "arr_0", "arr_5", "arr_6", "arr_9"
+
+_RE_NPZ = re.compile(r"SN_(\d{4})_(\d)\.npz$")
+
+
+def leer_npz(path_npz: Path) -> List[Dict]:
+    """Un `SN_YYMM_s.npz` -> filas listas para insertar.
+
+    Mismas compuertas que `leer_mes`: rango fisico (absoluto, porque la fisica
+    lo es) y error de ajuste RELATIVO a la mediana de este sensor en este mes.
+    """
+    import numpy as np
+
+    m = _RE_NPZ.search(path_npz.name)
+    if not m:
+        logger.warning("%s no tiene la forma SN_YYMM_s.npz", path_npz.name)
+        return []
+    sensor = int(m.group(2))
+
+    try:
+        z = np.load(path_npz, allow_pickle=False)
+    except Exception as exc:
+        logger.warning("no se pudo abrir %s: %s", path_npz.name, exc)
+        return []
+
+    faltan = [k for k in (NPZ_SAT, NPZ_PARLO, NPZ_PARLOC, NPZ_TIEMPO)
+              if k not in z]
+    if faltan:
+        logger.warning("%s: faltan %s", path_npz.name, faltan)
+        return []
+
+    sat = np.atleast_1d(z[NPZ_SAT]).astype(float)
+    loc = np.atleast_1d(z[NPZ_PARLOC]).astype(float)
+    lo = np.asarray(z[NPZ_PARLO], dtype=float)
+    tiempo = np.atleast_1d(z[NPZ_TIEMPO])
+    n = len(sat)
+    if lo.ndim == 1:
+        if lo.size != n * N_COLS_LO:
+            logger.warning("%s: parLO con %d valores para %d intervalos",
+                           path_npz.name, lo.size, n)
+            return []
+        lo = lo.reshape(n, N_COLS_LO)
+    if lo.shape[0] != n or len(tiempo) != n:
+        logger.warning("%s: desalineado --- sat=%d parLO=%d tiempo=%d",
+                       path_npz.name, n, lo.shape[0], len(tiempo))
+        return []
+
+    med_err = float(np.median(loc[np.isfinite(loc)])) if np.any(np.isfinite(loc)) else 0.0
+    lim_err = med_err * ERROR_AJUSTE_VECES_MEDIANA if med_err > 0 else float("inf")
+
+    filas = []
+    for i in range(n):
+        ts = str(tiempo[i])[:16]          # "AAAA-MM-DD HH:MM"
+        if len(ts) < 16 or ts[4] != "-":
+            continue                      # hora ilegible: se salta, no se finge
+        s_pct = float(sat[i])
+        err = float(loc[i])
+        malo = s_pct > SATURACION_MAXIMA_PCT or err > lim_err
+        fila = {"ts": ts, "sensor": sensor,
+                "saturacion_pct": round(s_pct, 4),
+                "error_ajuste": round(err, 6)}
+        for k in range(3):
+            f = float(lo[i, COL_FRECUENCIA[k]])
+            a = float(lo[i, COL_AMPLITUD[k]])
+            w = float(lo[i, COL_ANCHURA[k]])
+            lo_hz, hi_hz = RANGOS_HZ[k]
+            fuera = not (lo_hz <= f <= hi_hz)
+            fila[f"sr{k+1}_hz"] = None if (malo or fuera) else round(f, 4)
+            fila[f"sr{k+1}_amp"] = None if malo else round(a, 6)
+            fila[f"sr{k+1}_q"] = (None if (malo or fuera or abs(w) < 1e-6)
+                                  else round(f / abs(w), 4))
+        filas.append(fila)
+    logger.info("%s: %d intervalos, error mediano %.4f (limite %.4f)",
+                path_npz.name, len(filas), med_err, lim_err)
+    return filas
+
+
+def ingerir_npz_dir(conn: sqlite3.Connection, dir_npz: Path) -> Dict[str, int]:
+    """Ingiere todos los `SN_*.npz` de un directorio. Idempotente."""
+    asegurar_tabla(conn)
+    tot = {"archivos": 0, "filas": 0, "con_sr1": 0, "descartadas": 0}
+    for p in sorted(Path(dir_npz).rglob("SN_*.npz")):
+        filas = leer_npz(p)
+        if not filas:
+            continue
+        tot["archivos"] += 1
+        conn.executemany(
+            f"INSERT OR REPLACE INTO {TABLA} (ts, sensor, sr1_hz, sr2_hz, "
+            "sr3_hz, sr1_amp, sr2_amp, sr3_amp, sr1_q, sr2_q, sr3_q, "
+            "saturacion_pct, error_ajuste) VALUES (:ts,:sensor,:sr1_hz,"
+            ":sr2_hz,:sr3_hz,:sr1_amp,:sr2_amp,:sr3_amp,:sr1_q,:sr2_q,"
+            ":sr3_q,:saturacion_pct,:error_ajuste)", filas)
+        tot["filas"] += len(filas)
+        tot["con_sr1"] += sum(1 for f in filas if f["sr1_hz"] is not None)
+        tot["descartadas"] += sum(1 for f in filas if f["sr1_hz"] is None)
+        conn.commit()
+    return tot
