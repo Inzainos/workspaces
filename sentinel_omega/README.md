@@ -160,7 +160,7 @@ Orchestrator → GeodynamicLayerRunner → 8 Agentes SNT + Omega + Loki → Padr
 │
 ├── Alfa-1 (Geodinámico: Bz, viento solar, sísmico) — 30 años entrenamiento
 │       ↑ valida
-├── Alfa-2 (Satélite: ESA Sentinel) — 14 años
+├── Alfa-2 (Satélite: ESA Sentinel) — 14 años — NOTIFICADOR: avisa, NO vota
 │
 ├── Beta-1 (The Artist — Cymatic Figure) — 30 años  ← LATIDO
 │       ↑ valida
@@ -186,7 +186,10 @@ Orchestrator → GeodynamicLayerRunner → 8 Agentes SNT + Omega + Loki → Padr
 Si Schumann está perturbado junto con cualquier otra señal = precursor detectado.
 
 **Familias**:
-- `space_weather`: Alfa-1, Alfa-2
+- `space_weather`: Alfa-1, Alfa-2 (**Alfa-2 avisa, no vota**: sus 3 features no
+  alcanzan `MIN_DIMENSIONES_COMPARABLES`=4, así que no forma firmas. Pasa a
+  votante cuando la capa satelital aporte una cuarta señal; ver
+  `BOTS_ESPERANDO_SENALES`)
 - `schumann_cymatics`: Beta-1, Beta-2
 - `financial_sentiment`: Delta
 - ` Correlation Alpha's Telemetry, Schumann Resonance, Delta and Beta's Patterns':Omega
@@ -282,7 +285,7 @@ Se aplica a:
 
 | Tabla                      | Propósito                                                        |
 |----------------------------|-------------------------------------------------------------------|
-| TBL_FIRMAS                 | Memoria de patrones por bot. Estado: nueva → observada → recurrente → consolidada (por recurrencia). Solo las consolidadas son conocimiento exigible. |
+| TBL_FIRMAS                 | Memoria de patrones por bot. Estado: nueva → observada → recurrente → consolidada, **por RECURRENCIA**. Desde el 2026-10-07 `consolidada` **ya no significa `exigible`**: un patrón que reaparece en calma se consolidaba igual que uno que precede eventos. `exigible` es el hecho MEDIDO de discriminar eventos frente a calma (`discriminacion > 0,05`) y son **982 de 23.248 consolidadas (4,2 %)**; `consolidadas()` devuelve esas. |
 | TBL_JUEZ_AUDITORIA         | Ledger disciplinario del Juez: ACIERTO / FALLO / FALSO_POSITIVO con severidad asimétrica (omitir firma conocida = 20 base, omisión = 10, falsa alarma = 1) escalada por reincidencia. Columna **`fase`** estricta (viva/reconocimiento/backtest/observacion/trasfondo); la fase viva es **append-only**. |
 | **viva_real** (vista)      | Vara canónica de asertividad: SOLO filas `fase='viva'`. Todas las tuberías de reporte puntúan desde aquí. |
 | TBL_PESOS_BOTS             | Pesos de credibilidad por bot [0.3, 1.5] — castigo multiplicativo (Padre paga doble), refuerzo recupera hasta 1.0. |
@@ -562,7 +565,9 @@ python-dotenv>=1.0   # .env para secrets (no hardcode)
 ## Ejecución
 
 ```bash
-# Tests (396 tests, ejecutar desde /home/user/workspaces/)
+# Tests — 1.285 recolectados, 6 fallan (medido 2026-10-08). Ejecutar SIEMPRE
+# desde /home/deamon/workspaces: desde dentro de sentinel_omega/ fallan 15, y
+# los nueve de diferencia son tests que leen archivos por ruta relativa.
 python -m pytest sentinel_omega/tests/ -q
 
 # Dashboard (9 tabs interactivas)
