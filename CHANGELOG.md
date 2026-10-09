@@ -1,5 +1,55 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-09 - El notificador: rescatado, y un rebuild que NO se hizo
+
+Abierto por una pregunta del operador que el criterio no aguantaba: **«estás
+matando al notificador»**. El padre es quien ve y quien avisa, y tenía 29.148
+firmas ---el 72 % de la memoria del sistema--- con **cero exigibles**.
+
+### El criterio de `exigible` era absoluto y lo excluía por aritmética
+
+| bot | pe | pc | pe/pc | exigibles (viejo) |
+|---|---|---|---|---|
+| `padre` | 0,0040 | 0,0015 | **2,67×** | **0** |
+| `beta1` | 0,0391 | 0,0138 | 2,83× | 816 |
+| `alfa1` | 0,1610 | 0,1477 | **1,09×** | **131** |
+
+Con `pe - pc >= 0,05` y un `pe` de 0,0040, la diferencia máxima POSIBLE del
+padre era 0,0040: **no podía pasar el umbral ni siendo perfecto**. Y al revés
+premiaba a alfa1 por disparar mucho, no por distinguir.
+
+Ahora decide el **lift** suavizado `>= 2,0` más un suelo de 20 aciertos, con la
+muestra de 300 a 1.200 ventanas. Padre **0 → 895**, beta2 0 → 15, beta1 816 →
+1.812; alfa1, omega y loki a 0. Y la compuerta de habilidad ---medición
+independiente--- les había dado AUC 0,490/0,493/0,494 contra 0,800 de beta1:
+**las dos mediciones concuerdan ahora; antes se contradecían.**
+
+El padre ya tiene asertividad histórica: `causal 0,449`, `falsa_alarma 0,273`,
+**ganancia 0,176**.
+
+`tbl_sesgo_aprendizaje.consolidadas_sin_exigir` separa «no tiene memoria» de
+«tiene memoria y ninguna discrimina» ---el peor estado, y además deja al bot
+inmune al castigo---. Va en la misma pasada a propósito: dejar caer a tres bots
+sin esto habría trasladado el descarte silencioso.
+
+### Y el rebuild de los rasgos del padre NO se hizo, con el GO dado
+
+El operador autorizó rediseñar su conjunto de rasgos **aunque tocara rebuild**,
+pidiendo documentar antes de empezar. Documentar es lo que lo salvó.
+
+Con 21 dimensiones el lift del padre sería 5,26× contra 1,77×. Pero al diseñar
+el conjunto por medición, los cuatro rasgos que lo encabezan son `sismo_*_win`
+---la sismicidad PREVIA del propio nodo, **30-75×** más en una ventana de
+evento--- y **quitando esa familia el lift cae a 1,04-1,09×** en todos los
+tamaños. O sea que el 5,26× venía entero del historial sísmico del nodo.
+
+No es fuga de etiqueta (la ventana es `timestamp_blk < ts_evento`, estricta):
+es **agrupamiento de Omori**, lo mismo que la compuerta rechaza con
+`origen == "agrupamiento_omori"`. Darle una lista habría cocido un mapa de
+peligrosidad con cara de precursor en la memoria del que avisa, y es la tercera
+vez que la misma señal se disfraza en este proyecto. Reproducible:
+`deploy/disenar_rasgos_padre.py` y `deploy/sin_omori.py`.
+
 ## [Unreleased] - 2026-10-08 - El modelo nulo, en todas las capas
 
 Sin push. Branch `local/recuperacion-datos-2026-09`, 14 commits.

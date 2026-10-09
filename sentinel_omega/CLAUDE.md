@@ -81,6 +81,27 @@ If Schumann is perturbed alongside any other signal = precursor detected.
   antes de tocar un tab: tiene el sistema de color (saturado = riesgo, y nada
   más), las superficies por pestaña y los pozos conocidos.
 
+### El padre y su memoria (2026-10-09)
+
+El padre es quien ve y quien avisa, y hasta el 8-oct tenía **29.148 firmas**
+---el 72 % de toda la memoria--- con **CERO exigibles**. Tres hechos medidos que
+hay que tener antes de tocar nada suyo:
+
+1. **El criterio de `exigible` ya es RELATIVO.** Era `pe - pc >= 0,05`, una
+   diferencia ABSOLUTA, y con un `pe` de 0,0040 el padre no podía pasarla ni
+   siendo perfecto. Ahora decide el lift `(pe+1/n)/(pc+1/n) >= 2,0` más un
+   suelo de 20 aciertos (`mantenimiento.DISC_LIFT_MINIMO`). Padre 0 → **895**;
+   alfa1 131 → 0, que es correcto: su lift es 1,09× y su AUC 0,490.
+2. **`BOT_FEATURES["padre"] = None` a propósito**, aunque cueste. Su firma lleva
+   el vector completo (42 claves) y `similitud` es un PROMEDIO: 42 dimensiones
+   no bajan la similitud, encogen la varianza, y casi nada cruza el 0,80 fijo.
+   Con 21 dims su lift sería 5,26× en vez de 1,77×.
+3. **Y no se le dio una lista porque ese 5,26× es Omori.** Los rasgos que
+   encabezan el ranking son `sismo_*_win` ---la sismicidad previa del propio
+   nodo, 30-75× más en una ventana de evento--- y quitándolos el lift cae a
+   **1,04×**. Darle una lista cocería un mapa de peligrosidad con cara de
+   precursor. Detalle y comandos: bitácora del 8-oct §11.
+
 ### Reglas de dato del tablero (v3, 2026-09-28)
 
 Cuatro trampas verificadas contra la DB de producción. Las cuatro son la misma

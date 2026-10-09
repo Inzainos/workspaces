@@ -199,7 +199,30 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     # acoplamiento que sí existen.
     "jupiter": ["kp_mean", "kp_max", "kp_max_72h", "schumann_mean",
                 "schumann_std", "xray_mean", "xray_max", "trends_mean"],
-    "padre": None,  # full vector
+    # `None` = vector COMPLETO (42 claves), y tiene un coste medido que hay que
+    # conocer antes de tocarlo (2026-10-09, bitácora del 8-oct §11.2-11.3).
+    #
+    # `similitud` es `1 - media|Δz|/2`: promediar 42 dimensiones no baja la
+    # similitud, **encoge la varianza**, así que casi nada cruza el 0,80 fijo.
+    # El padre empareja el 0,59 % de las ventanas de evento y el 41 % de sus
+    # firmas no empareja NADA. Con 21 dimensiones su lift sería 5,26x contra el
+    # 1,77x de hoy, y se activaría 12 veces más.
+    #
+    # **Y aun así NO se le puso una lista.** Al diseñarla por medición, los
+    # cuatro rasgos que encabezan el ranking son de la familia `sismo_*_win`
+    # --- la sismicidad PREVIA del propio nodo, que en una ventana de evento es
+    # 30-75x la de una de calma. No es fuga de etiqueta (la ventana es
+    # `timestamp_blk < ts_evento`, estricta) pero es **agrupamiento de Omori**,
+    # lo mismo que la compuerta de habilidad rechaza con
+    # `origen == "agrupamiento_omori"`. Y quitando esa familia el lift cae a
+    # **1,04-1,09x** sobre Bz, Kp, LOD, mareas, fase lunar, VIX y protones:
+    # o sea que el 5,26x venía ENTERO del historial sísmico.
+    #
+    # Darle una lista hoy cocería un 5x de Omori con cara de precursor en la
+    # memoria del que avisa. Se revisa el día que haya rasgos que no sean la
+    # historia del nodo. Reproducir: `deploy/disenar_rasgos_padre.py` y
+    # `deploy/sin_omori.py`.
+    "padre": None,  # full vector --- a propósito; ver arriba
 }
 
 # Bots que NO forman firmas a propósito, por no alcanzar
