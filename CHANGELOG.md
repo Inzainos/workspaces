@@ -136,10 +136,14 @@ Copernicus y de Cloudflare (contra su cabecera `Date`); y el servidor **sí**
 acepta ese vale --- una petición directa con `Bearer` llega hasta devolver 416
 por la cabecera `Range`. PyJWT compara `iat` con el reloj local sin margen, así
 que con 5 s de atraso todo vale recién emitido nace en el futuro. **El arreglo
-de fondo es sincronizar el reloj, y **no con `hwclock -s`**: esto es WSL2, no hay
-RTC propio y la hora la pone el host, que es el atrasado --- el Capitán lo corrió y
-el desfase siguió en −6/−7 s. Va en **Windows**: `w32tm /resync` como admin
-(corrección de la sesión paralela, verificada aquí).
+de fondo era sincronizar el reloj, y **no con `hwclock -s`** (esto es WSL2: no hay
+RTC propio, la hora la pone el host y es el atrasado; además `hwclock` no existe en
+esta instalación). **RESUELTO a las 20:34**: el servicio de hora de Windows estaba
+`Stopped`/`Manual` --- de ahí que `w32tm /resync` devolviera `0x80070426` ---, se
+arrancó y se dejó en `Automatic`, y WSL recogió la hora del host solo. Desfase
+**−6/−7 s → 0/−1 s**, y el FRP pasó a leer **11 productos de 3 zonas sin un solo
+rechazo** (20:34:22), contra 6 productos y 5 rechazos en el ciclo anterior.
+Detalle en la bitácora §10.1.
 
 Aquí se quitó el daño colateral: eodag lo envuelve en `AuthenticationError`,
 `_es_fatal` lo daba por fatal y eso **cortaba las descargas del ciclo entero**
