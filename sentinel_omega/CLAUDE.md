@@ -259,7 +259,7 @@ sentinel_omega/
 │   ├── database/                # SQLite schema, repository, 125-node seed
 │   └── dashboard/               # Streamlit + Plotly dashboard (9 tabs)
 ├── data/                        # SQLite databases
-└── tests/                       # 1.285 tests (medido 2026-10-08; 6 fallan)
+└── tests/                       # 1.294 tests (medido 2026-10-08; 5 fallan)
 ```
 
 ### Pipeline scripts (operational map)

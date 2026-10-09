@@ -565,7 +565,7 @@ python-dotenv>=1.0   # .env para secrets (no hardcode)
 ## Ejecución
 
 ```bash
-# Tests — 1.285 recolectados, 6 fallan (medido 2026-10-08). Ejecutar SIEMPRE
+# Tests — 1.294 recolectados, 5 fallan (medido 2026-10-08). Ejecutar SIEMPRE
 # desde /home/deamon/workspaces: desde dentro de sentinel_omega/ fallan 15, y
 # los nueve de diferencia son tests que leen archivos por ruta relativa.
 python -m pytest sentinel_omega/tests/ -q

@@ -126,8 +126,35 @@ saneador y enviado por `send_alert`, lo registró el bot como `Alert sent` a las
 **18:40:21**. El despacho es un `Type=oneshot`, así que el arreglo quedó vivo sin
 reiniciar nada.
 
-**Y el recuento de tests de esta misma entrada estaba mal**: decía 2 rojos y son
-6. La invocación decide --- 6 desde `/home/deamon/workspaces`, **15** desde
+### (Noche) La anomalía térmica tenía dos tapones, y ninguno era la contraseña
+
+Tirando del cuarto test rojo —`test_anomalia_termica`, que devolvía `None` donde
+el test esperaba un dict— salieron dos cosas independientes:
+
+- **`h5py` no estaba declarado ni instalado**, y es lo que lee los productos FRP
+  de Sentinel-3 (`api/esa_frp.py`, tres imports en código vivo). `leer_frp`
+  moría con `No module named 'h5py'`, así que la anomalía térmica quedaba
+  AUSENTE **aunque las credenciales y la búsqueda funcionaran**. Instalado con
+  `--no-deps` para no mover `numpy` (2.5.2) bajo un sistema en marcha, y
+  declarado en `requirements.txt`. Los 27 tests del módulo, verdes.
+- **`The token is not yet valid (iat)` no es una credencial mala.** En el ciclo
+  vivo la búsqueda se autentica y encuentra el producto; lo que falla es la
+  validación del vale. Y no es el reloj de esta máquina: va **6 s por detrás**
+  de Cloudflare y de Copernicus (medido contra su cabecera `Date`), que es el
+  lado seguro. eodag lo envuelve en `AuthenticationError`, que `_es_fatal` daba
+  por fatal, así que un desfase de segundos **cortaba las descargas del ciclo
+  entero** y el log decía «fallo de autenticación» --- mandando a arreglar una
+  contraseña que está bien. Ahora no es fatal y se reintenta una vez tras 3 s;
+  `invalid_grant` y los 401/403 siguen siendo fatales, porque reintentar una
+  contraseña mala solo satura a Copernicus. 9 tests nuevos, 2 mutaciones.
+
+`pytrends` sigue declarado y sin instalar **a propósito**: el venv tiene pandas
+3.0.5 y `pytrends>=4.9` es anterior, así que no es inocuo. La señal viva no
+depende de él --- `tbl_trends_vivo` la escribe `layer_runners.py` y está fresca
+hasta hoy.
+
+**Y el recuento de tests de esta misma entrada estaba mal**: decía 2 rojos y eran
+6 (5 tras arreglar el de `h5py`). La invocación decide --- 6 desde `/home/deamon/workspaces`, **15** desde
 dentro de `sentinel_omega/` con `PYTHONPATH=.`, nueve fantasmas de rutas
 relativas --- y el `AGENTS.md` del home prescribía la de los 15. Corregido ahí,
 en `workspaces/AGENTS.md` y en `CLAUDE.md`. Los cuatro rojos reales, con su

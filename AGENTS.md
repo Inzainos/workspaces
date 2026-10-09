@@ -164,7 +164,7 @@ estado/             Reportes publicados: REPORTE.md (último) + historial/AAAA/M
 
 ```bash
 # Tests — SIEMPRE desde la raíz del workspace, nunca desde dentro de sentinel_omega/
-python -m pytest sentinel_omega/tests/ -q          # 1.285 tests; 6 fallan (2026-10-08)
+python -m pytest sentinel_omega/tests/ -q          # 1.294 tests; 5 fallan (2026-10-08)
 
 # Un solo archivo
 python -m pytest sentinel_omega/tests/test_firmas.py -v

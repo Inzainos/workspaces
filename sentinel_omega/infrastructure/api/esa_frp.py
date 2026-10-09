@@ -128,6 +128,27 @@ _ERRORES_FATALES = ("AuthenticationError", "MisconfiguredError")
 _TEXTO_FATAL = ("invalid_grant", "invalid user credentials")
 _HTTP_FATAL = re.compile(r"\b40[13]\b")
 
+# Un vale con la hora mal NO es una credencial mala.
+#
+# Medido el 2026-10-08 en el ciclo vivo: la BÚSQUEDA funciona y encuentra el
+# producto (`S3B_SL_2_FRP____20261008T122610`), y la descarga falla con
+#
+#     producto de FRP no legible (...): The token is not yet valid (iat)
+#     FRP: fallo de autenticación; se cortan las descargas de este ciclo
+#
+# eodag envuelve eso en `AuthenticationError`, que aquí es fatal, así que un
+# desajuste de segundos entre quien emite el vale y quien lo valida mataba la
+# fuente ENTERA cada ciclo --- y se leía como «Copernicus rechaza la
+# contraseña», que es otra cosa y manda a arreglar lo que no está roto. El
+# reloj de esta máquina no es la causa: va 6 s por DETRÁS de los servidores
+# (medido contra la cabecera `Date` de Cloudflare y de Copernicus), que es el
+# lado seguro.
+#
+# Así que: no es fatal (el ciclo sigue con las demás zonas) y se reintenta una
+# vez tras una espera corta, que es lo único que un desfase de segundos pide.
+_TEXTO_TRANSITORIO = ("not yet valid", "(iat)", "token expired")
+ESPERA_REINTENTO_VALE_S = 3.0
+
 # Sin reintentos escondidos de eodag (ver `_producto_local`).
 DESCARGA_WAIT_MIN = 0.1
 DESCARGA_TIMEOUT_MIN = 0.1
@@ -414,7 +435,17 @@ def _una_por_adquisicion(prods: list) -> list:
             if "_NR_" in str(elegido[k].properties.get("id", ""))]
 
 
+def _es_transitorio(e: Exception) -> bool:
+    """El vale llegó con la hora mal: se reintenta, no se abandona el ciclo."""
+    t = str(e).lower()
+    return any(s in t for s in _TEXTO_TRANSITORIO)
+
+
 def _es_fatal(e: Exception) -> bool:
+    # Lo transitorio se mira ANTES: eodag lo envuelve en `AuthenticationError`,
+    # que por tipo sería fatal, y no lo es.
+    if _es_transitorio(e):
+        return False
     if type(e).__name__ in _ERRORES_FATALES:
         return True
     t = str(e).lower()
@@ -500,7 +531,16 @@ def medir_frp(
         for prod in _una_por_adquisicion(list(res))[:max_productos]:
             pid = str(prod.properties.get("id", "?"))
             try:
-                ruta = _producto_local(dag, prod)
+                try:
+                    ruta = _producto_local(dag, prod)
+                except Exception as e:  # noqa: BLE001
+                    if not _es_transitorio(e):
+                        raise
+                    logger.info(
+                        "FRP: el vale llegó con la hora mal (%s); se reintenta "
+                        "en %.0f s", e, ESPERA_REINTENTO_VALE_S)
+                    time.sleep(ESPERA_REINTENTO_VALE_S)
+                    ruta = _producto_local(dag, prod)
                 total += leer_frp(ruta, bbox=bbox)
                 detecciones += leer_detecciones(ruta, bbox, zona, pid)
                 leidos += 1
