@@ -126,35 +126,40 @@ saneador y enviado por `send_alert`, lo registró el bot como `Alert sent` a las
 **18:40:21**. El despacho es un `Type=oneshot`, así que el arreglo quedó vivo sin
 reiniciar nada.
 
-### (Noche) La anomalía térmica tenía dos tapones, y ninguno era la contraseña
+### (Noche) El FRP no es la contraseña, es el reloj --- y dos venv que me engañaron
 
-Tirando del cuarto test rojo —`test_anomalia_termica`, que devolvía `None` donde
-el test esperaba un dict— salieron dos cosas independientes:
+`The token is not yet valid (iat)` llevaba dando por caída la anomalía térmica
+con el rótulo «fallo de autenticación». Medido entero: el texto sale de **PyJWT**
+(`jwt/api_jwt.py:481`), o sea validación **local** dentro de eodag; el `iat` del
+vale nace **+4,9 s en nuestro futuro** y este reloj va ~5 s por detrás de
+Copernicus y de Cloudflare (contra su cabecera `Date`); y el servidor **sí**
+acepta ese vale --- una petición directa con `Bearer` llega hasta devolver 416
+por la cabecera `Range`. PyJWT compara `iat` con el reloj local sin margen, así
+que con 5 s de atraso todo vale recién emitido nace en el futuro. **El arreglo
+de fondo es sincronizar el reloj** (`sudo hwclock -s`), no código.
 
-- **`h5py` no estaba declarado ni instalado**, y es lo que lee los productos FRP
-  de Sentinel-3 (`api/esa_frp.py`, tres imports en código vivo). `leer_frp`
-  moría con `No module named 'h5py'`, así que la anomalía térmica quedaba
-  AUSENTE **aunque las credenciales y la búsqueda funcionaran**. Instalado con
-  `--no-deps` para no mover `numpy` (2.5.2) bajo un sistema en marcha, y
-  declarado en `requirements.txt`. Los 27 tests del módulo, verdes.
-- **`The token is not yet valid (iat)` no es una credencial mala.** En el ciclo
-  vivo la búsqueda se autentica y encuentra el producto; lo que falla es la
-  validación del vale. Y no es el reloj de esta máquina: va **6 s por detrás**
-  de Cloudflare y de Copernicus (medido contra su cabecera `Date`), que es el
-  lado seguro. eodag lo envuelve en `AuthenticationError`, que `_es_fatal` daba
-  por fatal, así que un desfase de segundos **cortaba las descargas del ciclo
-  entero** y el log decía «fallo de autenticación» --- mandando a arreglar una
-  contraseña que está bien. Ahora no es fatal y se reintenta una vez tras 3 s;
-  `invalid_grant` y los 401/403 siguen siendo fatales, porque reintentar una
-  contraseña mala solo satura a Copernicus. 9 tests nuevos, 2 mutaciones.
+Aquí se quitó el daño colateral: eodag lo envuelve en `AuthenticationError`,
+`_es_fatal` lo daba por fatal y eso **cortaba las descargas del ciclo entero**
+por un producto. Ya no. Verificado en vivo tras el reinicio: `se cortan las
+descargas` desapareció del journal. **Sin reintento**: probado con 3 s y 10 s, no
+recupera, y pedir vales seguidos hizo que Copernicus devolviera **403** en el
+endpoint de tokens. 10 tests, 1 mutación.
 
-`pytrends` sigue declarado y sin instalar **a propósito**: el venv tiene pandas
-3.0.5 y `pytrends>=4.9` es anterior, así que no es inocuo. La señal viva no
-depende de él --- `tbl_trends_vivo` la escribe `layer_runners.py` y está fresca
-hasta hoy.
+**Y una corrección a mí mismo, que es la parte instructiva.** Corrí la suite con
+`sentinel_omega/.venv` creyendo que era el entorno del proyecto, y «encontré»
+cuatro fallos más. Hay **dos venv** y el servicio usa `workspaces/.venv` (lo dice
+su `ExecStart`): el otro es un resto huérfano que nadie referencia y al que le
+faltan eodag y pytrends. Con el bueno fallan **2**, las de `alfa1`, rojas a
+propósito --- la cifra que la bitácora decía desde el principio. Lo que afirmé y
+retiro: que `pytrends` y `h5py` no estuvieran instalados (lo están), y sobre todo
+que **«la fuga de la marea sigue roja después del rebuild»** --- es falso, esos
+dos tests pasan con el venv bueno. Queda en pie que `h5py` estaba **sin
+declarar** en `requirements.txt` aunque el código vivo lo importa, y ahí queda
+escrita la trampa de los dos venv. Regla 12 un piso más abajo: ancla el
+instrumento antes de anclar el test.
 
-**Y el recuento de tests de esta misma entrada estaba mal**: decía 2 rojos y eran
-6 (5 tras arreglar el de `h5py`). La invocación decide --- 6 desde `/home/deamon/workspaces`, **15** desde
+**El recuento de tests de esta entrada era correcto** (2 rojos); lo que estaba mal
+era mi medición. La invocación decide --- 6 desde `/home/deamon/workspaces`, **15** desde
 dentro de `sentinel_omega/` con `PYTHONPATH=.`, nueve fantasmas de rutas
 relativas --- y el `AGENTS.md` del home prescribía la de los 15. Corregido ahí,
 en `workspaces/AGENTS.md` y en `CLAUDE.md`. Los cuatro rojos reales, con su

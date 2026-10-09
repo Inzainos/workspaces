@@ -128,26 +128,38 @@ _ERRORES_FATALES = ("AuthenticationError", "MisconfiguredError")
 _TEXTO_FATAL = ("invalid_grant", "invalid user credentials")
 _HTTP_FATAL = re.compile(r"\b40[13]\b")
 
-# Un vale con la hora mal NO es una credencial mala.
+# Un vale rechazado por la hora NO es una credencial mala: ES EL RELOJ.
 #
-# Medido el 2026-10-08 en el ciclo vivo: la BÚSQUEDA funciona y encuentra el
-# producto (`S3B_SL_2_FRP____20261008T122610`), y la descarga falla con
+# Cadena medida de punta a punta el 2026-10-08, y conviene leerla entera porque
+# el síntoma apunta a donde no es:
 #
-#     producto de FRP no legible (...): The token is not yet valid (iat)
-#     FRP: fallo de autenticación; se cortan las descargas de este ciclo
+#   1. En el ciclo vivo la BÚSQUEDA funciona y encuentra el producto; falla la
+#      descarga con `The token is not yet valid (iat)`, y el log lo rotulaba
+#      «fallo de autenticación» --- mandando a revisar una contraseña sana.
+#   2. Ese texto sale de **PyJWT** (`jwt/api_jwt.py:481`,
+#      `ImmatureSignatureError`): la validación es LOCAL, dentro de eodag. No
+#      la hace Copernicus.
+#   3. El `iat` del vale nace **+4,9 s en nuestro futuro** (medido decodificando
+#      el vale), y este reloj va ~5-6 s por detrás de Copernicus y de
+#      Cloudflare (medido contra su cabecera `Date`).
+#   4. El servidor SÍ acepta un vale recién emitido: una petición directa con
+#      `Bearer` llega hasta devolver 416 por la cabecera `Range`, o sea que pasó
+#      la autenticación.
 #
-# eodag envuelve eso en `AuthenticationError`, que aquí es fatal, así que un
-# desajuste de segundos entre quien emite el vale y quien lo valida mataba la
-# fuente ENTERA cada ciclo --- y se leía como «Copernicus rechaza la
-# contraseña», que es otra cosa y manda a arreglar lo que no está roto. El
-# reloj de esta máquina no es la causa: va 6 s por DETRÁS de los servidores
-# (medido contra la cabecera `Date` de Cloudflare y de Copernicus), que es el
-# lado seguro.
+# Conclusión: PyJWT compara `iat` con el reloj local SIN margen, así que con el
+# reloj 5 s atrasado todo vale recién emitido nace «en el futuro». **El arreglo
+# de fondo es sincronizar el reloj**, no código de aquí.
 #
-# Así que: no es fatal (el ciclo sigue con las demás zonas) y se reintenta una
-# vez tras una espera corta, que es lo único que un desfase de segundos pide.
+# Lo que sí toca aquí es no hacer daño colateral: eodag lo envuelve en
+# `AuthenticationError`, que era fatal, y eso CORTABA LAS DESCARGAS DEL CICLO
+# ENTERO por un producto. Ahora no es fatal y el ciclo sigue con las demás
+# zonas.
+#
+# Y NO se reintenta. Se probó con 3 s y con 10 s: no recupera --- el desfase
+# sigue ahí --- y cada reintento pide OTRO vale. Pidiéndolos seguidos
+# Copernicus devolvió **403 Forbidden** en el endpoint de tokens, que sí es
+# fatal de verdad: un reintento aquí empeora el problema que pretende arreglar.
 _TEXTO_TRANSITORIO = ("not yet valid", "(iat)", "token expired")
-ESPERA_REINTENTO_VALE_S = 3.0
 
 # Sin reintentos escondidos de eodag (ver `_producto_local`).
 DESCARGA_WAIT_MIN = 0.1
@@ -531,22 +543,22 @@ def medir_frp(
         for prod in _una_por_adquisicion(list(res))[:max_productos]:
             pid = str(prod.properties.get("id", "?"))
             try:
-                try:
-                    ruta = _producto_local(dag, prod)
-                except Exception as e:  # noqa: BLE001
-                    if not _es_transitorio(e):
-                        raise
-                    logger.info(
-                        "FRP: el vale llegó con la hora mal (%s); se reintenta "
-                        "en %.0f s", e, ESPERA_REINTENTO_VALE_S)
-                    time.sleep(ESPERA_REINTENTO_VALE_S)
-                    ruta = _producto_local(dag, prod)
+                ruta = _producto_local(dag, prod)
                 total += leer_frp(ruta, bbox=bbox)
                 detecciones += leer_detecciones(ruta, bbox, zona, pid)
                 leidos += 1
             except Exception as e:  # noqa: BLE001
-                logger.warning("producto de FRP no legible (%s): %s",
-                               pid[:40], e)
+                if _es_transitorio(e):
+                    # Que el log diga DÓNDE está el defecto: PyJWT compara el
+                    # `iat` del vale con el reloj local y sin margen.
+                    logger.warning(
+                        "FRP: vale rechazado por la hora (%s) en %s --- es el "
+                        "RELOJ local, no la credencial: sincronízalo "
+                        "(`sudo hwclock -s`). El ciclo sigue con las demás zonas",
+                        e, pid[:40])
+                else:
+                    logger.warning("producto de FRP no legible (%s): %s",
+                                   pid[:40], e)
                 if _es_fatal(e):
                     logger.error("FRP: fallo de autenticación; se cortan las "
                                  "descargas de este ciclo")

@@ -5,16 +5,24 @@ pandas>=2.0
 requests>=2.28
 eodag>=4.0           # ESA Copernicus (Alfa-2 / Beta-2 satelital) — 4.x search(collection=...) API
 h5py>=3.10           # LEE los productos FRP de Sentinel-3 (`api/esa_frp.py`, 3 imports).
-                     # Estaba SIN DECLARAR y sin instalar: `leer_frp` moría con
-                     # «No module named h5py», así que la anomalía térmica quedaba
-                     # AUSENTE aunque las credenciales y la búsqueda funcionaran.
-                     # Instalado el 2026-10-08 con `--no-deps` para no mover numpy
-                     # (2.5.2) bajo un sistema en marcha.
+                     # Se declara el 2026-10-08: estaba SIN DECLARAR aunque el
+                     # código vivo lo importa. Instalado sí estaba (3.16.0) en el
+                     # venv que usa el servicio.
 pytrends>=4.9        # Google Trends (Júpiter — atención colectiva sobre tormentas solares)
-                     # OJO 2026-10-08: declarado y NO instalado. El venv tiene
-                     # pandas 3.0.5 y pytrends 4.9 es anterior: instalarlo no es
-                     # inocuo. La señal viva NO depende de él --- `tbl_trends_vivo`
-                     # la escribe `layer_runners.py` y está fresca.
+#
+# ───────────────────────────────────────────────────────────────────────────────
+# HAY DOS VENV Y SOLO UNO CUENTA. El servicio corre
+# `/home/deamon/workspaces/.venv/bin/python` (lo dice su `ExecStart`), y ese
+# tiene eodag 4.5.0, h5py 3.16.0 y pytrends. El de
+# `sentinel_omega/.venv` es un resto huérfano --- NADIE lo referencia (ni units,
+# ni scripts, ni docs) y le faltan eodag y pytrends.
+#
+# Medido el 2026-10-08, la misma suite con los dos: con el venv bueno fallan
+# **2** (las de `alfa1`, rojas a propósito) y con el huérfano **6**. Los cuatro
+# de diferencia eran dependencias que faltan ahí, no defectos: me costaron una
+# tarde y una conclusión falsa sobre la fuga de la marea. Si un test falla por
+# un `ModuleNotFoundError`, mira el intérprete ANTES que el código.
+# ───────────────────────────────────────────────────────────────────────────────
 # Dashboard (opcional pero recomendado)
 streamlit>=1.28
 plotly>=5.15

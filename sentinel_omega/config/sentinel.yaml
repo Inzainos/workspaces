@@ -24,6 +24,11 @@ api:
     recovery_timeout: 60
     half_open_max_calls: 3
 telegram:
+  # OJO: esta bandera NO apaga Telegram. Verificado el 2026-10-08 con un grep
+  # del repo: su único lector era el banner del arranque, que por eso decía
+  # «OFF (dry run)» mientras el sistema enviaba. Quien decide de verdad es
+  # `SENTINEL_DRY_RUN` más la presencia de TELEGRAM_BOT_TOKEN/CHAT_ID. Se deja
+  # para no romper nada que la lea mañana, pero no es el interruptor.
   enabled: false
   heartbeat_interval_s: 14400
   cooldown_s: 1800

@@ -140,6 +140,28 @@ def _launch_dashboard() -> subprocess.Popen:
     return proc
 
 
+def _estado_telegram(config) -> str:
+    """Lo que de verdad va a pasar con Telegram, no lo que diga el yaml.
+
+    El banner decía `OFF (dry run)` mientras el sistema enviaba de verdad ---
+    medido el 2026-10-08: el arranque de las 16:27 lo imprimió y ese mismo
+    proceso registró `CONSENSO digest horario (sent, …, dry_run=False)` y 17
+    intentos reales. La causa: leía `config.telegram.enabled`, que viene de
+    `sentinel.yaml` (`enabled: false`) y **no lo consulta nadie más** --- la
+    decisión real la toman `SENTINEL_DRY_RUN` y la presencia de credenciales,
+    en cuatro módulos. O sea que el cartel de estado era el único consumidor de
+    una bandera decorativa, y mentía en los dos sentidos posibles.
+
+    Ahora se evalúa la MISMA condición que el despacho, y se dice POR QUÉ está
+    apagado, que no es lo mismo no tener credenciales que estar en dry-run.
+    """
+    if os.environ.get("SENTINEL_DRY_RUN", "").lower() in ("1", "true", "yes"):
+        return "OFF (SENTINEL_DRY_RUN)"
+    if not config.telegram.is_configured:
+        return "OFF (sin TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)"
+    return "ON"
+
+
 def _print_banner(config):
     print()
     print("=" * 60)
@@ -151,7 +173,7 @@ def _print_banner(config):
     print(f"  Location:   {config.coordinates.get('location', '—')}")
     active = [k for k, v in config.layers.items() if v.enabled]
     print(f"  Layers:     {', '.join(active)}")
-    print(f"  Telegram:   {'ON' if config.telegram.enabled else 'OFF (dry run)'}")
+    print(f"  Telegram:   {_estado_telegram(config)}")
     print(f"  Log:        {LOGFILE}")
     print("=" * 60)
     print()
