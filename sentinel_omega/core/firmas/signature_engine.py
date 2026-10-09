@@ -798,7 +798,8 @@ class _ClaseEnMemoria:
 COLUMNAS_DISCRIMINACION = (
     ("discrimina_pe", "REAL"),      # fracción de ventanas de EVENTO que empareja
     ("discrimina_pc", "REAL"),      # fracción de ventanas de CALMA que empareja
-    ("discriminacion", "REAL"),     # pe - pc
+    ("discriminacion", "REAL"),     # pe - pc (histórico; ya NO decide)
+    ("discrimina_lift", "REAL"),    # pe/pc suavizado --- ESTO es lo que decide
     ("exigible", "INTEGER"),        # 1/0; NULL = sin medir todavía
     ("discrimina_at", "TEXT"),
 )
@@ -808,7 +809,18 @@ COLUMNAS_DISCRIMINACION = (
 #
 #     >0,02  659 (15,8 %) · >0,05  189 (4,5 %) · >0,10  57 (1,4 %) · >0,20  0
 #
-# Se elige 0,05: deja una población utilizable (~1.800 de las 40.684 firmas)
+# **JUBILADO el 2026-10-08 como criterio de decisión.** Una diferencia ABSOLUTA
+# mide a todos los bots con la misma vara viviendo en escalas distintas, y mató
+# al notificador: el padre tenía 29.148 firmas, un lift de 2,67x ---casi el de
+# beta1, el único bot con señal--- y CERO exigibles, porque con un `pe` de
+# 0,0040 su diferencia máxima posible era 0,0040 y el umbral pedía 0,05. Nunca
+# podía pasarlo. Al revés premiaba a alfa1 (131 exigibles con un lift de 1,09x)
+# por disparar mucho, no por distinguir. Lo sustituye
+# `mantenimiento.DISC_LIFT_MINIMO`, que tiene ahí la calibración entera.
+# Esta constante se conserva porque `discriminacion` (pe - pc) se sigue
+# guardando para poder comparar los dos criterios, pero ya no decide nada.
+#
+# Se eligió 0,05: dejaba una población utilizable (~1.800 de las 40.684 firmas)
 # excluyendo al 95 % que no distingue. Mover este número exige volver a medir
 # --- es un umbral calibrado, no una preferencia (regla dura 8).
 UMBRAL_DISCRIMINACION = 0.05

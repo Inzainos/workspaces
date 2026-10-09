@@ -828,6 +828,11 @@ def sesgo() -> Dict[str, Any]:
               "evaluada_at"]
     if tiene_ganancia:
         campos += ["n_calma", "falsa_alarma", "ganancia"]
+    # `n=0` significa DOS cosas y hasta el 2026-10-09 se veían iguales: «este
+    # bot no tiene memoria» y «tiene memoria y ninguna discrimina». El segundo
+    # es el peor estado y además deja al bot inmune al castigo.
+    if "consolidadas_sin_exigir" in cols:
+        campos += ["consolidadas_sin_exigir"]
     items = _rows(
         f"SELECT {', '.join(campos)} FROM tbl_sesgo_aprendizaje ORDER BY bot")
     caption = (

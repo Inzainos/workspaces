@@ -496,7 +496,14 @@ def evaluar_sesgo_aprendizaje(
     # evaluación.
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(tbl_sesgo_aprendizaje)")}
     for _c, _t in (("n_calma", "INTEGER"), ("falsa_alarma", "REAL"),
-                   ("ganancia", "REAL")):
+                   ("ganancia", "REAL"),
+                   # `n=0` significaba DOS cosas y la tabla no las separaba:
+                   # «este bot no tiene memoria» y «tiene memoria y ninguna
+                   # discrimina». El log sí lo decía desde el 2026-10-08, pero
+                   # el log no es lo que leen los reportes ni `/api/sesgo`.
+                   # Con esto, `n=0` junto a `consolidadas_sin_exigir=14958`
+                   # se lee como lo que es: el peor estado, no el neutro.
+                   ("consolidadas_sin_exigir", "INTEGER")):
         if _c not in _cols:
             conn.execute(f"ALTER TABLE tbl_sesgo_aprendizaje ADD COLUMN {_c} {_t}")
 
@@ -645,15 +652,6 @@ def evaluar_sesgo_aprendizaje(
             # n=0 / valores NULL en vez de omitirlos en silencio — antes
             # quedaban invisibles en tbl_sesgo_aprendizaje y en /api/sesgo
             # aunque el resto del pipeline (Fase 2/auditoria) ya los evalúa.
-            conn.execute(
-                "INSERT OR REPLACE INTO tbl_sesgo_aprendizaje "
-                "(bot, n, recon_insample, recon_causal, sesgo, castigos, "
-                " n_calma, falsa_alarma, ganancia) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
-                (bot, 0, None, None, None, 0, 0, None, None),
-            )
-            resultado[bot] = {"insample": None, "causal": None, "sesgo": None,
-                               "castigos": 0, "n": 0}
             # Distinguir «todavía no tiene memoria» de «tiene memoria y NINGUNA
             # es exigible», que son dos cosas muy distintas y aquí salían
             # iguales. El segundo caso es el peor estado posible y además deja
@@ -661,12 +659,26 @@ def evaluar_sesgo_aprendizaje(
             # patrón de «el que no opina no puede ser castigado» que deformó la
             # disciplina en 2026-09-26. No se castiga desde aquí (sería un
             # castigo sobre un dato que no se tomó), pero que se vea.
+            #
+            # El conteo se calcula ANTES del INSERT y VIAJA EN LA FILA: hasta el
+            # 2026-10-09 salía solo por el log, y el log no es lo que leen los
+            # reportes ni `/api/sesgo`.
             try:
                 cons = conn.execute(
                     "SELECT COUNT(*) FROM TBL_FIRMAS WHERE bot_name=? AND "
                     "estado='consolidada'", (bot,)).fetchone()[0]
             except sqlite3.Error:
                 cons = 0
+            conn.execute(
+                "INSERT OR REPLACE INTO tbl_sesgo_aprendizaje "
+                "(bot, n, recon_insample, recon_causal, sesgo, castigos, "
+                " n_calma, falsa_alarma, ganancia, consolidadas_sin_exigir) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (bot, 0, None, None, None, 0, 0, None, None, int(cons)),
+            )
+            resultado[bot] = {"insample": None, "causal": None, "sesgo": None,
+                               "castigos": 0, "n": 0,
+                               "consolidadas_sin_exigir": int(cons)}
             if cons:
                 logger.error(
                     "%s: tiene %d firmas consolidadas y NINGUNA exigible --- "
@@ -770,8 +782,62 @@ def evaluar_sesgo_aprendizaje(
 # Esta medición no reescribe `estado` --- la recurrencia sigue siendo un hecho
 # --- sino la bandera `exigible`, que es el hecho de discriminación. Las dos
 # cosas separadas y las dos medidas.
-DISC_MUESTRA_EVENTO = 300
-DISC_MUESTRA_CALMA = 300
+# La muestra sube a 1.200 el 2026-10-08, y no por gusto: el criterio pasó a ser
+# RELATIVO (abajo) y un cociente estimado sobre 5 aciertos de 300 es ruido. Con
+# 1.200 ventanas, la misma tasa mínima (1,7 %) descansa en 20 observaciones en
+# vez de 5. Coste medido: 42 s con 300+300 sobre 30.372 firmas, ~170 s con
+# 1.200+1.200. El barrido del lag ya tarda 240 s, así que cabe.
+DISC_MUESTRA_EVENTO = 1200
+DISC_MUESTRA_CALMA = 1200
+
+# ─── El criterio es RELATIVO, no una diferencia absoluta (2026-10-08) ────────
+#
+# Lo pidió el operador tras una pregunta que el criterio viejo no aguantaba:
+# **«estás matando al notificador»**. El padre es quien ve y quien avisa, y
+# tenía 29.148 firmas ---el 72 % de toda la memoria del sistema--- con CERO
+# exigibles. No porque no discriminara: porque no PODÍA pasar el umbral.
+#
+# `pe - pc >= 0,05` es una diferencia ABSOLUTA, y mide a todos los bots con la
+# misma vara cuando viven en escalas distintas:
+#
+#     bot      pe (empareja eventos)   pc (calma)   pe/pc    exigibles (viejo)
+#     padre          0,0040              0,0015     2,67x          0
+#     beta1          0,0391              0,0138     2,83x        816
+#     alfa1          0,1610              0,1477     1,09x        131
+#     beta2          0,0305              0,0303     1,01x          0
+#
+# El padre discrimina 2,67x --- casi como beta1, el único bot con señal real ---
+# y su diferencia máxima POSIBLE es 0,0040, porque ése es todo su `pe`. Nunca
+# podía llegar a 0,05 ni siendo perfecto; su mejor firma de 21.079 se quedó en
+# 0,0467. Y al revés: alfa1 cobraba 131 exigibles con un 1,09x, premiado por
+# disparar mucho, no por distinguir.
+#
+# El cociente normaliza la escala de cada bot, que es lo que el operador pidió
+# con «relativo dependiendo de cada bot». Calibrado sobre las 30.372 firmas
+# medidas (regla dura 8), con >=5 aciertos de 300 y el lift suavizado:
+#
+#     bot      lift>=1,5   lift>=2,0   lift>=3,0      (hoy, absoluto)
+#     padre       1.246       1.119         953             0
+#     beta1       1.989       1.935       1.831           816
+#     beta2         213          61          20             0
+#     alfa1          48           7           1           131
+#     omega          74          15           2            22
+#     loki          131          47          14             8
+#     delta         133          76          24             5
+#
+# Se elige **2,0**: «empareja eventos al menos el doble que calma», que es
+# interpretable y es donde beta2 se derrumba (213 -> 61, los ciegos caen) sin
+# que beta1 se mueva (1.989 -> 1.935). Y la validación que lo sostiene: el
+# criterio relativo DEGRADA a alfa1 de 131 a 7, y la compuerta de habilidad
+# ---medición independiente--- le dio AUC 0,490 contra 0,800 de beta1. Las dos
+# mediciones concuerdan ahora; con el criterio absoluto se contradecían.
+DISC_LIFT_MINIMO = 2.0
+
+# Aciertos de evento mínimos para que el cociente signifique algo. Un lift
+# calculado sobre 1 acierto de 1.200 contra 0 es infinito y es ruido. Con 20
+# sobre 1.200 la tasa mínima queda en 1,7 % --- la misma del criterio viejo con
+# 5 de 300 --- pero con cuatro veces la evidencia detrás.
+DISC_MIN_ACIERTOS = 20
 
 
 def medir_discriminacion_firmas(
@@ -878,23 +944,40 @@ def medir_discriminacion_firmas(
         pe = cuenta_ev / len(vent_ev)
         pc = cuenta_ca / len(vent_ca)
         disc = pe - pc
-        exig = (disc >= UMBRAL_DISCRIMINACION)
+
+        # El LIFT, suavizado con una pseudo-cuenta a cada lado: sin ella, una
+        # firma con 1 acierto de evento y 0 de calma daría un cociente infinito
+        # sobre una sola observación.
+        lift = ((pe + 1.0 / len(vent_ev)) / (pc + 1.0 / len(vent_ca)))
+
+        # Dos condiciones, y las dos hacen falta: que distinga (lift) y que haya
+        # con qué medirlo (aciertos). La diferencia absoluta `disc` se sigue
+        # guardando para poder comparar con el criterio viejo, pero ya NO decide.
+        exig = (lift >= DISC_LIFT_MINIMO) & (cuenta_ev >= DISC_MIN_ACIERTOS)
 
         por_bot: Dict[str, Dict[str, int]] = {}
-        for b, e in zip(bots, exig):
-            d = por_bot.setdefault(b, {"n": 0, "exigibles": 0})
+        for b, e, l, ce in zip(bots, exig, lift, cuenta_ev):
+            d = por_bot.setdefault(
+                b, {"n": 0, "exigibles": 0, "sin_aciertos": 0, "sin_lift": 0})
             d["n"] += 1
             d["exigibles"] += int(bool(e))
+            # Por qué NO pasó, que es lo que permite distinguir «no discrimina»
+            # de «no hay con qué medirlo» (regla dura 10).
+            if not e:
+                if ce < DISC_MIN_ACIERTOS:
+                    d["sin_aciertos"] += 1
+                else:
+                    d["sin_lift"] += 1
 
         if aplicar:
             ahora = _dtm.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             conn.executemany(
                 "UPDATE TBL_FIRMAS SET discrimina_pe=?, discrimina_pc=?, "
-                "discriminacion=?, exigible=?, discrimina_at=? "
-                "WHERE firma_id=?",
+                "discriminacion=?, discrimina_lift=?, exigible=?, "
+                "discrimina_at=? WHERE firma_id=?",
                 [(round(float(a), 4), round(float(b2), 4), round(float(c2), 4),
-                  int(bool(e)), ahora, i)
-                 for a, b2, c2, e, i in zip(pe, pc, disc, exig, ids)],
+                  round(float(lf), 3), int(bool(e)), ahora, i)
+                 for a, b2, c2, lf, e, i in zip(pe, pc, disc, lift, exig, ids)],
             )
             conn.commit()
 
