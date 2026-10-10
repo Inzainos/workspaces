@@ -1,5 +1,49 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-09 - El latido medido por fin: la hipótesis central, en negativo
+
+El eje del proyecto nunca había sido medido: `schumann_hz` era una recta sobre
+un conteo de píxeles (retirada el 2026-10-09). Hoy se bajó el **procesado
+completo de Sierra Nevada (UGR)** — 4 años, 96 `.npz`, 405.276 intervalos de
+10 min, ajuste lorentziano calibrado — y con él se contestó la pregunta que
+el sistema fue diseñado para hacer.
+
+**No hay señal precursora.** 26.458 sismos M4.5+, ventanas de evento contra
+calma **emparejada por época**, nivel y forma, escalas de 24 h a 336 h:
+
+- **NIVEL**: el único asomo (`sr3_hz` a 24 h, +0,191 en la primera lectura)
+  no sobrevive el barrido de once semillas: media **+0,063 ± 0,073**, y ningún
+  canal llega a 1 σ de su propio ruido de muestreo. El +0,191 era el sorteo
+  optimista, 3× la media.
+- **FORMA**: la curva z-normalizada no se parece más entre eventos que contra
+  calma en ninguna escala (ev-ev menos ev-calma entre −0,0007 y −0,0028; lift
+  0,96-1,01×).
+
+Lo que los días previos decían («no hay señal precursora») era correcto; lo que
+faltaba era haberlo medido con el sensor principal, y ahora está medido. No se
+integra al backcast un canal medido en nulo — lo contrario del vicio que esta
+bitácora persigue. Detalle y reproducibles:
+`estado/BITACORA_2026-10-09.md` · `deploy/medir_schumann_precursor.py` ·
+`deploy/bajar_schumann_ugr.sh` · `docs/SCHUMANN_FUENTES.md`.
+
+De adquisición: el «HTTP 403» del repositorio UGR era **bloqueo de bots** (con
+`User-Agent` propio entra); y la primera descarga se truncó al 30 % saliendo
+con `curl` exit 0 y HTTP 200 — el servidor cerró la conexión y el código de
+salida no lo delató. El reanudador verifica el **tamaño**, no el exit code.
+
+### El rebuild de la mañana murió a medias — 9 h con cero memoria exigible
+
+El rebuild de las 07:20 se cortó a las 07:40 (80.000/191.482 eventos, la sesión
+que lo lanzó murió y se lo llevó puesto) y dejó `TBL_FIRMAS` a medias con
+**cero exigibles**: el Padre sin memoria que exigir, y el sistema mandando
+digestos «normal» durante 9 h. Dos trampas medidas: `parar_launcher` mata el
+PID pero systemd (`Restart=always`) lo resucita en 10 s — el rebuild corrió
+17 min con el launcher escribiendo encima — y el `verificar_post_rebuild.py`
+escrito a las 07:23 nunca se corrió. Receta corregida y aplicada: launcher y
+watchdog bajados **a nivel systemd**, rebuild como **unit transitoria**
+(`systemd-run --user`) que sobrevive a la sesión. Verificación sobre
+poblaciones completas con `deploy/verificar_post_rebuild.py`.
+
 ## [Unreleased] - 2026-10-09 - El notificador: rescatado, y un rebuild que NO se hizo
 
 Abierto por una pregunta del operador que el criterio no aguantaba: **«estás

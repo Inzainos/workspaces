@@ -45,8 +45,8 @@ La única fuente verificada con **dato calibrado y con historia**.
 | procesado | FFT en la banda calibrada **6-25 Hz** → quita ruido antropogénico → **ajuste lorentziano** (`lmfit`) |
 | salida | `.npz` por mes y sensor (~43 MB), parámetros **cada 10 minutos** |
 | parámetros | de la lorentziana: frecuencia central, amplitud y anchura (→ Q), **con error de ajuste y incertidumbre por parámetro** |
-| crudo | Zenodo, ~26,7 GB/año (2014: `10.5281/zenodo.6348691`) |
-| procesado | repositorio UGR, handle `10481/71563`, 3,3 GB (devolvió HTTP 403 al consultarlo: pedir acceso) |
+| crudo | Zenodo, ~26,7 GB/año (2014: `10.5281/zenodo.6348691`) — **ya no hace falta**: el procesado de 4 años está descargado |
+| procesado | repositorio UGR, handle `10481/71563`, 3,58 GB — **descargado el 2026-10-09**. El «HTTP 403» era bloqueo de bots: con `User-Agent` propio entra. Script reproducible: `deploy/bajar_schumann_ugr.sh` |
 | código | `github.com/asalinas62/Sierra_Nevada_SR`, **GPL-3.0**, con muestra de marzo 2015 |
 | artículo | *Computers & Geosciences* 2022, `10.1016/j.cageo.2022.105148` |
 
@@ -54,19 +54,28 @@ Esto es un ajuste lorentziano sobre un espectro calibrado: frecuencia de
 verdad, no un conteo de brillo. Y a 10 minutos, más fino que la hora que pide
 el pipeline.
 
-## Plan, en orden y con su coste
+## Plan, en orden y con su coste — ejecutado el 2026-10-09
 
-1. **Validar el camino sin bajar nada grande.** Clonar el repo (GPL-3.0, trae
-   la muestra de marzo 2015) y correr su pipeline sobre esa muestra. Confirma el
-   esquema de salida y que los parámetros son los tres que hacen falta.
-   *Coste: minutos.* ⚠ Es código y datos de terceros: en directorio propio y
-   vacío, los scripts propios aparte, e intérprete con `-I`.
-2. **Un año completo.** 2014 desde Zenodo (26,7 GB; hay 803 GB libres) y correr
-   el pipeline → serie de 10 min para 2014.
-3. **Probar la hipótesis del proyecto, por fin.** Pareja de ventanas por época
-   contra el catálogo sísmico de 2014, con `deploy/medir_figura.py` y el canal
-   de Schumann dentro. **Esto es lo que nunca se ha medido.**
-4. Si sale señal: los cuatro años (≈107 GB) y Schumann entra al backcast.
+1. **Validar el camino sin bajar nada grande.** ✅ Hecho: repo clonado en
+   directorio propio, muestra de marzo 2015 corrida con intérprete `-I`,
+   esquema de salida confirmado (`arr_0` satélites, `arr_5/6` parámetros
+   lorentzianos, `arr_9` tiempo — ver `schumann_granada.leer_npz`).
+2. **Un año completo.** ✅ **Sobrecumplido**: los CUATRO años procesados
+   (2013-03 → 2017-02) bajados de una pieza desde la UGR — 3,58 GB, 96 `.npz`
+   — en vez de bajar 26,7 GB de crudo por año y correr el pipeline por nuestra
+   cuenta. Ingiero: **405.276 intervalos de 10 min, ambos sensores**.
+   Persistido en `sentinel_omega/data/schumann_granada/` (DB SQLite de 70 MB +
+   `Npz.zip`; `data/` es gitignored, regla 3). Ojo con el nombre real de los
+   archivos: la UGR publica `SN_{YYMM}_LO_6_1_{sensor}.npz`, no el
+   `SN_{YYMM}_{sensor}.npz` que construye su `Packaging.py` — el lector acepta
+   las dos formas.
+3. **Probar la hipótesis del proyecto, por fin.** ✅ Hecho con
+   `deploy/medir_schumann_precursor.py`: 26.458 sismos M4.5+ del periodo,
+   ventanas de evento contra calma **emparejada por época**, NIVEL y FORMA,
+   barrido de ventana (24/72/168/336 h) y de semilla de calma. Resultado en
+   `estado/BITACORA_2026-10-09.md`.
+4. Si sale señal: los cuatro años y Schumann entra al backcast. **No salió
+   señal** — ver bitácora.
 
 ## Y para el vivo
 
