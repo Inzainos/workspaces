@@ -284,7 +284,12 @@ def ingerir(conn: sqlite3.Connection, dir_fd: Path, yymm: str,
 # Una hora cierta es la diferencia entre poder emparejar con un sismo y no.
 NPZ_SAT, NPZ_PARLO, NPZ_PARLOC, NPZ_TIEMPO = "arr_0", "arr_5", "arr_6", "arr_9"
 
-_RE_NPZ = re.compile(r"SN_(\d{4})_(\d)\.npz$")
+# El nombre real del archivo publicado por la UGR es
+# `SN_{YYMM}_LO_6_1_{sensor}.npz` ---el `LO_6_1` es la banda de ajuste--- y no
+# `SN_{YYMM}_{sensor}.npz` como construye `Packaging.py` por defecto. Se aceptan
+# las dos formas: lo que importa son el mes y el sensor, y el sensor es siempre
+# el ULTIMO campo.
+_RE_NPZ = re.compile(r"SN_(\d{4})_(?:.+_)?(\d)\.npz$")
 
 
 def leer_npz(path_npz: Path) -> List[Dict]:

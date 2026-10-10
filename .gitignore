@@ -69,6 +69,9 @@ sentinel_omega/data/backups/
 sentinel_omega/data/estado_digesto.json
 sentinel_omega/data/schumann_sos70/
 sentinel_omega/data/reporte_padre_*.txt
+# Schumann de Sierra Nevada (UGR): la DB la cubre `*.db`, pero el `Npz.zip`
+# de 3,58 GB y el reanudador de descarga son datos de fuente, no código.
+sentinel_omega/data/schumann_granada/
 
 # Respaldos que deja un agente antes de tocar un archivo. Son de un momento,
 # no del proyecto (p. ej. `CHANGELOG.md.bak_g_20260927`).

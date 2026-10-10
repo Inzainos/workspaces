@@ -31,7 +31,11 @@ Se miden DOS cosas distintas, porque no son la misma pregunta:
   1. NIVEL: ¿la frecuencia/amplitud/Q media de la ventana difiere?
   2. FORMA: ¿la curva de 336 h se parece mas entre eventos que contra calma?
 
-Uso:  .venv/bin/python deploy/medir_schumann_precursor.py <db> [<db_schumann>]
+Uso:  .venv/bin/python deploy/medir_schumann_precursor.py <db> [<db_schumann>
+                    [SEP_H [VENTANA_H [SEMILLA]]]
+      El barrido que cierra la pregunta: ventanas 24/72/168/336 y, en la escala
+      que asome, varias semillas --- un efecto real no depende de ninguna de
+      las dos. Resultado (2026-10-09): negativo en todas las combinaciones.
 """
 from __future__ import annotations
 
@@ -48,11 +52,24 @@ sys.path.insert(0, "/home/deamon/workspaces")
 
 from sentinel_omega.infrastructure.api.schumann_granada import TABLA  # noqa: E402
 
+# La ventana. 336 h es la de las firmas, heredada --- pero si el precursor
+# actua en las ultimas horas, promediarlo sobre 14 dias lo DILUYE. Por eso se
+# puede pasar por argumento y se barre: un efecto real tiene que aparecer en
+# la escala en la que actua, y no aparecer en ninguna es la unica respuesta
+# que cierra la pregunta.
 VENTANA_H = 336
 HORIZONTE_H = 190
 EPOCA_D = 180
 N_BINS = 48
-SEP_H = 672
+# Separacion minima entre ventanas. 336 h = el largo de la ventana, o sea el
+# MINIMO que garantiza que dos ventanas no comparten ni un dato. Se arranco con
+# 672 (el doble) y dio solo 21 parejas en cuatro anos, porque cada pareja quema
+# 2 x 28 dias: con n=21 un efecto de 0,384 esta a 1,7 errores estandar y no se
+# puede concluir nada. Con 336 h la independencia se mantiene ---sin solape---
+# y la muestra se duplica. Se puede pasar por argumento para comprobar que el
+# resultado no depende de este numero.
+SEP_H = 336
+SEMILLA = 53
 CANALES = ("sr1_hz", "sr2_hz", "sr3_hz", "sr1_amp", "sr1_q")
 
 
@@ -111,8 +128,22 @@ def parecido(a, b):
 
 
 def main():
+    global SEP_H
     db = sys.argv[1]
     db_s = sys.argv[2] if len(sys.argv) > 2 else db
+    global VENTANA_H
+    if len(sys.argv) > 3:
+        SEP_H = int(sys.argv[3])
+    if len(sys.argv) > 4:
+        VENTANA_H = int(sys.argv[4])
+        if SEP_H < VENTANA_H:
+            SEP_H = VENTANA_H      # sin solape, siempre
+    global SEMILLA
+    if len(sys.argv) > 5:
+        SEMILLA = int(sys.argv[5])
+    print(f"ventana: {VENTANA_H} h · semilla de calma: {SEMILLA}")
+    print(f"separacion minima entre ventanas: {SEP_H} h "
+          f"({'sin solape' if SEP_H >= VENTANA_H else 'CON SOLAPE: las muestras no son independientes'})")
     c = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=30)
     cs = sqlite3.connect(f"file:{db_s}?mode=ro", uri=True, timeout=30)
 
@@ -139,7 +170,11 @@ def main():
         "timestamp_blk >= ? AND timestamp_blk <= ? ORDER BY timestamp_blk",
         (rango[0][:16], rango[1][:16]))]
     reales = sorted(por_nodo)
-    rng = random.Random(53)
+    # La semilla decide QUE ventanas de calma se sortean. Un efecto real no
+    # puede depender de ella: barrerla es la prueba que separa senal de ruido,
+    # y es la que falto en la primera lectura (un +0,384 con n=21 que se
+    # derrumbo a +0,080 al duplicar la muestra).
+    rng = random.Random(SEMILLA)
 
     def es_calma(ts_s, nodo, t):
         L = por_nodo.get(nodo)
