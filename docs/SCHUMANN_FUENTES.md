@@ -90,10 +90,20 @@ caminos, y ninguno da frecuencia hoy:
     magnetic field induction coil data from Eskdalemuir» — dos bobinas
     horizontales, **2025 (ene-may, oct-dic)**, DOI
     `10.5285/c80cd579-c647-4800-88f7-012ea304b22b`, publicado el 2026-10-02.
-    128 Hz ≥ 40 Hz de Nyquist: la resonancia ES visible en él. Acceso por el
-    portal de accessions del NGDC (app web, sujeto a sus Terms and
-    Conditions — copyright NERC; uso académico permitido). **No es vivo**:
-    `frequency of update: notPlanned`.
+    128 Hz ≥ 40 Hz de Nyquist: la resonancia ES visible en él. **El acceso es
+    ABIERTO** (verificado el 2026-10-10 contra el item 192216 de la API del
+    NGDC, `webservices.bgs.ac.uk/accessions/items/192216`):
+    `accessRestriction: unrestricted`, licencia **Open Government Licence**
+    — atribución «Contains data supplied by UKRI.» El blurb de copyright NERC
+    en data.gov.uk era el texto genérico, no el estado del item. El
+    «2025.zip» pesa **21,3 GB**; descarga reanudable por Range.
+  - **Estado (2026-10-10)**: descarga en curso vía
+    `eskdalemuir-descarga.service` (usuario, enabled, sobrevive reinicios;
+    ~160 KB/s → ETA ~35 h). Pipeline adaptado y verificado contra
+    lorentzianas sintéticas (`deploy/procesar_eskdalemuir.py`,
+    `BITACORA_2026-10-10.md`); falta sólo el lector del formato, que se
+    escribe tras inspeccionar el zip. **No es vivo**: `frequency of update:
+    notPlanned`.
   - **Para el VIVO no hay still nada**: la página de investigación del BGS
     (`intermagnet.bgs.ac.uk/research/inductioncoils.html`) muestra análisis de
     SR pero sin feed descargable, y `sungeo.net/station/bgs` —que dice servir

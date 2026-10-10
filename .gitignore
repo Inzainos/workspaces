@@ -72,6 +72,9 @@ sentinel_omega/data/reporte_padre_*.txt
 # Schumann de Sierra Nevada (UGR): la DB la cubre `*.db`, pero el `Npz.zip`
 # de 3,58 GB y el reanudador de descarga son datos de fuente, no código.
 sentinel_omega/data/schumann_granada/
+# Eskdalemuir (BGS): el crudo 2025.zip pesa 21,3 GB, y el pipeline de terceros
+# (GPL-3.0, con su LICENSE) vive aquí en copia local.
+sentinel_omega/data/schumann_eskdalemuir/
 
 # Respaldos que deja un agente antes de tocar un archivo. Son de un momento,
 # no del proyecto (p. ej. `CHANGELOG.md.bak_g_20260927`).

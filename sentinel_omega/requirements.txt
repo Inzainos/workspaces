@@ -8,6 +8,9 @@ h5py>=3.10           # LEE los productos FRP de Sentinel-3 (`api/esa_frp.py`, 3 
                      # Se declara el 2026-10-08: estaba SIN DECLARAR aunque el
                      # código vivo lo importa. Instalado sí estaba (3.16.0) en el
                      # venv que usa el servicio.
+lmfit>=1.2           # AJUSTE LORENTZIANO del pipeline Schumann (deploy/procesar_eskdalemuir.py,
+                     # método de Sierra Nevada: asalinas62/Sierra_Nevada_SR). Declarado el
+                     # 2026-10-10 al adaptar el pipeline a la estación Eskdalemuir (BGS).
 pytrends>=4.9        # Google Trends (Júpiter — atención colectiva sobre tormentas solares)
 #
 # ───────────────────────────────────────────────────────────────────────────────

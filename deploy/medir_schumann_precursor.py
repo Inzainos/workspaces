@@ -50,7 +50,15 @@ import numpy as np
 
 sys.path.insert(0, "/home/deamon/workspaces")
 
-from sentinel_omega.infrastructure.api.schumann_granada import TABLA  # noqa: E402
+from sentinel_omega.infrastructure.api.schumann_granada import (  # noqa: E402
+    TABLA as TABLA_DEFAULT,
+)
+
+# Tabla de la serie Schumann contra la que se mide. La de Granada por
+# defecto; la de Eskdalemuir (deploy/procesar_eskdalemuir.py, misma
+# estructura) se pasa como sexto argumento: la pregunta es idéntica y el
+# instrumento tiene que ser el mismo.
+TABLA = TABLA_DEFAULT
 
 # La ventana. 336 h es la de las firmas, heredada --- pero si el precursor
 # actua en las ultimas horas, promediarlo sobre 14 dias lo DILUYE. Por eso se
@@ -141,7 +149,10 @@ def main():
     global SEMILLA
     if len(sys.argv) > 5:
         SEMILLA = int(sys.argv[5])
-    print(f"ventana: {VENTANA_H} h · semilla de calma: {SEMILLA}")
+    global TABLA
+    if len(sys.argv) > 6:
+        TABLA = sys.argv[6].strip()
+    print(f"ventana: {VENTANA_H} h · semilla de calma: {SEMILLA} · tabla: {TABLA}")
     print(f"separacion minima entre ventanas: {SEP_H} h "
           f"({'sin solape' if SEP_H >= VENTANA_H else 'CON SOLAPE: las muestras no son independientes'})")
     c = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=30)
