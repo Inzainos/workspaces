@@ -914,7 +914,12 @@ class ConsensoVigilante:
             except (TypeError, ValueError):
                 tel_bits.append(f"Schumann {sch_hz}")
         if kp is not None:
-            tel_bits.append(f"Kp {kp} (tormenta geomagnética 0–9)")
+            # Formato propio: sin él el digesto salía con «Kp 1.6564245810...»
+            # --- 15 decimales de ruido flotante en lo que lee el operador.
+            try:
+                tel_bits.append(f"Kp {float(kp):.1f} (tormenta geomagnética 0–9)")
+            except (TypeError, ValueError):
+                tel_bits.append(f"Kp {kp} (tormenta geomagnética 0–9)")
         tel_line = (
             "🛰 <b>Telemetría:</b> " + " · ".join(tel_bits)
             if tel_bits
