@@ -1006,7 +1006,13 @@ def medir_discriminacion_firmas(
             "firmas": len(ids),
             "ventanas_evento": len(vent_ev),
             "ventanas_calma": len(vent_ca),
-            "umbral": UMBRAL_DISCRIMINACION,
+            # El criterio que DECIDE es el lift relativo, no la diferencia
+            # absoluta de `UMBRAL_DISCRIMINACION` (que ya no decide nada desde
+            # el 2026-10-08 y aquí solo confundía: el log del rebuild decía
+            # «umbral 0,05» cuando el que corría era lift>=2,0).
+            "criterio": (f"lift>={DISC_LIFT_MINIMO} y aciertos>={DISC_MIN_ACIERTOS} "
+                         f"de {len(vent_ev)} ventanas de evento"),
+            "umbral_absoluto_retirado": UMBRAL_DISCRIMINACION,
             "exigibles": int(exig.sum()),
             "no_exigibles": int((~exig).sum()),
             "por_bot": por_bot,
@@ -1014,9 +1020,9 @@ def medir_discriminacion_firmas(
         }
         logger.info(
             "Discriminación por firma: %d medidas, %d exigibles (%.1f %%) con "
-            "umbral %.2f%s", stats["firmas"], stats["exigibles"],
+            "criterio %s%s", stats["firmas"], stats["exigibles"],
             100.0 * stats["exigibles"] / max(stats["firmas"], 1),
-            UMBRAL_DISCRIMINACION,
+            stats["criterio"],
             "" if aplicar else " --- SOLO MEDIDO, no se escribió nada")
         return stats
     finally:

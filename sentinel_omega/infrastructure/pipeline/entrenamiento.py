@@ -992,9 +992,9 @@ def entrenar(
             medir_discriminacion_firmas,
         )
         discriminacion = medir_discriminacion_firmas(db_path, aplicar=True)
-        logger.info("Discriminación de firmas: %s exigibles de %s (umbral %s)",
+        logger.info("Discriminación de firmas: %s exigibles de %s (criterio: %s)",
                     discriminacion.get("exigibles"), discriminacion.get("firmas"),
-                    discriminacion.get("umbral"))
+                    discriminacion.get("criterio"))
     except Exception as e:  # noqa: BLE001 — el rebuild sigue
         logger.warning("Discriminación de firmas no disponible: %s", e)
 
