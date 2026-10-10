@@ -301,31 +301,48 @@ def calibracion_coil(path_dat: Path) -> np.ndarray:
 def leer_ssc_dia(path: Path) -> List[Tuple[str, int, np.ndarray]]:
     """Un `.ssc` diario -> [(ts ISO de la hora, sensor, hora de muestras mV)].
 
-    Devuelve la hora que ARRANCA cada bloque horario con datos; el resto de
-    la cadena (espectros_de_hora) rebana en intervalos de 10 min y salta los
-    incompletos. Sensor 0 = X (NS), 1 = Y (EW), la misma convención de
-    orientaciones que Granada (0 = NS, 1 = EW).
+    Alineación por `%hh` REAL, no por índice: BGS declara «occasional
+    missing values» del digitizador, y con huecos la rebanada por índice
+    desplazaría los bloques horarios en el tiempo. Medido el día 1: 804
+    muestras faltantes, cero saltos > 3 periodos y los bloques por índice
+    alinean --- pero eso no garantiza los otros 219 días. Se toma cada hora
+    donde el `%hh` dice que está, con una compuerta de completitud (≥95 %):
+    horas con huecos grandes quedan fuera (NULL), no corridas.
+
+    Sensor 0 = X (NS), 1 = Y (EW), la misma convención de orientaciones
+    que Granada (0 = NS, 1 = EW).
     """
     import pandas as pd
     df = pd.read_csv(path, sep=r"\s+", header=0,
-                     usecols=["X[mV]", "Y[mV]"], engine="c")
+                     usecols=["%hh", "X[mV]", "Y[mV]"], engine="c")
     n = len(df)
     if n < FM * 3600:
         print(f"  {path.name}: {n:,} muestras (< 1 h) --- se omite")
         return []
+    hh = df["%hh"].to_numpy()
     x = pd.to_numeric(df["X[mV]"], errors="coerce").to_numpy(dtype=float)
     y = pd.to_numeric(df["Y[mV]"], errors="coerce").to_numpy(dtype=float)
     fecha = path.name.split("-")[1]                    # '20250101'
     base = f"{fecha[:4]}-{fecha[4:6]}-{fecha[6:]}"
     nhora = FM * 3600
+    minimo = int(nhora * 0.95)        # huecos ≤5 % tolerados dentro de la hora
     out = []
     for h in range(24):
-        trozo0, trozo1 = h * nhora, min((h + 1) * nhora, n)
-        if trozo1 - trozo0 < nhora:
-            break                                     # hora incompleta: se omite
+        idx = np.flatnonzero(hh == h)
+        if idx.size < minimo:
+            if idx.size:
+                print(f"  {path.name} hora {h:02d}: {idx.size:,} de {nhora:,} "
+                      "muestras (digitizador con huecos) --- hora omitida")
+            continue
+        # Las filas de una hora son contiguas por construcción (datos
+        # cronológicos); si no lo fueran, el estado es imposible y se omite.
+        i0, i1 = idx[0], idx[-1] + 1
+        if i1 - i0 != idx.size:
+            print(f"  {path.name} hora {h:02d}: filas no contiguas --- omitida")
+            continue
         ts = f"{base} {h:02d}:00"
-        out.append((ts, 0, x[trozo0:trozo1]))
-        out.append((ts, 1, y[trozo0:trozo1]))
+        out.append((ts, 0, x[i0:i1]))
+        out.append((ts, 1, y[i0:i1]))
     return out
 
 
