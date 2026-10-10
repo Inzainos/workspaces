@@ -1333,7 +1333,12 @@ def telemetry() -> Dict[str, Any]:
             "tbl_schumann_vivo", sch_ts, sch_n,
             "TBL_PRECURSORES_COSMICOS.schumann_hz",
             {"hz_vivo": s0.get("schumann_hz"), "activity_vivo": s0.get("schumann_activity"), "hz_precursor": p0.get("schumann_hz"), "sch_term": sch_term},
-            "Así entra: tbl_schumann_vivo. Así lo usa Fantasma: Hz + activity (término ≈ activity/100×1.5). Referencia 7.83 Hz.",
+            "Así entra: tbl_schumann_vivo. La FRECUENCIA no se mide desde el "
+            "2026-10-09 --- de un conteo de píxeles no sale Hz, y la «fórmula» "
+            "7,83+act×0,02 se retiró --- así que hz llega NULL y NULL se "
+            "muestra. Lo que Fantasma usa de verdad es la ACTIVIDAD "
+            "(término ≈ activity/100×1,5). 7,83 queda solo como valor nominal "
+            "de la fundamental, no como lectura.",
         ),
         _src(
             "goes", "GOES X-ray (NOAA SWPC)",

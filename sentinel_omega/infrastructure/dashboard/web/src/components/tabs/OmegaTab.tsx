@@ -42,14 +42,19 @@ export function OmegaTab() {
 
   const schSeries = [...(sch.data?.items || [])]
     .reverse()
-    .map((r, i) => ({ i, hz: Number(r.schumann_hz ?? 0), act: Number(r.schumann_activity ?? 0) }));
+    .map((r, i) => ({
+      i,
+      // hz es NULL desde el retiro del 2026-10-09 (de un conteo de pixeles no
+      // sale una frecuencia): NULL se mantiene NULL, no se dibuja como 0.
+      hz: r.schumann_hz == null ? null : Number(r.schumann_hz),
+      act: r.schumann_activity == null ? null : Number(r.schumann_activity),
+    }));
   const precSeries = [...(prec.data || [])]
     .reverse()
     .map((r, i) => ({
       i,
-      hz: Number(r.schumann_hz ?? 0),
-      fantasma: Number(r.fantasma ?? 0),
-      kp: Number(r.kp ?? 0),
+      fantasma: r.fantasma == null ? null : Number(r.fantasma),
+      kp: r.kp == null ? null : Number(r.kp),
     }));
 
   const latestSch = sch.data?.latest || (sch.data?.items || [])[0] || {};
@@ -60,16 +65,21 @@ export function OmegaTab() {
       <TabIntro title="Omega — Schumann vivo vs confianza">
         <p>
           Omega cruza el latido Schumann (tbl_schumann_vivo) con su propia capa de predicción y el índice Fantasma.
-          Una desviación de Hz sola no es alarma; si se mueve con Kp/Bz y el Muro, el sistema marca precursor.
+          Lo que se mide en vivo es la ACTIVIDAD (intensidad, del espectrograma de Tomsk): la FRECUENCIA no se mide
+          desde el 2026-10-09 --- la «fórmula» 7,83+act×0,02 era un derivado con nombre de sensor y se retiró.
         </p>
-        <p>Calma: Hz cerca de 7.83 y Omega en NO_SIGNAL. Acción: Hz fuera de banda + Fantasma MODERATE+ — abrir Muro.</p>
+        <p>Calma: actividad baja y Omega en NO_SIGNAL. Acción: actividad elevada junto a Fantasma MODERATE+ — abrir Muro.</p>
       </TabIntro>
 
       <div className="grid gap-3 md:grid-cols-4">
         <Kpi
           label="Schumann vivo"
-          value={latestSch.schumann_hz != null ? `${fmtNum(latestSch.schumann_hz)} Hz` : "—"}
-          hint={`Δ vs 7.83 = ${fmtNum(Number(latestSch.schumann_hz ?? 7.83) - 7.83)}`}
+          value={
+            latestSch.schumann_activity != null
+              ? `${fmtNum(latestSch.schumann_activity)} %`
+              : "—"
+          }
+          hint="actividad WPC (intensidad). Frecuencia SIN MEDIR desde el retiro del 2026-10-09."
         />
         <Kpi
           label="Omega señal"
@@ -87,13 +97,18 @@ export function OmegaTab() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div>
-          <h4 className="mb-1 text-sm font-medium">Serie A — Schumann vivo (Hz)</h4>
+          <h4 className="mb-1 text-sm font-medium">
+            Serie A — Schumann vivo (actividad %; la frecuencia no se mide)
+          </h4>
           {schSeries.length ? (
-            <LineSpark data={schSeries} xKey="i" yKey="hz" height={140} />
+            <LineSpark data={schSeries} xKey="i" yKey="act" height={140} />
           ) : (
             <EmptyState title="Sin tbl_schumann_vivo" detail={sch.data?.caption || ""} />
           )}
-          <Caption>Fuente: {sch.data?.source || "tbl_schumann_vivo"}.</Caption>
+          <Caption>
+            Fuente: {sch.data?.source || "tbl_schumann_vivo"}. La serie de Hz era la fórmula
+            retirada 7,83+act×0,02 --- un número con dos nombres; hoy queda NULL.
+          </Caption>
         </div>
         <div>
           <h4 className="mb-1 text-sm font-medium">Serie B — Fantasma (precursores)</h4>
@@ -102,7 +117,7 @@ export function OmegaTab() {
           ) : (
             <EmptyState title="Sin precursores" detail="" />
           )}
-          <Caption>Dual contextual: Hz vivo vs Fantasma/Kp de precursores. No es eje causal forzado.</Caption>
+          <Caption>Dual contextual: actividad Schumann viva vs Fantasma/Kp de precursores. No es eje causal forzado.</Caption>
         </div>
       </div>
 

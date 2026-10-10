@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
 import { Kpi } from "@/components/Kpi";
+import { Cifra } from "@/components/ui/data";
 import { DataTable } from "@/components/DataTable";
 import { TabIntro, Caption } from "@/components/TabIntro";
 import { LineSpark, SimpleBars } from "@/components/charts/Sparkline";
@@ -64,7 +65,12 @@ export function FamiliasTab() {
     .map((r, i) => ({ i, bz: Number(r.bz_promedio ?? 0), kp: Number(r.kp_max ?? r.kp_promedio ?? 0) }));
 
   const schItems = sch.data?.items || [];
-  const schSpark = [...schItems].reverse().map((r, i) => ({ i, hz: Number(r.schumann_hz ?? 0) }));
+  // hz es NULL desde el retiro del 2026-10-09: se grafica la ACTIVIDAD (que
+  // es lo medido); NULL no se convierte en 0 dibujable (pozo del README).
+  const schSpark = [...schItems].reverse().map((r, i) => ({
+    i,
+    act: r.schumann_activity == null ? null : Number(r.schumann_activity),
+  }));
 
   const deltaItems = delta.data?.delta || [];
   const psiItems = delta.data?.psique || [];
@@ -168,8 +174,8 @@ export function FamiliasTab() {
         <div className="grid gap-3 md:grid-cols-4">
           <Kpi
             label="Schumann Hz"
-            value={fmtNum(latestSch.schumann_hz)}
-            hint={`ref 7.83 · Δ ${fmtNum(Number(latestSch.schumann_hz ?? 7.83) - 7.83)}`}
+            value={<Cifra valor={latestSch.schumann_hz} digits={2} unidad="Hz" />}
+            hint="SIN MEDIR desde el 2026-10-09: la fórmula 7,83+act×0,02 era un derivado, se retiró. Lo vivo es la actividad."
           />
           <Kpi label="Actividad" value={fmtNum(latestSch.schumann_activity, 0)} hint="% WPC vivo" />
           <Kpi
@@ -189,8 +195,8 @@ export function FamiliasTab() {
         </div>
         {schSpark.length ? (
           <div>
-            <div className="text-xs text-muted mb-1">Schumann vivo (tbl_schumann_vivo)</div>
-            <LineSpark data={schSpark} xKey="i" yKey="hz" height={120} />
+            <div className="text-xs text-muted mb-1">Schumann vivo — actividad % (frecuencia sin medir)</div>
+            <LineSpark data={schSpark} xKey="i" yKey="act" height={120} />
           </div>
         ) : (
           <EmptyState title="Sin schumann_vivo" detail={sch.data?.caption || sch.error || ""} />

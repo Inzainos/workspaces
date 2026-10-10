@@ -164,9 +164,24 @@ que no tener semáforo.
   nombradas aparte, nunca en el denominador. La consulta vive una sola vez, en
   `signature_engine.resumen_nulo_lag(conn)`.
 - **`consolidada` no es `exigible`.** `estado` es promoción por recurrencia;
-  `exigible` es el hecho medido de discriminar eventos frente a calma (982 de
-  23.248). Una cifra de «conocimiento del sistema» que use `estado` cuenta
-  22.266 patrones que no distinguen nada.
+  `exigible` es el hecho medido de discriminar eventos frente a calma. El
+  criterio es RELATIVO desde el 2026-10-08 (lift suavizado ≥2,0 + ≥20
+  aciertos, no la diferencia absoluta `pe−pc≥0,05`): medido tras el rebuild
+  del 2026-10-09 con `SIMILARITY_ALERT=0,75` son **11.368 de 23.260** (padre
+  8.969, beta1 2.394, y alfa1/omega/loki en 0 — concordante con la compuerta
+  ONNX). Una cifra de «conocimiento del sistema» que use `estado` cuenta los
+  11.892 patrones restantes que no distinguen nada.
+- **La «frecuencia» Schumann no se mide** (2026-10-09). `schumann_hz` fue
+  retirada del fetcher: era la recta `7,83 + actividad×0,02` sobre un conteo
+  de píxeles — un número con dos nombres. Consecuencias para el tablero:
+  - `hz` llega **NULL** de `tbl_schumann_vivo` y de los precursores; NULL se
+    pinta con `Cifra` ("sin lectura"), y las series grafican la ACTIVIDAD,
+    que sí es medida.
+  - El `Number(x ?? 0)` en una serie (el pozo de abajo) aquí era doblemente
+    grave: convertía el NULL en 0 **y** dibujaba la frecuencia fabricada como
+    si fuera historia. Corregido en Familias/Omega el 2026-10-09.
+  - El chip de `/api/telemetry` explica el retiro en su nota; `7,83` queda
+    como valor nominal de la fundamental, nunca como lectura.
 
 ## Superficies del nulo (2026-10-08)
 

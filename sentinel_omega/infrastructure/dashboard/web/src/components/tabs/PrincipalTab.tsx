@@ -259,8 +259,9 @@ export function PrincipalTab() {
             </div>
             {esAusente(d?.fantasma?.schumann_hz) && (
               <p className="mt-2 text-micro leading-snug" style={{ color: "var(--color-aviso)" }}>
-                Schumann sin lectura viva: la fuente de Tomsk repite un valor estático,
-                así que entra como NULL en vez de fingir una medición.
+                Schumann: la FRECUENCIA no se mide desde el 2026-10-09 (la «fórmula»
+                7,83+act×0,02 era un derivado y se retiró) --- entra NULL. Lo medido en
+                vivo es la actividad (intensidad del espectrograma).
               </p>
             )}
           </div>
