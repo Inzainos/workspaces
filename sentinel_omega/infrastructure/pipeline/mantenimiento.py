@@ -1602,6 +1602,16 @@ def volcar_telemetria_viva(
         # Solo lo MEDIDO pasa al enjambre: un arrastre (en_vivo=0) no es
         # una lectura nueva. Igual se borra todo lo anterior al corte.
         from sentinel_omega.core.schumann_vivo import filtro_en_vivo
+        # Desde el retiro del Hz (2026-10-09) la ACTIVIDAD es lo único
+        # medido: si el volcado no la persistiera, el histórico de
+        # entrenamiento perdería la única serie Schumann real. Columna
+        # añadida forward-only (regla 5), igual que hace schumann_vivo.
+        _cols_enj = {r[1] for r in conn.execute(
+            "PRAGMA table_info(tbl_enjambre_telemetria)").fetchall()}
+        if "schumann_activity" not in _cols_enj:
+            conn.execute("ALTER TABLE tbl_enjambre_telemetria "
+                         "ADD COLUMN schumann_activity REAL")
+            logger.info("Columna añadida: tbl_enjambre_telemetria.schumann_activity")
         rows = conn.execute(
             "SELECT timestamp_blk, schumann_hz, schumann_activity "
             "FROM tbl_schumann_vivo WHERE timestamp_blk < ?"
@@ -1613,9 +1623,9 @@ def volcar_telemetria_viva(
                 # id_nodo=0 = serie global (no ligada a un nodo UVG)
                 conn.execute(
                     """INSERT OR IGNORE INTO tbl_enjambre_telemetria
-                       (timestamp_blk, id_nodo, schumann_hz)
-                       VALUES (?, 0, ?)""",
-                    (ts, hz),
+                       (timestamp_blk, id_nodo, schumann_hz, schumann_activity)
+                       VALUES (?, 0, ?, ?)""",
+                    (ts, hz, act),
                 )
             # Se conserva la última lectura real (en_vivo=1) aunque sea más
             # vieja que el corte: es la fuente del arrastre sin límite. Sin

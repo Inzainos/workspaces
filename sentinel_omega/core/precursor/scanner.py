@@ -78,7 +78,10 @@ class PrecursorScanner:
         kp_series = beta1_data.get("kp_series")
         seismic_mags = beta1_data.get("seismic_magnitudes")
         schumann_hz = beta1_data.get("schumann_frequency")
-        schumann_pct = beta1_data.get("schumann_activity", 0.0)
+        # Sin default 0.0: desde el retiro del Hz (2026-10-09) la actividad
+        # es lo único medido, y un 0.0 inventado es la regla 7 en la puerta
+        # de una detección. Si no hay, que sea None y las ramas lo nombren.
+        schumann_pct = beta1_data.get("schumann_activity")
 
         omni_df = alfa1_data.get("omni_dataframe")
         bz = 0.0
@@ -325,19 +328,26 @@ class PrecursorScanner:
         )]
 
     def _scan_schumann(
-        self, schumann_hz: Optional[float], schumann_pct: float
+        self, schumann_hz: Optional[float], schumann_pct: Optional[float]
     ) -> List[PrecursorDetection]:
+        # RUTA SILENCIADA POR DISEÑO desde el retiro del Hz (2026-10-09):
+        # el fetcher ya no fabrica `7,83 + actividad×0,02`, así que
+        # `schumann_hz` llega None SIEMPRE y esta detección no dispara.
+        # Se mantiene la rama completa para el día que exista una fuente de
+        # FRECUENCIA calibrada en vivo (Eskdalemuir es la candidata); mientras
+        # tanto, inventar un umbral sobre la ACTIVIDAD sin su distribución
+        # medida sería numerología (regla 8).
         if schumann_hz is None:
             return []
 
         deviation = abs(schumann_hz - 7.83)
-        if deviation < 0.5 and schumann_pct < 150:
+        if deviation < 0.5 and (schumann_pct is None or schumann_pct < 150):
             return []
 
         confidence = 0.5
         if deviation >= 1.0:
             confidence += 0.2
-        if schumann_pct >= 200:
+        if schumann_pct is not None and schumann_pct >= 200:
             confidence += 0.15
 
         return [PrecursorDetection(
@@ -576,6 +586,11 @@ class PrecursorScanner:
         A high Π_i means large residual energy (not absorbed by the global
         resonator) is available to couple with moisture and reorganise as
         precipitation.
+
+        RUTA SILENCIADA POR DISEÑO desde el retiro del Hz (2026-10-09): esta
+        fórmula usaba la «frecuencia» fabricada como escala modal, o sea
+        que medía una recta sobre un conteo de píxeles. Con hz=None SIEMPRE
+        retorna vacío; se mantiene por si una frecuencia calibrada vuelve.
         """
         if schumann_hz is None or schumann_hz <= 0:
             return []

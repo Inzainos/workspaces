@@ -85,6 +85,9 @@ CREATE TABLE IF NOT EXISTS tbl_enjambre_telemetria (
     id_nodo         INTEGER NOT NULL,
     -- sin medir = NULL (retiro del 2026-10-09); el DEFAULT 7.83 fabricaba
     schumann_hz     REAL,
+    -- lo único medido en vivo desde el retiro: la ACTIVIDAD (WPC). El
+    -- volcado la persiste aquí desde el 2026-10-10.
+    schumann_activity REAL,
     en_vivo         INTEGER DEFAULT 1,
     PRIMARY KEY (timestamp_blk, id_nodo)
 );
