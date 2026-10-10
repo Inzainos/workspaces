@@ -404,8 +404,18 @@ def _schumann_from_db(days: int, db_path=None) -> Optional[SchumannData]:
     if not rows:
         return None
     dates = [r[0] for r in rows]
-    freqs = np.array([float(r[1]) for r in rows], dtype=float)
-    amps = np.array([max(0.05, float(r[2]) / 100.0) for r in rows], dtype=float)
+    # El hz es NULL desde el retiro del 2026-10-09 (de un conteo de pixeles no
+    # sale una frecuencia): AVG(schumann_hz) por día sale NULL y el
+    # float(None) de aquí reventaba cada ciclo --- caía al warning fail-soft
+    # «Schumann DB LOCF failed» y nadie lo miraba. La frecuencia viaja NaN
+    # (sin dato, se propaga y los pares de acoplamiento se filtran solos); la
+    # AMPLITUD sí es real (viene de la actividad).
+    freqs = np.array(
+        [np.nan if r[1] is None else float(r[1]) for r in rows], dtype=float)
+    amps = np.array(
+        [max(0.05, float(r[2]) / 100.0) if r[2] is not None else np.nan
+         for r in rows],
+        dtype=float)
     return SchumannData(
         dates=dates,
         freq_hz=freqs,

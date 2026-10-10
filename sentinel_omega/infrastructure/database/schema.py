@@ -25,6 +25,24 @@ def _load_expanded() -> str:
     return zlib.decompress(base64.b64decode(b64)).decode("utf-8")
 
 _src = _load_expanded()
+# Parche en carga (2026-10-09): el DDL canónico trae
+# `schumann_hz REAL DEFAULT 7.83` en TBL_PRECURSORES_COSMICOS — una máquina de
+# fabricación en potencia: cualquier INSERT que omita la columna escribiría la
+# fundamental «medida». El escritor vivo siempre la especifica (None = sin
+# medir, regla 2), pero el DEFAULT es una trampa parada. Los schema_parts son
+# artefactos comprimidos; el parche AQUÍ queda legible y auditable en el diff.
+# Forward-only: las tablas ya creadas conservan su DEFAULT viejo (SQLite no
+# permite ALTER de DEFAULT); esto corrige los checkouts nuevos.
+# La frecuencia Schumann no se mide desde el retiro del 2026-10-09. Hay dos
+# variantes de espaciado en el DDL expandido (medidas): una con un solo
+# espacio y otra con cuatro; se parchean las dos.
+_src = _src.replace(
+    "schumann_hz     REAL    DEFAULT 7.83,",
+    "schumann_hz     REAL,          -- sin medir = NULL; el 7.83 era fabricación",
+).replace(
+    "schumann_hz     REAL DEFAULT 7.83,",
+    "schumann_hz     REAL,",
+)
 exec(compile(_src, "schema_expanded", "exec"), globals())
 
 

@@ -38,8 +38,12 @@ GLOSSARY: List[Tuple[Tuple[str, ...], str]] = [
      "repite y despues coincidio con un evento es una pista, no una profecia."),
     (("schumann", "7.83", "resonancia"),
      "La resonancia Schumann es el 'latido' electromagnetico de la Tierra, cerca de 7.83 Hz. "
-     "Beta-1 la usa como referencia. Si Schumann se altera JUNTO con otras senales, "
-     "el sistema marca precursor. Una desviacion sola no basta."),
+     "OJO: en VIVO la FRECUENCIA no se mide desde el 2026-10-09 (la 'formula' 7.83+actx0.02 "
+     "era un derivado con nombre de sensor y se retiro); lo que llega de Tomsk es la "
+     "ACTIVIDAD, una intensidad. La historia calibrada (2013-2017, estacion Sierra Nevada "
+     "de la UGR) vive en data/schumann_granada y no entra al vivo. "
+     "Si la actividad se altera JUNTO con otras senales, el sistema marca precursor. "
+     "Una desviacion sola no basta."),
     (("padre", "consenso", "bot"),
      "Hay varios modelos (alfa1, alfa2, beta1, beta2, delta, omega, jupiter) y el Padre "
      "valida en cruz. El Padre es quien puede avisar. Cada bot tiene peso y asertividad "

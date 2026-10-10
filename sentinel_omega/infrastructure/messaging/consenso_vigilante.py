@@ -883,7 +883,6 @@ class ConsensoVigilante:
         tel_bits = []
         bz = telemetry.get("bz_nT") or telemetry.get("bz")
         wind = telemetry.get("viento_km_s") or telemetry.get("wind")
-        sch = telemetry.get("schumann_hz") or telemetry.get("schumann")
         kp = telemetry.get("kp")
         if bz is not None:
             try:
@@ -895,11 +894,25 @@ class ConsensoVigilante:
                 tel_bits.append(f"viento solar {float(wind):.0f} km/s")
             except (TypeError, ValueError):
                 tel_bits.append(f"viento {wind}")
-        if sch is not None:
+        # Schumann: la FRECUENCIA no se mide desde el retiro del 2026-10-09
+        # (la «fórmula» 7,83+act×0,02 era un derivado con nombre de sensor).
+        # Lo que el digesto reporta es la ACTIVIDAD, que sí es medida.
+        sch_hz = telemetry.get("schumann_hz") or telemetry.get("schumann")
+        sch_act = telemetry.get("schumann_activity")
+        if sch_act is not None:
             try:
-                tel_bits.append(f"Schumann {float(sch):.2f} Hz (latido de la Tierra)")
+                tel_bits.append(
+                    f"Schumann: actividad {float(sch_act):.1f} % "
+                    "(intensidad; frecuencia sin medir)")
             except (TypeError, ValueError):
-                tel_bits.append(f"Schumann {sch}")
+                tel_bits.append(f"Schumann: actividad {sch_act} %")
+        elif sch_hz is not None:
+            # Forma histórica: si algún día una fuente mide Hz de verdad,
+            # vuelve a reportarse sola.
+            try:
+                tel_bits.append(f"Schumann {float(sch_hz):.2f} Hz (latido de la Tierra)")
+            except (TypeError, ValueError):
+                tel_bits.append(f"Schumann {sch_hz}")
         if kp is not None:
             tel_bits.append(f"Kp {kp} (tormenta geomagnética 0–9)")
         tel_line = (
@@ -998,9 +1011,15 @@ class ConsensoVigilante:
             conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
             conn.row_factory = sqlite3.Row
             try:
+                # La columna es `timestamp` (epoch REAL); hasta el 2026-10-09
+                # esta query pedía `ts` --- que no existe --- fallaba envuelta
+                # en silencio y el digesto quedaba sin telemetría de
+                # precursores. La frecuencia viaja NULL desde el retiro de
+                # ese día; lo que se reporta es la ACTIVIDAD (medida).
                 row = conn.execute(
-                    "SELECT fantasma, schumann_hz, kp, bz_nT, viento_km_s, nivel_riesgo "
-                    "FROM tbl_precursores_cosmicos ORDER BY ts DESC LIMIT 1"
+                    "SELECT fantasma, schumann_hz, schumann_activity, "
+                    "kp, bz_nT, viento_km_s, nivel_riesgo "
+                    "FROM TBL_PRECURSORES_COSMICOS ORDER BY timestamp DESC LIMIT 1"
                 ).fetchone()
             except Exception:
                 row = None
@@ -1024,6 +1043,7 @@ class ConsensoVigilante:
                     ("bz_nT", "bz_nT"),
                     ("viento_km_s", "viento_km_s"),
                     ("schumann_hz", "schumann_hz"),
+                    ("schumann_activity", "schumann_activity"),
                     ("kp", "kp"),
                 ):
                     if src in keys:
