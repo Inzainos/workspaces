@@ -1,0 +1,11 @@
+[Unit]
+Description=Procesa incrementalmente los dias .ssc ya descargados del zip Eskdalemuir
+# Idempotente: marca dias completos en esk_dias_procesados y salta los hechos.
+# Se detiene en el primer dia incompleto del parcial; cuando la descarga
+# termina, la corrida final deja la DB completa sin intervencion.
+
+[Service]
+Type=oneshot
+ExecStart=/home/deamon/workspaces/.venv/bin/python /home/deamon/workspaces/deploy/procesar_eskdalemuir.py --procesar-parcial /home/deamon/workspaces/sentinel_omega/data/schumann_eskdalemuir/2025.zip /home/deamon/workspaces/sentinel_omega/data/schumann_eskdalemuir/eskdalemuir.db
+StandardOutput=append:/home/deamon/workspaces/sentinel_omega/logs/eskdalemuir_procesa.log
+StandardError=append:/home/deamon/workspaces/sentinel_omega/logs/eskdalemuir_procesa.log

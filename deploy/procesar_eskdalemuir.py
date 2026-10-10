@@ -9,15 +9,18 @@ quitar bandas antropogénicas (red europea 50 Hz) → ajuste LORENTZIANO TRIPLE
 Adaptación a 128 Hz: nventa=4096 → df=0,03125 Hz, la MISMA resolución por
 bin que Granada (256 Hz / 8192). Ventana de 10 s = 1280 muestras.
 
-Lo que está VERIFICADO hoy vs lo que falta (regla 0):
-  * VERIFICADO: la cadena espectro→antropo→lorentziano, contra espectros
-    SINTÉTICOS de lorentzianas conocidas (`.venv/bin/python
-    deploy/procesar_eskdalemuir.py --prueba-sintetica`): recupera las
-    frecuencias a <0,05 Hz con ruido y picos antropogénicos encima.
-  * FALTA: el LECTOR del formato crudo de BGS. No hay documentación del
-    formato y escribirlo antes de ver el 2025.zip (21,3 GB, en descarga)
-    sería inventar. `leer_archivo()` es un stub que se niega a fingir; cuando
-    el zip llegue se inspecciona y se completa SOLO esa función.
+Lo que está VERIFICADO (regla 0):
+  * La cadena espectro→antropo→lorentziano, contra espectros SINTÉTICOS de
+    lorentzianas conocidas: frecuencias recuperadas a <0,01 Hz con ruido y
+    picos de red encima (`--prueba-sintetica`).
+  * El LECTOR contra el crudo real de BGS (2026-10-10): el `.ssc` es CSV de
+    espacios (`%hh %mm %ss %tttt X[mV] Y[mV]`, 128 Hz), documentado por el
+    propio BGS en `code/ProcessInductionCoil_oneday_MFS05coils_128Hz.py`
+    (incluido en el zip). Las tablas de calibración de las bobinas MFS05
+    (`05028/05038_2403_L_15V.dat`, respuesta mV/nT) calibran el espectro a
+    nT/√Hz --- igual que el producto publicado de BGS (pT²/Hz).
+  * La física del primer día real (2025-01-01) es la prueba: SR1/SR2/SR3
+    tienen que salir cerca de 7,8/14,1/20,3 Hz. Ver §bitácora del 10-oct.
 
 Calibración, declarada: las constantes de respuesta de las bobinas de
 Granada NO aplican a las de Eskdalemuir. Las FRECUENCIAS (posición de los
@@ -93,12 +96,15 @@ def _hann(m: int) -> np.ndarray:
     return v / np.sqrt(np.sum(v ** 2) / m)
 
 
-def espectros_de_hora(muestras: np.ndarray) -> Tuple[List[np.ndarray], List[float]]:
-    """Una hora de muestras → (espectros por intervalo de 10 min, sat % c/u).
+def espectros_de_hora(muestras: np.ndarray,
+                      h_coil: Optional[np.ndarray] = None) -> Tuple[List[np.ndarray], List[float]]:
+    """Una hora de muestras (mV) → (espectros por intervalo de 10 min, sat % c/u).
 
     Welch como en Reading_Fourier.py: ventana Hann de 10 s, solape 50 %,
-    promedio de |FFT|²; se excluyen los segmentos saturados del promedio y
-    su fracción es la saturación del intervalo.
+    promedio de |FFT|². Se excluyen del promedio los segmentos con saturación
+    (|mV| >= 14.000: el ADC es de ±15 V) o con NaN, y su fracción es la
+    saturación del intervalo. Con `h_coil` (respuesta mV/nT en los bins de
+    FRE), el espectro sale CALIBRADO en nT/√Hz: PSD_mV²/Hz ÷ h² = nT²/Hz.
     """
     mw = int(VENTANA_S * FM)
     pw = mw // 2
@@ -107,8 +113,6 @@ def espectros_de_hora(muestras: np.ndarray) -> Tuple[List[np.ndarray], List[floa
     nhoradivi = (FM * 3600) // DIVI_HORA
     out: List[np.ndarray] = []
     sats: List[float] = []
-    lim = 0.999 * np.iinfo(muestras.dtype).max if muestras.dtype.kind in "iub" \
-        else None
     for d in range(DIVI_HORA):
         trozo = muestras[d * nhoradivi:(d + 1) * nhoradivi].astype(float)
         if trozo.size < nhoradivi:
@@ -117,7 +121,7 @@ def espectros_de_hora(muestras: np.ndarray) -> Tuple[List[np.ndarray], List[floa
         nseg = nsat = 0
         for i0 in range(0, nhoradivi - mw + 1, pw):
             seg = trozo[i0:i0 + mw]
-            if lim is not None and (seg >= lim).any():
+            if (not np.all(np.isfinite(seg))) or (np.abs(seg) >= SAT_MV).any():
                 nsat += 1
                 continue
             x = np.zeros(NVENTA)
@@ -128,9 +132,12 @@ def espectros_de_hora(muestras: np.ndarray) -> Tuple[List[np.ndarray], List[floa
             out.append(np.full(len(FRE), np.nan))
             sats.append(100.0)
             continue
-        spec = np.sqrt(acc * 2.0 / (nseg * FM * mw))
+        spec = _recorte(np.sqrt(acc * 2.0 / (nseg * FM * mw)))   # mV/√Hz, banda 6-25
+        if h_coil is not None:
+            # h en mV/nT sobre los mismos 609 bins de FRE: mV/√Hz ÷ (mV/nT) = nT/√Hz
+            spec = spec / np.where(h_coil > 0, h_coil, np.nan)
         sats.append(100.0 * nsat / (nsat + nseg))
-        out.append(_recorte(spec))
+        out.append(spec)
     return out, sats
 
 
@@ -257,40 +264,272 @@ def persistir(conn: sqlite3.Connection, filas: List[Dict[str, Any]]) -> int:
     return len(filas)
 
 
-# ── El lector del crudo de BGS: LO ÚNICO que falta ───────────────────────────
+# ── El lector del crudo de BGS: documentado por el propio BGS ────────────────
+#
+# El zip trae `code/ProcessInductionCoil_oneday_MFS05coils_128Hz.py` (Ciaran
+# Beggan, BGS, 2024) y DOS tablas de calibración de las bobinas GFZ MFS05
+# instaladas en agosto de 2024 (se corren a 128 Hz):
+#   * `05038_2403_L_15V.dat` → canal X (Norte-Sur)
+#   * `05028_2403_L_15V.dat` → canal Y (Este-Oeste)
+# El `.ssc` es CSV de espacios: `%hh %mm %ss %tttt X[mV] Y[mV]` con %tttt en
+# DIEZMILÉSIMAS de segundo (128 Hz = 7,8125 ms; 0022 + 78 → 0100, medido).
+# La calibración convierte mV → nT: PSD_mV²/Hz ÷ h(f)² [mV/nT]² = nT²/Hz, el
+# mismo producto que BGS publica en pT²/Hz.
 
-def leer_archivo(path: Path) -> List[Tuple[str, int, np.ndarray]]:
-    """Un archivo crudo de Eskdalemuir → [(timestamp ISO, sensor, muestras)].
+SAT_MV = 14_000.0        # el ADC es de ±15 V (nombre del .dat: «15V»)
+DAT_X = "05038_2403_L_15V.dat"   # canal X = Norte-Sur  -> sensor 0
+DAT_Y = "05028_2403_L_15V.dat"   # canal Y = Este-Oeste -> sensor 1
 
-    STUB HONESTO: el formato interno del 2025.zip no está documentado y no se
-    puede escribir a ciegas. Cuando la descarga termine:
 
-      1. unzip -l 2025.zip   → estructura
-      2. file / hexdump -C del primer archivo → dtype y endianness
-      3. llenar SOLO esta función (una hora o un día por archivo, sensor 0/1)
+def calibracion_coil(path_dat: Path) -> np.ndarray:
+    """Tabla de respuesta de la bobina -> h(f) interpolada en los bins de FRE.
 
-    Se niega a inventar: cualquier llamada hoy revienta con instrucciones.
+    Columnas del .dat (fixed-width, 18 líneas de encabezado): X[Hz], P[deg],
+    Mag[mV/nT]. Se usa la 1ª (frecuencia) y la 3ª (magnitud), como en el
+    CoilCalibration_MF5coils de BGS.
     """
-    raise NotImplementedError(
-        f"Lector pendiente: inspecciona el formato dentro de {path} "
-        "(unzip -l + hexdump del primer archivo) y completa leer_archivo(). "
-        "Nada más de la cadena necesita cambios.")
+    import pandas as pd
+    from scipy.interpolate import interp1d
+    tabla = pd.read_fwf(path_dat, header=18, widths=[15, 15, 15])
+    f = interp1d(tabla.values[:, 0].astype(float),
+                 tabla.values[:, 2].astype(float), bounds_error=False)
+    h = f(FRE)
+    h[~np.isfinite(h)] = 0.0
+    return h
+
+
+def leer_ssc_dia(path: Path) -> List[Tuple[str, int, np.ndarray]]:
+    """Un `.ssc` diario -> [(ts ISO de la hora, sensor, hora de muestras mV)].
+
+    Devuelve la hora que ARRANCA cada bloque horario con datos; el resto de
+    la cadena (espectros_de_hora) rebana en intervalos de 10 min y salta los
+    incompletos. Sensor 0 = X (NS), 1 = Y (EW), la misma convención de
+    orientaciones que Granada (0 = NS, 1 = EW).
+    """
+    import pandas as pd
+    df = pd.read_csv(path, sep=r"\s+", header=0,
+                     usecols=["X[mV]", "Y[mV]"], engine="c")
+    n = len(df)
+    if n < FM * 3600:
+        print(f"  {path.name}: {n:,} muestras (< 1 h) --- se omite")
+        return []
+    x = pd.to_numeric(df["X[mV]"], errors="coerce").to_numpy(dtype=float)
+    y = pd.to_numeric(df["Y[mV]"], errors="coerce").to_numpy(dtype=float)
+    fecha = path.name.split("-")[1]                    # '20250101'
+    base = f"{fecha[:4]}-{fecha[4:6]}-{fecha[6:]}"
+    nhora = FM * 3600
+    out = []
+    for h in range(24):
+        trozo0, trozo1 = h * nhora, min((h + 1) * nhora, n)
+        if trozo1 - trozo0 < nhora:
+            break                                     # hora incompleta: se omite
+        ts = f"{base} {h:02d}:00"
+        out.append((ts, 0, x[trozo0:trozo1]))
+        out.append((ts, 1, y[trozo0:trozo1]))
+    return out
 
 
 # ── Modo real y prueba sintética ─────────────────────────────────────────────
 
-def procesar(dir_o_zip: Path, db_out: Path) -> int:
-    import zipfile
+def entradas_remotas(zip_local: Path) -> List[Dict]:
+    """Directorio central del 2025.zip vía Range (HTTP 206): no espera al zip.
+
+    El server sirve bytes arbitrarios, y el EOCD vive al final: se traen los
+    últimos 6 MB, se parsea el EOCD64 y el directorio central completo. Da
+    la lista EXACTA de entradas con offsets y tamaños comprimidos. El
+    directorio central es estático: se cachea junto al zip (JSON) y las
+    corridas siguientes no vuelven a tocar la red.
+    """
+    import json
+    import struct
+    import urllib.request
+
+    cache = zip_local.parent / "esk_entradas.json"
+    if cache.exists():
+        try:
+            return json.load(open(cache))
+        except Exception:
+            pass                                  # cache ilegible: se refetch
+
+    total = 21_314_692_275
+    url = ("https://webservices.bgs.ac.uk/accessions/download/192216"
+           "?fileName=2025.zip")
+    req = urllib.request.Request(url, headers={"User-Agent": UA_DESCARGA})
+    req.add_header("Range", f"bytes={total - 6_000_000}-{total - 1}")
+    with urllib.request.urlopen(req, timeout=300) as r:
+        cola = r.read()
+    k = cola.rfind(b"PK\x06\x06")
+    if k < 0:
+        raise RuntimeError("no se encontró el EOCD64 en la cola del zip")
+    # Campos tras la firma: size(Q) ver(H) ver_n(H) disco(I) cd_disco(I)
+    # n_disco(Q) n_total(Q) tam_cd(Q) off_cd(Q)
+    (size, ver, ver_n, disco, cd_disco,
+     n_disco, n_total, tam_cd, off_cd) = struct.unpack(
+        "<QHHIIQQQQ", cola[k + 4:k + 4 + 52])
+    req2 = urllib.request.Request(url, headers={"User-Agent": UA_DESCARGA})
+    req2.add_header("Range", f"bytes={off_cd}-{off_cd + tam_cd - 1}")
+    with urllib.request.urlopen(req2, timeout=300) as r:
+        cd = r.read()
+    entradas, i = [], 0
+    while i < len(cd) and cd[i:i + 4] == b"PK\x01\x02":
+        (ver, ver_n, flags, comp, mt, md, crc, csize, usize,
+         nlen, elen, clen, disco, iattr, eattr, off) = struct.unpack(
+            "<HHHHHHIIIHHHHHII", cd[i + 4:i + 46])
+        nombre = cd[i + 46:i + 46 + nlen].decode("utf-8", "replace")
+        # offset ZIP64 (0xFFFFFFFF): buscarlo en el extra field
+        if off == 0xFFFFFFFF:
+            e = cd[i + 46 + nlen:i + 46 + nlen + elen]
+            j = 0
+            while j + 4 <= len(e):
+                eid, tam = struct.unpack("<HH", e[j:j + 4])
+                if eid == 0x0001:
+                    off = struct.unpack("<Q", e[j + 4:j + 12])[0]
+                    break
+                j += 4 + tam
+        entradas.append({"nombre": nombre, "comp": comp, "csize": csize,
+                         "usize": usize, "off": off})
+        i += 46 + nlen + elen + clen
+    json.dump(entradas, open(cache, "w"))
+    return entradas
+
+
+UA_DESCARGA = "Mozilla/5.0 (X11; Linux x86_64) SentinelOmega-research/1.0"
+
+
+def extraer_si_completo(zip_local: Path, entrada: Dict, destino: Path) -> bool:
+    """Extrae la entrada SOLO si su rango está íntegro en el parcial local.
+
+    El header LOCAL manda en offsets reales (su `elen` puede diferir del del
+    directorio central); el tamaño comprimido se valida contra el central.
+    """
+    import struct as _st
+    import zlib as _zl
+    with open(zip_local, "rb") as f:
+        f.seek(entrada["off"])
+        hdr = f.read(30)
+        if hdr[:4] != b"PK\x03\x04":
+            raise RuntimeError(f"firma inesperada en {entrada['off']}")
+        (_, _, comp, _, _, _, csize, usize, nlen, elen) = \
+            _st.unpack("<HHHHHIIIHH", hdr[4:30])
+        csize = csize or entrada["csize"]
+        fin = entrada["off"] + 30 + nlen + elen + csize + 32
+        if zip_local.stat().st_size < fin:
+            return False
+        f.seek(entrada["off"] + 30 + nlen + elen)
+        data = f.read(csize)
+    raw = _zl.decompress(data, -15) if comp == 8 else data
+    if len(raw) != entrada["usize"]:
+        raise RuntimeError(f"{entrada['nombre']}: {len(raw):,} != {entrada['usize']:,}")
+    destino.write_bytes(raw)
+    return True
+
+
+def dias_en_db(conn: sqlite3.Connection) -> set:
+    """Días COMPLETOS procesados: se marcan al terminar, no al empezar.
+
+    La marca vive aparte de las filas: si el proceso muere a media hora de un
+    día, sus filas parciales quedan pero el día NO está marcado, y la
+    siguiente corrida lo repite entero (INSERT OR REPLACE lo hace idempotente).
+    """
+    conn.execute("CREATE TABLE IF NOT EXISTS esk_dias_procesados ("
+                 "dia TEXT PRIMARY KEY)")
+    conn.commit()
+    return {r[0] for r in conn.execute(
+        "SELECT dia FROM esk_dias_procesados").fetchall()}
+
+
+def _marcar_dia(conn: sqlite3.Connection, dia: str) -> None:
+    conn.execute("INSERT OR REPLACE INTO esk_dias_procesados (dia) VALUES (?)",
+                 (dia,))
+    conn.commit()
+
+
+def procesar_parcial(zip_local: Path, db_out: Path,
+                     dir_calib: Optional[Path] = None) -> int:
+    """Procesa los días `.ssc` COMPLETOS que ya viven dentro del zip parcial.
+
+    Idempotente: los días marcados en `esk_dias_procesados` se saltan. A
+    medida que la descarga avanza, cada corrida incorpora los días nuevos.
+    El directorio central se trae por Range (cacheado): no requiere que el
+    zip esté terminado.
+    """
+    import re
+    import tempfile
+    entradas = entradas_remotas(zip_local)
+    # El archivo real es `ESK-YYYYMMDD-128Hz.ssc` (8 dígitos); las carpetas
+    # de mes (`ESK-YYYYMM-...`) y de día tienen 6 u otra cuenta y se caen solas.
+    pat = re.compile(r"ESK-(\d{8})-128Hz\.ssc$")
+    sscs = [e for e in entradas
+            if pat.search(e["nombre"]) and not e["nombre"].endswith("/")]
+    tam_local = zip_local.stat().st_size
+    print(f"{len(sscs)} días .ssc en el zip · descargados {tam_local/1e9:.2f} GB")
+    conn = sqlite3.connect(db_out)
+    conn.execute(DDL)
+    conn.commit()
+    hechos = dias_en_db(conn)
+    cdir = Path(dir_calib) if dir_calib else zip_local.parent
+    calibs: Dict[int, np.ndarray] = {}
+    for sensor, nombre in ((0, DAT_X), (1, DAT_Y)):
+        p = cdir / nombre
+        if p.exists():
+            calibs[sensor] = calibracion_coil(p)
+    if not calibs:
+        print("SIN calibración (espectros en mV/√Hz; frecuencias intactas)")
+    total = 0
+    with tempfile.TemporaryDirectory(prefix="esk_ssc_") as td:
+        for e in sscs:
+            d8 = pat.search(e["nombre"]).group(1)
+            iso = f"{d8[:4]}-{d8[4:6]}-{d8[6:]}"
+            if iso in hechos:
+                continue
+            tmp = Path(td) / Path(e["nombre"]).name
+            if not extraer_si_completo(zip_local, e, tmp):
+                print(f"  {iso}: aún no está completo en el parcial --- se para aquí")
+                break
+            print(f"  {iso}: extrayendo y procesando…", flush=True)
+            for ts, sensor, muestras in leer_ssc_dia(tmp):
+                specs, sats = espectros_de_hora(muestras, calibs.get(sensor))
+                filas = filas_de_espectros(ts, sensor, specs, sats)
+                if filas:
+                    total += persistir(conn, filas)
+            conn.commit()
+            _marcar_dia(conn, iso)
+            hechos.add(iso)
+    conn.close()
+    print(f"{total} intervalos NUEVOS persistidos")
+    return total
+
+
+def procesar(dir_dias: Path, db_out: Path,
+              dir_calib: Optional[Path] = None) -> int:
+    """Procesa los `ESK-*-128Hz.ssc` de un directorio (días extraídos).
+
+    `dir_calib` busca ahí las dos tablas de bobina; si no están, se procesa
+    SIN calibrar (espectros en mV/√Hz --- las frecuencias no cambian; se
+    declara en el log).
+    """
+    sscs = sorted(Path(dir_dias).glob("**/*-128Hz.ssc"))
+    if not sscs:
+        print(f"sin .ssc en {dir_dias}")
+        return 0
+    cdir = Path(dir_calib) if dir_calib else Path(dir_dias)
+    calibs: Dict[int, np.ndarray] = {}
+    for sensor, nombre in ((0, DAT_X), (1, DAT_Y)):
+        p = cdir / nombre
+        if p.exists():
+            calibs[sensor] = calibracion_coil(p)
+        else:
+            print(f"SIN CALIBRACIÓN para sensor {sensor} ({nombre} no está en {cdir})")
     conn = sqlite3.connect(db_out)
     total = 0
-    zips = [dir_o_zip] if dir_o_zip.suffix == ".zip" else sorted(dir_o_zip.rglob("*"))
-    for z in zips:
-        with zipfile.ZipFile(z) as zf:
-            for nombre in zf.namelist():
-                for ts, sensor, muestras in leer_archivo(Path(nombre)):
-                    specs, sats = espectros_de_hora(muestras)
-                    filas = filas_de_espectros(ts, sensor, specs, sats)
-                    total += persistir(conn, filas)
+    for p in sscs:
+        print(f"procesando {p.name} …", flush=True)
+        for ts, sensor, muestras in leer_ssc_dia(p):
+            specs, sats = espectros_de_hora(muestras, calibs.get(sensor))
+            filas = filas_de_espectros(ts, sensor, specs, sats)
+            if filas:
+                total += persistir(conn, filas)
+        conn.commit()
     conn.close()
     return total
 
@@ -367,10 +606,19 @@ def main() -> int:
         return prueba_sintetica()
     if sys.argv[1] == "--procesar":
         if len(sys.argv) < 4:
-            print("uso: --procesar <dir_o_zip> <db_out>")
+            print("uso: --procesar <dir_dias_extraidos> <db_out> [dir_calib]")
             return 1
-        n = procesar(Path(sys.argv[2]), Path(sys.argv[3]))
+        n = procesar(Path(sys.argv[2]), Path(sys.argv[3]),
+                     Path(sys.argv[4]) if len(sys.argv) > 4 else None)
         print(f"{n} intervalos persistidos en {TABLA}")
+        return 0
+    if sys.argv[1] == "--procesar-parcial":
+        if len(sys.argv) < 4:
+            print("uso: --procesar-parcial <2025.zip parcial> <db_out> [dir_calib]")
+            return 1
+        n = procesar_parcial(Path(sys.argv[2]), Path(sys.argv[3]),
+                             Path(sys.argv[4]) if len(sys.argv) > 4 else None)
+        print(f"total nuevos: {n}")
         return 0
     print(__doc__)
     return 1
