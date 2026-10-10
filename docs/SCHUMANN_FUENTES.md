@@ -84,9 +84,26 @@ caminos, y ninguno da frecuencia hoy:
 
 - **Tomsk/sos70 como está**, pero rotulado por lo que es: `schumann_activity`,
   una intensidad. Ya corregido.
-- **Eskdalemuir (British Geological Survey)**: espectrograma ELF con ejes de
-  frecuencia y potencia **calibrados**. No se encontró la página oficial de
-  descarga; es la vía institucional que vale la pena perseguir para el vivo.
+- **Eskdalemuir (British Geological Survey)**: es la vía institucional que
+  vale la pena perseguir. Investigado el 2026-10-09:
+  - **Existe el crudo publicado**: dataset NGDC «High frequency (128 Hz)
+    magnetic field induction coil data from Eskdalemuir» — dos bobinas
+    horizontales, **2025 (ene-may, oct-dic)**, DOI
+    `10.5285/c80cd579-c647-4800-88f7-012ea304b22b`, publicado el 2026-10-02.
+    128 Hz ≥ 40 Hz de Nyquist: la resonancia ES visible en él. Acceso por el
+    portal de accessions del NGDC (app web, sujeto a sus Terms and
+    Conditions — copyright NERC; uso académico permitido). **No es vivo**:
+    `frequency of update: notPlanned`.
+  - **Para el VIVO no hay still nada**: la página de investigación del BGS
+    (`intermagnet.bgs.ac.uk/research/inductioncoils.html`) muestra análisis de
+    SR pero sin feed descargable, y `sungeo.net/station/bgs` —que dice servir
+    el espectrograma de Eskdalemuir en vivo— es un tercero del mismo tipo que
+    los que SCHUMANN_FUENTES descarta: sin calibración verificable.
+  - **Lo que sí abre el crudo**: una SEGUNDA estación, otro hemisferio y otro
+    periodo (2025), procesable con el mismo pipeline lorentziano ya validado
+    con el repo de Granada — para repetir la medición del precursor sobre
+    una estación independiente. Un nulo sobre una estación no es un nulo
+    universal.
 
 Mientras el vivo no dé frecuencia, el entrenamiento puede usar la historia de
 Granada y el vivo aportar solo intensidad —declarado, no disimulado—.

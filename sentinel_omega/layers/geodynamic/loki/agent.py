@@ -180,6 +180,27 @@ class LokiAgent(BaseAgent):
         }
 
         # Decision logic
+        #
+        # ── MEDIDO el 2026-10-09: TODAS las rutas no neutrales son structuralmente
+        # muertas, en cualquier régimen físico posible (regla 8) ──────────────────
+        #
+        # El pipeline SVD→FFT→fractal degenera por construcción: el «vector de
+        # datos» es una FILA, su SVD da UN solo valor singular (la norma), y la
+        # FFT de esa norma rellenada con 32 ceros es un espectro CONSTANTE --- así
+        # que la dimensión fractal sale 2,0 (el máximo del clip) en todos los
+        # ciclos. Y el phi_alignment compara esa NORMA (dominada por el viento
+        # solar, 300-800 km/s mezclados con nT y ms) contra phi=1,618:
+        #
+        #     calma:      e^-258  -> posterior ~ 2e-112
+        #     Kp8:        e^-494  -> posterior ~ 1e-214
+        #     todo al mínimo físico: e^-187 -> posterior ~ 4e-80
+        #
+        # El umbral de WATCH pide 0,5: muerto por ~112 órdenes de magnitud. La
+        # evidencia independiente concuerda: la compuerta midió loki en AUC 0,494
+        # con 0 firmas exigibles, y el journal lleva 8.636 «neutral @ 0.20».
+        # Corregir el alineo con phi exigiría decidir QUÉ debe significar el
+        # colapso fractal-bayesiano y calibrarlo contra datos; sin eso, cualquier
+        # arreglo es numerología con mejor pinta. Documentado, no tocado.
         if self._bayesian_posterior >= self.COLLAPSE_THRESHOLD and self._fractal_dimension >= self.FRACTAL_DIMENSION_THRESHOLD:
             reasoning = f"FRACTAL-BAYESIAN COLLAPSE: Posterior={self._bayesian_posterior:.3f}, FractalDim={self._fractal_dimension:.3f} at Tlaxcala"
             return self.emit_signal(SignalType.ALERT, self._bayesian_posterior, data=signal_data, reasoning=reasoning)

@@ -130,6 +130,18 @@ class Beta1Agent(BaseAgent):
         # Tres estados, no dos: excitado, no excitado y NO LO SÉ. Antes el
         # relleno de 0.0 hacía que «no lo sé» se comportara como «no excitado»,
         # y nadie podía notar la diferencia leyendo el veredicto.
+        #
+        # Medido el 2026-10-09 (deploy/medir_reglas_beta1.py, regla 8): con la
+        # escala REAL de actividad del WPC (24 lecturas vivas, 4-8 %), los tres
+        # umbrales de Schumann de abajo son RUTAS MUERTAS:
+        #   * >15 y >30 no dispararon ni una vez (máx observado 8,3 %);
+        #   * comp_vib > 0.5 es aritméticamente inalcanzable: exige actividad
+        #     >50 % y el comp_vib máximo posible con los datos es 0,054.
+        # Los 15/30 se calibraron (sin medir) contra la escala fabricada que
+        # se retiró el 2026-10-09 (la del 21,46 % congelado). Hasta que haya
+        # una fuente viva con frecuencia/intensidad calibrada (Eskdalemuir),
+        # la única ruta de decisión VIVA de beta1 es la del espectro de Kp
+        # (high_freq_ratio > 0.6: 0,02 % de 95.652 ventanas históricas).
         sch_act = self._schumann_activity
         schumann_excited = None if sch_act is None else sch_act > 15.0
         schumann_strong = None if sch_act is None else sch_act > 30.0
