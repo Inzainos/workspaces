@@ -179,9 +179,15 @@ def _parse_last_modified(valor: Optional[str]) -> Optional[datetime]:
 
 def ultima_lectura_viva(
     db_path: Optional[Path] = None, ahora: Optional[float] = None,
-) -> Optional[Tuple[float, float]]:
+) -> Optional[Tuple[Optional[float], float]]:
     """Last live (en_vivo=1) reading in tbl_schumann_vivo from an EARLIER hour
-    block, read-only. None if there is none or the DB is unavailable."""
+    block, read-only. None if there is none or the DB is unavailable.
+
+    El hz puede ser None (y lo es en toda lectura post-retiro del 2026-10-09):
+    la última lectura se busca por ACTIVIDAD, no por Hz --- pedir
+    ``schumann_hz IS NOT NULL`` aquí escondía la última lectura real y la regla
+    de frescura «el valor repite la última viva» dejaba de aplicarse.
+    """
     db = Path(db_path) if db_path else _DB_DEFAULT
     if not db.exists():
         return None
@@ -193,15 +199,17 @@ def ultima_lectura_viva(
             filtro = " AND COALESCE(en_vivo,1)=1" if "en_vivo" in cols else ""
             r = con.execute(
                 "SELECT schumann_hz, schumann_activity FROM tbl_schumann_vivo "
-                "WHERE timestamp_blk < ? AND schumann_hz IS NOT NULL "
-                "AND schumann_activity IS NOT NULL" + filtro +
+                "WHERE timestamp_blk < ? AND schumann_activity IS NOT NULL"
+                + filtro +
                 " ORDER BY timestamp_blk DESC LIMIT 1", (blk,)).fetchone()
         finally:
             con.close()
     except sqlite3.Error as exc:
         logger.warning("Schumann: could not read last live reading: %s", exc)
         return None
-    return (float(r[0]), float(r[1])) if r else None
+    if not r or r[1] is None:
+        return None
+    return ((float(r[0]) if r[0] is not None else None), float(r[1]))
 
 
 def motivo_lectura_no_viva(
@@ -221,19 +229,35 @@ def motivo_lectura_no_viva(
         return f"spectrogram is {edad_h:.1f} h old (Last-Modified {last_modified.isoformat()})"
     if previa is not None:
         p_hz, p_act = previa
-        if abs(float(hz) - p_hz) < 1e-9 and abs(float(activity) - p_act) < 1e-9:
-            return f"identical to the previous stored reading ({p_hz} Hz, {p_act} %)"
+        # La repetición que importa es de la ACTIVIDAD (el hz es None desde el
+        # retiro del 2026-10-09; compararlo con float() era un crash latente).
+        if abs(float(activity) - p_act) < 1e-9:
+            return (f"identical to the previous stored reading ({p_act:.2f} %"
+                    + (f", {p_hz} Hz" if p_hz is not None else "") + ")")
     return None
 
 
 def is_baseline_placeholder(hz: Optional[float], activity: Optional[float]) -> bool:
-    """True when values look like the historical fake fallback (7.83, 0.0)."""
-    if hz is None or activity is None:
+    """True cuando NO hay actividad medida, o es el falso fallback histórico.
+
+    Cambiado el 2026-10-09 junto con el retiro de la frecuencia fabricada:
+    la lectura legítima del WPC es **(None, actividad)** ---el fetcher ya no
+    inventa Hz--- así que ``hz is None`` DEJÓ de significar placeholder. Con
+    la regla vieja, toda lectura real era descartada en la línea
+    ``if is_baseline_placeholder(...)`` y la serie viva de actividad murió en
+    silencio el mismo día que se «arregló» el Hz (medido: midió 4,88 % y el
+    ciclo la tiró como «baseline placeholder»). Lo que decide es la
+    ACTIVIDAD: sin ella o en exacto 0, no hay lectura.
+    """
+    if activity is None:
         return True
     try:
-        return abs(float(hz) - FUNDAMENTAL_HZ) < 1e-9 and float(activity) == 0.0
+        act = float(activity)
     except (TypeError, ValueError):
         return True
+    if act == 0.0:
+        return True                      # espectrograma muerto o el (7.83, 0.0)
+    return False                         # actividad medida: hay lectura, hz o no
 
 
 # ── Puerta de frescura por sha256 (sos70 no manda Last-Modified) ─────────────
@@ -366,15 +390,14 @@ def fetch_schumann_resonance(
             )
         elif (
             previa is not None
-            and abs(float(hz) - float(previa[0])) < 1e-9
             and abs(float(pct) - float(previa[1])) < 1e-9
         ):
-            # Regla del 2026-09-27 conservada: un valor que repite exacto la
-            # última lectura viva no aporta información, venga de una imagen
-            # nueva o no. El arrastre de `registrar` hace el resto.
+            # Regla del 2026-09-27 conservada, actualizada al retiro del Hz:
+            # un valor que repite exacto la última lectura viva (hoy: la
+            # ACTIVIDAD; el hz es None por diseño) no aporta información.
             motivo = (
                 "imagen nueva pero el valor repite la última lectura viva "
-                f"({hz} Hz, {pct} %)"
+                f"({pct} %)"
             )
         if motivo is None and sha_img is not None:
             if not guardar_sha_ingestado(sha_img, db_path):

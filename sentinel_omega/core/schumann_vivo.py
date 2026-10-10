@@ -77,9 +77,18 @@ def _as_float(v: Any) -> Optional[float]:
 
 
 def es_senal_muerta(hz: Any, act: Any) -> bool:
-    """Sin señal: falta un valor, o activity exactamente 0 (el falso clásico)."""
-    hz_f, act_f = _as_float(hz), _as_float(act)
-    return hz_f is None or act_f is None or act_f == 0.0
+    """Sin señal: falta la ACTIVIDAD, o es exactamente 0 (el falso clásico).
+
+    Cambiado el 2026-10-09, cuando la frecuencia fabricada se retiró del
+    fetcher (`api/schumann.py` ya no inventa `7,83 + actividad×0,02`). Desde
+    entonces la lectura viva trae **hz=None SIEMPRE** y la actividad es lo
+    único medido: con la regla vieja (`hz None => sin señal`) ninguna lectura
+    volvía a ser `en_vivo`, y el LOCF arrastraba para siempre la última
+    «frecuencia» — que era justamente la fabricada. El hz ya no decide si hay
+    señal; solo la actividad.
+    """
+    act_f = _as_float(act)
+    return act_f is None or act_f == 0.0
 
 
 def _horas_entre(desde: str, hasta: str) -> float:
@@ -105,22 +114,24 @@ def registrar(
     ts_blk = time.strftime(FMT_BLK, time.gmtime(time.time() if ahora is None else ahora))
 
     if not es_senal_muerta(hz, act):
+        # hz puede ser None (y lo es desde el retiro del 2026-10-09): se
+        # persiste como NULL, que es «no se midió», no como 0 ni como 7,83.
+        hz_f, act_f = _as_float(hz), _as_float(act)
         conn.execute(
             f"INSERT OR REPLACE INTO {TABLA} "
             "(timestamp_blk, schumann_hz, schumann_activity, creada_at, "
             " en_vivo, ultimo_vivo_ts, atraso_horas) "
             "VALUES (?,?,?,datetime('now'),1,?,0)",
-            (ts_blk, float(hz), float(act), ts_blk),
+            (ts_blk, hz_f, act_f, ts_blk),
         )
         conn.commit()
         return {"estado": "en_vivo", "timestamp_blk": ts_blk,
-                "schumann_hz": float(hz), "schumann_activity": float(act),
+                "schumann_hz": hz_f, "schumann_activity": act_f,
                 "en_vivo": 1, "ultimo_vivo_ts": ts_blk, "atraso_horas": 0.0}
 
     ult = conn.execute(
         f"SELECT schumann_hz, schumann_activity, timestamp_blk FROM {TABLA} "
         "WHERE COALESCE(en_vivo,1)=1 "
-        "AND schumann_hz IS NOT NULL "
         "AND schumann_activity IS NOT NULL AND schumann_activity != 0 "
         "AND timestamp_blk <= ? "
         "ORDER BY timestamp_blk DESC LIMIT 1",
@@ -131,7 +142,8 @@ def registrar(
                 "schumann_hz": None, "schumann_activity": None,
                 "en_vivo": 0, "ultimo_vivo_ts": None, "atraso_horas": None}
 
-    u_hz, u_act, u_ts = float(ult[0]), float(ult[1]), ult[2]
+    # u_hz puede ser None (lecturas en vivo post-retiro): se arrastra tal cual.
+    u_hz, u_act, u_ts = _as_float(ult[0]), float(ult[1]), ult[2]
     if u_ts[:13] == ts_blk[:13]:
         # Ya hay lectura real de esta misma hora (un ciclo anterior): se queda.
         return {"estado": "en_vivo", "timestamp_blk": ts_blk,

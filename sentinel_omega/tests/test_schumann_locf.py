@@ -111,8 +111,41 @@ def test_el_placeholder_de_libro_sigue_reconociendose():
     assert is_baseline_placeholder(7.83, 0.0) is True
     assert is_baseline_placeholder(8.26, 21.46) is False
     assert is_baseline_placeholder(None, None) is True
-    assert sv.es_senal_muerta(7.83, 0.0) and sv.es_senal_muerta(None, 1.0)
+    # Desde el retiro del 2026-10-09, hz=None es lo NORMAL del fetcher: la
+    # señal la decide la ACTIVIDAD sola. Con la regla vieja, (None, 1.0) era
+    # «señal muerta» y ninguna lectura volvía a ser en_vivo.
+    assert sv.es_senal_muerta(7.83, 0.0) and sv.es_senal_muerta(None, None)
+    assert not sv.es_senal_muerta(None, 1.0)
     assert not sv.es_senal_muerta(8.26, 21.46)
+    # Y el placeholder del fetcher ya no descarta la lectura (None, actividad):
+    # con la regla vieja TODA lectura real moría como «baseline placeholder»
+    # y la serie viva de actividad quedó muda el mismo día del retiro.
+    assert is_baseline_placeholder(None, 4.88) is False
+    assert is_baseline_placeholder(None, 0.0) is True
+
+
+def test_hz_none_con_actividad_real_es_en_vivo(conn):
+    """El caso normal DESDE el retiro del 2026-10-09: el fetcher trae hz=None
+    y una actividad medida. Tiene que quedar en_vivo con hz NULL --- y no
+    arrastrar la última «frecuencia», que era la fabricada (7,92 de la
+    fórmula 7,83 + actividad×0,02)."""
+    sv.registrar(conn, 7.92, 4.41, ahora=T0)          # la vieja, fabricada
+    r = sv.registrar(conn, None, 4.41, ahora=T0 + H)  # la nueva normal
+    assert r["estado"] == "en_vivo" and r["schumann_hz"] is None
+    assert r["schumann_activity"] == 4.41 and r["atraso_horas"] == 0.0
+    filas = _filas(conn)
+    assert filas[-1][1] is None and filas[-1][3] == 1
+
+
+def test_el_arrastre_ya_no_resucita_una_frecuencia_fabricada(conn):
+    """Tras una lectura real sin hz, una caída de la API arrastra la actividad
+    --- con el hz NULL del último real, no el 7,92 de la fórmula retirada."""
+    sv.registrar(conn, 7.92, 4.41, ahora=T0)
+    sv.registrar(conn, None, 4.41, ahora=T0 + H)      # real nueva, sin hz
+    r = sv.registrar(conn, None, None, ahora=T0 + 2 * H)   # API caída
+    assert r["estado"] == "arrastrado"
+    assert r["schumann_hz"] is None and r["schumann_activity"] == 4.41
+    assert r["ultimo_vivo_ts"] == _filas(conn)[1][0]
 
 
 def test_el_volcado_conserva_la_ultima_lectura_real(tmp_path):

@@ -830,8 +830,13 @@ def _build_live_features(runner, conn=None) -> dict:
         except Exception as e:  # noqa: BLE001 — el ciclo sigue sin los rasgos
             logger.warning("Kp/densidad por ventana no disponible (%s): "
                            "quedan sin dato", e)
-    if "schumann_frequency" in beta1:
-        features["schumann_mean"] = float(beta1["schumann_frequency"])
+    # hz es None desde el retiro del 2026-10-09 (de un conteo de pixeles no
+    # sale una frecuencia): el rasgo queda SIN DATO --- no se convierte en 0,
+    # y `float(None)` no puede pasar de aquí (crash latente medido el mismo
+    # día del retiro: la clave pasa a existir con valor None en el cache).
+    _sch_f = beta1.get("schumann_frequency")
+    if _sch_f is not None:
+        features["schumann_mean"] = float(_sch_f)
     # La dispersión de Schumann: el modelo la pide y nadie la calculaba.
     for clave in ("schumann_std", "schumann_sigma", "schumann_desviacion"):
         if clave in beta1 and beta1[clave] is not None:
