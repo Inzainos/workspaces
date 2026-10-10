@@ -16,7 +16,12 @@ Honestidad de rol (v2.5.1):
   - Se eliminó el "friction" institucional hardcodeado (0.4/0.3/0.5): eran
     constantes inventadas que inflaban el score compuesto sin dato real
     detrás. El score compuesto ahora sale solo de entradas medidas
-    (Fear&Greed, VIX, curva de rendimientos, topología cripto/sectorial).
+    (Fear&Greed, VIX, curva de rendimientos). Los «bonos de topología»
+    cripto/sectorial que se añadieron después corrieron la misma suerte el
+    2026-10-09: medidos, disparaban en 2.674/2.674 ciclos (b estructural de
+    -4,85 contra umbral -0,2; concentration en dólares crudos contra 0,7) y
+    dejaban el compuesto clavado en 0,300 --- un desplazamiento aditivo fijo
+    con cara de señal. Ver analyze().
 """
 
 import numpy as np
@@ -124,12 +129,28 @@ class DeltaAgent(BaseAgent):
         crypto_topo = self._crypto_topology()
         sector_topo = self._sector_topology()
 
-        # Score compuesto SOLO de entradas medidas — sin constantes inventadas
-        combined = fear_score * 0.7
-        if crypto_topo["signal"] != SignalType.NEUTRAL:
-            combined += 0.15
-        if sector_topo.get("concentration", 0) > 0.7:
-            combined += 0.15
+        # Score compuesto = SOLO el miedo medido. Los dos «bonos de topología»
+        # que vivían aquí (2026-10-08) eran un desplazamiento aditivo fijo sin
+        # información, medido el 2026-10-09 sobre 2.674 ciclos:
+        #
+        #   * crypto: `power_law_b` sobre precios RELATIVOS A BTC es
+        #     estructuralmente empinado --- medido en vivo: b = -4,85 contra un
+        #     umbral de -0,2. Disparó en 2.674/2.674 ciclos: BEARISH/BULLISH
+        #     siempre, no describe nada.
+        #   * sector: `concentration` guarda `composite_gradient` en DÓLARES
+        #     CRUDOS (~8×10⁹ de close×volumen) y se comparaba contra 0,7
+        #     --- una fracción. Tautología: 8×10⁹ > 0,7 no puede ser falso.
+        #
+        # Juntos dejaban `combined` clavado en 0,300 --- una delta de Dirac,
+        # exactamente 0,05 por debajo de su propio umbral de WATCH. Un valor
+        # constante no discrimina nada (regla 8). Se quitan; `crypto_b` y
+        # `sector_concentration` siguen en `signal_data` para que, si algún
+        # día se les encuentra una distribución calibrada, haya con qué.
+        #
+        # Umbrales sobre fear_score (0-1, suma de fuentes extremas medidas):
+        #   0,35 = al menos UNA fuente extrema (FGI<20, VIX>35…)  -> WATCH
+        #   0,60 = al menos una y media (extrema + curva invertida) -> WATCH fuerte (techo)
+        combined = fear_score
 
         signal_data = {
             "fear_greed": self._fear_greed,
@@ -145,7 +166,7 @@ class DeltaAgent(BaseAgent):
         # el compuesto y sus entradas para ver si es calma real o señal rota.
         logger.info(
             "DELTA diag: combined=%.3f fear=%.3f vix=%s spread=%s | "
-            "umbrales ALERT(>0.6) WATCH(>0.35)",
+            "umbral WATCH fuerte(>0.6) moderado(>0.35)",
             combined, fear_score, _n(self._vix, 1), _n(self._yield_spread, 2),
         )
 

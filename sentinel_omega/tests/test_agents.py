@@ -337,6 +337,84 @@ class TestDeltaAgentFinancial:
         signal = agent.analyze()
         assert signal.signal_type in SignalType
 
+    # ── Los bonos de topología, medidos y retirados (2026-10-09) ────────────
+    #
+    # Medido en vivo: crypto `b` = -4,85 contra umbral -0,2 (estructural:
+    # precios relativos a BTC); `concentration` = 8,07e9 DÓLARES contra
+    # umbral 0,7 (una fracción --- tautología). Juntos disparaban en
+    # 2.674/2.674 ciclos y dejaban `combined` clavado en 0,300. Estos tests
+    # anclan el comportamiento nuevo: la topología ya no desplaza el score.
+
+    def test_topologia_que_dispara_siempre_ya_no_desplaza_el_score(self):
+        """Con miedo CERO, ni la topología más «señalada» puede dar WATCH.
+
+        Con los valores medidos en vivo (b=-4,85 siempre BEARISH/BULLISH,
+        concentration=8e9>0,7 siempre), el score viejo era 0,300 constante
+        con fear=0. Ahora fear=0 tiene que dar NEUTRAL, sin importar cuán
+        «extrema» parezca la topología: un input que dispara el 100 % de las
+        veces no es input.
+        """
+        from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
+        agent = DeltaAgent()
+        agent.ingest({
+            "fear_greed": 50.0,
+            "vix": 18.0,
+            "yield_spread": 1.0,
+            # los valores REALES medidos el 2026-10-09:
+            "crypto_ratios": {"ETH": 0.03018, "SOL": 0.00133,
+                              "BNB": 0.00902, "XRP": 0.00002},
+            "sector_market_caps": {"XLK": 1.455e9, "XLV": 1.388e9,
+                                   "XLF": 2.087e9, "XLY": 7.50e8,
+                                   "XLE": 2.296e9, "XLI": 1.258e9},
+        })
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.NEUTRAL
+        assert signal.data["market_fear_score"] == 0.0
+
+    def test_una_sola_fuente_extrema_es_watch_moderado(self):
+        """VIX>35 solo: fear=0,4 -> 0,4 pasa 0,35 (moderado) pero no 0,6."""
+        from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
+        agent = DeltaAgent()
+        agent.ingest({
+            "fear_greed": 50.0,     # normal: no suma
+            "vix": 38.0,            # extremo: +0,4
+            "yield_spread": 1.0,
+            "crypto_ratios": {"ETH": 0.03018, "SOL": 0.00133,
+                              "BNB": 0.00902, "XRP": 0.00002},
+        })
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.WATCH
+        assert signal.confidence < 0.5 + 0.6 * 0.3   # rama moderada, no la fuerte
+
+    def test_dos_fuentes_extremas_siguen_dando_watch_fuerte_con_techo(self):
+        """FGI<20 + VIX>35: fear=0,8 -> rama fuerte, y SIGUE siendo WATCH:
+        el estrés financiero es contexto, no evidencia sísmica."""
+        from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
+        agent = DeltaAgent()
+        agent.ingest({
+            "fear_greed": 15.0,     # extremo: +0,4
+            "vix": 38.0,           # extremo: +0,4
+            "yield_spread": 1.0,
+        })
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.WATCH
+        assert signal.confidence <= 0.8
+        assert "techo WATCH" in signal.reasoning
+
+    def test_euforia_vix_bajo_ya_no_da_watch(self):
+        """VIX<12 solo daba +0,2 -> con los bonos viejos: 0,14+0,30=0,44 y
+        WATCH moderado. La euforia NO es estrés: fear=0,2 se queda bajo el
+        0,35. La rama WATCH moderada exige una fuente EXTREMA completa."""
+        from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
+        agent = DeltaAgent()
+        agent.ingest({
+            "fear_greed": 75.0,     # zona neutra: no suma
+            "vix": 10.0,            # +0,2 por euforia
+            "yield_spread": 1.0,
+        })
+        signal = agent.analyze()
+        assert signal.signal_type in (SignalType.NEUTRAL, SignalType.NO_SIGNAL)
+
     def test_health_check(self):
         from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
         agent = DeltaAgent()
