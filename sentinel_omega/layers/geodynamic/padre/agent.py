@@ -11,15 +11,20 @@ Hierarchy:
   - Omega provides spatial/cosmic corroboration
   - Loki provides Bayesian probability collapse (Final Act)
 
-Schumann correlation:
-  Everything correlates against the Schumann resonance (Beta-1).
-  If Schumann is perturbed alongside any other signal, that's a precursor.
+Corroboration (was \"Schumann correlation\", renamed 2026-10-10):
+  The schumann_cymatics FAMILY (beta1 OR beta2) must be active for ALERT.
+  Until 2026-10-10 this gate demanded beta1 SPECIFICALLY without reading a
+  single Schumann data point --- with beta1's only live route at 0.02%,
+  the system emitted 0 ALERTs in 4,566 production cycles. Family-level
+  corroboration chosen by the operator (option B): beta1 (0.02%) or
+  beta2 (~7% via fog/atmospheric stress) provides the second voice.
 
 Flow:
   1. SNT Families detect patterns -> cross-family validation
-  2. Omega validates spatial/cosmic correlation
-  3. Loki performs Bayesian probability collapse
-  4. If all three acts align -> ALERT CONFIRMED
+  2. Familia schumann_cymatics corrobora (gate de ALERT)
+  3. Omega activo sube el techo de confianza; Loki solo sube confianza
+     (sus ramas de decision estan muertas por construccion, medido)
+  4. ALERT cuando: >=2 familias + >=2 alertas + corroboration > 0.3
 """
 
 from typing import Any, Dict, List, Optional
@@ -153,15 +158,37 @@ class GeodynamicPadre(PadreAgent):
                 family_active[family] = True
         return family_active
 
-    def _schumann_correlation(self, validated: Dict[str, AgentSignal]) -> float:
-        beta1 = validated.get("beta1")
-        if beta1 is None:
+    def _corroboracion_familiar(self, validated: Dict[str, AgentSignal]) -> float:
+        """Corroboración de la FAMILIA schumann_cymatics: beta1 O beta2 activos.
+
+        Hasta el 2026-10-10 esto exigía beta1 específicamente y se llamaba
+        «correlación Schumann» SIN leer un solo dato de Schumann --- la
+        fórmula era `otros_activos×0,3 + conf_beta1×0,4`, o sea «beta1
+        activo». Con la única ruta viva de beta1 al 0,02 % de las ventanas
+        (medido, BITACORA_2026-10-09 §4.2), la compuerta era un veto casi
+        permanente: **0 ALERTs en 4.566 ciclos de producción**.
+
+        El operador eligió la corroboración por FAMILIA (opción B): la
+        segunda voz la da cualquiera de los dos bots de la familia ---
+        beta1 (0,02 %) o beta2 (~7 % vía niebla/estrés, medido 203/2.863
+        ciclos). El umbral 0,3 se mantiene: con dos familias activas (requisito
+        previo) hay siempre ≥1 «otro activo», así que un bot familiar activo
+        da 0,3 + 0,4×conf >= 0,5 --- la compuerta filtra «la familia no ve
+        nada» sin volver a ser un veto eterno.
+        """
+        mejor = None
+        for name in ("beta1", "beta2"):
+            sig = validated.get(name)
+            if sig is not None and sig.signal_type in (SignalType.ALERT, SignalType.WATCH):
+                if mejor is None or sig.confidence > mejor.confidence:
+                    mejor = sig
+        if mejor is None:
             return 0.0
-        schumann_active = beta1.signal_type in (SignalType.ALERT, SignalType.WATCH)
-        if not schumann_active:
-            return 0.0
-        other_active = sum(1 for name, sig in validated.items() if name != "beta1" and sig.signal_type in (SignalType.ALERT, SignalType.WATCH))
-        return min(1.0, other_active * 0.3 + beta1.confidence * 0.4)
+        other_active = sum(
+            1 for name, sig in validated.items()
+            if name not in ("beta1", "beta2")
+            and sig.signal_type in (SignalType.ALERT, SignalType.WATCH))
+        return min(1.0, other_active * 0.3 + mejor.confidence * 0.4)
 
     def _loki_validation(self, validated: Dict[str, AgentSignal]) -> Dict[str, Any]:
         loki_sig = validated.get("loki")
@@ -201,7 +228,7 @@ class GeodynamicPadre(PadreAgent):
             elif str(k).lower() == "loki":
                 loki_sig = validated.pop(k)
         family_status = self._cross_family_check(validated)
-        schumann_corr = self._schumann_correlation(validated)
+        corroboracion = self._corroboracion_familiar(validated)
         active_families = sum(1 for a in family_status.values() if a)
         alert_signals = [s for s in validated.values() if s.signal_type == SignalType.ALERT]
         watch_signals = [s for s in validated.values() if s.signal_type == SignalType.WATCH]
@@ -211,25 +238,32 @@ class GeodynamicPadre(PadreAgent):
         veto_active = False
         veto_reason = ""
         note = ""
-        if active_families >= 2 and len(alert_signals) >= 2 and schumann_corr > 0.3 and omega_active and loki_confirms:
+        if (active_families >= 2 and len(alert_signals) >= 2
+                and corroboracion > 0.3 and omega_active):
+            # Loki ya NO elige entre dos ramas ALERT (elegía entre «THREE
+            # ACTS» y «SNT + Omega; Loki pending», ambas ALERT --- confirmar
+            # o no daba lo mismo, y su confirmación es imposible: posterior
+            # ~1e-112). Solo sube la confianza cuando confirma.
             avg_conf = sum(s.confidence for s in alert_signals) / len(alert_signals)
-            final, reached, conf = SignalType.ALERT, True, min(avg_conf + schumann_corr * 0.15 + loki_validation["loki_probability"] * 0.15, 0.98)
-            note = "THREE ACTS ALIGNED: SNT + Omega + Loki"
-        elif active_families >= 2 and len(alert_signals) >= 2 and schumann_corr > 0.3 and omega_active and not loki_confirms:
+            if loki_confirms:
+                final, reached, conf = SignalType.ALERT, True, min(
+                    avg_conf + corroboracion * 0.15
+                    + loki_validation["loki_probability"] * 0.15, 0.98)
+                note = "Familia corrobora + Omega + Loki (three acts)"
+            else:
+                final, reached, conf = SignalType.ALERT, True, min(
+                    avg_conf + corroboracion * 0.2, 0.9)
+                note = "Familia schumann_cymatics corrobora + Omega (Loki sin confirmar)"
+        elif (active_families >= 2 and len(alert_signals) >= 2
+                and corroboracion > 0.3):
+            # Sin Omega (ausente o inactivo): ALERT con techo menor. Las dos
+            # ramas VIEJAS que esto reemplaza estaban muertas --- una exigía
+            # loki_confirms (imposible) y la otra exigía que Loki NO emitiera
+            # señal (solo alcanzable en tests).
             avg_conf = sum(s.confidence for s in alert_signals) / len(alert_signals)
-            final, reached, conf = SignalType.ALERT, True, min(avg_conf + schumann_corr * 0.2, 0.9)
-            note = "SNT + Omega aligned; Loki pending"
-            veto_active = True
-            veto_reason = "Loki probability below threshold for full confirmation"
-        elif active_families >= 2 and len(alert_signals) >= 2 and schumann_corr > 0.3 and not omega_active and loki_confirms:
-            avg_conf = sum(s.confidence for s in alert_signals) / len(alert_signals)
-            final, reached, conf = SignalType.ALERT, True, min(avg_conf + schumann_corr * 0.15 + loki_validation["loki_probability"] * 0.15, 0.9)
-            note = "SNT + Loki aligned; Omega pending"
-        elif active_families >= 2 and len(alert_signals) >= 2 and schumann_corr > 0.3 and not omega_active and not loki_validation["loki_active"]:
-            # Legacy SNT-only ALERT (no Omega/Loki in signals — e.g. unit tests)
-            avg_conf = sum(s.confidence for s in alert_signals) / len(alert_signals)
-            final, reached, conf = SignalType.ALERT, True, min(avg_conf + schumann_corr * 0.2, 0.92)
-            note = "SNT consensus (legacy, no Omega/Loki)"
+            final, reached, conf = SignalType.ALERT, True, min(
+                avg_conf + corroboracion * 0.1, 0.85)
+            note = "Familia schumann_cymatics corrobora; Omega ausente/inactivo"
         elif active_families >= 2 and (len(alert_signals) >= 1 or len(watch_signals) >= 2):
             avg_conf = sum(s.confidence for s in (alert_signals + watch_signals)) / max(len(alert_signals + watch_signals), 1)
             final, reached, conf = SignalType.WATCH, True, avg_conf * 0.8
@@ -257,4 +291,4 @@ class GeodynamicPadre(PadreAgent):
             all_sigs.append(omega_sig)
         if loki_sig:
             all_sigs.append(loki_sig)
-        return ConsensusResult(consensus_reached=reached, final_signal=final, confidence=conf, agent_signals=all_sigs, veto_active=veto_active, veto_reason=veto_reason, metadata={"families_active": active_families, "schumann_correlation": schumann_corr, "cross_family": family_status, "note": note, "loki": loki_validation, **dual})
+        return ConsensusResult(consensus_reached=reached, final_signal=final, confidence=conf, agent_signals=all_sigs, veto_active=veto_active, veto_reason=veto_reason, metadata={"families_active": active_families, "corroboracion_familiar": corroboracion, "cross_family": family_status, "note": note, "loki": loki_validation, **dual})

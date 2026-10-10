@@ -103,7 +103,12 @@ tiempo operativo.
 
 - **Familias:** `space_weather` (alfa1/alfa2), `schumann_cymatics` (beta1/beta2),
   `financial_sentiment` (delta). Consenso: ≥2 familias + ≥2 alertas +
-  correlación Schumann > 0.3.
+  **corroboración de la familia schumann_cymatics > 0.3** (beta1 O beta2
+  activos; opción B del operador, 2026-10-10). Hasta esa fecha la compuerta
+  decía «correlación Schumann» sin leer un dato de Schumann y exigía beta1
+  específicamente (ruta viva al 0,02 %): **0 ALERTs en 4.566 ciclos**.
+  Omega activo sube el techo de confianza; Loki solo sube confianza cuando
+  confirma (sus ramas de decisión están muertas por construcción, medido).
 - **Firmas:** memoria de patrones por bot de la ventana de 14 días previa a cada
   evento. Estados `nueva → observada → recurrente → consolidada`.
   **`consolidada` NO es lo mismo que `exigible`** (separado el 2026-10-07): la

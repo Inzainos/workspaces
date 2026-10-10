@@ -213,17 +213,59 @@ class TestGeodynamicPadreConsensus:
         assert result.consensus_reached is True
         assert result.final_signal in (SignalType.ALERT, SignalType.WATCH)
 
-    def test_schumann_correlation_boost(self):
+    def test_corroboracion_familiar(self):
+        """La compuerta de ALERT es la FAMILIA schumann_cymatics, no beta1.
+
+        Antes se llamaba «correlación Schumann» sin leer un dato de Schumann:
+        exigía beta1 (ruta viva al 0,02 %) y el sistema dio 0 ALERTs en
+        4.566 ciclos. Opción B del operador (2026-10-10): corrobora
+        cualquiera de los dos bots de la familia.
+        """
         signals_with_schumann = [
             _signal("alfa1", SignalType.ALERT, 0.8),
             _signal("beta1", SignalType.ALERT, 0.9),
             _signal("delta", SignalType.ALERT, 0.6),
         ]
         result = self.padre.evaluate_consensus(signals_with_schumann)
-        schumann_corr = self.padre._schumann_correlation(
+        corroboracion = self.padre._corroboracion_familiar(
             self.padre._validate_junior_with_senior(signals_with_schumann)
         )
-        assert schumann_corr > 0
+        assert corroboracion > 0
+        assert result.final_signal == SignalType.ALERT
+
+    def test_la_corroboracion_la_da_beta2_tambien(self):
+        """beta2 (niebla/estrés, ~7 % medido) ES segunda voz: si beta1 está
+        en calma pero beta2 activa + dos familias alertan, hay ALERT."""
+        signals = [
+            _signal("alfa1", SignalType.ALERT, 0.85),
+            _signal("alfa2", SignalType.WATCH, 0.6),
+            _signal("beta1", SignalType.NEUTRAL, 0.3),
+            _signal("beta2", SignalType.WATCH, 0.7),
+            _signal("delta", SignalType.NEUTRAL, 0.3),
+        ]
+        validated = self.padre._validate_junior_with_senior(signals)
+        corr = self.padre._corroboracion_familiar(validated)
+        assert corr > 0.3
+        result = self.padre.evaluate_consensus(signals)
+        # alfa1 ALERT + beta2 (junior confirmado por... alfa2 WATCH no es
+        # senior de beta2) --- la corroboración existe aunque el tier final
+        # dependa de las demás compuertas.
+        assert corr > 0.3 and result.final_signal in (
+            SignalType.ALERT, SignalType.WATCH)
+
+    def test_sin_corroboracion_familiar_no_hay_alert(self):
+        """La compuerta sigue FILTRANDO: sin la familia schumann_cymatics
+        activa, dos alertas de dos familias no pasan a ALERT."""
+        signals = [
+            _signal("alfa1", SignalType.ALERT, 0.9),
+            _signal("delta", SignalType.ALERT, 0.8),
+            _signal("beta1", SignalType.NEUTRAL, 0.3),
+            _signal("beta2", SignalType.NEUTRAL, 0.2),
+        ]
+        validated = self.padre._validate_junior_with_senior(signals)
+        assert self.padre._corroboracion_familiar(validated) == 0.0
+        result = self.padre.evaluate_consensus(signals)
+        assert result.final_signal != SignalType.ALERT
 
     def test_no_consensus_all_neutral(self):
         signals = [

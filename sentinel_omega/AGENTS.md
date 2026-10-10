@@ -24,7 +24,7 @@ The system follows a tiered validation process. A signal must climb this ladder 
 
 ### 🟪 Omega (The Correlator)
 - **Role**: Validates the SNT consensus against global cosmic cycles.
-- **Logic**: If $\ge 2$ families agree and the Schumann correlation is $> 0.3$, Omega elevates the signal.
+- **Logic**: If $\ge 2$ families agree and the schumann_cymatics family corroborates ($> 0.3$), Omega elevates the signal. (Renamed 2026-10-10: the gate was mislabeled "Schumann correlation" but read no Schumann data and demanded beta1 specifically — 0 ALERTs in 4,566 cycles.)
 
 ### 🟥 Loki (The Bayesian Collapse)
 - **Role**: Final probability arbiter based on the Unified Field Theory.
