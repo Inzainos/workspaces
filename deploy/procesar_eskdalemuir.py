@@ -313,13 +313,21 @@ def leer_ssc_dia(path: Path) -> List[Tuple[str, int, np.ndarray]]:
     que Granada (0 = NS, 1 = EW).
     """
     import pandas as pd
+    # `dtype=str`: algunos días traen «NAN» LITERAL escrito por el
+    # digitizador (medido: 2025-03-28, línea ~2,9 M) y la inferencia de
+    # tipos del parser C revienta con `usecols` (IndexError en el camino
+    # del DtypeWarning --- bug de pandas con usecols + chunking). Leyendo
+    # como texto y convirtiendo con `to_numeric(errors="coerce")`, el NAN
+    # se vuelve NaN de verdad y los segmentos que lo contienen quedan
+    # excluidos del promedio Welch (ya lo hacía `espectros_de_hora`).
     df = pd.read_csv(path, sep=r"\s+", header=0,
-                     usecols=["%hh", "X[mV]", "Y[mV]"], engine="c")
+                     usecols=["%hh", "X[mV]", "Y[mV]"],
+                     dtype=str, engine="c")
     n = len(df)
     if n < FM * 3600:
         print(f"  {path.name}: {n:,} muestras (< 1 h) --- se omite")
         return []
-    hh = df["%hh"].to_numpy()
+    hh = pd.to_numeric(df["%hh"], errors="raise").to_numpy(dtype=np.int64)
     x = pd.to_numeric(df["X[mV]"], errors="coerce").to_numpy(dtype=float)
     y = pd.to_numeric(df["Y[mV]"], errors="coerce").to_numpy(dtype=float)
     fecha = path.name.split("-")[1]                    # '20250101'

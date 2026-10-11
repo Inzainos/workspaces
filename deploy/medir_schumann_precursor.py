@@ -68,6 +68,13 @@ TABLA = TABLA_DEFAULT
 VENTANA_H = 336
 HORIZONTE_H = 190
 EPOCA_D = 180
+# La estacionalidad del propio Schumann (distribución global de relámpagos)
+# mueve SR3 en décimas de Hz entre meses (medido en Eskdalemuir 2025: feb
+# 21,30 vs dic 19,95). Con ±180 días la calma puede caer en otra estación
+# --- y con un hueco de datos en medio, la fuga es sistemática. El barrido
+# estrecho (p. ej. ±30 días, séptimo argumento) es la prueba que separa
+# precursor de calendario (misma lección que mató al 5,02× de las figuras
+# en Granada v2).
 N_BINS = 48
 # Separacion minima entre ventanas. 336 h = el largo de la ventana, o sea el
 # MINIMO que garantiza que dos ventanas no comparten ni un dato. Se arranco con
@@ -152,8 +159,11 @@ def main():
     global TABLA
     if len(sys.argv) > 6:
         TABLA = sys.argv[6].strip()
+    global EPOCA_D
+    if len(sys.argv) > 7:
+        EPOCA_D = int(sys.argv[7])
     print(f"ventana: {VENTANA_H} h · semilla de calma: {SEMILLA} · tabla: {TABLA}")
-    print(f"separacion minima entre ventanas: {SEP_H} h "
+    print(f"epoca de empareje: ±{EPOCA_D} días · separacion minima: {SEP_H} h "
           f"({'sin solape' if SEP_H >= VENTANA_H else 'CON SOLAPE: las muestras no son independientes'})")
     c = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=30)
     cs = sqlite3.connect(f"file:{db_s}?mode=ro", uri=True, timeout=30)
