@@ -538,6 +538,7 @@ def format_centinela_threat(
     bz: float,
     wind: float,
     schumann: Optional[float] = None,
+    schumann_act: Optional[float] = None,
 ) -> Optional[Tuple[str, str]]:
     """
     Prioridades Centinela V2. Devuelve (alert_type, html) o None.
@@ -549,6 +550,16 @@ def format_centinela_threat(
     bz = float(bz)
     wind = float(wind)
     schumann = hz_schumann_valido(schumann)
+    # La actividad WPC es lo único medido en vivo desde el retiro del Hz
+    # (2026-10-09). El parte CRÍTICO la reporta con la frecuencia declarada
+    # SIN MEDIR --- nunca como si estuviera medida.
+    act_linea = ""
+    if schumann_act is not None:
+        try:
+            act_linea = (f"\n🌐 Schumann: actividad {float(schumann_act):.1f} %"
+                         " (frecuencia sin medir)")
+        except (TypeError, ValueError):
+            act_linea = ""
 
     if r >= TH_RISK_CRIT:
         return (
@@ -561,7 +572,8 @@ def format_centinela_threat(
             # desaparecía del parte igual que un None. Aquí sólo llegan Hz
             # (ver orchestrator.py); antes podía llegar una fracción de WPC.
             + (f"\n🌐 Schumann: {schumann:.2f} Hz"
-               if schumann is not None else ""),
+               if schumann is not None else "")
+            + act_linea,
         )
     if bz <= TH_BZ_CRACK:
         return (
@@ -610,6 +622,7 @@ def dispatch_cycle_alerts(
     bz: Optional[float] = None,
     wind: Optional[float] = None,
     schumann: Optional[float] = None,
+    schumann_act: Optional[float] = None,
     consensus_signal: Optional[str] = None,
     consensus_conf: float = 0.0,
     agents_n: int = 0,
@@ -649,7 +662,7 @@ def dispatch_cycle_alerts(
         sent += 1
 
     if fantasma is not None and bz is not None and wind is not None:
-        threat = format_centinela_threat(fantasma, bz, wind, schumann)
+        threat = format_centinela_threat(fantasma, bz, wind, schumann, schumann_act)
         if threat:
             atype, html = threat
             sev = Severity.ROJO if atype in ("CRITICO", "GRIETA") else Severity.AMARILLO

@@ -250,17 +250,28 @@ class SentinelOrchestrator:
         # Nunca se sustituye por la fracción --- un número en la unidad
         # equivocada es peor que no dar el dato.
         sch = None
+        sch_act = None
         if self._runner is not None:
             _cache = getattr(getattr(self._runner, "pipeline", None), "_cache", {}) or {}
             _hz = (_cache.get("beta1") or {}).get("schumann_frequency")
             if _hz is not None and float(_hz) == float(_hz):   # descarta NaN
                 sch = float(_hz)
+            # La ACTIVIDAD es lo único medido en vivo desde el retiro del Hz
+            # (2026-10-09): el parte CRÍTICO la reporta cuando hay lectura
+            # fresca, con la frecuencia declarada sin medir.
+            _act = (_cache.get("beta1") or {}).get("schumann_activity")
+            if _act is not None:
+                try:
+                    sch_act = float(_act)
+                except (TypeError, ValueError):
+                    sch_act = None
 
         n = dispatch_cycle_alerts(
             fantasma=fantasma if fantasma is not None else None,
             bz=float(bz) if bz is not None else None,
             wind=float(wind) if wind is not None else None,
             schumann=float(sch) if sch is not None else None,
+            schumann_act=sch_act,
             consensus_signal=geo.final_signal.value if geo.final_signal else None,
             consensus_conf=float(geo.confidence or 0),
             agents_n=len(geo.agent_signals or []),

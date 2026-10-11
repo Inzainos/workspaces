@@ -23,6 +23,20 @@ def _linea_schumann(schumann):
     return next((l for l in r[1].splitlines() if "Schumann" in l), None)
 
 
+def test_la_actividad_se_reporta_con_frecuencia_sin_medir():
+    """Desde el retiro del Hz (2026-10-09) el parte CRÍTICO reporta la
+    ACTIVIDAD (lo único medido) y declara la frecuencia sin medir."""
+    r = format_centinela_threat(risk=95.0, bz=-12.0, wind=650.0,
+                                schumann=None, schumann_act=4.9)
+    assert r is not None
+    assert "actividad 4.9 %" in r[1]
+    assert "sin medir" in r[1]
+    # y sin actividad (lectura no fresca) no se inventa línea alguna:
+    r2 = format_centinela_threat(risk=95.0, bz=-12.0, wind=650.0,
+                                 schumann=None, schumann_act=None)
+    assert "Schumann" not in r2[1]
+
+
 def test_la_fundamental_se_publica():
     assert "7.83" in _linea_schumann(7.83)
 
