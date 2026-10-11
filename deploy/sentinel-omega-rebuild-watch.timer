@@ -1,0 +1,9 @@
+[Unit]
+Description=Timer que vigila el rebuild (cada 15 min mientras hay uno activo)
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target

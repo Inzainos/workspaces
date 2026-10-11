@@ -1,0 +1,9 @@
+{
+  "cuando": "2026-10-11T17:14:45.231956+00:00",
+  "issues": [],
+  "accion": "limpio",
+  "rojos_deliberados": [
+    "test_fantasma_alfa1_kp_cero.py::test_con_el_kp_ausente_el_modelo_YA_NO_inventa_un_watch",
+    "test_fantasma_alfa1_kp_cero.py::test_con_el_kp_real_el_modelo_no_alarma"
+  ]
+}

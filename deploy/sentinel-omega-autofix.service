@@ -1,0 +1,9 @@
+[Unit]
+Description=Auto-fix: detecta issues y (v2) dispara el fix via Concilio
+# v1: solo detecta y escribe estado. v2: añade --fix cuando el operador dé el GO.
+
+[Service]
+Type=oneshot
+ExecStart=/home/deamon/workspaces/.venv/bin/python /home/deamon/workspaces/deploy/auto_fix.py --detect
+StandardOutput=append:/home/deamon/workspaces/sentinel_omega/logs/auto_fix.log
+StandardError=append:/home/deamon/workspaces/sentinel_omega/logs/auto_fix.log

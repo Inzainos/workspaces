@@ -1,0 +1,8 @@
+[Unit]
+Description=Vigila el rebuild y sube servicios cuando termina
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/deamon/workspaces/deploy/vigilar_rebuild.sh
+StandardOutput=append:/home/deamon/workspaces/sentinel_omega/logs/vigilar_rebuild.log
+StandardError=append:/home/deamon/workspaces/sentinel_omega/logs/vigilar_rebuild.log

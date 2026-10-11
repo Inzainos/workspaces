@@ -1,0 +1,10 @@
+[Unit]
+Description=Timer de auto-fix: cada 4 h detecta (y en v2, repara)
+
+[Timer]
+OnBootSec=20min
+OnUnitActiveSec=4h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
