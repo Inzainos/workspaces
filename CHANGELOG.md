@@ -1,5 +1,115 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-10/11 - Eskdalemuir: la réplica medida — y la hipótesis central cerrada en DOS estaciones
+
+Lo que siguió a la medición de Granada: tres pasadas más del retiro del Hz
+(porque estaba a medias y la primera mató la serie de actividad), la
+auditoría de TODO el pipeline por el cambio, el consenso arreglado, y el
+GO del operador para la réplica en estación independiente. Que resultó
+estar descargable, abierta y cruda — y que CONFIRMÓ el nulo, con el
+confound rastreado hasta el mecanismo.
+
+### El retiro del Hz, terminado de verdad (tres pasadas)
+
+- **Pasada 1**: el fetcher medía actividad real y la tiraba como
+  «placeholder» (`is_baseline_placeholder` trataba `hz=None` como el
+  fallback viejo); el LOCF arrastraba el 7,92 fabricado como «último valor
+  real» para siempre; `launcher.schumann_mean` y las puertas de frescura
+  tenían `float(None)` latentes. La ACTIVIDAD es la señal en toda la
+  cadena; el hz viaja NULL.
+- **Pasada 2**: el digesto llevaba SIN telemetría de precursores por una
+  query con columna muerta (`ts`); el Kp salía con 15 decimales; el
+  `delta_enrichd` reventaba por ciclo en `float(AVG(NULL))`; el
+  `DEFAULT 7.83` del DDL era una máquina de fabricación en potencia;
+  la historia fabricada NULL-eada con respaldos (740 precursores + 883
+  enjambre + 25 vivo).
+- **Pasada 3 (auditoría del pipeline completo, con el reentreno ONNX como
+  fecha límite)**: el volcado al enjambre TIRABA la actividad (columna
+  añadida forward-only + backfill de 117 filas desde precursores, donde la
+  actividad siempre fue real); `.get(..., 0.0)` (regla 7) en el scanner; las
+  dos rutas muertas del scanner declaradas en el código. Verificados
+  seguros: rasgos del Juez, ONNX (el reentreno realinea ambos lados),
+  consenso, omega, loki, jupiter.
+
+### El consenso: la «correlación Schumann» era «beta1 activo» disfrazado
+
+Medido: **0 ALERTs en 4.566 ciclos de producción**. La compuerta nunca leyó
+un dato de Schumann; exigía beta1 específicamente (ruta viva al 0,02 %).
+Opción B del operador: **corroboración por FAMILIA** — beta1 O beta2
+(~7 % vía niebla/estrés, medido) dan la segunda voz; Loki pasa a solo
+subir confianza (sus ramas de decisión están muertas por construcción,
+posterior ~1e-112); el veto huérfano y las dos ramas muertas retirados.
+Sin la familia activa, dos alertas de dos familias siguen en WATCH (test
+que lo ancla).
+
+### Regla 8 sobre los abiertos: delta, beta1 y loki medidos
+
+- **Delta**: sus dos «bonos de topología» disparaban en 2.674/2.674 ciclos
+  — uno estructural (b=−4,85 contra umbral −0,2) y uno comparando DÓLARES
+  contra 0,7. Retirados; `combined = fear_score` medido y verificado en
+  vivo (0,000 en calma).
+- **beta1** (`deploy/medir_reglas_beta1.py`): única ruta viva = espectro Kp
+  (0,02 % de 95.652 ventanas); las tres rutas de Schumann muertas con la
+  escala real de actividad.
+- **loki**: todas sus rutas no neutrales muertas por construcción (SVD de
+  una fila → FFT plana → dim fractal clavada en 2,0; la norma del vector
+  contra φ=1,618 da posterior ~1e-112). Documentado, no tocado —
+  rediseñarlo es decisión del operador.
+- `sos70-descarga.timer` resucitado: la cirugía systemd del 8-oct lo dejó
+  disabled sin registro (archivaba Tomsk desde el 27-sep; se detuvo ese
+  día). Documentado en AGENTS.
+
+### Eskdalemuir: abierto, crudo y con el método del propio BGS
+
+- **Acceso ABIERTO**: el item 192216 del NGDC es unrestricted, licencia
+  Open Government Licence («Contains data supplied by UKRI»). El blurb de
+  copyright NERC en data.gov.uk era el texto genérico. 2025.zip:
+  21,3 GB, descarga reanudable, montada como servicio que sobrevive
+  reinicios (~29 h reales).
+- **La documentación legacy estaba DENTRO del zip**: lector oficial de
+  BGS, las DOS tablas de calibración de las bobinas GFZ MFS-05 (calibradas
+  en Niemegk 2024) y el docx de Ciaran Beggan. El `.ssc` es ASCII de
+  espacios a 128 Hz; el espectro sale calibrado en nT/√Hz. El «conteo de
+  píxeles» sobre los PNG quedó descartado: con el crudo, el lorentziano
+  es estrictamente más información.
+- **La física salió el primer día**: SR1 ≈ 7,9-8,0 Hz, SR2 ≈ 14,1, SR3 ≈
+  20,0-20,6, con variación intradía de ~0,6 Hz — la misma escala que
+  Granada. Lector endurecido con alineación por `%hh` REAL (los huecos del
+  digitizador no corren los bloques; el digitizador escribe «NAN» literal
+  y el parser C de pandas revienta ahí — corregido). 220 días, 52.490
+  intervalos, procesado incremental mientras bajaba.
+
+### La réplica: el efecto que sobrevivió once semillas… y era el calendario
+
+El barrido pareció dar OTRA cosa: sr3_hz a +0,53 (24 h) y +0,78 (72 h),
+**estable a once semillas** (+0,64 ± 0,11 — a diferencia del +0,19 de
+Granada, que murió al primer barrido). El playbook mandó desconfiar, y la
+descomposición escalón a escalón del empareje estacional lo cerró:
+
+| empareje | sr3_hz (24 h) |
+|---|---|
+| ±180 días | +0,64 ± 0,11 |
+| ±30 días | +0,27 ± 0,08 |
+| **±7 días** | **+0,057 ± 0,078 — nada** |
+
+**El 100 % era fuga estacional**: la base mensual de SR3 oscila 1,35 Hz
+(feb 21,30 vs dic 19,95) y el hueco may-oct del dataset la filtraba. La
+explicación de Omori que se propuso para el residuo quedó DESCARTADA por
+medición — la lección (dicha en la bitácora): el siguiente control más
+BARATO antes que la explicación elaborada. **El nulo queda confirmado en
+DOS estaciones independientes** (España 2013-2017, Escocia 2025), dos
+instrumentos, el mismo medidor y protocolo.
+
+### La historia de git, limpiada para poder empujar
+
+Los 217 commits sin push llevaban dentro blobs de **915 MB (copia de la
+DB), 733 MB ×2 (WAL) y 255 MB (log)** — GitHub los habría rechazado. La
+primera herramienta (git-filter-repo) reescribió toda la historia al
+quitar la firma GPG del commit raíz (perdió el merge-base); corregido con
+filter-branch por RANGO: ancestros intactos, 217 commits, cero blobs
+>10 MB, árbol final idéntico, sin secretos en el diff (escaneado por
+patrones de token).
+
 ## [Unreleased] - 2026-10-09 - El latido medido por fin: la hipótesis central, en negativo
 
 El eje del proyecto nunca había sido medido: `schumann_hz` era una recta sobre

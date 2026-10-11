@@ -655,7 +655,8 @@ Sentinel Omega se integra con **Consensus Expert Agent** vía Telegram bot compa
 ### Flujo Sentinel Omega → Usuario (Alertas)
 ```python
 from sentinel_omega.infrastructure.api import telegram as tg
-tg.send_alert("Mensaje de alerta HTML", chat_id="8056592822")
+# el chat_id real vive SOLO en .env (TELEGRAM_CHAT_ID); nunca en el repo
+tg.send_alert("Mensaje de alerta HTML", chat_id=os.environ["TELEGRAM_CHAT_ID"])
 ```
 - Envía alertas de precursores detectados en tiempo real
 - Soporta `send_photo()` y `send_document()` para gráficas PNG/PDF
@@ -677,7 +678,7 @@ El bot `@IngZainos_bot` (corriendo en Consensus Expert Agent) recibe comandos y 
 Ambos sistemas usan las **mismas credenciales** en sus respectivos `.env`:
 ```bash
 TELEGRAM_BOT_TOKEN=<REDACTED_TELEGRAM_TOKEN>
-TELEGRAM_CHAT_ID=8056592822,8016695154
+TELEGRAM_CHAT_ID=<tus_chat_ids_separados_por_coma>
 ```
 
 ### Ejecutar bot de Consensus

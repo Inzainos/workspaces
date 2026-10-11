@@ -44,8 +44,14 @@ Orchestrator → GeodynamicLayerRunner → 8 Agents (SNT×5 + Omega + Loki) → 
 ```
 
 **Hierarchy**: #2 agents → report to #1 → Padre cross-validates across families.
-**Schumann is the heartbeat**: Everything correlates against Schumann resonance (Beta-1).
-If Schumann is perturbed alongside any other signal = precursor detected.
+**Schumann era «el latido» — y la hipótesis está MEDIDA Y CERRADA en negativo
+(2026-10-09/11)**: con la frecuencia calibrada de Sierra Nevada (UGR, 4 años)
+y la réplica en Eskdalemuir (BGS, 2025), NO hay señal precursora de Schumann
+para M4.5+ — ni en nivel ni en forma, 24-336 h; los efectos aparentes eran
+fuga estacional de la distribución de tormentas (bitácoras 10-09 §2, 10-11
+§1-4). En VIVO la frecuencia NO se mide (retirada el 2026-10-09: la «fórmula»
+7,83+act×0,02 era un derivado); lo único medido es la ACTIVIDAD (intensidad
+WPC de Tomsk).
 
 **Families**:
 - `space_weather`: Alfa-1, Alfa-2
@@ -53,16 +59,24 @@ If Schumann is perturbed alongside any other signal = precursor detected.
 - `financial_sentiment`: Delta
 - ` Correlation Alpha's Telemetry, Schumann Resonance, Delta and Beta's Patterns':Omega
 
-**Consensus requires**: >= 2 families active + >= 2 alerts + schumann_correlation > 0.3
+**Consensus requires**: >= 2 families active + >= 2 alerts + corroboration
+de la familia schumann_cymatics > 0.3 (beta1 O beta2 activos; renombrada el
+2026-10-10 — la vieja «correlación Schumann» exigía beta1 específicamente
+sin leer un dato de Schumann, y con su ruta viva al 0,02 % el sistema dio
+0 ALERTs en 4.566 ciclos)
 
 ## Key formulas
 
 - **Fantasma**: `(abs(bz)^2) + (viento*0.02) + (sch_wpc*1.5)` + pressure/Kp/LOD modifiers
 - **Risk levels**: LOW (<5), MODERATE (5-15), HIGH (15-30), CRITICAL (>=30)
 - **Asymmetric loss**: Miss penalty = 10x, False alarm = 1x
-- **Beta-1 (honesto)**: FFT PLANO del Kp (`kp_spectral_features`) + Schumann
-  MEDIDO de Tomsk (excitación >15% suma confianza; >30% con espectro calmo →
-  WATCH). El viejo "filtro armónico"/coherencia era numerología y se eliminó.
+- **Beta-1 (honesto)**: FFT PLANO del Kp (`kp_spectral_features`) — su única
+  ruta de decisión viva (0,02 % de las ventanas históricas, medido el
+  2026-10-09 con `deploy/medir_reglas_beta1.py`). Las rutas de Schumann
+  (>15 % / >30 % / comp_vib>0,5) están MUERTAS con la escala real de
+  actividad (máx 8,3 %; la compuerta aritmética es inalcanzable) — los
+  umbrales se calibraron contra la escala fabricada que se retiró. El viejo
+  "filtro armónico"/coherencia era numerología y se eliminó.
 - **Molchan**: ganancia = hit_rate ÷ tasa base (modelo nulo alertar-siempre,
   `core/precursor/baseline.py`). Ganancia ≤ 1 = sin habilidad real.
 - **Pisos**: el sistema MIDE desde M3.3 (piso real del backcast); ALERTA solo
