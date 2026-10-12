@@ -297,19 +297,23 @@ class AlertTemplates:
 
     @staticmethod
     def reporte_resumen(fantasma: float, muro: str, precursores: list, consenso: str = "") -> FormattedMessage:
+        # `<br>` NO existe en Telegram: la etiqueta se sanea a salto de línea
+        # en send_alert, pero usar \n directamente es más claro y no depende
+        # del saneador. (2026-10-11: esta plantilla es huérfana --- nadie la
+        # llama --- pero se corrige para el día que se cablee.)
         n = len(precursores)
         tabla = ""
         if precursores:
-            tabla = "<b>Precursores</b> (qué se vio; no son pings ni tips)<br>"
+            tabla = "<b>Precursores</b> (qué se vio; no son pings ni tips)\n"
             for r in precursores[:5]:
-                tabla += f"- {r.get('tipo', r.get('display_name', ''))} {r.get('conf', '')} {r.get('zona', '')}<br>"
+                tabla += f"- {r.get('tipo', r.get('display_name', ''))} {r.get('conf', '')} {r.get('zona', '')}\n"
         html = (
-            f"<b>SENTINEL OMEGA - RESUMEN</b><br>"
+            f"<b>SENTINEL OMEGA - RESUMEN</b>\n"
             f"<b>Fantasma:</b> <code>{fantasma:.1f}</code> — estrés geofísico  "
             f"<b>Muro:</b> <code>{muro}</code> — barreras 1–5  "
-            f"<b>Precursores:</b> <code>{n}</code><br>"
+            f"<b>Precursores:</b> <code>{n}</code>\n"
             f"{tabla}"
-            f"<b>Consenso:</b> {consenso or ''}<br>"
+            f"<b>Consenso:</b> {consenso or ''}\n"
             f"<i>{_now_utc_str()}</i> - ver estado/REPORTE.md"
         )
         return FormattedMessage(html=html, markdown=html, plain=_strip_tags(html), subject=f"[SENTINEL] RESUMEN Fantasma {fantasma:.1f}", severity=Severity.AZUL, alert_type="RESUMEN")
