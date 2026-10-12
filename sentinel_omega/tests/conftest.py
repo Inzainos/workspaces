@@ -38,6 +38,15 @@ def _estado_vivo_fuera_de_la_suite(tmp_path_factory):
     directorio = tmp_path_factory.mktemp("estado_vivo")
     previo = os.environ.get("TG_DIGEST_STATE")
     os.environ["TG_DIGEST_STATE"] = str(directorio / "estado_digesto.json")
+    # Lo mismo para el modo tormenta (2026-10-12): `_tormenta_activa` lee la
+    # DB que `SENTINEL_DB` apunte. Sin esto, una corrida de la suite DURANTE
+    # una tormenta real bajaría la cadencia de los tests a 15 min y
+    # `test_un_proceso_nuevo_NO_repite_el_digesto_dentro_de_la_ventana`
+    # fallaría por el estado del mundo, no por el código. Un path que no
+    # existe => sin dato => sin modo tormenta (regla 7): la suite mide la
+    # cadencia de calma salvo que el test la inyecte a propósito.
+    previo_db = os.environ.get("SENTINEL_DB")
+    os.environ["SENTINEL_DB"] = str(directorio / "no_existe.db")
     try:
         yield
     finally:
@@ -45,3 +54,7 @@ def _estado_vivo_fuera_de_la_suite(tmp_path_factory):
             os.environ.pop("TG_DIGEST_STATE", None)
         else:
             os.environ["TG_DIGEST_STATE"] = previo
+        if previo_db is None:
+            os.environ.pop("SENTINEL_DB", None)
+        else:
+            os.environ["SENTINEL_DB"] = previo_db

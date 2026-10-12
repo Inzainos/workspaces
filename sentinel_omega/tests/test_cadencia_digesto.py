@@ -185,3 +185,95 @@ def test_la_compuerta_sigue_leyendo_el_mando_declarado():
     assert _proceso_nuevo(reloj, minutos=30).maybe_flush(snapshot=SNAP) is not None
     reloj["t"] += 31 * 60
     assert _proceso_nuevo(reloj, minutos=30).maybe_flush(snapshot=SNAP) is not None
+
+
+# ─── modo TORMENTA ACTIVA (2026-10-12): la tormenta del 10-oct fue invisible ──
+
+def _proceso_con_tormenta(reloj, tormenta, minutos=60, minutos_tormenta=15):
+    """Vigilante con la señal de tormenta INYECTADA: sin DB, sin red."""
+    return ConsensoVigilante(
+        dry_run=False, digest_minutes_override=minutos,
+        digest_minutes_tormenta_override=minutos_tormenta,
+        tormenta_fn=lambda: tormenta, now_fn=lambda: reloj["t"])
+
+
+def test_con_tormenta_la_cadencia_baja_a_la_de_tormenta():
+    """Kp>=5 en la ventana: el digesto sale cada 15 min, no cada 60. Es la
+    tormenta del 10-oct de nuevo: esta vez el operador la ve en tiempo
+    casi real (la cadencia del oneshot de rutinas)."""
+    tormenta = {"activa": True, "kp_max": 7.0, "kp_min_umbral": 5.0}
+    reloj = {"t": 9_000_000.0}
+    recs = []
+    for _ in range(4):                      # 4 corridas del oneshot: 0, 15, 30, 45 min
+        rec = _proceso_con_tormenta(reloj, tormenta).maybe_flush(snapshot=SNAP)
+        recs.append(rec)
+        reloj["t"] += 15 * 60
+    assert all(r is not None and r.sent for r in recs), (
+        "con tormenta activa cada corrida de 15 min debe mandar el digesto")
+
+
+def test_kp_debajo_del_umbral_NO_es_tormenta():
+    """Kp 3 en la ventana: cadencia de calma. El 5 es la definición G1 de
+    NOAA y el mismo umbral medido del scanner (regla 8), no un número
+    puesto a mano."""
+    tormenta = {"activa": False, "kp_max": 3.0, "kp_min_umbral": 5.0}
+    reloj = {"t": 10_000_000.0}
+    assert _proceso_con_tormenta(reloj, tormenta).maybe_flush(snapshot=SNAP) is not None
+    reloj["t"] += 15 * 60
+    assert _proceso_con_tormenta(reloj, tormenta).maybe_flush(snapshot=SNAP) is None, (
+        "sin tormenta, 15 min NO puede vencer la ventana de 60")
+
+
+def test_sin_dato_de_kp_no_hay_modo_tormenta():
+    """Sin lectura en la tabla horaria: None, no cero (regla 7). La cadencia
+    se queda en calma aunque el mundo esté en llamas --- lo honesto es
+    decir que no se midió."""
+    reloj = {"t": 11_000_000.0}
+    assert _proceso_con_tormenta(reloj, None).maybe_flush(snapshot=SNAP) is not None
+    reloj["t"] += 15 * 60
+    assert _proceso_con_tormenta(reloj, None).maybe_flush(snapshot=SNAP) is None
+
+
+def test_el_digesto_lleva_el_banner_y_el_sello_de_tormenta():
+    """Lo primero que el operador lee en el parte durante una tormenta es
+    QUE HAY TORMENTA, con su Kp y la cadencia nueva. Y el subject lo
+    lleva, para verlo sin abrir el mensaje."""
+    v = ConsensoVigilante(
+        dry_run=True, digest_minutes_override=60,
+        digest_minutes_tormenta_override=15,
+        tormenta_fn=lambda: {"activa": True, "kp_max": 6.7, "kp_min_umbral": 5.0})
+    html, subject = v._build_digest(
+        {"fantasma": 12.0, "nivel": "MODERATE", "muro_n": 2}, [],
+        tormenta=v._tormenta_activa())
+    assert "MODO TORMENTA ACTIVA" in html
+    assert "6.7" in html          # el Kp medido, no una plantilla
+    assert "15" in html           # la cadencia nueva, declarada
+    assert "TORMENTA" in subject
+
+
+def test_la_tormenta_se_mide_contra_la_tabla_horaria_real(tmp_path):
+    """La señal de producción no es una simulación: MAX(kp_max) de las
+    últimas 2 h de `tbl_clima_espacial_raw` (regla 9: contra el dato, no
+    contra el manual). Con DB explícita --- el conftest aísla la de prod."""
+    import sqlite3
+    from datetime import datetime, timedelta, timezone
+
+    db = tmp_path / "tormenta.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE tbl_clima_espacial_raw (timestamp_blk TEXT, kp_max REAL)")
+    ahora = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    vieja = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M")
+    conn.execute("INSERT INTO tbl_clima_espacial_raw VALUES (?, ?)", (vieja, 8.0))  # fuera de ventana
+    conn.execute("INSERT INTO tbl_clima_espacial_raw VALUES (?, ?)", (ahora, 6.2))  # dentro
+    conn.commit(); conn.close()
+
+    v = ConsensoVigilante(dry_run=True, db_path=str(db))
+    t = v._tormenta_activa()
+    assert t is not None and t["activa"] is True
+    assert t["kp_max"] == 6.2, "el Kp 8 de hace 5 h NO cuenta: la ventana es de 3 h"
+
+    # y sin la tabla: None, no un falso negativo disfrazado de calma
+    db2 = tmp_path / "vacia.db"
+    sqlite3.connect(db2).close()
+    v2 = ConsensoVigilante(dry_run=True, db_path=str(db2))
+    assert v2._tormenta_activa() is None

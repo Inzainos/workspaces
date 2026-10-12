@@ -97,6 +97,46 @@ def digest_minutes() -> int:
     return max(1, n)
 
 
+# ── Modo TORMENTA ACTIVA (2026-10-12, GO del operador) ──────────────────────
+# Durante una tormenta geomagnética (Kp >= 5, la definición G1 de NOAA) el
+# digesto pasa de cada 60 min a cada `TG_DIGEST_MINUTES_TORMENTA` (default 15,
+# la cadencia del oneshot de rutinas). La señal es el MAX(kp_max) de las
+# últimas 3 h de `tbl_clima_espacial_raw` — la tabla horaria que el ciclo
+# vivo escribe con cada bloque, la misma contra la que se calibró el scanner
+# el mismo día (regla 8: Kp>=5 ocurre el 2,94 % de las horas en 30 años;
+# no es una compuerta que viva encendida). Sin dato en la tabla → no hay
+# modo tormenta: ausencia no es cero (regla 7).
+#
+# Por qué TRES horas y a PISO de hora (regla 0, medido el mismo día): el
+# bloque de la hora H no aparece hasta que H cierra (~1-1,5 h de retraso
+# medido: a las 15:01 la fila más fresca era la de las 13:00), y una
+# ventana `datetime('now','-2 hours')` trae SEGUNDOS que excluyen la fila
+# límite — la primera versión devolvía None con tormenta en la tabla. El
+# piso de hora + 3 h garantiza ver siempre los últimos 3-4 bloques.
+DEFAULT_DIGEST_MINUTES_TORMENTA = 15
+TORMENTA_VENTANA_H = 3
+
+
+def digest_minutes_tormenta() -> int:
+    raw = os.environ.get(
+        "TG_DIGEST_MINUTES_TORMENTA", str(DEFAULT_DIGEST_MINUTES_TORMENTA)
+    )
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        n = DEFAULT_DIGEST_MINUTES_TORMENTA
+    return max(1, n)
+
+
+def tormenta_kp_min() -> float:
+    raw = os.environ.get("TG_TORMENTA_KP_MIN", "5.0")
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        v = 5.0
+    return v
+
+
 def webapp_url() -> str:
     return (os.environ.get("TELEGRAM_WEBAPP_URL") or "").strip()
 
@@ -403,6 +443,8 @@ class ConsensoVigilante:
         now_fn: Callable[[], float] = time.time,
         db_path: Optional[str] = None,
         snapshot_fn: Optional[Callable[[], Dict[str, Any]]] = None,
+        digest_minutes_tormenta_override: Optional[int] = None,
+        tormenta_fn: Optional[Callable[[], Optional[Dict[str, Any]]]] = None,
     ) -> None:
         if dry_run is None:
             dry_run = os.environ.get("SENTINEL_DRY_RUN", "").lower() in (
@@ -416,6 +458,15 @@ class ConsensoVigilante:
             if digest_minutes_override is not None
             else digest_minutes()
         )
+        self._digest_minutes_tormenta = (
+            digest_minutes_tormenta_override
+            if digest_minutes_tormenta_override is not None
+            else digest_minutes_tormenta()
+        )
+        # Inyectable para tests: sin DB, el modo tormenta se simula aquí.
+        # Producción lo deja en None y `_tormenta_activa` consulta la tabla
+        # horaria real (read-only).
+        self._tormenta_fn = tormenta_fn
         self._now = now_fn
         self.db_path = db_path or os.environ.get(
             "SENTINEL_DB",
@@ -554,6 +605,47 @@ class ConsensoVigilante:
                 "cadencia vuelve a depender de la memoria del proceso y "
                 "`TG_DIGEST_MINUTES` deja de valer entre corridas", ruta, exc)
 
+    def _tormenta_activa(self) -> Optional[Dict[str, Any]]:
+        """¿Hay tormenta geomagnética AHORA? Kp>=5 en las últimas 3 h.
+
+        Lee `MAX(kp_max)` de `tbl_clima_espacial_raw` en modo read-only —
+        la misma tabla y el mismo umbral con los que el scanner aprendió a
+        ver tormentas (2026-10-12). El piso de hora entera y las 3 h de
+        ventana absorben el retraso del escritor de bloques (~1-1,5 h,
+        medido: el bloque de la hora H aparece cuando H cierra). Devuelve
+        None si no hay dato: sin medición no hay modo tormenta (regla 7),
+        y la cadencia se queda en la de calma.
+        """
+        if self._tormenta_fn is not None:
+            try:
+                return self._tormenta_fn()
+            except Exception as exc:
+                logger.warning("tormenta_fn falló (%s); cadencia de calma", exc)
+                return None
+        path = self.db_path
+        if not path or not os.path.exists(path):
+            return None
+        try:
+            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
+        except sqlite3.Error:
+            return None
+        try:
+            row = conn.execute(
+                "SELECT MAX(kp_max) FROM tbl_clima_espacial_raw "
+                "WHERE timestamp_blk >= strftime('%Y-%m-%d %H:00', 'now', ?)",
+                (f"-{TORMENTA_VENTANA_H} hours",),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            logger.debug("consulta de tormenta falló: %s", exc)
+            return None
+        finally:
+            conn.close()
+        kp_max = row[0] if row else None
+        if kp_max is None:
+            return None
+        activa = float(kp_max) >= tormenta_kp_min()
+        return {"activa": activa, "kp_max": float(kp_max), "kp_min_umbral": tormenta_kp_min()}
+
     def maybe_flush(self, snapshot: Optional[Dict[str, Any]] = None) -> Optional[DispatchRecord]:
         """Flush the hourly digest if the timer is due. Always sends when due,
         even if the buffer is empty (calm hour still gets a concentrado).
@@ -561,21 +653,35 @@ class ConsensoVigilante:
         La compuerta funciona **entre procesos** desde el 2026-10-07: la marca
         se lee del disco en el `__init__`, así que un `Type=oneshot` que corre
         cada 15 min respeta `TG_DIGEST_MINUTES=60`. Ver `DIGEST_STATE_FILE`.
+
+        **Modo tormenta (2026-10-12):** con Kp>=5 en las últimas 3 h la
+        cadencia baja a `TG_DIGEST_MINUTES_TORMENTA` (default 15 min). La
+        marca compartida sigue siendo la única fuente de verdad — sólo
+        cambia cada cuánto se considera vencida.
         """
-        due_s = self._digest_minutes * 60
+        tormenta = self._tormenta_activa()
+        due_min = self._digest_minutes
+        if tormenta and tormenta.get("activa") and self._digest_minutes_tormenta < due_min:
+            due_min = self._digest_minutes_tormenta
+            logger.info(
+                "CONSENSO modo TORMENTA: Kp_max %.1f >= %.1f — cadencia de digesto %d min",
+                float(tormenta.get("kp_max") or 0.0), tormenta_kp_min(), due_min,
+            )
+        due_s = due_min * 60
         now = self._now()
         if self.last_digest_ts and (now - self.last_digest_ts) < due_s:
             faltan = (due_s - (now - self.last_digest_ts)) / 60.0
             logger.info(
                 "CONSENSO digesto aún no toca: faltan %.0f min de los %d "
-                "declarados en TG_DIGEST_MINUTES", faltan, self._digest_minutes)
+                "declarados en TG_DIGEST_MINUTES", faltan, due_min)
             return None
-        return self.flush_digest(force=True, snapshot=snapshot)
+        return self.flush_digest(force=True, snapshot=snapshot, tormenta=tormenta)
 
     def flush_digest(
         self,
         force: bool = False,
         snapshot: Optional[Dict[str, Any]] = None,
+        tormenta: Optional[Dict[str, Any]] = None,
     ) -> DispatchRecord:
         """Build and send the hourly concentrado. `force` ignores the timer."""
         if not force:
@@ -603,7 +709,7 @@ class ConsensoVigilante:
 
         drained = list(self.buffer)
         self.buffer.clear()
-        html, subject = self._build_digest(snap, drained)
+        html, subject = self._build_digest(snap, drained, tormenta=tormenta)
         markup = webapp_reply_markup()
         rec = DispatchRecord(
             kind="digest",
@@ -804,8 +910,12 @@ class ConsensoVigilante:
         self,
         snap: Dict[str, Any],
         drained: Sequence[BufferedAlert],
+        tormenta: Optional[Dict[str, Any]] = None,
     ) -> tuple[str, str]:
         fantasma = snap.get("fantasma")
+        # El banner de tormenta llega por argumento (maybe_flush midió la
+        # cadencia) o por el snapshot (llamadas directas). None = sin modo.
+        tormenta = tormenta if tormenta is not None else snap.get("tormenta")
         nivel = snap.get("nivel") or snap.get("nivel_riesgo") or _nivel_from_fantasma(fantasma)
         muro_n = snap.get("muro_n")
         muro_den = snap.get("muro_den") or 5
@@ -987,9 +1097,25 @@ class ConsensoVigilante:
         model_status = get_model_status(self.db_path)
         vara = get_vara_juez(self.db_path)
 
+        # Banner del modo tormenta: va ARRIBA de todo — es el estado operativo
+        # del sistema, lo primero que el operador debe ver.
+        tormenta_line = ""
+        tormenta_txt = ""
+        if tormenta and tormenta.get("activa"):
+            kp_mx = tormenta.get("kp_max")
+            kp_s = f"{float(kp_mx):.1f}" if kp_mx is not None else "n/d"
+            tormenta_line = (
+                f"🌀 <b>MODO TORMENTA ACTIVA</b> — Kp máx <code>{kp_s}</code> "
+                f"(≥ {tormenta.get('kp_min_umbral', 5.0):.0f}) en las últimas "
+                f"{TORMENTA_VENTANA_H} h. Reporte acelerado: cada "
+                f"<code>{self._digest_minutes_tormenta}</code> min.\n\n"
+            )
+            tormenta_txt = " · TORMENTA"
+
         html = (
             f"<b>SENTINEL OMEGA — REPORTE HORARIO</b>\n"
             f"<i>{_now_utc_str()} · {_mx_str()}</i>\n\n"
+            f"{tormenta_line}"
             f"{fant_line}\n"
             f"{muro_line}\n"
             f"{tel_line}\n"
@@ -1003,7 +1129,10 @@ class ConsensoVigilante:
             f"Es el concentrado de lo que midió el Padre en la última hora.</i>"
         )
         fv_s = f"{float(fantasma):.1f}" if fantasma is not None else "n/d"
-        subject = f"[SENTINEL] REPORTE HORARIO Fantasma {fv_s} muro {muro_n or 'n'}/{muro_den}"
+        subject = (
+            f"[SENTINEL] REPORTE HORARIO Fantasma {fv_s} muro {muro_n or 'n'}/{muro_den}"
+            f"{tormenta_txt}"
+        )
         return html, subject
 
     def _load_snapshot(self) -> Dict[str, Any]:

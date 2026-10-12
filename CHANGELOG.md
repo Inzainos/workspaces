@@ -41,6 +41,28 @@ el test de la tormenta cae. Suite: 1.337 pasan · 2 rojos deliberados de
 alfa1. Con esto el muro SOLAR se enciende en tormentas: la base del
 «modo tormenta activa» (Kp≥5 → reportes más frecuentes).
 
+### Modo TORMENTA ACTIVA: el digesto acelera con Kp≥5 (mismo día, GO)
+
+Con tormenta geomagnética (Kp≥5, definición G1 de NOAA) el digesto pasa de
+cada 60 min a **cada 15 min** — la cadencia del oneshot de rutinas, tormenta
+en tiempo casi real. La señal es `MAX(kp_max)` de las últimas **3 h** de
+`tbl_clima_espacial_raw` (read-only), el mismo umbral medido del scanner.
+Medido: la tormenta del 10-oct habría mantenido el modo activo **12 h**
+(15:00 → 02:00) — ~48 digestos en vez de 12.
+
+- `TG_DIGEST_MINUTES_TORMENTA` (default 15) y `TG_TORMENTA_KP_MIN`
+  (default 5.0) por entorno. La marca compartida del digesto sigue siendo
+  la única fuente de verdad; sólo cambia cada cuánto se considera vencida.
+- Banner «🌀 MODO TORMENTA ACTIVA» con el Kp medido al tope del digesto, y
+  `· TORMENTA` en el subject.
+- **Por qué 3 h a piso de hora** (regla 0, cazado en vivo): el bloque de la
+  hora H no aparece hasta que H cierra (~1-1,5 h de retraso medido) y una
+  ventana de 2 h con segundos excluía la fila límite — la primera versión
+  devolvía `None` con la tabla llena. Sin dato → sin modo tormenta (regla 7).
+- La suite se aísla de la DB de producción (`conftest` apunta `SENTINEL_DB`
+  a un temporal): una corrida DURANTE una tormenta real no puede cambiar la
+  cadencia de los tests.
+
 ## [Unreleased] - 2026-10-11 — El pivote, la auto-reparación y la miniapp del pipeline
 
 **El proyecto se convierte en lo que ya era.** El operador dio el GO:
