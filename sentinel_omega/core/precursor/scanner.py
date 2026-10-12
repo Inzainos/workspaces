@@ -86,15 +86,30 @@ class PrecursorScanner:
         omni_df = alfa1_data.get("omni_dataframe")
         bz = 0.0
         viento = 0.0
+        bz_min = None
+        viento_max = None
         if omni_df is not None:
             if "bz_gsm" in omni_df.columns:
-                bz = float(np.nanmean(omni_df["bz_gsm"]))
+                _sbz = np.asarray(omni_df["bz_gsm"], dtype=float)
+                _sbz = _sbz[np.isfinite(_sbz)]
+                if _sbz.size:
+                    bz = float(_sbz.mean())
+                    bz_min = float(_sbz.min())
             if "plasma_speed" in omni_df.columns:
-                viento = float(np.nanmean(omni_df["plasma_speed"]))
+                _sv = np.asarray(omni_df["plasma_speed"], dtype=float)
+                _sv = _sv[np.isfinite(_sv)]
+                if _sv.size:
+                    viento = float(_sv.mean())
+                    viento_max = float(_sv.max())
 
         kp_mean = 0.0
+        kp_max = None
         if kp_series is not None and len(kp_series) > 0:
-            kp_mean = float(np.nanmean(kp_series))
+            _skp = np.asarray(kp_series, dtype=float)
+            _skp = _skp[np.isfinite(_skp)]
+            if _skp.size:
+                kp_mean = float(_skp.mean())
+                kp_max = float(_skp.max())
 
         detections.extend(self._scan_blue_jets(atmospheric))
         detections.extend(self._scan_sprites_rojos(atmospheric))
@@ -106,8 +121,8 @@ class PrecursorScanner:
         detections.extend(self._scan_fantasma(risk))
         detections.extend(self._scan_volcanic(air_quality, seismic_mags, atmospheric))
         detections.extend(self._scan_schumann(schumann_hz, schumann_pct))
-        detections.extend(self._scan_tormenta_solar(bz, kp_mean, viento))
-        detections.extend(self._scan_perturbacion_geomagnetica(bz, kp_mean))
+        detections.extend(self._scan_tormenta_solar(bz_min, kp_max, viento_max))
+        detections.extend(self._scan_perturbacion_geomagnetica(bz_min, kp_max))
         detections.extend(self._scan_tsunami(seismic_mags, delta_data, beta1_data))
         detections.extend(self._scan_hurricanes(hurricane_data or {}))
         detections.extend(self._scan_financial_correlation(financial_data or {}))
@@ -365,15 +380,32 @@ class PrecursorScanner:
         )]
 
     def _scan_tormenta_solar(
-        self, bz: float, kp: float, viento: float
+        self, bz_min: Optional[float], kp_max: Optional[float],
+        viento_max: Optional[float],
     ) -> List[PrecursorDetection]:
-        if bz > -10.0 or kp < 5.0:
+        """Tormenta geomagnética: GRIETA (Bz sur profundo) + Kp de tormenta.
+
+        Recalibrado el 2026-10-12 contra 287.178 h de historia (regla 8):
+        la compuerta vieja leía las MEDIAS de ventana (bz ≤ −10 Y kp ≥ 5)
+        y sólo se cruzaba en las tormentas del siglo — 187 h en 30 años,
+        **0 en 1.770 h vivas**, incluida la del 10-oct (Kp 7, Bz_min −28,9,
+        2 h de pico que la media de 24 h diluyó a ~−3). TORMENTA_SOLAR no
+        disparó NI UNA VEZ en toda la historia de TBL_DETECCIONES.
+
+        La nueva lee EXTREMOS: bz_min(24 h) ≤ −10 ∧ kp_max(6 h) ≥ 5.
+        Coincidencia por hora en el histórico: 1.305 h (0,45 %) — dispara
+        en tormentas reales y casi nunca en calma. Sin dato (None), no
+        dispara: ausencia no es cero (regla 7).
+        """
+        if bz_min is None or kp_max is None:
+            return []
+        if bz_min > -10.0 or kp_max < 5.0:
             return []
 
         confidence = 0.7
-        if bz < -20.0:
+        if bz_min < -20.0:
             confidence += 0.15
-        if viento > 600:
+        if viento_max is not None and viento_max > 600:
             confidence += 0.1
 
         return [PrecursorDetection(
@@ -384,24 +416,33 @@ class PrecursorScanner:
             lon=None,
             confidence=min(confidence, 0.95),
             values={
-                "bz_nT": bz,
-                "kp": kp,
-                "viento_kms": viento,
+                "bz_min_nT": bz_min,
+                "kp_max": kp_max,
+                "viento_max_kms": viento_max,
             },
         )]
 
     def _scan_perturbacion_geomagnetica(
-        self, bz: float, kp: float
+        self, bz_min: Optional[float], kp_max: Optional[float],
     ) -> List[PrecursorDetection]:
-        if bz > -5.0 or kp < 3.0:
+        """Perturbación moderada: misma recalibración a extremos (2026-10-12).
+
+        Media vieja (bz ≤ −5 ∧ kp ≥ 3): también 0 disparos vivos. Con
+        extremos, la coincidencia por hora en 30 años es 9.233 h (3,2 %).
+        Si la ventana cumple la compuerta de TORMENTA (bz_min ≤ −10 ∧
+        kp_max ≥ 5), esto calla: es tormenta, no perturbación.
+        """
+        if bz_min is None or kp_max is None:
             return []
-        if bz <= -10.0 and kp >= 5.0:
+        if bz_min > -5.0 or kp_max < 3.0:
+            return []
+        if bz_min <= -10.0 and kp_max >= 5.0:
             return []
 
         confidence = 0.55
-        if abs(bz) > 7:
+        if abs(bz_min) > 7:
             confidence += 0.1
-        if kp >= 4:
+        if kp_max >= 4:
             confidence += 0.1
 
         return [PrecursorDetection(
@@ -412,8 +453,8 @@ class PrecursorScanner:
             lon=None,
             confidence=min(confidence, 0.95),
             values={
-                "bz_nT": bz,
-                "kp": kp,
+                "bz_min_nT": bz_min,
+                "kp_max": kp_max,
             },
         )]
 

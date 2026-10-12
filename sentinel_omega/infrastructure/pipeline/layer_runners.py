@@ -348,16 +348,36 @@ class GeodynamicLayerRunner:
 
         bz = None  # sin magnetómetro (columna ausente o toda NaN): NULL, no 0
         viento = None  # sin plasma (columna ausente o toda NaN): NULL, no 0
+        # Extremos e instantáneo de la ventana (2026-10-12): la tormenta del
+        # 10-oct (Bz_min −28,9 nT durante 2 h, Kp 7) fue INVISIBLE para toda
+        # la cadena solar porque las compuertas leían la MEDIA de 24 h, que
+        # diluye el pico a ~−3. TORMENTA_SOLAR: 0 detecciones en toda la
+        # historia viva; la media ≤ −10 sólo ocurre en las tormentas del
+        # siglo (187 h en 30 años). El fantasma SIGUE con la media — el
+        # índice es comparable con sus 3.261 ciclos y con el backcast —
+        # pero quien decide "hay grieta/tormenta AHORA" lee el extremo.
+        bz_min = None
+        bz_max = None
+        bz_inst = None
+        viento_max = None
+        viento_inst = None
         omni_df = alfa1_data.get("omni_dataframe")
         if omni_df is not None:
             if "bz_gsm" in omni_df.columns:
                 serie_bz = np.asarray(omni_df["bz_gsm"], dtype=float)
                 serie_bz = serie_bz[np.isfinite(serie_bz)]
-                bz = float(serie_bz.mean()) if serie_bz.size else None
+                if serie_bz.size:
+                    bz = float(serie_bz.mean())
+                    bz_min = float(serie_bz.min())
+                    bz_max = float(serie_bz.max())
+                    bz_inst = float(serie_bz[-1])
             if "plasma_speed" in omni_df.columns:
                 serie_v = np.asarray(omni_df["plasma_speed"], dtype=float)
                 serie_v = serie_v[np.isfinite(serie_v)]
-                viento = float(serie_v.mean()) if serie_v.size else None
+                if serie_v.size:
+                    viento = float(serie_v.mean())
+                    viento_max = float(serie_v.max())
+                    viento_inst = float(serie_v[-1])
 
         # Sin lectura viva de Schumann (la API falló o dio el placeholder):
         # None → NULL en PREC y «sin dato» en el reporte, no un 0 sintético.
@@ -371,6 +391,12 @@ class GeodynamicLayerRunner:
 
         kp_series = beta1_data.get("kp_series")
         kp = float(np.nanmean(kp_series)) if kp_series is not None and len(kp_series) > 0 else 0.0
+        kp_max = None
+        if kp_series is not None and len(kp_series) > 0:
+            _ks = np.asarray(kp_series, dtype=float)
+            _ks = _ks[np.isfinite(_ks)]
+            if _ks.size:
+                kp_max = float(_ks.max())
 
         lod_series = beta1_data.get("lod_ms")
         lod_ms = float(np.nanmean(lod_series)) if lod_series is not None and len(lod_series) > 0 else None
@@ -386,6 +412,23 @@ class GeodynamicLayerRunner:
             bz=bz, viento=viento, sch_wpc=sch_wpc,
             pressure_hpa=pressure_hpa, kp=kp, lod_ms=lod_ms,
         )
+        # Adición forward-only (2026-10-12): extremos e instantáneos de la
+        # ventana, para quien decide "hay tormenta/grieta AHORA" (scanner,
+        # GRIETA). `bz_nT`/`wind_kms` siguen siendo la MEDIA — el fantasma
+        # y el histórico de PREC conservan su comparabilidad. Sin dato en
+        # la serie: la clave queda ausente, no 0 (regla 7).
+        if bz_min is not None:
+            risk.components["bz_min"] = bz_min
+        if bz_max is not None:
+            risk.components["bz_max"] = bz_max
+        if bz_inst is not None:
+            risk.components["bz_inst"] = bz_inst
+        if viento_max is not None:
+            risk.components["viento_max"] = viento_max
+        if viento_inst is not None:
+            risk.components["viento_inst"] = viento_inst
+        if kp_max is not None:
+            risk.components["kp_max"] = kp_max
         self.last_risk = risk
         logger.info(f"Precursor risk: fantasma={risk.fantasma:.2f} level={risk.risk_level}")
         return risk

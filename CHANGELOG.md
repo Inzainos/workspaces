@@ -1,5 +1,46 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-12 — La tormenta que el sistema no vio: la cadena solar recalibrada a extremos
+
+**La tormenta Kp=7 del 10-oct (Bz_min −28,9 nT durante 2 h, viento 841 km/s)
+pasó sin UNA detección solar, sin UN GRIETA y con el consenso en `neutral`.**
+Corrección al propio CHANGELOG: la entrada del 10-11 decía
+«`_scan_tormenta_solar` ✓ · GRIETA en alertas ✓» — las rutas existían, pero
+medidas contra producción **disparaban 0 veces en 1.770 h vivas** y 0 en toda
+la historia de `TBL_DETECCIONES`. `TORMENTA_SOLAR` nunca había disparado.
+
+### La causa: toda la cadena solar leía la MEDIA de 24 h
+
+`layer_runners._compute_precursor_risk` reducía el feed 1-min a
+`bz = mean(omni_df.bz_gsm)`, y ese escalar era el que llegaba al scanner
+(`bz ≤ −10 ∧ kp ≥ 5`) y a la alerta GRIETA (`bz ≤ −5`). Una grieta de 2 h a
+−12/−28,9 se diluye a ~−3 en la media diaria: la compuerta vieja sólo se
+cruzaba en las tormentas del siglo (**187 h en 30 años**, 2003-11/1998-11).
+Regla 8 en estado puro.
+
+### El arreglo: quien decide "AHORA" lee el EXTREMO
+
+- `components` gana claves (forward-only, sin tocar DB): `bz_min`, `bz_max`,
+  `bz_inst`, `viento_max`, `viento_inst`, `kp_max`. `bz_nT`/`wind_kms` siguen
+  siendo la MEDIA — el fantasma conserva su comparabilidad con sus 3.261
+  ciclos y con el backcast.
+- `_scan_tormenta_solar`: `bz_min(24 h) ≤ −10 ∧ kp_max(6 h) ≥ 5` — tasa
+  medida sobre 287.178 h: **1,99 %** (5.701 h); en el periodo vivo habría
+  disparado **57 de 1.770 h** (toda la tormenta del 10-oct incluida).
+- `_scan_perturbacion_geomagnetica`: mismos extremos (`bz_min ≤ −5 ∧
+  kp_max ≥ 3`, callando si cumple la de tormenta). Tasa: 15,4 % — al borde
+  de lo hablador; vigilar en producción y apretar a `kp_max ≥ 4` si ruido.
+- GRIETA/TORMENTA inmediatos (Centinela): leen el Bz/viento
+  **instantáneo** (última lectura 1-min) con respaldo a la media.
+- Sin dato en la serie → `None`, no dispara: ausencia no es cero (regla 7).
+
+Verificado: replay de la tormenta real (desde `tbl_clima_espacial_raw`) a
+través del `scan()` nuevo — pico 17:00 UTC → `TORMENTA_SOLAR 0,85` con
+`bz_min −28,89 / kp_max 7,0`; calma → nada. Mutación: vuelta a medias →
+el test de la tormenta cae. Suite: 1.337 pasan · 2 rojos deliberados de
+alfa1. Con esto el muro SOLAR se enciende en tormentas: la base del
+«modo tormenta activa» (Kp≥5 → reportes más frecuentes).
+
 ## [Unreleased] - 2026-10-11 — El pivote, la auto-reparación y la miniapp del pipeline
 
 **El proyecto se convierte en lo que ya era.** El operador dio el GO:

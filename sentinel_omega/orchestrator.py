@@ -231,8 +231,18 @@ class SentinelOrchestrator:
 
         comps = getattr(risk, "components", None) or {} if risk else {}
         fantasma = float(getattr(risk, "fantasma", 0) or 0) if risk else None
-        bz = comps.get("bz_nT")
-        wind = comps.get("wind_kms")
+        # 2026-10-12: el Centinela (GRIETA / TORMENTA por viento) clasifica el
+        # AHORA, y el "ahora" es la última lectura del feed 1-min, no la media
+        # de 24 h — que diluyó la tormenta del 10-oct (Bz_min −28,9 durante 2 h,
+        # media ~−3) y dejó el parte sin UN solo GRIETA. El fantasma y PREC
+        # siguen con su media; aquí sólo cambia qué Bz ve la clasificación.
+        # Respaldo a la media si no hay instantáneo (serie vacía/NaN).
+        bz = comps.get("bz_inst")
+        if bz is None:
+            bz = comps.get("bz_nT")
+        wind = comps.get("viento_inst")
+        if wind is None:
+            wind = comps.get("wind_kms")
         # Los Hz de Schumann salen de beta1, NO de `components`.
         #
         # Encontrado el 2026-09-26 auditando: aquí decía

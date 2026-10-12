@@ -863,6 +863,59 @@ class TestPrecursorScanner:
         storm = [d for d in detections if d.tipo == PrecursorType.TORMENTA_SOLAR]
         assert len(storm) == 1
 
+    def test_tormenta_solar_ve_la_grieta_de_dos_horas(self):
+        """La tormenta del 2026-10-10, recreada: 22 h de calma + 2 h de grieta.
+
+        La media de la ventana es ~−3,6 nT: la compuerta VIEJA (medias,
+        bz ≤ −10) no disparó ni aquí ni en ninguna de las 1.770 h vivas.
+        La nueva lee el EXTREMO (bz_min ≤ −10 ∧ kp_max ≥ 5) y ve la tormenta
+        que el sistema vivió sin registrar UNA detección solar.
+        Regla 8 medida: 1.305 h (0,45 %) en 30 años de histórico.
+        """
+        scanner = self._make_scanner()
+        # 22 lecturas de calma + 2 de grieta: la tormenta real duró ~2 h
+        serie_bz = [-1.0] * 22 + [-12.0, -28.9]
+        omni_df = pd.DataFrame({
+            "bz_gsm": serie_bz,
+            "plasma_speed": [400.0] * 22 + [800.0, 841.0],
+        })
+        alfa1 = {"omni_dataframe": omni_df}
+        # kp medio ~3,9 (por debajo de 5): sólo el EXTREMO cruza la puerta
+        beta1 = {"kp_series": np.array([2.0, 3.0, 4.0, 7.0])}
+        detections = scanner.scan(alfa1, beta1, {})
+        storm = [d for d in detections if d.tipo == PrecursorType.TORMENTA_SOLAR]
+        assert len(storm) == 1
+        # Lo que reporta es el EXTREMO, no la media que diluye
+        assert storm[0].values["bz_min_nT"] == -28.9
+        assert storm[0].values["kp_max"] == 7.0
+        # La media de la ventana NO cruza la compuerta vieja: sin extremos,
+        # esta tormenta era invisible (el motivo de la recalibración)
+        assert float(np.mean(serie_bz)) > -10.0
+
+    def test_tormenta_solar_sin_dato_no_dispara(self):
+        """Sin magnetómetro o sin Kp: ausencia no es cero (regla 7)."""
+        scanner = self._make_scanner()
+        detections = scanner.scan({}, {}, {})
+        storm = [d for d in detections if d.tipo == PrecursorType.TORMENTA_SOLAR]
+        pert = [d for d in detections if d.tipo == PrecursorType.PERTURBACION_GEOMAGNETICA]
+        assert len(storm) == 0
+        assert len(pert) == 0
+
+    def test_perturbacion_moderada_con_extremos(self):
+        """Bz_min −7 con Kp_max 3,5: perturbación (no tormenta) con la puerta de extremos."""
+        scanner = self._make_scanner()
+        serie_bz = [-1.0] * 20 + [-6.0, -7.0]  # media ~−1,8: la puerta vieja no la veía
+        omni_df = pd.DataFrame({
+            "bz_gsm": serie_bz,
+            "plasma_speed": [400.0] * 22,
+        })
+        alfa1 = {"omni_dataframe": omni_df}
+        beta1 = {"kp_series": np.array([2.0, 3.0, 3.5])}
+        detections = scanner.scan(alfa1, beta1, {})
+        pert = [d for d in detections if d.tipo == PrecursorType.PERTURBACION_GEOMAGNETICA]
+        assert len(pert) == 1
+        assert pert[0].values["bz_min_nT"] == -7.0
+
     def test_multiple_simultaneous_precursors(self):
         scanner = self._make_scanner()
         omni_df = pd.DataFrame({
