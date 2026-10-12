@@ -1,6 +1,6 @@
 # Sentinel Omega
 
-Precursor detection platform for natural events.
+**Plataforma de Detección de Anomalías Multi-Dominio** (pivote estratégico, 2026-10-11).
 Author: Elan Zainos Corona (Fractal Core Research)
 
 ## ⛔ REGLA #0 — nunca asumas, siempre revisa
@@ -12,11 +12,24 @@ unitarios NO prueba que el pipeline completo quede conectado. Antes de decir
 sin error real? Si no lo verificaste, no lo afirmes; di qué falta comprobar.
 Esta regla manda sobre todo lo demás.
 
-## What this project does
+## What this project does (verificado con medición)
 
-Sentinel Omega detects **precursors of natural events** (earthquakes, volcanic activity, solar storms, tsunamis, etc.) using real-time geophysical data from NOAA, USGS, ESA, and other sources. It uses Shadow Node Theory (SNT) **only as the mathematical framework** (power law R(t) = a·t^b), not as the system's core purpose.
+**Detecta y caracteriza anomalías naturales en cuatro dominios:**
 
-The system is the successor to the TITAN V32/V46/V53 bot family.
+| Dominio | Qué detecta | Señal | Estado |
+|---|---|---|---|
+| **Espacio** | Tormentas geomagnéticas, grietas de escudo, viento solar | Kp, Bz, GOES | 8.439 tormentas en 30 años · scanner vivo |
+| **Tierra** | Enjambres sísmicos, actividad volcánica | USGS, SO2 | 191.592 eventos · 979 firmas de erupciones |
+| **Atmósfera** | Presión anómala, química, niebla | OWM (4 estaciones + 6 volcanes) | Vivo cada ciclo |
+| **Financiero** | Estrés de mercado (contexto, no predicción) | VIX, FGI, BTC | Vivo, techo WATCH |
+
+**Lo que NO hace** (medido, no especulado):
+- NO predice sismos M4.5+ vía Schumann (cerrado en negativo en dos estaciones)
+- NO tiene modelos ONNX aprobados (la compuerta negó a los 7)
+- NO mide la frecuencia Schumann en vivo (retirada 2026-10-09)
+
+**Lo que está listo para experimentos dirigidos:**
+`docs/EXPERIMENTO_DIRIGIDO.md` — plantilla con 4 reglas, 5 candidatos, paso a paso.
 
 ## Architecture — 8 Agents (SNT 5 + Omega + Loki + Padre), Single System
 

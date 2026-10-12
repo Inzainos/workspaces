@@ -1,5 +1,89 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-11 — El pivote, la auto-reparación y la miniapp del pipeline
+
+**El proyecto se convierte en lo que ya era.** El operador dio el GO:
+«B y C en paralelo, A como experimento dirigido». El pivote de
+«predecir sismos vía Schumann» a **plataforma multi-dominio de detección
+de anomalías naturales**.
+
+### La Opción B: la plataforma que ya existe (medida contra 30 años)
+
+| Dominio | Señal | En la DB | Firmas | Scanner |
+|---|---|---|---|---|
+| Espacio | Tormentas Kp≥5 | **8.439** horas | 429 Kp6 | `_scan_tormenta_solar` ✓ |
+| Espacio | Grietas Bz≤−10 | **1.738** horas | — | GRIETA en alertas ✓ |
+| Espacio | Kp≥8 extremas | **258** horas | — | ✓ |
+| Volcánico | Erupciones VEI≥3 | — | **756** | SO2 + air_quality ✓ |
+| Sísmico | Enjambres activos | **2 ahora** | 20.130+ | `_scan_seismic_cluster` ✓ |
+
+**Hubo una tormenta Kp=9 AYER** y el sistema la vio.
+
+### La Opción C: el 46 % de exigibles, descompuesto
+
+Los 11.271 exigibles del padre son **100 % Omori** (`sismo_*_win`):
+cero sin rasgo sísmico. Es un mapa de peligrosidad, no detección de
+precursores. Sin el padre: **2.399 exigibles reales** (beta1 2.394 +
+mínimos). El reparto concuerda con la compuerta ONNX (medición
+independiente).
+
+### La Opción A: plantilla del experimento dirigido
+
+`docs/EXPERIMENTO_DIRIGIDO.md` — las cuatro reglas (declarar antes de
+medir, nulo al lado, once semillas, control más barato primero), cinco
+candidatos con física más plausible que Schumann (radón, resistividad,
+migración de enjambres, Vp/Vs, infrasonido), y el paso a paso.
+
+### Auto-reparación: tres capas vivas
+
+| Capa | Qué hace | Cómo |
+|---|---|---|
+| 1. Detección | Tests, journal, servicios, DB | Timer cada 4 h |
+| 2. Fix determinístico | WAL→checkpoint, launcher→restart, timer→reanclar | Instantáneo |
+| 3. Fix vía Concilio | codegemma escribe, verificador ejecuta | Esqueleto, GO pendiente |
+
+Más el **vigilante de rebuild** (cada 15 min): detecta que terminó,
+verifica log, sube servicios, reancla timers, corre verificación —
+TODO sin intervención.
+
+### Rebuild con el código nuevo (post-pivote)
+
+40.726 firmas, 23.266 consolidadas, 13.972 exigibles, **cero rasgos de
+Schumann fabricados** (verificado), 348.588 patrones cimáticos,
+3h 20min, log verificado sin fallos.
+
+### Mensajes y saneador, verificados punta a punta
+
+El saneador de HTML para Telegram: `<b>`, `<i>`, `<code>`, `<pre>` pasan
+tal cual; `<br>` se convierte a salto de línea; `<` y `&` sueltos se
+escapan (el caso `(<50)` que mató 16 digestos). Plantilla huérfana
+corregida. Dos interpolaciones sin `html.escape()` en el bot del
+Concilio arregladas.
+
+### Miniapp rediseñada: pipeline de Sentinel como protagonista
+
+`/api/mini/sentinel` — nuevo endpoint que lee la DB de producción.
+6 cards: estado del ciclo, telemetría, muro visual, sismicidad (M4.5+ +
+enjambres), clima espacial (tormentas), memoria del sistema. El Concilio
+relegado a card secundaria. Verificado contra producción.
+
+### El residuo de Eskdalemuir, muerto a ±7 días
+
+El efecto aparente de `sr3_hz` (+0,64 con ±180 días) se desplomó al
+estrechar el empareje estacional: ±30 días +0,27 → **±7 días +0,057 ±
+0,078 (cero)**. El 100 % era calendario (tormentas globales moviendo
+SR3 en 0,3-0,6 Hz entre meses, filtrado por el hueco may-oct del
+dataset). La explicación de Omori que propuse para el residuo quedó
+DESCARTADA por medición — la lección: el siguiente control más BARATO
+antes que la explicación elaborada. Costo: seis corridas de un minuto.
+
+### Git limpiado para push
+
+2,6 GB de blobs muertos en la historia (915 MB DB, 733 MB ×2 WAL, 255
+MB log) removidos con filter-branch por rango. Chat-id personal
+redactado (repo público). Cero secretos en el rango. CLAUDE.md y
+CHANGELOG actualizados con lo medido. 218 commits limpios.
+
 ## [Unreleased] - 2026-10-10/11 - Eskdalemuir: la réplica medida — y la hipótesis central cerrada en DOS estaciones
 
 Lo que siguió a la medición de Granada: tres pasadas más del retiro del Hz
