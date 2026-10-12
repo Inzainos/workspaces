@@ -4,6 +4,15 @@ Repositorio base para **todos los proyectos** del workspace.
 Actualmente contiene como proyecto principal **Sentinel Omega** y su operación
 completa (código, despliegue, reportes y automatizaciones).
 
+## Pivote estratégico (2026-10-11)
+
+El proyecto pasa de "predecir sismos vía Schumann" a **"detectar y
+caracterizar anomalías naturales en cuatro dominios"**. La hipótesis
+central (Schumann → sismo) fue medida y cerrada en negativo en DOS
+estaciones independientes; la plataforma multi-dominio (espacio, tierra,
+atmósfera, financiero) ya existe y funciona — solo estaba mirando al otro
+lado. Ver `sentinel_omega/README.md` para el detalle.
+
 
 ## Estado reciente (2026-10-08) — el modelo nulo
 
