@@ -1,5 +1,24 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-13 (mañana) — Migración a python 3.14 ejecutada
+
+La actualización de Windows movió el python del sistema 3.13→3.14 y
+demostró que el symlink genérico rompería los venv otra vez: migrado el
+venv del servicio a 3.14 con el método seguro (construcción paralela →
+suite de validación → ventana de 15 min → verificación en vivo).
+
+- **Fijado `onnx==1.22.0`**: la 1.23.2 escribe IR 14 que ni su propio
+  onnxruntime 1.31 carga (los mocks de test reventaban; los modelos reales
+  cargaban). La 1.22 es la versión medida del stack probado.
+- **Dos dependencias no declaradas, cazadas y declaradas**: `pytest`
+  (la suite corre con el venv del servicio) y `opencv-python-headless`
+  (el conteo de píxeles del espectrograma de Schumann lo usa cada ciclo y
+  vivía instalado a mano — la mañana en 3.14 arrancó sin Schumann).
+- Shebangs de `.venv/bin` repuntados tras el `mv` (streamlit 203/EXEC).
+- Validación: suite **1.348 · 2 rojos deliberados** idéntica al baseline
+  3.13; launcher con 0 errores, Schumann midiendo, dashboards 200.
+  `.venv313` queda de respaldo reversible.
+
 ## [Unreleased] - 2026-10-13 — JSONB: propuesto, medido, rechazado
 
 Del full-upgrade (SQLite 3.53) salió la hipótesis de acelerar las

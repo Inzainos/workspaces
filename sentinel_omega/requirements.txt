@@ -33,6 +33,18 @@ plotly>=5.15
 matplotlib>=3.7
 # Inferencia ML (opcional — precursor tipo 11)
 onnxruntime>=1.14
+# onnx fijado el 2026-10-13 (migración a python 3.14): la 1.23.2 escribe IR 14
+# que ni su propio onnxruntime 1.31 carga (los mocks de test reventaban). La
+# 1.22.0 es la versión medida contra la suite completa: 1.348 · 2 rojos
+# deliberados. Subirla exige volver a medir.
+onnx==1.22.0
+# opencv: el conteo de píxeles del espectrograma de Schumann (sos70) lo usa
+# cada ciclo, pero vivía instalado a mano SIN declarar — lo cazó la
+# migración a 3.14 (bitácora 10-13: «cannot analyze Schumann spectrogram»).
+opencv-python-headless
+# pytest: la suite se corre con el venv del servicio (venv equivocado = 4
+# fallos falsos, regla 12 / bitácora 10-08 §9) — que conste declarado.
+pytest
 ephem>=4.1
 scikit-learn
 skl2onnx
