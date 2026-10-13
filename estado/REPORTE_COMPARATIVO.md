@@ -1,24 +1,24 @@
-# 🔄 Comparativo diario — 2026-10-12 vs 2026-10-11
-*Corte 12:29 hora MX*
+# 🔄 Comparativo diario — 2026-10-13 vs 2026-10-12
+*Corte 00:43 hora MX*
 
 | Métrica | Hoy | Ayer | Cambio |
 |---|---:|---:|---:|
-| Fantasma medio | 14.6 | 30.4 | ▼ -15.8 |
-| Fantasma máx | 30.6 | 41.8 | ▼ -11.2 |
-| Ciclos corridos | 10 | 12 | ▼ -2 |
-| Breaches del Muro | 7 | 2 | ▲ +5 |
-| Asertividad viva (resuelta en el día) | — | — | — |
-| Patrones cimáticos (total / nuevos 24h) | 2113 | — | +41 |
+| Fantasma medio | 11.5 | 13.9 | ▼ -2.4 |
+| Fantasma máx | 12.9 | 30.6 | ▼ -17.7 |
+| Ciclos corridos | 4 | 12 | ▼ -8 |
+| Breaches del Muro | 2 | 8 | ▼ -6 |
+| Asertividad viva (resuelta en el día) | — | 100% (n=8) | — |
+| Patrones cimáticos (total / nuevos 24h) | 2132 | — | +47 |
 
 ## ✅ Aciertos — Últimas 24 horas
 
 | Métrica | Valor |
 |---------|-------|
-| **Aciertos** | 394 |
+| **Aciertos** | 402 |
 | **Fallos** | 1406 |
 | **Falsos positivos** | 0 |
-| **Tasa de acierto** | 21.9% `▓▓▓░░░░░░░░░` |
-| **Total predicciones** | 1800 |
+| **Tasa de acierto** | 22.2% `▓▓▓░░░░░░░░░` |
+| **Total predicciones** | 1808 |
 
 ![Distribución de veredictos](graficas/aciertos_1d_pastel.png)
 
@@ -26,12 +26,14 @@
 
 | Bot | Aciertos | Tasa | Confianza | Ventana declarada |
 |-----|----------|------|-----------|--------------------|
-| omega | 117/300 | 39% `▓▓▓░░░░░` | 0.39 | 0.0h |
-| beta1 | 95/300 | 32% `▓▓▓░░░░░` | 0.32 | 0.0h |
-| padre | 66/300 | 22% `▓▓░░░░░░` | 0.22 | 0.0h |
-| alfa1 | 61/300 | 20% `▓▓░░░░░░` | 0.20 | 0.0h |
-| delta | 38/300 | 13% `▓░░░░░░░` | 0.13 | 0.0h |
-| beta2 | 17/300 | 6% `░░░░░░░░` | 0.06 | 0.0h |
+| omega | 118/301 | 39% `▓▓▓░░░░░` | 0.39 | 0.0h |
+| beta1 | 96/301 | 32% `▓▓▓░░░░░` | 0.32 | 0.0h |
+| padre | 67/301 | 22% `▓▓░░░░░░` | 0.22 | 0.0h |
+| alfa1 | 62/301 | 21% `▓▓░░░░░░` | 0.20 | 0.0h |
+| delta | 39/301 | 13% `▓░░░░░░░` | 0.13 | 0.0h |
+| beta2 | 18/301 | 6% `░░░░░░░░` | 0.06 | 0.0h |
+| alfa2 | 1/1 | 100% `▓▓▓▓▓▓▓▓` | 0.30 | 2.0h |
+| jupiter | 1/1 | 100% `▓▓▓▓▓▓▓▓` | 0.20 | 2.0h |
 
 ![Desempeño por bot](graficas/aciertos_1d_barras.png)
 
