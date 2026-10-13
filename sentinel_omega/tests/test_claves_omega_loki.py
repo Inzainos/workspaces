@@ -318,14 +318,22 @@ def test_loki_sin_entradas_da_no_signal():
     assert all(v is None for v in sig.data["medido"].values())
 
 
-def test_loki_con_nan_es_sin_dato_y_no_toca_el_prior():
+def test_loki_con_nan_es_sin_dato_y_sin_estado_contaminado():
+    # Rediseño 2026-10-12: el prior bayesiano mutante del diseño viejo era
+    # estado que un ciclo sin medir podía corromper. Ahora NO hay estado
+    # mutable: cada ciclo decide sólo con lo que ingirió.
     loki = LokiAgent()
-    prior = loki._bayesian_prior
     loki.ingest({"bz_gsm": float("nan"), "solar_wind": 410.0})
     sig = loki.analyze()
     assert sig.signal_type is SignalType.NO_SIGNAL
     assert "bz" in sig.data["faltan"]
-    assert loki._bayesian_prior == prior
+    # y el ciclo siguiente decide limpio, sin residuo del anterior
+    loki.ingest({"bz_gsm": -0.5, "solar_wind": 410.0,
+                 "resonancia_rotacion": {"activa": True, "dias_desde": 27,
+                                         "ultima_tormenta_dias": 27}})
+    sig2 = loki.analyze()
+    assert sig2.signal_type is not SignalType.NO_SIGNAL
+    assert sig2.signal_type is SignalType.WATCH
 
 
 def test_loki_sin_schumann_ni_lod_sigue_pero_lo_anota():
@@ -334,6 +342,138 @@ def test_loki_sin_schumann_ni_lod_sigue_pero_lo_anota():
     sig = loki.analyze()
     assert sig.signal_type is not SignalType.NO_SIGNAL
     assert set(sig.data["faltan"]) == {"schumann_activity", "lod"}
+
+
+# ── REDISEÑO 2026-10-12: Resonancia del Ciclo Mayor ───────────────────────────
+# La teoría del operador (Campo Unificado Fractal), operacionalizada y medida
+# en deploy/medir_loki_teoria.py: P(tormenta) 0,94 % → 3,19 % con antecedente
+# de tormenta Kp>=5 hace 26-29 d (ganancia 3,4×, control 0,88 %, dispara el
+# 3,2 % de los días). El pipeline SVD→FFT→φ de una fila salió: muerto por
+# ~112 órdenes de magnitud, medido el 2026-10-09.
+
+def _res_activa():
+    return {"activa": True, "dias_desde": 27, "ultima_tormenta_dias": 27}
+
+
+def test_loki_resonancia_activa_da_watch_con_posterior_medido():
+    loki = LokiAgent()
+    loki.ingest({"bz_gsm": -0.5, "solar_wind": 410.0,
+                 "resonancia_rotacion": _res_activa()})
+    sig = loki.analyze()
+    assert sig.signal_type is SignalType.WATCH
+    assert sig.confidence == pytest.approx(LokiAgent.CONF_RESONANCIA)
+    # el posterior de Bayes es el MEDIDO contra 32 años, no un φ-alignment
+    assert sig.data["bayesian_posterior"] == pytest.approx(LokiAgent.P_RESONANCIA)
+    assert "3.19" in sig.reasoning or "3.2%" in sig.reasoning.replace(" ", "")
+    assert "ganancia" in sig.reasoning.lower()
+    assert "27" in sig.reasoning  # los días desde el antecedente, medidos
+    assert sig.data["resonancia"]["dias_desde"] == 27
+
+
+def test_loki_resonancia_con_grieta_confirma_pero_no_alerta_solo():
+    """El colapso recurrente: grieta viva (Bz<=-5) dentro de la ventana de
+    resonancia. Loki CONFIRMA (WATCH alto) — nunca ALERT solo: su rol en el
+    consenso (2026-10-10) es subir confianza cuando confirma."""
+    loki = LokiAgent()
+    loki.ingest({"bz_gsm": -6.2, "solar_wind": 480.0,
+                 "resonancia_rotacion": _res_activa()})
+    sig = loki.analyze()
+    assert sig.signal_type is SignalType.WATCH     # no ALERT: confirma
+    assert sig.confidence == pytest.approx(LokiAgent.CONF_COLAPSO)
+    assert sig.data["colapso_recurrente"] is True
+    assert sig.data["bayesian_posterior"] == pytest.approx(LokiAgent.P_COLAPSO)
+    assert "CONFIRMA" in sig.reasoning
+    assert "n=13" in sig.reasoning   # la fragilidad va EN el reasoning, no oculta
+
+
+def test_loki_resonancia_inactiva_da_neutral_con_contexto():
+    loki = LokiAgent()
+    loki.ingest({"bz_gsm": -0.5, "solar_wind": 410.0,
+                 "resonancia_rotacion": {"activa": False, "dias_desde": None,
+                                         "ultima_tormenta_dias": 8}})
+    sig = loki.analyze()
+    assert sig.signal_type is SignalType.NEUTRAL
+    assert sig.confidence == pytest.approx(0.2)
+    assert "26-29" in sig.reasoning
+    assert sig.data["bayesian_posterior"] == pytest.approx(LokiAgent.P_BASE)
+
+
+def test_loki_sin_estado_de_resonancia_no_inventa_el_antecedente():
+    """Clave AUSENTE ≠ resonancia inactiva (regla 7): sin medición no se
+    decide sobre el ciclo mayor — neutral honesto que lo dice."""
+    loki = LokiAgent()
+    loki.ingest({"bz_gsm": -0.5, "solar_wind": 410.0})
+    sig = loki.analyze()
+    assert sig.signal_type is SignalType.NEUTRAL
+    assert "sin resonancia medida" in sig.reasoning
+    assert sig.data["resonancia"] is None
+
+
+def test_loki_grieta_sin_resonancia_no_es_colapso():
+    """La grieta sola (sin antecedente) no confirma nada: eso es territorio
+    del scanner y del Centinela. Loki sin resonancia se queda en neutral
+    con contexto — medido: la conjunción no supera a la grieta sola."""
+    loki = LokiAgent()
+    loki.ingest({"bz_gsm": -12.0, "solar_wind": 800.0,
+                 "resonancia_rotacion": {"activa": False, "dias_desde": None,
+                                         "ultima_tormenta_dias": 40}})
+    sig = loki.analyze()
+    assert sig.signal_type is SignalType.NEUTRAL
+    assert sig.data.get("colapso_recurrente") is False
+
+
+def test_el_runner_mide_la_resonancia_contra_la_tabla_horaria(tmp_path):
+    """El antecedente sale de tbl_clima_espacial_raw (histórico MEDIDO, no
+    live): tormenta hace 27 d → activa; sin tormentas → inactiva con
+    contexto; sin tabla → None (regla 7)."""
+    import sqlite3
+    from sentinel_omega.infrastructure.database.repository import SentinelRepository
+
+    db = tmp_path / "loki.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE tbl_clima_espacial_raw (timestamp_blk TEXT, kp_max REAL)")
+    # tormenta hace exactamente 27 d (strftime para el mismo reloj que la query)
+    conn.execute(
+        "INSERT INTO tbl_clima_espacial_raw VALUES "
+        "(strftime('%Y-%m-%d','now','-27 days') || ' 12:00', 6.0)")
+    # y una más reciente hace 5 d (fuera de la ventana): contexto, no resonancia
+    conn.execute(
+        "INSERT INTO tbl_clima_espacial_raw VALUES "
+        "(strftime('%Y-%m-%d','now','-5 days') || ' 12:00', 5.5)")
+    conn.commit(); conn.close()
+
+    runner = GeodynamicLayerRunner.__new__(GeodynamicLayerRunner)
+    runner._repo = SentinelRepository(str(db))
+    res = runner._estado_resonancia()
+    assert res["activa"] is True
+    assert res["dias_desde"] == 27
+    assert res["ultima_tormenta_dias"] == 5
+
+    # sin tormentas: inactiva, con la última a 40+ días… o ninguna
+    db2 = tmp_path / "calma.db"
+    conn = sqlite3.connect(db2)
+    conn.execute("CREATE TABLE tbl_clima_espacial_raw (timestamp_blk TEXT, kp_max REAL)")
+    conn.execute(
+        "INSERT INTO tbl_clima_espacial_raw VALUES "
+        "(strftime('%Y-%m-%d','now','-40 days') || ' 12:00', 2.0)")
+    conn.commit(); conn.close()
+    runner2 = GeodynamicLayerRunner.__new__(GeodynamicLayerRunner)
+    runner2._repo = SentinelRepository(str(db2))
+    res2 = runner2._estado_resonancia()
+    assert res2["activa"] is False
+    assert res2["ultima_tormenta_dias"] is None
+
+    # tabla VACÍA (el repo auto-crea el schema al conectar; cero filas =
+    # cero mediciones): inactiva, sin inventar última tormenta. La ruta
+    # None queda para query rota/DB inaccesible (defensiva).
+    db3 = tmp_path / "vacia.db"
+    sqlite3.connect(db3).close()
+    runner3 = GeodynamicLayerRunner.__new__(GeodynamicLayerRunner)
+    runner3._repo = SentinelRepository(str(db3))
+    res3 = runner3._estado_resonancia()
+    assert res3 is not None
+    assert res3["activa"] is False
+    assert res3["ultima_tormenta_dias"] is None
 
 
 # ── (d) omega.analyze() ya no corre ONNX ────────────────────────────────────

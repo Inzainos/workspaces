@@ -108,7 +108,10 @@ tiempo operativo.
   decía «correlación Schumann» sin leer un dato de Schumann y exigía beta1
   específicamente (ruta viva al 0,02 %): **0 ALERTs en 4.566 ciclos**.
   Omega activo sube el techo de confianza; Loki solo sube confianza cuando
-  confirma (sus ramas de decisión están muertas por construcción, medido).
+  confirma (rediseñado el 2026-10-12: su rama viva es la RESONANCIA de la
+  rotación solar — tormenta Kp≥5 hace 26-29 d, ganancia 3,4× medida contra
+  32 años; el SVD→FFT→φ de una fila salió, muerto por ~112 órdenes de
+  magnitud. Ver `deploy/medir_loki_teoria.py`).
 - **Firmas:** memoria de patrones por bot de la ventana de 14 días previa a cada
   evento. Estados `nueva → observada → recurrente → consolidada`.
   **`consolidada` NO es lo mismo que `exigible`** (separado el 2026-10-07): la

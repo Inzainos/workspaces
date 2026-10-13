@@ -699,6 +699,59 @@ class GeodynamicLayerRunner:
             "lod_ms": lod_ms,
         }
 
+    def _estado_resonancia(self) -> Optional[Dict]:
+        """¿Resuena el ciclo mayor? Tormenta Kp>=5 hace 26-29 días.
+
+        La regla MEDIDA (deploy/medir_loki_teoria.py, 11.688 días 1994-2025):
+        P(tormenta) 0,94 % base → 3,19 % con antecedente en la ventana de la
+        rotación de Carrington (27,275 d) — ganancia 3,4×; control sin
+        antecedente 0,88 %. Dispara el 3,2 % de los días (regla 8 ✓).
+
+        Lee `tbl_clima_espacial_raw` (read-only por el repo). Sin dato en la
+        tabla → None: la ausencia de antecedente medido no es «no hay»
+        (regla 7); Loki no decide sobre una resonancia sin medir.
+        """
+        try:
+            repo = self._get_repo()
+            # ¿Hubo ALGUNA hora con Kp>=5 en la ventana 26-29 días atrás?
+            # (acceso posicional: la conexión del repo no garantiza Row)
+            fila = repo._execute(
+                "SELECT MAX(substr(timestamp_blk,1,10)), MAX(kp_max) "
+                "FROM tbl_clima_espacial_raw "
+                "WHERE timestamp_blk >= date('now','-29 days') "
+                "AND timestamp_blk <  date('now','-26 days') "
+                "AND kp_max >= 5.0"
+            ).fetchone()
+            # Última tormenta en general (contexto para el reasoning)
+            fila_ult = repo._execute(
+                "SELECT MAX(substr(timestamp_blk,1,10)) "
+                "FROM tbl_clima_espacial_raw WHERE kp_max >= 5.0"
+            ).fetchone()
+        except Exception as e:
+            logger.warning(f"resonancia_rotacion: consulta falló ({e}); Loki sin estado")
+            return None
+        import datetime as _dt
+        # Mismo reloj que la query: `date('now')` de SQLite es UTC, y la
+        # tabla horaria es UTC. `date.today()` es local (UTC-6 aquí) y
+        # desfasa un día la cuenta --- medido en el test.
+        hoy = _dt.datetime.now(_dt.timezone.utc).date()
+        res: Dict[str, Any] = {
+            "activa": False, "dias_desde": None,
+            "ultima_tormenta_dias": None,
+        }
+        if fila_ult is not None and fila_ult[0]:
+            try:
+                res["ultima_tormenta_dias"] = (hoy - _dt.date.fromisoformat(fila_ult[0])).days
+            except ValueError:
+                pass
+        if fila is not None and fila[0]:
+            try:
+                res["dias_desde"] = (hoy - _dt.date.fromisoformat(fila[0])).days
+                res["activa"] = True
+            except ValueError:
+                res["activa"] = False
+        return res
+
     def run(self, financial_data: Optional[Dict] = None) -> ConsensusResult:
         logger.info("=== Sentinel Omega Cycle ===")
 
@@ -803,11 +856,16 @@ class GeodynamicLayerRunner:
         except Exception as e:
             logger.warning(f"Omega layer failed (non-blocking): {e}")
 
-        # Loki (Act 3): Unified Field - Fractal-Bayesian collapse
+        # Loki (Act 3): Resonancia del Ciclo Mayor (rediseñado 2026-10-12)
         try:
             # Sin valores por defecto: lo que falta llega como None y Loki
             # emite NO_SIGNAL si le faltan sus entradas clave.
             loki_data = self._datos_loki(alfa1_data, beta1_data, delta_data)
+            # La resonancia del ciclo mayor (tormenta Kp>=5 hace 26-29 d,
+            # rotación de Carrington) se mide contra la tabla horaria: el
+            # antecedente ES histórico, no live. Sin dato → None y Loki no
+            # decide sobre ella (regla 7).
+            loki_data["resonancia_rotacion"] = self._estado_resonancia()
             self.loki.ingest(loki_data)
             signals.append(self.loki.analyze())
             logger.info(f"Loki signal: {signals[-1].signal_type.value} (conf={signals[-1].confidence:.2f})")

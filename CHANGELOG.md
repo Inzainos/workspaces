@@ -1,5 +1,43 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-12 (noche) — Loki rediseñado: la teoría del operador, medida y viva
+
+**«TEORÍA DEL CAMPO UNIFICADO FRACTAL» (operador, 2026-09-16), operacionalizada
+con `deploy/medir_loki_teoria.py` contra 11.688 días (1994-2025).** El
+pipeline SVD→FFT→φ de una fila (muerto por ~112 órdenes de magnitud, medido
+el 10-09) salió; entra la señal que los datos aprueban: **la resonancia de
+la rotación solar** — el sistema menor (tormentas) resonando con el ciclo
+mayor (Carrington, 27,275 d), tal como pide la teoría.
+
+| Paso de la teoría | Medido | Veredicto |
+|---|---|---|
+| Fourier (resonancia con el ciclo mayor) | picos vs nulo de ruido rojo: 27,3 d en viento (×1,19) y Bz (×1,53); armónicos 13,5/9,1 d | **VIVE** |
+| Bayes (la recurrencia como regla) | P(tormenta) 0,94 % → **3,19 %** con antecedente hace 26–29 d (ganancia 3,4×; control sin antecedente 0,88 %; dispara 3,2 % de los días) | **VIVE** |
+| Colapso (resonancia ∧ grieta) | P=23 %, n=13 días en 32 años — frágil, reportado con su n; la conjunción no supera a la grieta sola (34 %) | el aporte de loki es el eje del TIEMPO, no la conjunción |
+| Gauss-Jordan (matriz limpia) | rango 4,00 exacto en calma y tormenta: las 7 columnas son colineales SIEMPRE | **LIMPIEZA** (preprocesado), no señal — y con ello muere el SVD de una fila |
+
+- **WATCH de resonancia** (conf 0,55): tormenta Kp≥5 hace 26–29 d → el
+  posterior medido va EN el reasoning («P(tormenta hoy) 3,19 % contra base
+  0,94 % — ganancia 3,4× medida 1994-2025»).
+- **Confirmación** (conf 0,70): grieta viva (Bz≤−5) dentro de la ventana →
+  «COLAPSO RECURRENTE… Loki CONFIRMA, no alerta solo» — su rol de consenso
+  del 10-10 intacto, y la fragilidad (n=13) declarada en el propio texto.
+- `bayesian_posterior` del signal sigue existiendo para el tablero — ahora
+  con la probabilidad REAL condicional, no un φ-alignment.
+- El runner mide el antecedente contra `tbl_clima_espacial_raw` (read-only,
+  reloj UTC alineado con la tabla — off-by-one cazado por el test).
+- La Espiral Dorada de la teoría sobrevive como el CICLO EN EL TIEMPO
+  (27,275 d), no como la norma de un vector contra 1,618.
+- **Predicción concreta**: la tormenta del 10-oct activa la ventana de
+  resonancia ~**5–8 de noviembre** — si su fuente fue un agujero coronal
+  recurrente, loki pre-avisará.
+
+Tests: 6 nuevos (resonancia activa/colapso/inactiva/ausente/grieta sin
+resonancia + el runner contra DB temporal); mutación (ramas en `if False`)
+mata exactamente a los tres que vigilan la decisión. Suite: **1.348 · 2
+rojos deliberados de alfa1 · 7 saltos**. Launcher reiniciado: primer ciclo
+vivo `resonancia=medida, inactiva → neutral`, cero errores.
+
 ## [Unreleased] - 2026-10-12 — La tormenta que el sistema no vio: la cadena solar recalibrada a extremos
 
 **La tormenta Kp=7 del 10-oct (Bz_min −28,9 nT durante 2 h, viento 841 km/s)
