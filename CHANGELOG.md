@@ -1,5 +1,15 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-13 — JSONB: propuesto, medido, rechazado
+
+Del full-upgrade (SQLite 3.53) salió la hipótesis de acelerar las
+auditorías del Juez con JSONB. Medida contra la DB real (1,03 M filas /
+124,5 MB de `detalles_json`): `json_extract` GANA en todos los patrones
+(1,21–1,25× más rápido, incluso contra el jsonb materializado una vez por
+fila). **Integración rechazada por medición**; `deploy/bench_jsonb.py`
+queda como instrumento para no re-persuadirla. La migración de venvs a
+python 3.14 sigue pendiente de ventana de rebuild (nunca en caliente).
+
 ## [Unreleased] - 2026-10-12 (madrugada del 13) — Auditoría del tablero: las superficies invisibles montadas por fin
 
 **La trampa del 25-sep, cazada de nuevo:** `App.tsx` montaba 7 pestañas
