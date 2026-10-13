@@ -95,6 +95,18 @@ def describe_values(tipo: str, values: Any) -> str:
         if values.get("activity") is not None or values.get("schumann_activity") is not None:
             act = values.get("activity", values.get("schumann_activity"))
             bits.append(f"actividad {float(act):.1f}")
+    elif "TORMENTA" in t or "GRIETA" in t or "PERTURBACION" in t:
+        # Rama añadida el 2026-10-12: el scanner solar recalibrado DISPARA
+        # (antes no existía la rama porque TORMENTA_SOLAR no había disparado
+        # ni una vez en toda la historia). Las claves son las de extremos:
+        # bz_min_nT/kp_max/viento_max_kms --- la media de 24 h que usaba el
+        # detector viejo diluía la grieta y no llegaba aquí nunca.
+        if values.get("bz_min_nT") is not None:
+            bits.append(f"grieta Bz mín {float(values['bz_min_nT']):.1f} nT")
+        if values.get("kp_max") is not None:
+            bits.append(f"Kp máx {float(values['kp_max']):.1f}")
+        if values.get("viento_max_kms") is not None:
+            bits.append(f"viento máx {float(values['viento_max_kms']):.0f} km/s")
     else:
         for k, v in list(values.items())[:6]:
             bits.append(f"{k}={v}")

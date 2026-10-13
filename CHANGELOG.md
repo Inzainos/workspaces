@@ -1,5 +1,36 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-12 (madrugada del 13) — Auditoría del tablero: las superficies invisibles montadas por fin
+
+**La trampa del 25-sep, cazada de nuevo:** `App.tsx` montaba 7 pestañas
+mientras 6 archivos de tabs vivían sin montar. Lo grave medido: los **4 KPI
+del nulo del lag** (10-08) se escribieron en `PadreJuezTab`… que nadie
+montaba — superficie invisible. Y `ConsensoTab`/`SistemaTab` referenciaban
+`api.system`, un namespace que **nunca existió** (compilaban porque tsc no
+llega a archivos fuera del grafo de importación).
+
+- **LokiTab reescrita y MONTADA**: identidad nueva (Resonancia del Ciclo
+  Mayor), KPIs medidos (resonancia con días, P(tormenta hoy) con base al
+  lado, última tormenta, rotación de Carrington como constante declarada),
+  Schumann como **actividad** (Hz SIN MEDIR), y el **reasoning vivo** de la
+  última predicción del Juez. `/api/unificado` sirve el bloque `loki`
+  completo: resonancia calculada con la MISMA función del runner
+  (`estado_resonancia` extraída a módulo para que la regla viva una sola
+  vez), posteriores medidos y último veredicto con su explicación.
+- **PadreJuezTab montada** — los 4 KPI del nulo del lag y los veredictos
+  del Juez fase viva por fin visibles.
+- **Borradas** `ConsensoTab`/`SistemaTab` (muertas + rotas). FamiliasTab y
+  OmegaTab quedan sin montar, documentadas en el README del dashboard.
+- **Telegram**: rama solar en `describe_values` (grieta Bz mín / Kp máx /
+  viento máx) — no existía porque `TORMENTA_SOLAR` no había disparado ni
+  una vez en toda la historia; hoy dispara y sus valores son los extremos.
+- Auditoría de pipeline: los consumidores de `values_json` son genéricos
+  (safe con las claves nuevas); `juez_cycle_register` copia sólo sus 5
+  claves — la resonancia no engorda `detalles_json`.
+- Build verde (tsc + 366 KB), Vite sirviendo ambas pestañas nuevas en 200,
+  API devuelta verificada con curl (resonancia medida: última tormenta
+  hace 3 d, inactiva — correcto). Suite: 1.348 · 2 rojos deliberados.
+
 ## [Unreleased] - 2026-10-12 (noche) — Loki rediseñado: la teoría del operador, medida y viva
 
 **«TEORÍA DEL CAMPO UNIFICADO FRACTAL» (operador, 2026-09-16), operacionalizada

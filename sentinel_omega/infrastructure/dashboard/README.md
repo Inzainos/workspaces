@@ -69,11 +69,24 @@ centrado con tres tarjetas iguales es el error más común y el más caro.
 |---|---|---|
 | Presentación | **Decide/Learn** | la única donde un hero es correcto |
 | Principal | **Monitor** | densidad, lectura de reojo, sin hero |
+| Loki | **Monitor** | resonancia del ciclo mayor: el estado medido del rediseño 2026-10-12 (KPI de resonancia, posterior, última tormenta, reasoning vivo) |
+| Padre+Juez | **Compare** | los 4 KPI del nulo del lag + veredictos del Juez fase viva |
 | Predicciones | **Monitor** | estado de precursores y ventana |
 | Mapas | **Explore** | mapa primero, controles al margen |
 | Señales | **Monitor** | telemetría cruda por familia |
 | Modelos | **Compare** | 9 bots enfrentados, columnas alineadas |
 | Reportes | **Explore** | bitácora navegable |
+
+**La trampa de las pestañas sin montar (medida dos veces: 25-sep y 12-oct).**
+`App.tsx` monta lo que monta — existir en `components/tabs/` no es ser
+visible. El 10-08 los 4 KPI del nulo del lag se escribieron en
+`PadreJuezTab`… que nadie montaba: superficie invisible hasta el 12-oct.
+Ese día se montaron Loki y Padre+Juez, y se **borraron** `ConsensoTab` y
+`SistemaTab` (muertas y ROTO: referenciaban un namespace `api.system` que
+nunca existió — tsc no las veía porque los archivos no importados no
+entran al grafo de compilación). `FamiliasTab` y `OmegaTab` siguen en el
+árbol sin montar: funcionales, montables, documentadas aquí para que nadie
+las dé por visibles ni por basura.
 
 ---
 

@@ -314,6 +314,9 @@ def _overview_payload() -> Dict[str, Any]:
             "value": latest_prec.get("fantasma") if latest_prec else None,
             "nivel_riesgo": latest_prec.get("nivel_riesgo") if latest_prec else None,
             "schumann_hz": latest_prec.get("schumann_hz") if latest_prec else None,
+            # La ACTIVIDAD es la señal medida desde el retiro del Hz
+            # (2026-10-09); añadir la clave es forward-only.
+            "schumann_activity": latest_prec.get("schumann_activity") if latest_prec else None,
             "kp": latest_prec.get("kp") if latest_prec else None,
             "bz_nT": latest_prec.get("bz_nT") if latest_prec else None,
             "viento_km_s": latest_prec.get("viento_km_s") if latest_prec else None,
@@ -1413,13 +1416,65 @@ def unificado() -> Dict[str, Any]:
     if tlax is None and nodos:
         tlax = nodos[0]
     cim_n = int(_scalar("SELECT COUNT(*) FROM tbl_cimatica_patrones", default=0) or 0)
+
+    # ── Loki (rediseñado 2026-10-12): Resonancia del Ciclo Mayor ──────────
+    # La resonancia se calcula con la MISMA función del runner (una sola
+    # fuente de verdad), contra la misma tabla horaria medida.
+    from sentinel_omega.infrastructure.pipeline.layer_runners import estado_resonancia
+    from sentinel_omega.layers.geodynamic.loki.agent import LokiAgent
+
+    def _exec_ro(sql: str, params: tuple = ()):
+        return _repo._ro_execute(sql, params)
+
+    resonancia = estado_resonancia(_exec_ro)
+    loki_ultimo = None
+    try:
+        fila = _repo._ro_execute(
+            "SELECT prediccion, confianza, timestamp, detalles_json FROM viva_real "
+            "WHERE LOWER(bot_name)='loki' ORDER BY timestamp DESC LIMIT 1"
+        ).fetchone()
+    except Exception:
+        fila = None
+    if fila is not None:
+        razon = None
+        try:
+            dets = json.loads(fila[3] or "{}")
+            razon = dets.get("reasoning")
+        except Exception:
+            razon = None
+        loki_ultimo = {
+            "prediccion": fila[0],
+            "confianza": fila[1],
+            "timestamp": fila[2],
+            "reasoning": razon,
+        }
+    loki_estado = {
+        "identidad": "Resonancia del Ciclo Mayor (rotación de Carrington)",
+        "rotacion_carrington_d": LokiAgent.ROTACION_CARRINGTON_D,
+        "resonancia": resonancia,
+        # Posteriores MEDIDOS (deploy/medir_loki_teoria.py, 1994-2025);
+        # no son parámetros de diseño: cambiarlos exige volver a medir.
+        "posterior": {
+            "base": LokiAgent.P_BASE,
+            "resonancia": LokiAgent.P_RESONANCIA,
+            "colapso": LokiAgent.P_COLAPSO,
+            "nota": "P(tormenta Kp>=5) medida 1994-2025; colapso con n=13 días: frágil",
+        },
+        "ultimo": loki_ultimo,
+    }
+
     sch = ov.get("fantasma", {}).get("schumann_hz")
     return _jsonable(
         {
             "phi": PHI,
+            # La frecuencia NO se mide desde el 2026-10-09; lo que existe es
+            # la actividad. El campo se conserva por compatibilidad de los
+            # consumidores, y delta sale solo con Hz real.
             "schumann_ref_hz": 7.83,
             "schumann_hz": sch,
             "schumann_delta": (float(sch) - 7.83) if sch is not None else None,
+            "schumann_activity": ov.get("fantasma", {}).get("schumann_activity"),
+            "loki": loki_estado,
             "fantasma": ov.get("fantasma"),
             "muro": ov.get("muro"),
             "ciclo": ov.get("ciclo"),
@@ -1431,7 +1486,12 @@ def unificado() -> Dict[str, Any]:
             },
             "cimatica_total": cim_n,
             "engine_in_prod": False,
-            "caption": "Loki is the Campo Unificado native bot (third act). Not on prod systemd. Beta-1 draws figuritas; Beta-2 looks up the mixed library (no live training).",
+            "caption": (
+                "Loki detecta la resonancia entre el sistema menor (tormentas "
+                "geomagnéticas) y el ciclo mayor (rotación de Carrington, 27,275 d): "
+                "ganancia 3,4× medida 1994-2025. φ queda como constante de la "
+                "teoría, no como dato vivo."
+            ),
         }
     )
 

@@ -2,6 +2,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HealthStrip } from "@/components/HealthStrip";
 import { PresentacionTab } from "@/components/tabs/PresentacionTab";
 import { PrincipalTab } from "@/components/tabs/PrincipalTab";
+import { LokiTab } from "@/components/tabs/LokiTab";
+import { PadreJuezTab } from "@/components/tabs/PadreJuezTab";
 import { PrediccionesTab } from "@/components/tabs/PrediccionesTab";
 import { MapasTab } from "@/components/tabs/MapasTab";
 import { SenalesTab } from "@/components/tabs/SenalesTab";
@@ -63,6 +65,8 @@ export default function App() {
           <TabsList>
             <TabsTrigger value="presentacion">Presentación</TabsTrigger>
             <TabsTrigger value="principal">Principal</TabsTrigger>
+            <TabsTrigger value="loki">Loki</TabsTrigger>
+            <TabsTrigger value="padrejuez">Padre+Juez</TabsTrigger>
             <TabsTrigger value="predicciones">Predicciones</TabsTrigger>
             <TabsTrigger value="mapas">Mapas</TabsTrigger>
             <TabsTrigger value="senales">Señales</TabsTrigger>
@@ -71,6 +75,12 @@ export default function App() {
           </TabsList>
           <TabsContent value="presentacion"><PresentacionTab /></TabsContent>
           <TabsContent value="principal"><PrincipalTab /></TabsContent>
+          {/* Montadas el 2026-10-12: LokiTab existía desde el origen y
+              PadreJuezTab recibió los 4 KPI del nulo del lag el 10-08 —
+              ambas INVISIBLES porque App.tsx nunca las montó (la trampa
+              del 25-sep, otra vez). */}
+          <TabsContent value="loki"><LokiTab /></TabsContent>
+          <TabsContent value="padrejuez"><PadreJuezTab /></TabsContent>
           <TabsContent value="predicciones"><PrediccionesTab /></TabsContent>
           <TabsContent value="mapas"><MapasTab /></TabsContent>
           <TabsContent value="senales"><SenalesTab /></TabsContent>
