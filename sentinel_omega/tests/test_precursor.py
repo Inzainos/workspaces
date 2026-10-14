@@ -902,7 +902,7 @@ class TestPrecursorScanner:
         assert len(pert) == 0
 
     def test_perturbacion_moderada_con_extremos(self):
-        """Bz_min −7 con Kp_max 3,5: perturbación (no tormenta) con la puerta de extremos."""
+        """Bz_min −7 con Kp_max 3,5 al FINAL de la ventana: perturbación AHORA."""
         scanner = self._make_scanner()
         serie_bz = [-1.0] * 20 + [-6.0, -7.0]  # media ~−1,8: la puerta vieja no la veía
         omni_df = pd.DataFrame({
@@ -914,7 +914,32 @@ class TestPrecursorScanner:
         detections = scanner.scan(alfa1, beta1, {})
         pert = [d for d in detections if d.tipo == PrecursorType.PERTURBACION_GEOMAGNETICA]
         assert len(pert) == 1
-        assert pert[0].values["bz_min_nT"] == -7.0
+        assert pert[0].values["bz_min_2h_nT"] == -7.0
+
+    def test_perturbacion_no_arrastro_la_grieta_de_ayer(self):
+        """EL contrato de los cortes de 2 h (2026-10-13, orden del operador).
+
+        La grieta ocurrió hace 22 h y AHORA está calmo: la ventana de 24 h
+        mantenía la detección encendida todo el día (1 hora de disturbio
+        real → 93 % de los ciclos, medido el 13-oct). Con cortes de 2 h la
+        perturbación fluctúa: se apaga cuando el disturbio se apaga.
+        La TORMENTA sí conserva la memoria de 24 h — son semánticas
+        distintas: la perturbación es un estado de horas.
+        """
+        scanner = self._make_scanner()
+        serie_bz = [-8.0, -7.0] + [-1.0] * 120  # grieta hace 22 h, calma ahora
+        omni_df = pd.DataFrame({
+            "bz_gsm": serie_bz,
+            "plasma_speed": [400.0] * len(serie_bz),
+        })
+        alfa1 = {"omni_dataframe": omni_df}
+        beta1 = {"kp_series": np.array([4.0] + [1.0] * 119)}  # Kp alto hace 2 h, no ahora
+        detections = scanner.scan(alfa1, beta1, {})
+        pert = [d for d in detections if d.tipo == PrecursorType.PERTURBACION_GEOMAGNETICA]
+        assert len(pert) == 0, "la grieta de ayer NO es perturbación ACTIVA"
+        # y el mínimo de 24 h sigue viéndola — para TORMENTA (si cumpliera
+        # su compuerta Kp), que es la memoria de días que sí debe existir
+        assert float(np.min(serie_bz)) == -8.0
 
     def test_multiple_simultaneous_precursors(self):
         scanner = self._make_scanner()

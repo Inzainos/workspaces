@@ -87,6 +87,7 @@ class PrecursorScanner:
         bz = 0.0
         viento = 0.0
         bz_min = None
+        bz_min_2h = None
         viento_max = None
         if omni_df is not None:
             if "bz_gsm" in omni_df.columns:
@@ -95,6 +96,14 @@ class PrecursorScanner:
                 if _sbz.size:
                     bz = float(_sbz.mean())
                     bz_min = float(_sbz.min())
+                    # Corte de 2 h (2026-10-13, orden del operador): la
+                    # PERTURBACIÓN juzga el AHORA, no el día arrastrado.
+                    # Con la ventana de 24 h, UNA hora de grieta compraba
+                    # 24 de bandera (medido el mismo día: 1 hora real de
+                    # disturbio → 93 % de los ciclos con detección). Con
+                    # cortes de 2 h: 4,64 %/h en 30 años, rachas medianas
+                    # de 3 h — fluctúa con el disturbio real.
+                    bz_min_2h = float(_sbz[-120:].min())
             if "plasma_speed" in omni_df.columns:
                 _sv = np.asarray(omni_df["plasma_speed"], dtype=float)
                 _sv = _sv[np.isfinite(_sv)]
@@ -104,12 +113,14 @@ class PrecursorScanner:
 
         kp_mean = 0.0
         kp_max = None
+        kp_max_2h = None
         if kp_series is not None and len(kp_series) > 0:
             _skp = np.asarray(kp_series, dtype=float)
             _skp = _skp[np.isfinite(_skp)]
             if _skp.size:
                 kp_mean = float(_skp.mean())
                 kp_max = float(_skp.max())
+                kp_max_2h = float(_skp[-120:].max())
 
         detections.extend(self._scan_blue_jets(atmospheric))
         detections.extend(self._scan_sprites_rojos(atmospheric))
@@ -122,7 +133,7 @@ class PrecursorScanner:
         detections.extend(self._scan_volcanic(air_quality, seismic_mags, atmospheric))
         detections.extend(self._scan_schumann(schumann_hz, schumann_pct))
         detections.extend(self._scan_tormenta_solar(bz_min, kp_max, viento_max))
-        detections.extend(self._scan_perturbacion_geomagnetica(bz_min, kp_max))
+        detections.extend(self._scan_perturbacion_geomagnetica(bz_min_2h, kp_max_2h))
         detections.extend(self._scan_tsunami(seismic_mags, delta_data, beta1_data))
         detections.extend(self._scan_hurricanes(hurricane_data or {}))
         detections.extend(self._scan_financial_correlation(financial_data or {}))
@@ -423,26 +434,34 @@ class PrecursorScanner:
         )]
 
     def _scan_perturbacion_geomagnetica(
-        self, bz_min: Optional[float], kp_max: Optional[float],
+        self, bz_min_2h: Optional[float], kp_max_2h: Optional[float],
     ) -> List[PrecursorDetection]:
-        """Perturbación moderada: misma recalibración a extremos (2026-10-12).
+        """Perturbación moderada AHORA: cortes de 2 h (2026-10-13, operador).
 
-        Media vieja (bz ≤ −5 ∧ kp ≥ 3): también 0 disparos vivos. Con
-        extremos, la coincidencia por hora en 30 años es 9.233 h (3,2 %).
-        Si la ventana cumple la compuerta de TORMENTA (bz_min ≤ −10 ∧
-        kp_max ≥ 5), esto calla: es tormenta, no perturbación.
+        La versión de ventana de 24 h convertía UNA hora de grieta en 24 de
+        bandera: medido ese día, 1 hora real de disturbio (Bz mín −8,7) dejó
+        la detección en el 93 % de los ciclos y el muro en breach sostenido.
+        Con cortes de 2 h, contra 30 años de la tabla horaria:
+        **4,64 %/h** de tasa, rachas medianas de 3 h (p90: 7 h, máx 33 h) —
+        fluctúa con el disturbio real: ese mismo día habría estado activa
+        5 h en 3 episodios (01-03, 11-13, 15-16).
+
+        La TORMENTA conserva su ventana de 24 h a propósito: una tormenta
+        ES un estado de días; una perturbación es un estado de horas.
+        Si el corte de 2 h cumple la compuerta de tormenta, esto calla.
+        Sin dato (None) no dispara: ausencia no es cero (regla 7).
         """
-        if bz_min is None or kp_max is None:
+        if bz_min_2h is None or kp_max_2h is None:
             return []
-        if bz_min > -5.0 or kp_max < 3.0:
+        if bz_min_2h > -5.0 or kp_max_2h < 3.0:
             return []
-        if bz_min <= -10.0 and kp_max >= 5.0:
+        if bz_min_2h <= -10.0 and kp_max_2h >= 5.0:
             return []
 
         confidence = 0.55
-        if abs(bz_min) > 7:
+        if abs(bz_min_2h) > 7:
             confidence += 0.1
-        if kp_max >= 4:
+        if kp_max_2h >= 4:
             confidence += 0.1
 
         return [PrecursorDetection(
@@ -453,8 +472,8 @@ class PrecursorScanner:
             lon=None,
             confidence=min(confidence, 0.95),
             values={
-                "bz_min_nT": bz_min,
-                "kp_max": kp_max,
+                "bz_min_2h_nT": bz_min_2h,
+                "kp_max_2h": kp_max_2h,
             },
         )]
 
