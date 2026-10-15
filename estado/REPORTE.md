@@ -1,6 +1,6 @@
 # 🌍 Sentinel Omega — Estado del Sistema
 
-**Generado:** 2026-10-14 22:19 UTC (16:19 UTC-6)
+**Generado:** 2026-10-15 00:51 UTC (18:51 UTC-6)
 
 > **¿Qué es esto?** Sentinel Omega es un sistema que vigila señales físicas del planeta (campo magnético solar, resonancia de la Tierra, actividad sísmica, gases volcánicos, incluso el nerviosismo de los mercados) buscando *precursores*: condiciones que en 32 años de historia han aparecido **antes** de eventos naturales fuertes. No predice con certeza — reconoce parecidos con el pasado y avisa cuando el presente se parece demasiado a los días previos a un evento. Este reporte es una foto de lo que el sistema ve ahora.
 
@@ -10,11 +10,11 @@
 
 | Métrica | Valor | Lectura |
 |---|---|---|
-| Fantasma | 🟡 **12.5** `▓▓░░░░░░░░` | actividad moderada |
-| Consenso de los 6 bots | NEUTRAL (20%) | evaluando |
-| Muro de los 5 frentes | 2/5 activos | estable — sin convergencia crítica |
-| Precursores detectados | 2 | ["SEISMIC_CLUSTER", "TSUNAMI"] |
-| Hora de la medición | 2026-10-14 22:19 UTC | |
+| Fantasma | 🟡 **12.0** `▓▓░░░░░░░░` | actividad moderada |
+| Consenso de los 6 bots | NO_SIGNAL (0%) | evaluando |
+| Muro de los 5 frentes | 3/5 activos | 🚨 **BREACH** — varios dominios alterados a la vez |
+| Precursores detectados | 3 | ["SILENT_TRIGGER", "SEISMIC_CLUSTER", "TSUNAMI"] |
+| Hora de la medición | 2026-10-15 00:51 UTC | |
 
 ## 🚦 Semáforo — reglas fijas del nivel de riesgo
 
@@ -23,12 +23,12 @@
 | Nivel | Regla (se evalúa de abajo hacia arriba) | Acción interna |
 |---|---|---|
 | 🔴 ROJO | Muro ≥3/5 (breach) **y** Fantasma ≥30 | Escalamiento interno |
-| 🟠 NARANJA | Muro ≥3/5 (breach) **o** (Fantasma ≥15 y firma ≥85%) | Revisión manual inmediata |
-| ➡ 🟡 AMARILLO | Fantasma 5–15 **o** firma ≥80% | Vigilancia reforzada |
+| ➡ 🟠 NARANJA | Muro ≥3/5 (breach) **o** (Fantasma ≥15 y firma ≥85%) | Revisión manual inmediata |
+| 🟡 AMARILLO | Fantasma 5–15 **o** firma ≥80% | Vigilancia reforzada |
 | 🔵 AZUL | Fantasma <5 con detecciones o muros 1–2 | Seguimiento ampliado |
 | 🟢 VERDE | Fantasma <5, muro 0/5, sin firmas ≥80% | Monitoreo base |
 
-**Nivel del corte: 🟡 AMARILLO** — con Fantasma 12.5, muro 2/5 y firma máxima 90%.
+**Nivel del corte: 🟠 NARANJA** — con Fantasma 12.0, muro 3/5 (breach) y firma máxima 89%.
 
 ## 📈 Operación reciente — hoy vs cómo solía estar
 
@@ -36,9 +36,9 @@
 
 | Métrica | Actual | Prom. 7d | Prom. 30d | Máx 30d | Percentil |
 |---|---:|---:|---:|---:|---:|
-| Fantasma | 12.5 | 14.9 | 16.4 | 61.2 | P56 |
-| Muro de los 5 | 2 | 2.2 | 2.0 | 3 | P77 |
-| Silent Trigger | inactivo | 48% ciclos | 50% ciclos | — | — |
+| Fantasma | 12.0 | 14.9 | 16.4 | 61.2 | P54 |
+| Muro de los 5 | 3 | 2.2 | 2.1 | 3 | P100 |
+| Silent Trigger | activo | 48% ciclos | 51% ciclos | — | — |
 | Asertividad viva | 28% | 100% | — | — | — |
 
 *Los promedios de 30 días combinan los ciclos conservados y el resumen diario del barrido (lo compactado no se pierde, se resume).*
@@ -49,7 +49,7 @@
 
 | Métrica | Valor |
 |---|---:|
-| Ventanas evaluadas (viva) | 8829 |
+| Ventanas evaluadas (viva) | 8845 |
 | Ventanas con evento real (tasa base) | 96% |
 | Asertividad del sistema | 28% |
 | **Ganancia** (sistema ÷ tasa base) | 0.30× |
@@ -66,11 +66,11 @@
 |---|---|---|
 | Tsunami / Maremoto | 70% `▓▓▓▓░` | regional |
 | Enjambre Sísmico Local | 95% `▓▓▓▓▓` | regional |
+| Patrón Silent Trigger (Calma) | 80% `▓▓▓▓░` | global |
 | Tsunami / Maremoto | 70% `▓▓▓▓░` | regional |
 | Enjambre Sísmico Local | 95% `▓▓▓▓▓` | regional |
 | Tsunami / Maremoto | 70% `▓▓▓▓░` | regional |
 | Enjambre Sísmico Local | 95% `▓▓▓▓▓` | regional |
-| Patrón Silent Trigger (Calma) | 90% `▓▓▓▓░` | global |
 | Tsunami / Maremoto | 70% `▓▓▓▓░` | regional |
 
 ## 🎯 Firma Match — la memoria reconoce el momento actual
@@ -79,11 +79,11 @@
 
 | Parecido | Precedió a | Zona (nodo de la malla) | Veces vista | Suele avisar con |
 |---|---|---|---|---|
-| **90%** `▓▓▓▓▓` | SISMO_M6 | **Grecia Helénica** (37.0, 22.0) · nodo 35 | 24 | ~9 días |
-| **88%** `▓▓▓▓░` | SISMO_M5 | **Baja California Sur** (24.1, -110.0) · nodo 14 | 295 | ~8 días |
-| **88%** `▓▓▓▓░` | SISMO_M6 | **Baja California Sur** (24.1, -110.0) · nodo 14 | 22 | ~9 días |
+| **89%** `▓▓▓▓░` | SISMO_M5 | **Baja California Sur** (24.1, -110.0) · nodo 14 | 295 | ~8 días |
+| **89%** `▓▓▓▓░` | SISMO_M6 | **Grecia Helénica** (37.0, 22.0) · nodo 35 | 24 | ~9 días |
+| **89%** `▓▓▓▓░` | SISMO_M6 | **Baja California Sur** (24.1, -110.0) · nodo 14 | 22 | ~9 días |
 | **87%** `▓▓▓▓░` | SISMO_M7 | **Ghost Guerrero Deep** (17.0, -100.0) · nodo 87 | 5 | ~12 días |
-| **86%** `▓▓▓▓░` | SISMO_M5 | **Ghost Caribbean-PR** (19.5, -65.0) · nodo 65 | 128 | ~8 días |
+| **85%** `▓▓▓▓░` | SISMO_M5 | **Ghost Caribbean-PR** (19.5, -65.0) · nodo 65 | 128 | ~8 días |
 
 *SISMO_M5 / M6 / M7 = sismo de magnitud 5+, 6+ o 7+. La zona es el punto de la malla global UVG-125 donde se aprendió la firma (nombre y coordenadas lat, lon); los nodos 'Ghost' son puntos teóricos de la malla sin estación física encima.*
 
@@ -126,8 +126,8 @@
 | delta | 380 | 15,727 | 0.30 `▓░░░░░` |
 | omega | 360 | 179,235 | 0.30 `▓░░░░░` |
 | padre | 2,249 | 49,001 | 0.30 `▓░░░░░` |
-| alfa2 | _en vivo · 19 ciclos · 2620 pases observados_ | — | 0.30 `▓░░░░░` |
-| jupiter | _en vivo · atención colectiva_ | — | 0.32 `▓░░░░░` |
+| alfa2 | _en vivo · 20 ciclos · 2759 pases observados_ | — | 0.30 `▓░░░░░` |
+| jupiter | _en vivo · atención colectiva_ | — | 0.33 `▓░░░░░` |
 
 ## 🎯 Asertividad — ¿qué tan bien le ha ido?
 
@@ -136,7 +136,7 @@
 | Métrica | Valor |
 |---|---|
 | **Histórica** (examen sobre 32 años) | 98.7% |
-| **Viva** (operación real, auditada) | 28.4% |
+| **Viva** (operación real, auditada) | 28.3% |
 | **Últimos 7 días** (viva) | 100.0% |
 
 ### Por bot
@@ -145,12 +145,12 @@
 |---|---|---|---|---|
 | alfa1 | 98.9% | 28.1% | 100.0% | 0.30 |
 | alfa2 | 5.0% | 5.0% | 100.0% | 0.30 |
-| beta1 | 98.8% | 46.4% | 100.0% | 0.30 |
-| beta2 | 96.9% | 17.4% | 100.0% | 0.30 |
+| beta1 | 98.8% | 46.3% | 100.0% | 0.30 |
+| beta2 | 96.9% | 17.3% | 100.0% | 0.30 |
 | delta | 96.2% | 20.0% | 100.0% | 0.30 |
-| jupiter | 15.8% | 15.8% | 100.0% | 0.32 |
-| omega | 99.6% | 34.2% | 100.0% | 0.30 |
-| padre | 98.2% | 35.6% | 100.0% | 0.30 |
+| jupiter | 16.2% | 16.2% | 100.0% | 0.33 |
+| omega | 99.6% | 34.1% | 100.0% | 0.30 |
+| padre | 98.2% | 35.5% | 100.0% | 0.30 |
 
 *La histórica mide reconocimiento de patrones dentro de los mismos datos con que se entrenó (por eso es tan alta). La viva es la prueba honesta: predicciones a futuro calificadas contra la realidad.*
 
@@ -307,10 +307,10 @@
 > El Juez es un auditor que **nunca predice**: solo registra cada aviso de los bots y, cuando se cierra la ventana de 72 horas, lo compara contra el catálogo sísmico real (USGS) y dicta sentencia. Dejar pasar un evento castiga 10 veces más que una falsa alarma — preferimos un sistema nervioso a uno dormido. **Solo la fase viva puntúa asertividad**; el resto es bitácora de entrenamiento y no se mezcla.
 
 **Operación viva (lo que cuenta):**
-- ACIERTO — avisó y el evento ocurrió: 2,504
-- FALLO — el evento ocurrió sin aviso (lo más castigado): 6,323
+- ACIERTO — avisó y el evento ocurrió: 2,506
+- FALLO — el evento ocurrió sin aviso (lo más castigado): 6,337
 - FALSO POSITIVO — avisó y no pasó nada: 2
-- PENDIENTE — ventana de 72h aún abierta: 840
+- PENDIENTE — ventana de 72h aún abierta: 832
 
 **Bitácora de entrenamiento (reconocimiento/backtest/trasfondo — no puntúa):**
 - ACIERTO: 216,646
@@ -323,10 +323,10 @@
 | Campo | Este corte | Corte anterior | Cambio |
 |---|---|---|---|
 | Versión del modelo | 2.5.0-shadow-node | — | — |
-| Asertividad viva | 28.4% | — | — |
-| Aciertos / Fallos (vivos) | 2,504 / 6,323 | — | — aciertos |
-| Pendientes de auditoría | 840 | — | — |
-| Pesos de bots | alfa1 0.30, alfa2 0.30, beta1 0.30, beta2 0.30, delta 0.30, jupiter 0.32, omega 0.30, padre 0.30 | — | primera bitácora |
+| Asertividad viva | 28.3% | — | — |
+| Aciertos / Fallos (vivos) | 2,506 / 6,337 | — | — aciertos |
+| Pendientes de auditoría | 832 | — | — |
+| Pesos de bots | alfa1 0.30, alfa2 0.30, beta1 0.30, beta2 0.30, delta 0.30, jupiter 0.33, omega 0.30, padre 0.30 | — | primera bitácora |
 
 
 ## ✅ Aciertos y Predicciones Correctas
@@ -337,12 +337,12 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Aciertos** | 11873 |
-| **Fallos** | 44166 |
+| **Aciertos** | 11875 |
+| **Fallos** | 44172 |
 | **Falsos positivos** | 1 |
 | **Tasa de acierto** | 21.2% `▓▓▓░░░░░░░░░` |
-| **Predicciones auditadas** | 56040 |
-| **Pendientes (ventana abierta)** | 840 |
+| **Predicciones auditadas** | 56048 |
+| **Pendientes (ventana abierta)** | 832 |
 
 _La tasa se calcula solo sobre lo que el Juez ya resolvió; las pendientes aún no se sabe si aciertan._
 
@@ -350,14 +350,14 @@ _La tasa se calcula solo sobre lo que el Juez ya resolvió; las pendientes aún 
 
 | Bot | Aciertos | Tasa | Confianza | Ventana declarada (h) |
 |-----|----------|------|-----------|------------------------|
-| omega | 3513/9255 | 38% `▓▓▓░░░░░` | 0.39 | 6.3 |
-| beta1 | 2811/9255 | 30% `▓▓░░░░░░` | 0.31 | 6.3 |
-| padre | 2000/9255 | 22% `▓▓░░░░░░` | 0.22 | 6.3 |
-| alfa1 | 1815/9255 | 20% `▓▓░░░░░░` | 0.20 | 6.3 |
-| delta | 1106/9255 | 12% `▓░░░░░░░` | 0.13 | 6.3 |
-| beta2 | 548/9255 | 6% `░░░░░░░░` | 0.06 | 6.3 |
-| jupiter | 61/255 | 24% `▓▓░░░░░░` | 0.26 | 227.5 |
-| alfa2 | 19/255 | 7% `▓░░░░░░░` | 0.30 | 227.5 |
+| omega | 3513/9256 | 38% `▓▓▓░░░░░` | 0.39 | 6.3 |
+| beta1 | 2811/9256 | 30% `▓▓░░░░░░` | 0.31 | 6.3 |
+| padre | 2000/9256 | 22% `▓▓░░░░░░` | 0.22 | 6.3 |
+| alfa1 | 1815/9256 | 20% `▓▓░░░░░░` | 0.20 | 6.3 |
+| delta | 1106/9256 | 12% `▓░░░░░░░` | 0.13 | 6.3 |
+| beta2 | 548/9256 | 6% `░░░░░░░░` | 0.06 | 6.3 |
+| jupiter | 63/256 | 25% `▓▓░░░░░░` | 0.26 | 227.4 |
+| alfa2 | 19/256 | 7% `▓░░░░░░░` | 0.30 | 227.4 |
 
 ### 🎯 Eventos Predichos Correctamente (más recientes primero)
 
@@ -451,9 +451,9 @@ _La tasa se calcula solo sobre lo que el Juez ya resolvió; las pendientes aún 
 - **Confianza:** 100.0% `▓▓▓▓▓▓▓▓▓▓`
 - **Fase:** trasfondo
 
-_... y 11863 aciertos más en los últimos 30 días_
+_... y 11865 aciertos más en los últimos 30 días_
 
 ---
 *Todos los datos provienen de fuentes públicas oficiales (NOAA, USGS, NASA, ESA). Nada aquí es un pronóstico oficial de protección civil: es investigación de precursores en curso.*
 
-*Ciclos totales: 268 · Sentinel Omega · Fractal Core Research*
+*Ciclos totales: 269 · Sentinel Omega · Fractal Core Research*
