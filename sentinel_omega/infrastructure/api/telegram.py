@@ -94,9 +94,19 @@ _TAGS_TELEGRAM = (
     "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
     "a", "code", "pre", "span", "tg-spoiler", "tg-emoji", "blockquote",
 )
+_TAGS_TELEGRAM = (
+    "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+    "a", "code", "pre", "span", "tg-spoiler", "tg-emoji", "blockquote",
+)
 _TAG_PERMITIDA = re.compile(
+    # El grupo (1) es el NOMBRE: lo usa `_balancear_tags` para emparejar.
+    # Medido el 2026-10-17: el recorte a 3990 puede partir un <i> de su
+    # </i>, y Telegram rechaza el mensaje ENTERO por una etiqueta abierta
+    # («can't find end tag») — 36 avisos reenviados SIN FORMATO (con los
+    # <b></b> crudos) en una semana. El saneo ahora GARANTIZA lo parseable.
     r"</?(?:" + "|".join(_TAGS_TELEGRAM) + r")(?:\s[^<>]*)?>", re.IGNORECASE
 )
+_TAG_NOMBRE = re.compile(r"</?(b|strong|i|em|u|ins|s|strike|del|a|code|pre|span|tg-spoiler|tg-emoji|blockquote)(?:\s[^<>]*)?>", re.IGNORECASE)
 _SALTO_HTML = re.compile(r"<br\s*/?>", re.IGNORECASE)
 # `&` suelta también rompe el parser; una entidad válida no.
 _ENTIDAD = re.compile(r"&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#\d{1,7}|#[xX][0-9a-fA-F]{1,6});")
@@ -133,6 +143,42 @@ def sanear_html_telegram(texto: str) -> str:
         else:
             salida.append(c)
         i += 1
+    return _balancear_tags("".join(salida))
+
+
+def _balancear_tags(texto: str) -> str:
+    """Cierra lo abierto, tira lo huérfano: lo que sale, Telegram lo parsea.
+
+    El recorte de 3990 caracteres puede caer entre un ``<i>`` y su ``</i>``
+    (digestos largos con 93 avisos agrupados): el mensaje sale con una
+    etiqueta abierta y Telegram lo rechaza ENTERO («can't find end tag
+    corresponding to start tag "i"», 36 veces medido entre el 10 y el 17
+    de octubre). Aquí se cierra lo que quedó abierto, en orden y al final;
+    los ``</x>`` sin apertura se tiran; y un cierre que salta anidación
+    cierra primero los intermedios (Telegram exige anidado correcto).
+    """
+    pila: List[str] = []
+    salida: List[str] = []
+    ultimo = 0
+    for m in _TAG_NOMBRE.finditer(texto):
+        salida.append(texto[ultimo:m.start()])
+        token = m.group(0)
+        nombre = m.group(1).lower()
+        if token.startswith("</"):
+            if nombre in pila:
+                while pila and pila[-1] != nombre:
+                    salida.append(f"</{pila.pop()}>")
+                pila.pop()
+                salida.append(token)
+            # </x> huérfano: fuera — mejor perder un cierre suelto
+            # que perder el mensaje entero
+        else:
+            pila.append(nombre)
+            salida.append(token)
+        ultimo = m.end()
+    salida.append(texto[ultimo:])
+    while pila:
+        salida.append(f"</{pila.pop()}>")
     return "".join(salida)
 
 

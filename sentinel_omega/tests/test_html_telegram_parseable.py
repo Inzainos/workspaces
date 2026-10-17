@@ -167,3 +167,36 @@ def test_las_alertas_inmediatas_con_texto_sucio():
 
     # `plain` es «sin marcado»: las entidades vuelven a ser caracteres
     assert "bz<0 & viento>600" in casos[0].plain
+
+
+def test_el_recorte_que_partia_un_tag_se_cierra_solo():
+    """El caso medido del 2026-10-17: 36 avisos reenviados SIN FORMATO.
+
+    El recorte a 3990 podía caer entre un `<i>` y su `</i>` (digestos con
+    93 avisos): Telegram rechazaba el mensaje ENTERO («can't find end tag
+    corresponding to start tag "i"») y el reenvío sin formato mostraba los
+    `<b></b>` crudos en el chat. El saneo ahora GARANTIZA lo parseable:
+    cierra lo abierto, al final y en orden.
+    """
+    truncado = "<b>REPORTE</b>\n<i>2026-10-17 06:00"  # el recorte comió el </i>
+    out = sanear_html_telegram(truncado)
+    exigir_parseable(out)
+    # emparejado: cada apertura tiene su cierre
+    assert out.count("<i>") == out.count("</i>")
+    assert out.count("<b>") == out.count("</b>")
+
+
+def test_el_cierre_huerfano_se_tira_no_el_mensaje():
+    """Un `</b>` sin apertura venía de recortes que dejaban la cola suelta."""
+    out = sanear_html_telegram("texto </b> suelto")
+    exigir_parseable(out)
+    assert "</b>" not in out
+    assert "texto" in out and "suelto" in out
+
+
+def test_el_cierre_que_salta_nidacion_cierra_los_intermedios():
+    """Telegram exige anidado correcto: `<b><i>x</b>` no parsea. El saneo
+    cierra el `<i>` antes del `</b>` — reordenar, no inventar."""
+    out = sanear_html_telegram("<b><i>marcado</b>")
+    exigir_parseable(out)
+    assert out == "<b><i>marcado</i></b>"
