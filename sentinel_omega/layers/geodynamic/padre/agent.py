@@ -40,7 +40,6 @@ class GeodynamicPadre(PadreAgent):
         "alfa1": 30, "beta1": 30,
         "alfa2": 14, "beta2": 14,
         "delta": 10,
-        "jupiter": 5,
         "omega": 30,
         "loki": 0,  # Loki is not trained on history; it computes probability
     }
@@ -51,7 +50,6 @@ class GeodynamicPadre(PadreAgent):
         "beta1": "schumann_cymatics",
         "beta2": "schumann_cymatics",
         "delta": "financial_sentiment",
-        "jupiter": "space_weather",
         "omega": "cosmic_correlation",
         "loki": "unified_field",  # Act 3 - standalone
     }
@@ -142,7 +140,7 @@ class GeodynamicPadre(PadreAgent):
                 validated[junior_name] = junior
         if "delta" in by_name:
             validated["delta"] = by_name["delta"]
-        for extra in ("jupiter", "omega", "loki"):
+        for extra in ("omega", "loki"):
             if extra in by_name:
                 validated[extra] = by_name[extra]
         return validated
