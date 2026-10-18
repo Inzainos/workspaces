@@ -1,3 +1,30 @@
+## 2026-10-17 — Vigía de Sentinel Omega (sidecar Elixir)
+
+Instalado `sidecar/vigia_sentinel/` — dead man's switch que detecta si el
+ciclo del launcher se paró y avisa por Telegram (bot compartido
+`@SismoBio_Bot`).
+
+- Lee `data/sentinel_omega.log` (líneas `Starting cycle #N`) cada 5 min; la
+  DB (`sentinel.db`) no deja huella de ciclo (`insert_ciclo` cae en un
+  try/rescue silencioso), así que el log es el latido real.
+- Alerta si el último ciclo supera 15 min (3 ciclos perdidos; umbral medido:
+  cadencia 300 s), re-alerta cada 2 h y avisa la recuperación.
+- Detección de pausa del sistema: si el propio vigía estuvo congelado
+  (WSL2/Windows), no alerta.
+- Runtime aparte (BEAM): si el ecosistema Python falla, el aviso lo emite
+  otro mundo. Cero dependencias Hex.
+- El token nunca vive en el estado del GenServer (se lee de entorno vía
+  systemd `EnvironmentFile`; los crash dumps no lo exponen).
+- `mix test` no arranca el watcher (`:ignore`): evitaría envíos reales de
+  Telegram durante pruebas.
+- Verificado: 13/13 tests; envío real de Telegram (HTTP 200); simulación de
+  caída en dry-run contra copia del log (alerta correcta, sin envío real);
+  `vigia-sentinel.service` (systemd --user, enabled).
+- Es un sidecar: no toca el launcher, ni la DB, ni el unit de Sentinel.
+- Operación: `sidecar/README.md`.
+
+---
+
 ## 2026-09-28 (madrugada) — Pendientes cerrados: el tapón por una bandera, el bot mal nombrado y 959 filas de relleno
 
 Los créditos de la pandilla se agotaron (vuelven en siete días) y el operador pidió

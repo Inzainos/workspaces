@@ -77,7 +77,7 @@ class Alfa1Agent(BaseAgent):
 
     def ingest(self, data: Dict[str, Any]) -> None:
         df = data.get("omni_dataframe")
-        if df is None:
+        if omni_df is None:
             self.logger.warning("No OMNI data provided")
             return
 
