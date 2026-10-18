@@ -1,5 +1,46 @@
 # Changelog — Sentinel Omega
 
+## [Unreleased] - 2026-10-18 — jupiter retirado; xray a alfa2 y trends a delta; el ALERT perpetuo de alfa2 muerto; rebuild-watch arreglado
+
+Dos rebuilds completos en el día (180 y 177 min, ambos exit 0): el primero
+restituyó la memoria amnésica (**11.375 exigibles**, 0 desde el 10-09) y
+confirmó que la muerte silenciosa de las tres corridas anteriores era la
+**sesión que los lanzaba** (`nohup` no sobrevive al shell); la receta
+`systemd-run --user` de la bitácora 10-09 §3 quedó probada punta a punta.
+El segundo reconstruyó la memoria con el reparto nuevo de features.
+
+- **`jupiter` RETIRADO** (operador, sobre medición): 0 alertas en 168 ciclos
+  vivos (11 watch, todos por Kp≥5 — redundantes con alfa1/beta1/scanner),
+  0 exigibles de 27 consolidadas, AUC no medible (53 muestras), 3 de 6
+  rasgos duplicando el dominio de alfa1. Peso y firmas borrados de la DB;
+  juez fase viva conservada (append-only). 20+ archivos y 55 referencias
+  de tests limpiados.
+- **xray → alfa2**: GOES es un satélite; el bot satelital decide con
+  umbrales físicos NOAA (M ≥1e-5 W/m² → WATCH; X ≥1e-4 → ALERT). 37 de 43
+  firmas nuevas llevan `xray_mean`/`xray_max` (las 6 sin xray son eventos
+  previos al nacimiento de `tbl_xray_vivo` — NULL, regla 2).
+- **trends → delta**: su dominio documentado («Bolsa + cripto + tendencias»)
+  por fin lleva `trends_mean` en `BOT_FEATURES`. Aún 0/718 firmas lo traen
+  (el fuente de eventos del backcast termina 2026-01-13; trends nace
+  2026-06-24) — materializará con eventos vivos.
+- **El ALERT perpetuo de alfa2 (168/168 ciclos) murió**: baseline JSON de
+  septiembre con `thermal_std=0` sombreando el cálculo fresco de la DB +
+  centinela `_z` de exactamente 3.0 (el umbral de ALERT) + z-score sobre
+  distribución inflada en ceros dando "3σ" a la p99 rutinaria de la propia
+  zona. Ahora el térmico es **PRECEDENTE por zona** (valor > su propio máx
+  histórico: ≥1 → WATCH, ≥3 simultáneas → ALERT). Replay de las horas
+  vivas: 13 NEUTRAL / 1 WATCH / 1 ALERT (antes: 15/15 ALERT).
+- **rebuild-watch**: tres bugs corregidos (auto-empareje que quemaba el tope
+  de 4 h en cada disparo esperándose a sí mismo; glob de logs rancio; elif
+  que probaba el exit de TAIL y llamaba "FALLO" a las 935 líneas rutinarias
+  `JUEZ: FALLO` del entrenamiento). Verificado E2E con rebuild falso
+  (`systemd-run sleep`): detecta, vigila, recupera. Sin rebuild: 1 s (antes 4 h).
+- **El vigía (sidecar Elixir) pasó su primera prueba real**: activo durante
+  las 8.3 h de launcher parado que duró el rebuild #2, alertando por
+  Telegram, y detectó la recuperación en el primer chequeo tras el arranque.
+- Validación: suite **1.333 · 2 rojos deliberados · 7 saltos**; bitácora
+  `estado/BITACORA_2026-10-18.md` con las nueve secciones del día.
+
 ## [Unreleased] - 2026-10-13 (mañana) — Migración a python 3.14 ejecutada
 
 La actualización de Windows movió el python del sistema 3.13→3.14 y
