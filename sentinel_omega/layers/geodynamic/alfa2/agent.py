@@ -127,7 +127,13 @@ class Alfa2Agent(BaseAgent):
         # que analyze() caía siempre en NO_SIGNAL 0.0 pese a haber cobertura
         # real en la DB. Los tests no lo detectaban porque llaman a ingest()
         # con la clave del agente, nunca con la del pipeline.
-        self._cobertura_data = data.get("zone_coverages", {})
+        # Se mantiene el fallback a "cobertura_satelital" porque los tests
+        # (test_pipeline.py:595) y el pipeline legacy usan esa clave.
+        self._cobertura_data = (
+            data.get("zone_coverages")
+            or data.get("cobertura_satelital")
+            or {}
+        )
         n = len(self._cobertura_data)
         self.logger.info(f"Alfa-2 (Satellite) ingested: {n} zone records")
 
