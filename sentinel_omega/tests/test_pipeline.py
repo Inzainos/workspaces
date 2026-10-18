@@ -528,10 +528,38 @@ class TestESASentinelConnector:
 
 
 class TestAlfa2Agent:
-    """Alfa-2 canonical behavior: historical baseline inference only (no live learning)."""
+    """Alfa-2: precedente térmico por zona + GOES X-ray (2026-10-18).
 
-    def _ingest_zone(self, agent, zona, *, total_passes, clear_passes, thermal_anomalies=0.0):
-        agent.ingest({
+    El z-score sobre el térmico murió medido: la distribución histórica es
+    inflada en ceros (nodo040: 58% de horas con anomalía, p99 viva == p99
+    histórica) y el agente emitía ALERT en 168/168 ciclos vivos. La señal
+    térmica ahora es PRECEDENTE (valor > máx del PROPIO histórico de la zona)
+    y la solar es la clase física NOAA de fulguración (M/X).
+    """
+
+    # Baseline inyectado: los tests NO deben depender de la DB de producción.
+    BASE = {
+        "guerrero_gap": {"obs_mean": 2.5, "obs_std": 1.2,
+                         "clarity_mean": 0.33, "clarity_std": 0.06,
+                         "thermal_max": 3.0},
+        "oaxaca_costa": {"obs_mean": 2.0, "obs_std": 1.0,
+                         "clarity_mean": 0.28, "clarity_std": 0.05,
+                         "thermal_max": 4.0},
+        "chiapas": {"obs_mean": 2.2, "obs_std": 1.1,
+                    "clarity_mean": 0.24, "clarity_std": 0.05,
+                    "thermal_max": 2.0},
+    }
+
+    def _agente(self):
+        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+
+        agent = Alfa2Agent()
+        agent._baseline_stats = {z: dict(s) for z, s in self.BASE.items()}
+        return agent
+
+    def _ingest_zone(self, agent, zona, *, total_passes, clear_passes,
+                     thermal_anomalies=0.0, xray_df=None):
+        data = {
             "cobertura_satelital": {
                 zona: {
                     "total_passes": total_passes,
@@ -539,44 +567,88 @@ class TestAlfa2Agent:
                     "thermal_anomalies": thermal_anomalies,
                 }
             }
-        })
+        }
+        if xray_df is not None:
+            data["xray_df"] = xray_df
+        agent.ingest(data)
 
-    def test_analyze_with_coverage(self):
-        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
+    def test_termico_rutinario_es_neutral(self):
+        """La hora con anomalías DENTRO del rango histórico es calma, no ALERT.
 
-        agent = Alfa2Agent()
+        Regresión del bug 168/168: el valor rutinario (1 < máx 3) cruzaba el
+        umbral 3σ por la desviación histórica en cero y alfa2 vivía en ALERT.
+        """
+        agent = self._agente()
         self._ingest_zone(
-            agent, "guerrero_gap", total_passes=60, clear_passes=20, thermal_anomalies=0.0
+            agent, "guerrero_gap", total_passes=60, clear_passes=20,
+            thermal_anomalies=1.0,
         )
         signal = agent.analyze()
-        assert signal.signal_type in SignalType
-        assert signal.confidence >= 0.0
-        assert signal.data.get("baseline_source") == "historical_precomputed"
-        assert signal.data.get("zones_analyzed") == 1
+        assert signal.signal_type == SignalType.NEUTRAL
+        assert signal.data["n_sin_precedente"] == 0
+        assert signal.data["zonas_analizadas"] == 1
 
-    def test_analyze_with_thermal_alert(self):
-        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
-
-        agent = Alfa2Agent()
-        # thermal_std in baseline is ~0 → z_thermal blows up with small counts
+    def test_termico_sin_precedente_es_watch(self):
+        agent = self._agente()
         self._ingest_zone(
-            agent, "guerrero_gap", total_passes=58, clear_passes=20, thermal_anomalies=5.0
+            agent, "guerrero_gap", total_passes=58, clear_passes=20,
+            thermal_anomalies=5.0,  # > máx histórico 3
+        )
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.WATCH
+        assert signal.data["n_sin_precedente"] == 1
+
+    def test_tres_zonas_sin_precedente_es_alert(self):
+        """Coherencia espacial: varias zonas sin precedente a la vez = ALERT."""
+        agent = self._agente()
+        agent.ingest({
+            "cobertura_satelital": {
+                "guerrero_gap": {"total_passes": 58, "clear_passes": 20, "thermal_anomalies": 5.0},
+                "oaxaca_costa": {"total_passes": 55, "clear_passes": 18, "thermal_anomalies": 6.0},
+                "chiapas": {"total_passes": 50, "clear_passes": 15, "thermal_anomalies": 3.0},
+            }
+        })
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.ALERT
+        assert signal.data["n_sin_precedente"] == 3
+
+    def test_fulguracion_clase_M_es_watch(self):
+        """GOES X-ray (ex-jupiter): M-class (≥1e-5 W/m²) = WATCH."""
+        import pandas as pd
+
+        agent = self._agente()
+        self._ingest_zone(
+            agent, "guerrero_gap", total_passes=60, clear_passes=20,
+            thermal_anomalies=1.0,
+            xray_df=pd.DataFrame({"flux": [3e-5, 2e-5]}),
+        )
+        signal = agent.analyze()
+        assert signal.signal_type == SignalType.WATCH
+        assert "M-class" in signal.reasoning
+
+    def test_fulguracion_clase_X_es_alert(self):
+        """GOES X-ray (ex-jupiter): X-class (≥1e-4 W/m²) = ALERT."""
+        import pandas as pd
+
+        agent = self._agente()
+        self._ingest_zone(
+            agent, "guerrero_gap", total_passes=60, clear_passes=20,
+            thermal_anomalies=1.0,
+            xray_df=pd.DataFrame({"flux": [2e-4]}),
         )
         signal = agent.analyze()
         assert signal.signal_type == SignalType.ALERT
-        assert signal.confidence > 0.5
-        assert signal.data["max_sigma"] >= 3.0
+        assert "X-class" in signal.reasoning
 
-    def test_moderate_anomaly_is_watch(self):
-        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
-
-        agent = Alfa2Agent()
+    def test_xray_sin_dato_no_dispara(self):
+        """Sin xray_df (None) la señal no se inventa una fulguración (regla 7)."""
+        agent = self._agente()
         self._ingest_zone(
-            agent, "guerrero_gap", total_passes=80, clear_passes=70, thermal_anomalies=0.02
+            agent, "guerrero_gap", total_passes=60, clear_passes=20,
+            thermal_anomalies=1.0, xray_df=None,
         )
         signal = agent.analyze()
-        assert signal.signal_type in (SignalType.WATCH, SignalType.ALERT)
-        assert signal.data["max_sigma"] >= 1.0
+        assert signal.signal_type == SignalType.NEUTRAL
 
     def test_analyze_no_data(self):
         from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
@@ -648,16 +720,17 @@ class TestAlfa2Agent:
         assert "guerrero_gap" in agent._baseline_stats or "mexico" in agent._baseline_stats
 
     def test_near_baseline_is_neutral(self):
-        from sentinel_omega.layers.geodynamic.alfa2.agent import Alfa2Agent
-
-        agent = Alfa2Agent()
-        # Near historical obs_mean (~58.5) with low thermal → NEUTRAL/low sigma
+        """Cobertura normal y térmico en cero: sin precedente, sin fulguración
+        → NEUTRAL. (Antes: 'max_sigma < 1.0' — el z-score que murió con el
+        bug 168/168.)"""
+        agent = self._agente()
         self._ingest_zone(
             agent, "guerrero_gap", total_passes=90, clear_passes=30, thermal_anomalies=0.0
         )
         signal = agent.analyze()
         assert signal.signal_type == SignalType.NEUTRAL
-        assert signal.data["max_sigma"] < 1.0
+        assert signal.data["n_sin_precedente"] == 0
+        assert signal.data["xray_max"] is None
 
 
 

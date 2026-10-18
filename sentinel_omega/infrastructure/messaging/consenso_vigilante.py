@@ -197,7 +197,6 @@ NOMBRES_ONNX = {
     "delta": "delta_financial_lstm.onnx",
     "omega": "omega_espacial_rf.onnx",
     "loki": "loki_unificado_rf.onnx",
-    "jupiter": "jupiter_attention_rf.onnx",
 }
 
 MODELS_DIR = Path(__file__).resolve().parents[2] / "models"

@@ -192,15 +192,6 @@ class AllONNXModelsConfig:
         enabled=False      # constante — ver «MODELOS APAGADOS POR CONSTANTES»
     ))
 
-    jupiter: ONNXModelConfig = field(default_factory=lambda: ONNXModelConfig(
-        name="jupiter",
-        model_path="jupiter_attention_rf.onnx",
-        input_features=8,
-        output_shape=(1, 2),
-        confidence_threshold=0.55,
-        enabled=True
-    ))
-
     runtime: ONNXRuntimeConfig = field(default_factory=ONNXRuntimeConfig)
 
     def get_enabled_models(self) -> Dict[str, ONNXModelConfig]:
@@ -210,7 +201,6 @@ class AllONNXModelsConfig:
             "beta1": self.beta1,
             "beta2": self.beta2,
             "loki": self.loki,
-            "jupiter": self.jupiter,
             "delta": self.delta,
             "omega": self.omega,
         }

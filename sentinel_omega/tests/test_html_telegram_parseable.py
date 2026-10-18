@@ -135,7 +135,7 @@ def test_el_digesto_de_modelos_con_el_metadato_real(tmp_path, monkeypatch):
         "bots": {
             "alfa2": {"n": 0, "reentrenado": False,
                       "source": "NO se reentrena: 38 muestras reales (<50) y sin prior"},
-            "jupiter": {"n": 53, "habilidad": {
+            "delta": {"n": 53, "habilidad": {
                 "auc": None, "aprueba": False,
                 "motivo": "solo 53 muestras; <60 el AUC es ruido"}},
             "beta1": {"n": 7000, "habilidad": {

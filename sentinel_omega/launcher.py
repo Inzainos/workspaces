@@ -929,8 +929,8 @@ def _build_live_features(runner, conn=None) -> dict:
         if key in delta and delta[key] is not None:
             features[key] = float(delta[key])
 
-    # ── loki y jupiter: rayos X y tendencias ──────────────────────
-    # Sus modelos se entrenan con xray_mean/xray_max/trends_mean --- están en
+    # ── rayos X y tendencias (2026-10-18: alimentan a alfa2 y delta) ──
+    # xray_mean/xray_max alimentan a ALFA2 y trends_mean a DELTA --- están en
     # las firmas, con variación real --- y el ciclo no los producía, así que al
     # inferir llegaban como 0.0: para el modelo, «el Sol no emite rayos X».
     # Las dos tablas se llenan cada hora y estaban ahí sin usarse.

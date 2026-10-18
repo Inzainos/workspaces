@@ -45,7 +45,7 @@ GLOSSARY: List[Tuple[Tuple[str, ...], str]] = [
      "Si la actividad se altera JUNTO con otras senales, el sistema marca precursor. "
      "Una desviacion sola no basta."),
     (("padre", "consenso", "bot"),
-     "Hay varios modelos (alfa1, alfa2, beta1, beta2, delta, omega, jupiter) y el Padre "
+     "Hay varios modelos (alfa1, alfa2, beta1, beta2, delta, omega, loki) y el Padre "
      "valida en cruz. El Padre es quien puede avisar. Cada bot tiene peso y asertividad "
      "viva (aciertos contra fallos del Juez, fase viva)."),
     (("juez", "asertividad", "acierto", "fallo", "viva"),

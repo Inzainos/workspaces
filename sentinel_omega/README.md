@@ -44,12 +44,15 @@ Vivos:
 - `alfa1` (espacio: Bz, Kp, viento, protones) — votante
 - `beta1` (cimático: espectro Kp + actividad Schumann) — votante
 - `beta2` (atmosférico: presión, química, niebla) — votante
-- `delta` (financiero: VIX, FGI, BTC — contexto, techo WATCH) — votante
+- `delta` (financiero: VIX, FGI, BTC, tendencias — contexto, techo WATCH) — votante
 - `omega` (ritmo cósmico: luna, Schumann-actividad, acoplamientos) — votante
-- `jupiter` (atención colectiva: Kp, rayos X, Trends) — votante
 - `padre` (consenso jerárquico con corroboración por familia) — árbitro
-- `alfa2` (satélites ESA) — notificador (no vota)
+- `alfa2` (satélites: térmico por precedente + rayos X GOES clase M/X) — votante
 - `loki` (fractal-bayesiano) — **rutas muertas por construcción** (documentado)
+
+Retirados (medido, no especulado):
+- `jupiter` (atención colectiva) — **fuera desde 2026-10-18**: 0 alertas en
+  168 ciclos, 0 exigibles, kp redundante con alfa1; xray→alfa2, trends→delta
 
 Muertos (medidos y documentados, no tocados):
 - Frecuencia Schumann: retirada, NULL en toda la cadena

@@ -530,13 +530,10 @@ def evaluar_sesgo_aprendizaje(
 
     # Incluye 'omega' en el dominio de evaluación aunque no esté en BOT_FEATURES
     # (Omega usa None como keys → vector completo)
-    # También incluye jupiter y loki que no están en BOT_FEATURES
     bots_evaluar = dict(BOT_FEATURES)
     if "omega" not in bots_evaluar:
         bots_evaluar["omega"] = None  # None → vector completo (igual que el Padre)
-    # Jupiter y Loki: evaluar con vector completo (None keys = vector completo)
-    if "jupiter" not in bots_evaluar:
-        bots_evaluar["jupiter"] = None
+    # Loki: evaluar con vector completo (None keys = vector completo)
     if "loki" not in bots_evaluar:
         bots_evaluar["loki"] = None
 

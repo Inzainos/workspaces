@@ -1631,7 +1631,7 @@ def test_guardado_con_schumann_none_queda_null(tmp_path):
 def test_onnx_schumann_ausente_sigue_en_cero():
     """El vector ONNX no cambia: Schumann ausente = 0.0, nunca NaN."""
     from sentinel_omega.core.features_onnx import FEATURE_ORDER, vector_para
-    for bot in ("beta1", "omega", "loki", "jupiter"):
+    for bot in ("beta1", "omega", "loki"):
         for rasgos in ({"kp_mean": 3.0},
                        {"kp_mean": 3.0, "schumann_mean": None, "schumann_std": float("nan")}):
             vec = vector_para(bot, rasgos)

@@ -1148,13 +1148,12 @@ def layers() -> Dict[str, Any]:
         return {"present": False, "reason": str(exc), "agents": [], "padre": None}
     DISPLAY = {
         "alfa1": "Alfa-1 (Bz/OMNI)",
-        "alfa2": "Alfa-2 (Satellite)",
+        "alfa2": "Alfa-2 (Satellite+GOES)",
         "beta1": "Beta-1 (Kp/FFT+Schumann)",
         "beta2": "Beta-2 (Atmospheric)",
-        "delta": "Delta (Financial)",
+        "delta": "Delta (Financial+Trends)",
         "omega": "Omega (Dual-Ask)",
         "loki": "Loki (Campo Unificado)",
-        "jupiter": "Jupiter",
         "padre": "Padre",
     }
     agents = []
@@ -1329,7 +1328,7 @@ def telemetry() -> Dict[str, Any]:
             "tbl_clima_espacial_raw.kp_max", clima_ts, clima_n,
             "TBL_PRECURSORES_COSMICOS.kp",
             {"kp_precursor": p0.get("kp"), "kp_max_raw": cl0.get("kp_max")},
-            "GFZ se consulta en el loop (jupiter) pero no tiene tabla propia: no hay reloj GFZ persistido. El Kp que usa Sentinel está en precursores.",
+            "GFZ se consulta en el loop (Kp histórico) pero no tiene tabla propia: no hay reloj GFZ persistido. El Kp que usa Sentinel está en precursores.",
         ),
         _src(
             "schumann", "Schumann (Tomsk / vivo)",
@@ -1345,11 +1344,14 @@ def telemetry() -> Dict[str, Any]:
         ),
         _src(
             "goes", "GOES X-ray (NOAA SWPC)",
-            None, None, 0,
-            "sin tabla persistida",
+            "tbl_xray_vivo",
+            _scalar("SELECT MAX(timestamp_blk) FROM tbl_xray_vivo", default=None) if _table_exists("tbl_xray_vivo") else None,
+            int(_scalar("SELECT COUNT(*) FROM tbl_xray_vivo", default=0) or 0) if _table_exists("tbl_xray_vivo") else 0,
+            "tbl_xray_vivo.flux_max",
             None,
-            "El conector fetch_goes_xray existe (loop Júpiter) pero no hay tabla SQLite de X-ray. Sin marca de tiempo.",
-            inbound_status="sin marca de tiempo",
+            "Fulguraciones GOES persistidas por hora desde 2026-09-17. Desde el "
+            "2026-10-18 alimentan a ALFA-2 (era de jupiter): umbral físico NOAA "
+            "--- M-class (≥1e-5 W/m²) WATCH, X-class (≥1e-4) ALERT.",
         ),
         _src(
             "lod", "LOD / cinemática terrestre",
@@ -1366,12 +1368,15 @@ def telemetry() -> Dict[str, Any]:
             "Así entra la cobertura satelital; Alfa-2 usa coverage_score / anomalías térmicas, no el JPEG crudo.",
         ),
         _src(
-            "jupiter_trends", "Júpiter / Google Trends / GFZ",
-            None, None, 0,
-            "TBL_PESOS_BOTS + viva_real (bot jupiter)",
+            "jupiter_trends", "Google Trends (interés solar)",
+            "tbl_trends_vivo",
+            _scalar("SELECT MAX(fecha) FROM tbl_trends_vivo", default=None) if _table_exists("tbl_trends_vivo") else None,
+            int(_scalar("SELECT COUNT(*) FROM tbl_trends_vivo", default=0) or 0) if _table_exists("tbl_trends_vivo") else 0,
+            "tbl_trends_vivo.solar_interest",
             None,
-            "Trends y GFZ viven en memoria del ciclo (TTL 6 h para Trends). No hay tabla de crudo: sin marca de tiempo. El bot jupiter sí tiene peso/asertividad.",
-            inbound_status="sin marca de tiempo",
+            "Interés de búsqueda solar persistido por día. Desde el 2026-10-18 "
+            "alimenta a DELTA (era de jupiter) como «tendencias», su dominio "
+            "documentado: Bolsa + cripto + tendencias.",
         ),
         _src(
             "delta", "Delta / acoplamiento geo-financiero",

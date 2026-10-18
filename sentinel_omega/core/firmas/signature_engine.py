@@ -85,10 +85,11 @@ FEATURE_KEYS = [
     "satellite_revisita_dias",
     # delta_enriched: acoplamiento geofísico-financiero (live-only, desde tbl_delta_cross)
     "delta_cross_coupling", "delta_geo_coupling", "delta_schumann_coupling",
-    # jupiter: fulguraciones solares (GOES) + atención colectiva (Google Trends).
-    # Antes se bajaban cada ciclo y se descartaban sin tabla ni escritor, así
-    # que Júpiter no tenía de dónde formar su vector. Ahora se persisten en
-    # tbl_xray_vivo / tbl_trends_vivo y se acumulan desde el ciclo operativo.
+    # rayos X GOES (alfa2 desde 2026-10-18) + tendencias (delta desde
+    # 2026-10-18) — eran de jupiter. Antes se bajaban cada ciclo y se
+    # descartaban sin tabla ni escritor, así que no había de dónde formar su
+    # vector. Ahora se persisten en tbl_xray_vivo / tbl_trends_vivo y se
+    # acumulan desde el ciclo operativo.
     "xray_mean", "xray_max", "trends_mean",
     # beta2: marea terrestre por efemérides (2026-09-27).
     #
@@ -569,7 +570,7 @@ def extraer_features_ventana(
     except Exception:
         pass  # tabla no existe aún → features de alfa2 ausentes (NaN en vector)
 
-    # ── jupiter: rayos X GOES + atención colectiva ───────────────────────────
+    # ── rayos X GOES (alfa2) + tendencias (delta) ───────────────────────────
     try:
         xr = conn.execute(
             "SELECT flux_max, flux_avg FROM tbl_xray_vivo "
@@ -583,7 +584,7 @@ def extraer_features_ventana(
         if picos:
             features["xray_max"] = float(max(picos))
     except Exception:
-        pass  # sin tabla aún → jupiter arranca con el vector incompleto
+        pass  # sin tabla aún → alfa2 arranca con el vector incompleto
 
     try:
         tr = conn.execute(

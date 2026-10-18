@@ -152,7 +152,7 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     # vector de delta no puede incorporarlo: entrenaría con la columna en
     # cero y en vivo recibiría 14,87.
     "delta": ["btc_volatilidad", "btc_vol_max", "btc_ret_win", "btc_vol_72h",
-              "vix"],
+              "vix", "trends_mean"],
     # alfa2 entrena desde la tabla tbl_cobertura_satelital, que se acumula en
     # ciclos en vivo (no hay backcast de 14 años de cobertura ESA Sentinel).
     # Las firmas de alfa2 empiezan en 0 y crecen con el tiempo operativo.
@@ -161,8 +161,13 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     # sobre las 3.231 filas del histórico: 153 valores distintos y 100 % de
     # cobertura, más varianza que cualquier otra columna de la capa. Detalle y
     # por qué no es redundante con el puntaje, en `FEATURE_KEYS`.
+    # 2026-10-18 (operador): el X-ray de GOES pasa de jupiter a alfa2 — el bot
+    # satelital se queda con la señal satelital. tbl_xray_vivo se acumula en
+    # el ciclo (desde 2026-09-17), así que las firmas con ventana anterior
+    # llevan NULL en xray_* (regla 2: faltante = NULL, no cero).
     "alfa2": ["satellite_coverage_score", "satellite_thermal_anomalies",
-              "satellite_clear_passes", "satellite_revisita_dias"],
+              "satellite_clear_passes", "satellite_revisita_dias",
+              "xray_mean", "xray_max"],
     # Omega — el ritmo cósmico: fase lunar/sicigias + resonancia Schumann +
     # envolvente solar + acoplamiento Schumann↔mercado. Todo mapeado de la
     # telemetría existente (sin fetchers nuevos). Sus correlaciones viven en
@@ -185,20 +190,16 @@ BOT_FEATURES: Dict[str, Optional[List[str]]] = {
     # no había BTC y donde loki no tiene ni una firma.
     "loki": ["bz_mean", "viento_avg", "schumann_mean", "vix", "lod",
              "kp_mean", "fase_lunar", "bz_min", "btc_volatilidad"],
-    # Júpiter — atención colectiva: Kp + fulguración solar + interés de
-    # búsqueda + Schumann. Seis de sus ocho nombres NO existían en
-    # FEATURE_KEYS ("latest_kp", "storm_active", "attention_z",
-    # "corr_significant") o no tenían tabla de origen ("xray_mean",
-    # "trends_mean"): el filtro `if k in feats` los tiraba y a Júpiter le
-    # quedaban 2 de 8, por debajo de su mínimo de 3. Se saltaba con un
-    # `continue` mudo y consumió dos rebuilds de ~16 h sin una sola firma.
-    # Ahora: nombres canónicos, y xray/trends ya se persisten en el ciclo
-    # (tbl_xray_vivo / tbl_trends_vivo). Los conceptos sin serie propia
-    # --- "storm_active" y "corr_significant" son derivados booleanos del
-    # agente vivo, no magnitudes medidas --- se representan por el Kp y el
-    # acoplamiento que sí existen.
-    "jupiter": ["kp_mean", "kp_max", "kp_max_72h", "schumann_mean",
-                "schumann_std", "xray_mean", "xray_max", "trends_mean"],
+    # Júpiter fue RETIRADO el 2026-10-18 (decisión del operador, sobre
+    # medición): 0 alertas en 168 ciclos vivos (157 neutral + 11 watch, todos
+    # por Kp≥5 — redundante con alfa1/beta1/scanner), 0 exigibles de 27
+    # consolidadas, AUC no medible (53 muestras < 60) y 3 de sus 6 rasgos
+    # duplicaban el dominio de alfa1. Sus señales únicas se redistribuyeron:
+    # xray_* -> alfa2 (el bot satelital), trends_mean -> delta (su dominio
+    # documentado: «Bolsa + cripto + tendencias»). tbl_xray_vivo y
+    # tbl_trends_vivo SIGUEN acumulándose en el ciclo — son la fuente de
+    # esas features.
+
     # `None` = vector COMPLETO (42 claves), y tiene un coste medido que hay que
     # conocer antes de tocarlo (2026-10-09, bitácora del 8-oct §11.2-11.3).
     #
@@ -310,7 +311,7 @@ def _auditar_features_declaradas(bots_activos) -> None:
 # que la capa satelital aporte más señales. Decisión del operador (2026-09-22):
 # preferible que no tenga memoria a que tenga memoria que no empareja.
 MIN_FEATURES_POR_BOT = {"alfa1": 4, "beta1": 4, "beta2": 4, "delta": 4,
-                        "alfa2": 4, "omega": 4, "loki": 4, "jupiter": 4,
+                        "alfa2": 4, "omega": 4, "loki": 4,
                         "padre": 5}
 
 # El contrato se verifica al importar: si alguien baja un mínimo por debajo del
@@ -329,14 +330,12 @@ if _bajo_el_suelo:
 # beta2 = desde 2012 (catálogo volcánico NASA MSVOLSO2L4)
 # delta = desde 2016 (BTC/cripto/tendencias)
 # loki = desde 2014 (necesita datos financieros VIX + espacio + Schumann)
-# jupiter = desde 2014 (necesita datos financieros + Kp histórico)
 # alfa2 NO tiene ventana de arranque fija: entrena solo desde la primera fila
 # de tbl_cobertura_satelital (datos en vivo). El backcast no la incluye.
 BOT_DESDE: Dict[str, str] = {
     "beta2": "2012-01-01",
     "delta": "2016-01-01",
     "loki": "2014-01-01",
-    "jupiter": "2014-01-01",
 }
 
 # Bots que solo entrenan desde datos EN VIVO (no tienen backcast en la DB).

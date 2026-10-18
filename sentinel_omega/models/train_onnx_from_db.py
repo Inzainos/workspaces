@@ -988,7 +988,6 @@ def train_export(
         "delta": "delta_financial_lstm.onnx",
         "omega": "omega_espacial_rf.onnx",
         "loki": "loki_unificado_rf.onnx",
-        "jupiter": "jupiter_attention_rf.onnx",
     }
     out = MODELS_DIR / names[bot]
     with open(out, "wb") as f:

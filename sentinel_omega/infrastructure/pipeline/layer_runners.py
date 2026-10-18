@@ -35,7 +35,6 @@ from sentinel_omega.layers.geodynamic.beta1.agent import Beta1Agent
 from sentinel_omega.layers.geodynamic.beta2.agent import Beta2Agent
 from sentinel_omega.layers.geodynamic.delta.agent import DeltaAgent
 from sentinel_omega.layers.geodynamic.padre.agent import GeodynamicPadre
-from sentinel_omega.layers.geodynamic.jupiter.agent import JupiterAgent
 from sentinel_omega.layers.geodynamic.omega.agent import OmegaAgent
 from sentinel_omega.layers.geodynamic.loki.agent import LokiAgent
 
@@ -197,7 +196,6 @@ class GeodynamicLayerRunner:
         self.beta1 = Beta1Agent()
         self.beta2 = Beta2Agent()
         self.delta = DeltaAgent()
-        self.jupiter = JupiterAgent()
         self.omega = OmegaAgent()
         self.loki = LokiAgent()  # Act 3 - Unified Field
         self.padre = GeodynamicPadre()
@@ -274,13 +272,15 @@ class GeodynamicLayerRunner:
         except Exception as exc:  # noqa: BLE001 — fail-soft por diseño
             logger.warning("Persistencia sísmica falló (no bloqueante): %s", exc)
 
-    def _persist_jupiter(self, jupiter_data: Dict) -> None:
-        """Persiste rayos X GOES e interés de búsqueda para Júpiter.
+    def _persist_xray_trends(self, atencion_data: Dict) -> None:
+        """Persiste rayos X GOES e interés de búsqueda (2026-10-18: jupiter
+        retirado; los datos SIGUEN — alimentan la memoria de alfa2 (xray_*)
+        y delta (trends_mean) vía tbl_xray_vivo / tbl_trends_vivo).
 
         Hasta ahora `fetch_jupiter_data()` bajaba `xray_df` y `trends_df` cada
         ciclo, se los pasaba al agente y los tiraba: no había escritor ni
-        tabla. Por eso Júpiter no tenía histórico que entrenar --- el mismo
-        patrón del catálogo sísmico, no un problema de nombres de features.
+        tabla. Por eso no había histórico que entrenar --- el mismo patrón
+        del catálogo sísmico, no un problema de nombres de features.
 
         Dos tablas propias, INSERT OR IGNORE por marca temporal. Fail-soft:
         que falle el guardado no debe tumbar el ciclo.
@@ -299,7 +299,7 @@ class GeodynamicLayerRunner:
                 " fecha TEXT PRIMARY KEY, solar_interest REAL)"
             )
 
-            xray = jupiter_data.get("xray_df")
+            xray = atencion_data.get("xray_df")
             if xray is not None and len(xray) and "time_tag" in xray.columns:
                 x = xray.copy()
                 x["blk"] = x["time_tag"].dt.strftime("%Y-%m-%d %H:00")
@@ -313,7 +313,7 @@ class GeodynamicLayerRunner:
                      if pd.notna(r["max"]) and pd.notna(r["mean"])],
                 )
 
-            trends = jupiter_data.get("trends_df")
+            trends = atencion_data.get("trends_df")
             if (trends is not None and len(trends)
                     and {"date", "solar_interest"}.issubset(trends.columns)):
                 repo._executemany(
@@ -325,7 +325,7 @@ class GeodynamicLayerRunner:
                      if pd.notna(r["solar_interest"])],
                 )
         except Exception as e:  # noqa: BLE001
-            logger.warning("No se pudo persistir la telemetría de Júpiter: %s", e)
+            logger.warning("No se pudo persistir la telemetría GOES/Trends: %s", e)
 
     def _persist_clima(self, alfa1_data: Dict) -> None:
         """Persiste la telemetría horaria en tbl_clima_espacial_raw.
@@ -807,6 +807,16 @@ class GeodynamicLayerRunner:
             self.delta.analyze(),
         ]
 
+        # GOES X-ray + Google Trends (2026-10-18: jupiter RETIRADO; el fetch
+        # y la persistencia SIGUEN porque alimentan la memoria de alfa2
+        # (xray_*) y delta (trends_mean) vía tbl_xray_vivo / tbl_trends_vivo).
+        atencion_data: Optional[Dict] = None
+        try:
+            atencion_data = self.pipeline.fetch_jupiter_data()
+            self._persist_xray_trends(atencion_data)
+        except Exception as e:
+            logger.warning(f"GOES/Trends layer failed (non-blocking): {e}")
+
         if self._enable_satellite and self.alfa2:
             try:
                 # Cobertura GLOBAL por rotación (2026-10-02). Antes se pedían
@@ -828,6 +838,10 @@ class GeodynamicLayerRunner:
                 logger.info("Alfa-2: midiendo %d zonas de la rotación: %s",
                             len(zonas), ", ".join(zonas))
                 alfa2_data = self.pipeline.fetch_alfa2_data(zones=zonas)
+                # El X-ray de GOES viaja con alfa2 (decisión del operador,
+                # 2026-10-18): el bot satelital decide con la señal satelital.
+                if isinstance(alfa2_data, dict) and atencion_data:
+                    alfa2_data["xray_df"] = atencion_data.get("xray_df")
                 if conn_z is not None:
                     from sentinel_omega.infrastructure.api.esa_sentinel import (
                         get_seismic_zone_bboxes,
@@ -847,14 +861,6 @@ class GeodynamicLayerRunner:
                 self._last_alfa2_data = None
         else:
             self._last_alfa2_data = None
-
-        try:
-            jupiter_data = self.pipeline.fetch_jupiter_data()
-            self.jupiter.ingest(jupiter_data)
-            signals.append(self.jupiter.analyze())
-            self._persist_jupiter(jupiter_data)
-        except Exception as e:
-            logger.warning(f"Júpiter layer failed (non-blocking): {e}")
 
         # Omega: telemetría espacial + pregunta a Beta-1
         try:

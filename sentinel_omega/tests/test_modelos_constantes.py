@@ -50,7 +50,7 @@ DESVIACION_MINIMA = 0.02
 # Lo que se midió el 2026-10-07, para que el umbral de arriba no sea numerología.
 DESVIACIONES_MEDIDAS = {
     "beta2": 0.0026, "loki": 0.0100, "omega": 0.0149, "beta1": 0.0153,
-    "delta": 0.0183, "jupiter": 0.0199, "alfa1": 0.1663,
+    "delta": 0.0183, "alfa1": 0.1663,
 }
 
 CONSTANTES_APAGADOS = {"beta1", "beta2", "delta", "loki", "omega"}
@@ -73,23 +73,10 @@ def test_alfa1_sigue_encendido_porque_SI_varia():
         f"({DESVIACIONES_MEDIDAS['alfa1']} contra <0,02 de los demás)")
 
 
-def test_jupiter_sigue_encendido_porque_FRENA_su_regla():
-    """Contraintuitivo y medido: el modelo de jupiter dice NEUTRAL 22/22 y su
-    REGLA dice watch en el 22 % de los ciclos. Apagarlo SUBIRÍA su alarma del
-    0 % al 22 %. No todo modelo apagado mejora el sistema."""
-    assert onnx_config.jupiter.enabled is True, (
-        "se apagó jupiter: su modelo estaba frenando los watches de su regla, "
-        "así que apagarlo sube su alarma del 0 % al 22 %")
-
-
-# `jupiter` mide 0,0199 --- por debajo del corte --- y sigue ENCENDIDO a
-# propósito: su modelo dice NEUTRAL 22/22 y está frenando los watches de su
-# propia regla, así que apagarlo SUBIRÍA su alarma del 0 % al 22 %. Es la única
-# excepción y va con su medición al lado, para que no se pueda añadir otra sin
-# una.
-EXCEPCIONES_MEDIDAS = {
-    "jupiter": "su NEUTRAL frena los watches de su propia regla (0 % contra 22 %)",
-}
+# (2026-10-18: test_jupiter_sigue_encendido_porque_FRENA_su_regla fue
+# retirado junto con el bot: medía que su modelo NEUTRAL frenaba los watches
+# de su regla, 0 % contra 22 %. El bot ya no existe.)
+EXCEPCIONES_MEDIDAS = {}
 
 
 def test_el_corte_y_lo_apagado_se_derivan_de_la_misma_medicion():

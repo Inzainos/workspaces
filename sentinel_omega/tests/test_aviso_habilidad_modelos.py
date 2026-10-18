@@ -125,9 +125,12 @@ def test_falta_de_MUESTRA_no_se_confunde_con_metadato_VIEJO(models_dir):
     de ser viejos.
 
     Falta de evidencia no es una mala nota, y tampoco es un metadato rancio.
+
+    2026-10-18: jupiter fue retirado (xray→alfa2, trends→delta); el caso
+    «habilidad con motivo» ahora se ejemplifica con delta, que es un bot vivo.
     """
     _onnx(models_dir, "alfa2")
-    _onnx(models_dir, "jupiter")
+    _onnx(models_dir, "delta")
     _onnx(models_dir, "loki")        # este no aparece en el metadato
     (models_dir / "models_meta.json").write_text(json.dumps({
         "retrained_at": "2026-10-08T19:30:19Z",
@@ -136,8 +139,8 @@ def test_falta_de_MUESTRA_no_se_confunde_con_metadato_VIEJO(models_dir):
             # NO en `habilidad`, que no existe. Leer solo `motivo` la perdía.
             "alfa2": {"n": 0, "reentrenado": False,
                       "source": "NO se reentrena: 38 muestras reales (<50)"},
-            # jupiter: entró en `medir_habilidad` y salió sin AUC con motivo.
-            "jupiter": {"n": 53, "source": "db-only (53)", "habilidad": {
+            # delta: entró en `medir_habilidad` y salió sin AUC con motivo.
+            "delta": {"n": 53, "source": "db-only (53)", "habilidad": {
                 "auc": None, "aprueba": False,
                 "motivo": "solo 53 muestras; por debajo de 60 el AUC es ruido"}},
         },
@@ -152,7 +155,7 @@ def test_falta_de_MUESTRA_no_se_confunde_con_metadato_VIEJO(models_dir):
     # loki no está en el metadato: ESE sí es el caso «anterior a la compuerta»
     assert "LOKI" in txt and "habilidad sin medir" in txt
     assert "anteriores a la compuerta" in txt
-    # …y no se le echa a alfa2/jupiter, que pasaron por ella
+    # …y no se le echa a alfa2/delta, que pasaron por ella
     assert "falta de evidencia, no una mala nota" in txt
 
 

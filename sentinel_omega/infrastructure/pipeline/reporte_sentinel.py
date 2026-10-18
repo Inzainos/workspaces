@@ -286,7 +286,7 @@ def reporte_general(db_path: str) -> Dict:
     # Se conserva el orden canonico, pero cualquier bot que aparezca en los
     # datos y no este en la lista se anade al final en vez de desaparecer: asi
     # un bot nuevo no se puede volver a caer en silencio.
-    ORDEN_CANONICO = ["alfa1", "alfa2", "beta1", "beta2", "delta", "jupiter",
+    ORDEN_CANONICO = ["alfa1", "alfa2", "beta1", "beta2", "delta",
                       "loki", "padre", "omega"]
     en_datos = {str(r["bot_name"]) for r in firma_rows if r["bot_name"]}
     extra = sorted(en_datos - set(ORDEN_CANONICO))

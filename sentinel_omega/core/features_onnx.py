@@ -36,7 +36,6 @@ BOT_DIMS: Dict[str, int] = {
     "delta": 16,
     "omega": 12,
     "loki": 8,
-    "jupiter": 8,
 }
 
 # Las repeticiones son RELLENO deliberado, no descuidos: alfa2 tiene 3 rasgos
@@ -158,10 +157,8 @@ FEATURE_ORDER: Dict[str, List[str]] = {
         "bz_mean", "viento_avg", "schumann_mean", "vix",
         "kp_mean", "fase_lunar", "btc_volatilidad", "bz_min",
     ],
-    "jupiter": [
-        "kp_mean", "kp_max", "kp_max_72h", "schumann_mean",
-        "schumann_std", "xray_mean", "xray_max", "trends_mean",
-    ],
+    # jupiter retirado 2026-10-18: sus señales únicas (xray, trends) viven
+    # ahora en alfa2 y delta.
 }
 
 

@@ -74,32 +74,31 @@ herramientas; `sentinel_omega/CLAUDE.md` tiene detalle adicional y
 
 ## Arquitectura (para ubicarte rápido)
 
-8 bots votantes + 1 notificador + Juez auditor (separado, nunca predice):
+8 bots votantes + Juez auditor (separado, nunca predice):
 
 | Bot | Dominio | Memoria | Rol |
 |-----|---------|---------|-----|
 | `alfa1` | Clima espacial: Bz GSM, viento solar, Kp, protones | 1994→ | votante |
 | `beta1` | Resonancia Schumann — **el latido**; todo se correlaciona contra él | 1994→ | votante |
 | `beta2` | Desgasificación volcánica / atmósfera (SO₂ sobre baseline natural) | 2012→ | votante |
-| `delta` | Bolsa + cripto + tendencias | 2016→ | votante |
+| `delta` | Bolsa + cripto + **tendencias** (trends_mean desde 2026-10-18) | 2016→ | votante |
 | `omega` | Ritmo cósmico: fase lunar/sicigias + Schumann + envolvente solar + acoplamiento Schumann↔mercado | 1994→ | votante |
-| `loki` | Fractal-bayesiano: Bz, viento, Schumann, VIX, LOD | 2014→ | votante |
-| `jupiter` | Atención colectiva: Kp + fulguración GOES + interés de búsqueda + Schumann | 2026-07→ | votante |
+| `loki` | Fractal-bayesiano: resonancia de rotación solar (Carrington, ganancia 3,4× medida) | 2014→ | votante |
+| `alfa2` | Satélites ESA Sentinel (cobertura, térmico por PRECEDENTE de zona) + **rayos X GOES** (clase M→WATCH, X→ALERT; desde 2026-10-18) | vivo (2026-07→) | votante («vota y avisa», 2026-10-02) |
 | `padre` | Consenso jerárquico cruzado entre familias (aplica pesos) | — | árbitro |
-| `alfa2` | Satélites ESA Sentinel (cobertura, anomalías térmicas, pasadas claras) | — | **notificador** |
 
-**`alfa2` avisa, no vota.** Sus sensores van casi en tiempo real, así que ve los
-movimientos antes que nadie: una anomalía suya es motivo para ir a mirar, no un
-voto del consenso. No forma firmas porque sus tres features nunca alcanzan
-`MIN_DIMENSIONES_COMPARABLES` (4) — por debajo de ese suelo `similitud()`
-devuelve 0.0 y una firma no empareja ni consigo misma. Pasa a votante cuando la
-capa satelital aporte una cuarta señal. Ver `BOTS_ESPERANDO_SENALES` en
-`infrastructure/pipeline/entrenamiento.py`.
+**`jupiter` fue RETIRADO el 2026-10-18** (decisión del operador, sobre medición):
+0 alertas en 168 ciclos vivos, 0 exigibles de 27 consolidadas, AUC no medible
+(53 muestras) y 3 de 6 rasgos duplicando el dominio de alfa1. Sus señales únicas
+se redistribuyeron: **xray → alfa2** (el bot satelital), **trends → delta**
+(su dominio documentado). `tbl_xray_vivo`/`tbl_trends_vivo` siguen acumulándose.
+Su historia en el Juez fase viva se conserva (append-only).
 
-**`jupiter` solo tiene memoria reciente**: su histórico de rayos X y tendencias
-nunca se persistió (se bajaba cada ciclo y se descartaba). Desde 2026-09-24 se
-acumula en `tbl_xray_vivo` / `tbl_trends_vivo`, así que su ventana crece con el
-tiempo operativo.
+**El térmico de alfa2 es PRECEDENTE, no z-score** (2026-10-18): la distribución
+histórica es inflada en ceros y el z-score daba 3σ a la p99 rutinaria de la
+propia zona → ALERT en 168/168 ciclos. Ahora: zona con térmico > su PROPIO máx
+histórico = sin precedente (≥1 → WATCH, ≥3 simultáneas → ALERT). Medido: 13%
+de horas vivas no-neutral.
 
 - **Familias:** `space_weather` (alfa1/alfa2), `schumann_cymatics` (beta1/beta2),
   `financial_sentiment` (delta). Consenso: ≥2 familias + ≥2 alertas +
