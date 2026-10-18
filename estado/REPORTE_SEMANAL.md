@@ -1,16 +1,16 @@
 # 📅 Reporte semanal — Sentinel Omega
-*Generado 2026-10-11 12:32 hora MX — ventana 7 días*
+*Generado 2026-10-18 12:28 hora MX — ventana 7 días*
 
 ## Resumen
-- Ciclos corridos: **93**
-- Fantasma medio del periodo: **12.2**
+- Ciclos corridos: **94**
+- Fantasma medio del periodo: **15.1**
 - Fantasma máximo: **41.8**
-- Breaches del Muro: **6**
-- Asertividad viva del periodo: **—** (n=0 resueltas)
+- Breaches del Muro: **51**
+- Asertividad viva del periodo: **100%** (n=16 resueltas)
 
 ## Cimática
-- Patrones `general`: 535 (frecuencia máx 10)
-- Patrones `nodo`: 1537 (frecuencia máx 15)
+- Patrones `general`: 591 (frecuencia máx 10)
+- Patrones `nodo`: 1715 (frecuencia máx 15)
 
 | Patrón | Ámbito | Evento asociado | Frecuencia |
 |---|---|---|---:|
@@ -29,11 +29,11 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Aciertos** | 2758 |
-| **Fallos** | 9842 |
+| **Aciertos** | 2766 |
+| **Fallos** | 9850 |
 | **Falsos positivos** | 0 |
 | **Tasa de acierto** | 21.9% `▓▓▓░░░░░░░░░` |
-| **Total predicciones** | 12600 |
+| **Total predicciones** | 12616 |
 
 ![Distribución de veredictos](graficas/aciertos_7d_pastel.png)
 
@@ -41,12 +41,14 @@
 
 | Bot | Aciertos | Tasa | Confianza | Ventana declarada |
 |-----|----------|------|-----------|--------------------|
-| omega | 819/2100 | 39% `▓▓▓░░░░░` | 0.39 | 0.0h |
-| beta1 | 665/2100 | 32% `▓▓▓░░░░░` | 0.32 | 0.0h |
-| padre | 462/2100 | 22% `▓▓░░░░░░` | 0.22 | 0.0h |
-| alfa1 | 427/2100 | 20% `▓▓░░░░░░` | 0.20 | 0.0h |
-| delta | 266/2100 | 13% `▓░░░░░░░` | 0.13 | 0.0h |
-| beta2 | 119/2100 | 6% `░░░░░░░░` | 0.06 | 0.0h |
+| omega | 819/2102 | 39% `▓▓▓░░░░░` | 0.39 | 0.0h |
+| beta1 | 658/2102 | 31% `▓▓▓░░░░░` | 0.31 | 0.0h |
+| padre | 462/2102 | 22% `▓▓░░░░░░` | 0.22 | 0.0h |
+| alfa1 | 431/2102 | 21% `▓▓░░░░░░` | 0.20 | 0.0h |
+| delta | 270/2102 | 13% `▓░░░░░░░` | 0.13 | 0.0h |
+| beta2 | 122/2102 | 6% `░░░░░░░░` | 0.06 | 0.0h |
+| alfa2 | 2/2 | 100% `▓▓▓▓▓▓▓▓` | 0.30 | 2.0h |
+| jupiter | 2/2 | 100% `▓▓▓▓▓▓▓▓` | 0.20 | 2.0h |
 
 ![Desempeño por bot](graficas/aciertos_7d_barras.png)
 

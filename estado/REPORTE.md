@@ -1,6 +1,6 @@
 # 🌍 Sentinel Omega — Estado del Sistema
 
-**Generado:** 2026-10-18 18:22 UTC (12:22 UTC-6)
+**Generado:** 2026-10-18 18:28 UTC (12:28 UTC-6)
 
 > **¿Qué es esto?** Sentinel Omega es un sistema que vigila señales físicas del planeta (campo magnético solar, resonancia de la Tierra, actividad sísmica, gases volcánicos, incluso el nerviosismo de los mercados) buscando *precursores*: condiciones que en 32 años de historia han aparecido **antes** de eventos naturales fuertes. No predice con certeza — reconoce parecidos con el pasado y avisa cuando el presente se parece demasiado a los días previos a un evento. Este reporte es una foto de lo que el sistema ve ahora.
 
@@ -36,9 +36,9 @@
 
 | Métrica | Actual | Prom. 7d | Prom. 30d | Máx 30d | Percentil |
 |---|---:|---:|---:|---:|---:|
-| Fantasma | 10.3 | 13.9 | 13.8 | 41.8 | P42 |
+| Fantasma | 10.3 | 13.6 | 13.8 | 41.8 | P42 |
 | Muro de los 5 | 3 | 2.6 | 2.5 | 3 | P100 |
-| Silent Trigger | activo | 59% ciclos | 54% ciclos | — | — |
+| Silent Trigger | activo | 60% ciclos | 54% ciclos | — | — |
 | Asertividad viva | 27% | 100% | — | — | — |
 
 *Los promedios de 30 días combinan los ciclos conservados y el resumen diario del barrido (lo compactado no se pierde, se resume).*
@@ -338,10 +338,10 @@
 | Métrica | Valor |
 |---------|-------|
 | **Aciertos** | 11840 |
-| **Fallos** | 44176 |
+| **Fallos** | 44168 |
 | **Falsos positivos** | 0 |
 | **Tasa de acierto** | 21.1% `▓▓▓░░░░░░░░░` |
-| **Predicciones auditadas** | 56016 |
+| **Predicciones auditadas** | 56008 |
 | **Pendientes (ventana abierta)** | 864 |
 
 _La tasa se calcula solo sobre lo que el Juez ya resolvió; las pendientes aún no se sabe si aciertan._
@@ -350,14 +350,14 @@ _La tasa se calcula solo sobre lo que el Juez ya resolvió; las pendientes aún 
 
 | Bot | Aciertos | Tasa | Confianza | Ventana declarada (h) |
 |-----|----------|------|-----------|------------------------|
-| omega | 3504/9252 | 38% `▓▓▓░░░░░` | 0.39 | 6.0 |
-| beta1 | 2817/9252 | 30% `▓▓░░░░░░` | 0.31 | 6.0 |
-| padre | 1989/9252 | 21% `▓▓░░░░░░` | 0.22 | 6.0 |
-| alfa1 | 1818/9252 | 20% `▓▓░░░░░░` | 0.20 | 6.0 |
-| delta | 1123/9252 | 12% `▓░░░░░░░` | 0.13 | 6.0 |
-| beta2 | 532/9252 | 6% `░░░░░░░░` | 0.06 | 6.0 |
-| jupiter | 51/252 | 20% `▓▓░░░░░░` | 0.26 | 221.7 |
-| alfa2 | 6/252 | 2% `░░░░░░░░` | 0.30 | 221.7 |
+| omega | 3504/9251 | 38% `▓▓▓░░░░░` | 0.39 | 6.0 |
+| beta1 | 2817/9251 | 30% `▓▓░░░░░░` | 0.31 | 6.0 |
+| padre | 1989/9251 | 22% `▓▓░░░░░░` | 0.22 | 6.0 |
+| alfa1 | 1818/9251 | 20% `▓▓░░░░░░` | 0.20 | 6.0 |
+| delta | 1123/9251 | 12% `▓░░░░░░░` | 0.13 | 6.0 |
+| beta2 | 532/9251 | 6% `░░░░░░░░` | 0.06 | 6.0 |
+| jupiter | 51/251 | 20% `▓▓░░░░░░` | 0.26 | 221.7 |
+| alfa2 | 6/251 | 2% `░░░░░░░░` | 0.30 | 221.7 |
 
 ### 🎯 Eventos Predichos Correctamente (más recientes primero)
 
