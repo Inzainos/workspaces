@@ -1,23 +1,23 @@
 # 🔄 Comparativo diario — 2026-10-19 vs 2026-10-18
-*Corte 00:47 hora MX*
+*Corte 12:28 hora MX*
 
 | Métrica | Hoy | Ayer | Cambio |
 |---|---:|---:|---:|
-| Fantasma medio | 10.2 | 11.4 | ▼ -1.2 |
-| Fantasma máx | 10.4 | 13.1 | ▼ -2.7 |
-| Ciclos corridos | 4 | 12 | ▼ -8 |
+| Fantasma medio | 11.6 | 11.4 | ▲ +0.2 |
+| Fantasma máx | 14.9 | 13.1 | ▲ +1.8 |
+| Ciclos corridos | 10 | 12 | ▼ -2 |
 | Breaches del Muro | 4 | 8 | ▼ -4 |
 | Asertividad viva (resuelta en el día) | — | — | — |
-| Patrones cimáticos (total / nuevos 24h) | 2317 | — | +25 |
+| Patrones cimáticos (total / nuevos 24h) | 2333 | — | +27 |
 
 ## ✅ Aciertos — Últimas 24 horas
 
 | Métrica | Valor |
 |---------|-------|
-| **Aciertos** | 386 |
-| **Fallos** | 1414 |
+| **Aciertos** | 372 |
+| **Fallos** | 1428 |
 | **Falsos positivos** | 0 |
-| **Tasa de acierto** | 21.4% `▓▓▓░░░░░░░░░` |
+| **Tasa de acierto** | 20.7% `▓▓░░░░░░░░░░` |
 | **Total predicciones** | 1800 |
 
 ![Distribución de veredictos](graficas/aciertos_1d_pastel.png)
@@ -28,10 +28,10 @@
 |-----|----------|------|-----------|--------------------|
 | omega | 115/300 | 38% `▓▓▓░░░░░` | 0.38 | 0.0h |
 | beta1 | 86/300 | 29% `▓▓░░░░░░` | 0.29 | 0.0h |
-| padre | 64/300 | 21% `▓▓░░░░░░` | 0.21 | 0.0h |
-| alfa1 | 63/300 | 21% `▓▓░░░░░░` | 0.21 | 0.0h |
-| delta | 40/300 | 13% `▓░░░░░░░` | 0.13 | 0.0h |
-| beta2 | 18/300 | 6% `░░░░░░░░` | 0.06 | 0.0h |
+| padre | 62/300 | 21% `▓▓░░░░░░` | 0.21 | 0.0h |
+| alfa1 | 61/300 | 20% `▓▓░░░░░░` | 0.20 | 0.0h |
+| delta | 35/300 | 12% `▓░░░░░░░` | 0.12 | 0.0h |
+| beta2 | 13/300 | 4% `░░░░░░░░` | 0.04 | 0.0h |
 
 ![Desempeño por bot](graficas/aciertos_1d_barras.png)
 
