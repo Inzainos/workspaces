@@ -208,12 +208,25 @@ def get_profile(tipo: PrecursorType) -> PrecursorProfile:
     return PRECURSOR_PROFILES[tipo]
 
 
-def detect_blue_jet(temp_c: float, weather_id: int, pressure_hpa: float = 1013.0) -> bool:
+def detect_blue_jet(
+    temp_c: Optional[float],
+    weather_id: Optional[int],
+    pressure_hpa: Optional[float] = None,
+) -> bool:
+    # Sin dato → False (regla 7/8). El viejo default pressure_hpa=1013.0
+    # (y weather_id=800 arriba en la cadena) inventaba cielo despejado.
+    if temp_c is None or weather_id is None:
+        return False
     is_thunderstorm = 200 <= weather_id <= 232
     return is_thunderstorm and temp_c > 25.0
 
 
-def detect_niebla_tule(humidity_pct: float, visibility_m: float) -> bool:
+def detect_niebla_tule(
+    humidity_pct: Optional[float],
+    visibility_m: Optional[float],
+) -> bool:
+    if humidity_pct is None or visibility_m is None:
+        return False
     return humidity_pct > 90.0 and visibility_m < 1000.0
 
 

@@ -285,7 +285,7 @@ class GeodynamicLayerRunner:
         Dos tablas propias, INSERT OR IGNORE por marca temporal. Fail-soft:
         que falle el guardado no debe tumbar el ciclo.
         """
-        if not isinstance(jupiter_data, dict):
+        if not isinstance(atencion_data, dict):
             return
         try:
             repo = self._get_repo()
@@ -298,7 +298,23 @@ class GeodynamicLayerRunner:
                 "CREATE TABLE IF NOT EXISTS tbl_trends_vivo ("
                 " fecha TEXT PRIMARY KEY, solar_interest REAL)"
             )
+            # Forward-only (2026-10-19): la fuente se marca para que la
+            # columna no mezcle escalas en silencio — Trends es 0-100,
+            # Wikipedia pageviews crudos (cientos+). try/except porque la
+            # tabla ya existe en producción y ADD COLUMN falla si repite.
+            try:
+                repo._execute(
+                    "ALTER TABLE tbl_trends_vivo ADD COLUMN fuente TEXT"
+                )
+            except Exception:  # noqa: BLE001 — columna ya presente
+                pass
+            # Los días históricos (pre-2026-10-19) son todos de Trends.
+            repo._execute(
+                "UPDATE tbl_trends_vivo SET fuente='trends' "
+                "WHERE fuente IS NULL"
+            )
 
+            fuente = atencion_data.get("trends_fuente") or "trends"
             xray = atencion_data.get("xray_df")
             if xray is not None and len(xray) and "time_tag" in xray.columns:
                 x = xray.copy()
@@ -318,9 +334,10 @@ class GeodynamicLayerRunner:
                     and {"date", "solar_interest"}.issubset(trends.columns)):
                 repo._executemany(
                     "INSERT OR IGNORE INTO tbl_trends_vivo "
-                    "(fecha, solar_interest) VALUES (?,?)",
+                    "(fecha, solar_interest, fuente) VALUES (?,?,?)",
                     [(pd.Timestamp(r["date"]).strftime("%Y-%m-%d"),
-                      float(r["solar_interest"]))
+                      float(r["solar_interest"]),
+                      fuente)
                      for _, r in trends.iterrows()
                      if pd.notna(r["solar_interest"])],
                 )
@@ -446,7 +463,9 @@ class GeodynamicLayerRunner:
         sch_wpc = _sch_act / 100.0 if _sch_act is not None and np.isfinite(_sch_act) else None
 
         kp_series = beta1_data.get("kp_series")
-        kp = float(np.nanmean(kp_series)) if kp_series is not None and len(kp_series) > 0 else 0.0
+        # Sin serie de Kp → None (regla 7/8): el modificador se salta, igual
+        # que con 0.0, pero components['kp'] lleva el NULL honesto.
+        kp = float(np.nanmean(kp_series)) if kp_series is not None and len(kp_series) > 0 else None
         kp_max = None
         if kp_series is not None and len(kp_series) > 0:
             _ks = np.asarray(kp_series, dtype=float)
@@ -459,10 +478,13 @@ class GeodynamicLayerRunner:
         if lod_ms is not None and not np.isfinite(lod_ms):
             lod_ms = None  # sin dato del IERS: NULL, no un 0 sintético
 
-        pressure_hpa = 1013.0
+        # Presión: sin gradiente o sin presiones válidas → None. El default
+        # 1013.0 de aquí alimentaba el término de presión del Fantasma con
+        # calma falsa cuando OWM fallaba (regla 7/8, hallado 2026-10-19).
+        pressure_hpa: Optional[float] = None
         pg = beta2_data.get("pressure_gradient")
         if pg:
-            pressure_hpa = pg.get("mean_pressure", 1013.0)
+            pressure_hpa = pg.get("mean_pressure")
 
         risk = compute_fantasma(
             bz=bz, viento=viento, sch_wpc=sch_wpc,

@@ -436,6 +436,9 @@ class GeodynamicPipeline:
             if readings:
                 gradient = compute_pressure_gradient(readings)
                 result["pressure_gradient"] = gradient
+                # Campos tal cual (None = OWM no los trajo, regla 7/8) +
+                # los nuevos que OWM ya entregaba y se tiraban (gust, rain,
+                # presión a nivel de estación, dt del dato).
                 result["atmospheric_readings"] = [
                     {
                         "station": r.station,
@@ -445,12 +448,33 @@ class GeodynamicPipeline:
                         "temp_c": r.temp_c,
                         "humidity_pct": r.humidity_pct,
                         "visibility_m": r.visibility_m,
+                        "wind_speed_ms": r.wind_speed_ms,
+                        "wind_gust_ms": r.wind_gust_ms,
+                        "rain_1h": r.rain_1h,
+                        "snow_1h": r.snow_1h,
+                        "grnd_level_hpa": r.grnd_level_hpa,
                         "weather_id": r.weather_id,
+                        "data_ts": r.data_ts,
                     }
                     for r in readings
                 ]
         except Exception as e:
             logger.warning(f"Atmospheric data fetch failed: {e}")
+
+        # Pronóstico 5d/3h (2026-10-19): anticipación atmosférica — misma
+        # key OWM, endpoint nunca usado. Resumen por nodo primario con TTL
+        # de 3 h dentro del módulo. Regla 9: aún SIN regla de alerta —
+        # primero se acumula y se observa su distribución.
+        try:
+            from sentinel_omega.infrastructure.api.openweathermap import (
+                fetch_forecast,
+            )
+
+            forecast = fetch_forecast(19.31, -98.24, station_name="tlaxcala")
+            if forecast:
+                result["forecast_owm"] = forecast
+        except Exception as e:
+            logger.warning(f"OWM forecast fetch failed: {e}")
 
         try:
             tlaxcala = MONITORING_STATIONS["tlaxcala"]
@@ -733,21 +757,49 @@ class GeodynamicPipeline:
         xray = fetch_goes_xray()
 
         trends = None
+        trends_fuente = None
         cached = self._cache.get("jupiter_trends")
         age = time.time() - self._cache_ts.get("jupiter_trends", 0)
         if cached and age < self._TRENDS_TTL_S:
             trends = cached.get("trends_df")
+            trends_fuente = cached.get("fuente")
             logger.info(f"Júpiter Trends from cache (age={age / 3600:.1f}h)")
         else:
             trends = fetch_solar_storm_trends(timeframe="today 3-m")
             if trends is not None:
-                self._cache["jupiter_trends"] = {"trends_df": trends}
+                trends_fuente = "trends"
+            else:
+                # Fallback (2026-10-19): pytrends da HTTP 400 intermitente
+                # (Google throttlea por IP; medido: días seguidos en 400 y
+                # recuperación espontánea). Los pageviews de Wikipedia son
+                # el sustituto libre de referencia, con el MISMO contrato
+                # [date, solar_interest] — pero escala de pageviews crudos,
+                # no 0-100. La fuente se marca en `trends_fuente` para que
+                # la columna no mezcle significados en silencio. Ver
+                # api/atencion_wiki.py y BITACORA_2026-10-19.
+                from sentinel_omega.infrastructure.api.atencion_wiki import (
+                    fetch_atencion_wiki,
+                )
+
+                trends = fetch_atencion_wiki()
+                if trends is not None:
+                    trends_fuente = "wiki"
+                    logger.info(
+                        "Atención: Trends caído (400) — usando Wikipedia "
+                        "pageviews (escala distinta, marcada en fuente)"
+                    )
+            if trends is not None:
+                self._cache["jupiter_trends"] = {
+                    "trends_df": trends,
+                    "fuente": trends_fuente,
+                }
                 self._cache_ts["jupiter_trends"] = time.time()
 
         result = {
             "kp_df": kp,
             "xray_df": xray,
             "trends_df": trends,
+            "trends_fuente": trends_fuente,
             "schumann_series": schumann_series,
         }
         n = sum(1 for v in (kp, xray, trends) if v is not None and len(v))

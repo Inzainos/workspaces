@@ -70,17 +70,27 @@ REFERENCE_STATIONS: Dict[str, Dict[str, float]] = {
 
 @dataclass
 class AtmosphericReading:
+    """Lectura atmosférica. Campo ausente = None (regla 7/8), nunca un
+    número plausible: 1013 hPa/20 °C/cielo despejado venían aquí como
+    defaults benignos y entraban a beta2 y al Fantasma como si estuvieran
+    medidos (hallado 2026-10-19). Campos nuevos (gust/rain/grnd_level) son
+    datos que OWM ya entregaba y se tiraban."""
     station: str
     lat: float
     lon: float
-    pressure_hpa: float
-    temp_c: float
-    humidity_pct: float
-    visibility_m: float
-    wind_speed_ms: float
-    wind_deg: float
-    clouds_pct: float
-    weather_id: int = 800
+    pressure_hpa: Optional[float] = None       # nivel del mar (OWM "pressure")
+    temp_c: Optional[float] = None
+    humidity_pct: Optional[float] = None
+    visibility_m: Optional[float] = None
+    wind_speed_ms: Optional[float] = None
+    wind_deg: Optional[float] = None
+    clouds_pct: Optional[float] = None
+    weather_id: Optional[int] = None
+    wind_gust_ms: Optional[float] = None       # ráfaga — perturbación pre-tormenta
+    rain_1h: Optional[float] = None             # mm en la última hora
+    snow_1h: Optional[float] = None
+    grnd_level_hpa: Optional[float] = None      # presión a nivel de estación
+    data_ts: Optional[int] = None               # dt del servidor OWM (frescura)
 
 
 def _get_api_key() -> Optional[str]:
@@ -115,22 +125,49 @@ def fetch_weather(
         main = data.get("main", {})
         wind = data.get("wind", {})
         clouds = data.get("clouds", {})
+        rain = data.get("rain", {})
+        snow = data.get("snow", {})
         weather_list = data.get("weather", [])
-        weather_id = weather_list[0].get("id", 800) if weather_list else 800
+
+        # Sin defaults: campo ausente = None (regla 7/8). Antes un JSON sin
+        # "pressure" se publicaba como 1013 hPa — calma falsa en cadena.
+        def _f(v) -> Optional[float]:
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
 
         reading = AtmosphericReading(
             station=station_name,
             lat=lat,
             lon=lon,
-            pressure_hpa=main.get("pressure", 1013.0),
-            temp_c=main.get("temp", 20.0),
-            humidity_pct=main.get("humidity", 50.0),
-            visibility_m=data.get("visibility", 10000),
-            wind_speed_ms=wind.get("speed", 0.0),
-            wind_deg=wind.get("deg", 0.0),
-            clouds_pct=clouds.get("all", 0),
-            weather_id=weather_id,
+            pressure_hpa=_f(main.get("pressure")),
+            temp_c=_f(main.get("temp")),
+            humidity_pct=_f(main.get("humidity")),
+            visibility_m=_f(data.get("visibility")),
+            wind_speed_ms=_f(wind.get("speed")),
+            wind_deg=_f(wind.get("deg")),
+            clouds_pct=_f(clouds.get("all")),
+            weather_id=(
+                int(weather_list[0].get("id"))
+                if weather_list and weather_list[0].get("id") is not None
+                else None
+            ),
+            wind_gust_ms=_f(wind.get("gust")),
+            rain_1h=_f(rain.get("1h")),
+            snow_1h=_f(snow.get("1h")),
+            grnd_level_hpa=_f(main.get("grnd_level")),
+            data_ts=data.get("dt"),
         )
+        faltantes = sum(
+            1 for v in (reading.pressure_hpa, reading.temp_c, reading.humidity_pct)
+            if v is None
+        )
+        if faltantes:
+            logger.warning(
+                "OWM %s: %d campo(s) base ausentes en el JSON — se reportan "
+                "como NULL, no como valores plausibles", station_name, faltantes,
+            )
         logger.info(
             f"OWM {station_name}: {reading.pressure_hpa}hPa, "
             f"{reading.temp_c}C, {reading.humidity_pct}%RH"
@@ -164,14 +201,16 @@ def fetch_air_quality(
             return None
 
         components = data["list"][0].get("components", {})
-        result = {
-            "co": components.get("co", 0.0),
-            "so2": components.get("so2", 0.0),
-            "no2": components.get("no2", 0.0),
-            "pm2_5": components.get("pm2_5", 0.0),
-            "pm10": components.get("pm10", 0.0),
-            "o3": components.get("o3", 0.0),
-            "aqi": data["list"][0].get("main", {}).get("aqi", 0),
+        # Sin defaults: gas ausente = None (regla 7/8). Antes 0.0 "medido";
+        # y aqi 0 es un valor IMPOSIBLE (la escala OWM es 1-5).
+        result: Dict[str, Optional[float]] = {
+            "co": components.get("co"),
+            "so2": components.get("so2"),
+            "no2": components.get("no2"),
+            "pm2_5": components.get("pm2_5"),
+            "pm10": components.get("pm10"),
+            "o3": components.get("o3"),
+            "aqi": data["list"][0].get("main", {}).get("aqi"),
         }
         logger.info(f"OWM AQ: CO={result['co']}, SO2={result['so2']}, AQI={result['aqi']}")
         return result
@@ -199,11 +238,13 @@ def fetch_reference_baseline() -> Optional[Dict[str, float]]:
     if not samples:
         return None
 
+    # Media por gas IGNORANDO muestras sin ese gas (None); gas sin ninguna
+    # muestra válida → None, no 0.0 (regla 7/8).
     gases = ("co", "so2", "no2", "pm2_5", "pm10", "o3")
-    baseline = {
-        g: round(sum(s.get(g, 0.0) for s in samples) / len(samples), 3)
-        for g in gases
-    }
+    baseline: Dict[str, Optional[float]] = {}
+    for g in gases:
+        vals = [s[g] for s in samples if s.get(g) is not None]
+        baseline[g] = round(sum(vals) / len(vals), 3) if vals else None
     baseline["station_count"] = len(samples)
     logger.info(
         f"Reference baseline (natural degassing): "
@@ -238,16 +279,20 @@ def scan_global_nodes(
 
         aq = fetch_air_quality(cfg["lat"], cfg["lon"])
         if aq:
-            entry["so2"] = aq.get("so2", 0.0)
-            entry["co"] = aq.get("co", 0.0)
-            entry["no2"] = aq.get("no2", 0.0)
+            # Solo campos presentes: un gas ausente ya no se reporta como 0.0.
+            for g in ("so2", "co", "no2"):
+                if aq.get(g) is not None:
+                    entry[g] = aq[g]
 
         reading = fetch_weather(cfg["lat"], cfg["lon"], station_name=name)
         if reading:
-            entry["temp_c"] = reading.temp_c
-            entry["pressure_hpa"] = reading.pressure_hpa
+            if reading.temp_c is not None:
+                entry["temp_c"] = reading.temp_c
+            if reading.pressure_hpa is not None:
+                entry["pressure_hpa"] = reading.pressure_hpa
 
-        if "so2" in entry or "temp_c" in entry:
+        # El nodo entra si produjo ALGÚN dato medido (no defaults).
+        if any(k in entry for k in ("so2", "co", "no2", "temp_c", "pressure_hpa")):
             results.append(entry)
 
     logger.info(f"Global node scan: {len(results)}/{len(target)} nodes responding")
@@ -272,22 +317,133 @@ def fetch_monitoring_network(
 
 
 def compute_pressure_gradient(readings: List[AtmosphericReading]) -> Dict[str, Any]:
-    """Compute pressure anomalies across the monitoring network."""
-    if len(readings) < 2:
-        return {"mean_pressure": 1013.0, "pressure_spread": 0.0, "low_pressure_stations": []}
+    """Gradiente de presión SOBRE las lecturas que traen presión medida.
 
-    pressures = [r.pressure_hpa for r in readings]
-    mean_p = sum(pressures) / len(pressures)
-    spread = max(pressures) - min(pressures)
+    Sin suficientes presiones válidas → mean_pressure None (sin dato), no
+    1013.0: ese default alimentaba el término de presión del Fantasma con
+    calma falsa cuando OWM no respondía (regla 7/8, hallado 2026-10-19)."""
+    presiones = [r for r in readings if r.pressure_hpa is not None]
+    if len(presiones) < 2:
+        logger.warning(
+            "Gradiente de presión: %d de %d lecturas con presión — sin dato",
+            len(presiones), len(readings),
+        )
+        return {
+            "mean_pressure": None,
+            "pressure_spread": None,
+            "low_pressure_stations": [],
+            "station_count": len(presiones),
+        }
 
-    low_stations = [
-        r.station for r in readings
-        if r.pressure_hpa < 1008
-    ]
+    vals = [r.pressure_hpa for r in presiones]
+    mean_p = sum(vals) / len(vals)
+    spread = max(vals) - min(vals)
+    low_stations = [r.station for r in presiones if r.pressure_hpa < 1008]
 
     return {
         "mean_pressure": mean_p,
         "pressure_spread": spread,
         "low_pressure_stations": low_stations,
-        "station_count": len(readings),
+        "station_count": len(presiones),
     }
+
+
+# ── Pronóstico 5 días / 3 horas (2026-10-19) ────────────────────────────────
+# Endpoint incluido en la MISMA key (tier gratuito) y nunca usado: es la
+# anticipación atmosférica — la caída barométrica PRONOSTICADA, no solo el
+# "ahora" que ya consume beta2. TTL de 3 h: OWM emite el forecast cada ~3 h y
+# así no gastamos cuota por ciclo (10 estaciones × ciclo de 5 min).
+OWM_FORECAST_TTL_S = 3 * 3600
+_forecast_cache: Dict[str, Dict[str, Any]] = {}
+_forecast_cache_ts: Dict[str, float] = {}
+
+
+def fetch_forecast(
+    lat: float,
+    lon: float,
+    station_name: str = "unknown",
+) -> Optional[Dict[str, Any]]:
+    """Resumen del pronóstico 5d/3h de OWM para una coordenada.
+
+    Devuelve el dato útil para precursores, no la lista cruda:
+      - presion_min_48h / caida_24h: mínimo y caída de presión pronosticados
+      - presion_min_ts: hora (ISO) de ese mínimo — cuándo llega el pico
+      - lluvia_24h_mm / rafaga_max_ms: precipitación y ráfaga acumuladas
+      - n_pasos: pasos recibidos (sanity)
+    None en un campo = OWM no lo pronosticó (regla 7/8). Fail-soft total.
+    """
+    import time as _time
+
+    clave = f"{station_name}:{lat:.2f},{lon:.2f}"
+    ahora = _time.time()
+    cached = _forecast_cache.get(clave)
+    if cached and (ahora - _forecast_cache_ts.get(clave, 0.0)) < OWM_FORECAST_TTL_S:
+        return cached
+
+    api_key = _get_api_key()
+    if not api_key:
+        return None
+    try:
+        resp = get_session().get(
+            f"{OWM_BASE}/forecast",
+            params={"lat": lat, "lon": lon, "appid": api_key, "units": "metric"},
+            timeout=TIMEOUT,
+        )
+        resp.raise_for_status()
+        pasos = resp.json().get("list", [])
+        if not pasos:
+            return None
+
+        presiones = [
+            (p["main"]["pressure"], p["dt"])
+            for p in pasos
+            if isinstance(p.get("main"), dict) and p["main"].get("pressure") is not None
+        ]
+        emision_ts = pasos[0].get("dt")
+
+        def _sum_rain(field: str, horas: int) -> Optional[float]:
+            total = 0.0
+            hay = False
+            for p in pasos[:horas // 3]:
+                v = (p.get(field) or {}).get("3h")
+                if v is not None:
+                    total += float(v)
+                    hay = True
+            return round(total, 2) if hay else None
+
+        rafagas = [
+            p["wind"].get("gust")
+            for p in pasos[:8]
+            if isinstance(p.get("wind"), dict) and p["wind"].get("gust") is not None
+        ]
+
+        resumen: Dict[str, Any] = {
+            "station": station_name,
+            "emision_dt": emision_ts,
+            "presion_min_24h": min((p for p, _ in presiones[:8]), default=None),
+            "presion_min_48h": min((p for p, _ in presiones[:16]), default=None),
+            "presion_min_ts": (
+                min(presiones[:16], key=lambda x: x[0])[1] if len(presiones) >= 16 or presiones else None
+            ),
+            "lluvia_24h_mm": _sum_rain("rain", 24),
+            "nieve_24h_mm": _sum_rain("snow", 24),
+            "rafaga_max_24h_ms": max(rafagas) if rafagas else None,
+            "n_pasos": len(pasos),
+        }
+        # Caída pronosticada desde la primera lectura (proxy del "ahora").
+        if presiones:
+            resumen["caida_24h_hpa"] = round(presiones[0][0] - (resumen["presion_min_24h"] or presiones[0][0]), 2)
+        else:
+            resumen["caida_24h_hpa"] = None
+
+        _forecast_cache[clave] = resumen
+        _forecast_cache_ts[clave] = ahora
+        logger.info(
+            "OWM forecast %s: mín 48h=%s hPa, caída 24h=%s hPa, lluvia 24h=%s mm",
+            station_name, resumen["presion_min_48h"],
+            resumen["caida_24h_hpa"], resumen["lluvia_24h_mm"],
+        )
+        return resumen
+    except Exception as e:  # noqa: BLE001 — fail-soft, como el resto de OWM
+        logger.warning("OWM forecast falló para %s: %s", station_name, e)
+        return None

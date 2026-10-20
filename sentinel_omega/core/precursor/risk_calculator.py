@@ -127,8 +127,8 @@ def compute_fantasma(
     bz: Optional[float],
     viento: Optional[float],
     sch_wpc: Optional[float],
-    pressure_hpa: float = 1013.0,
-    kp: float = 0.0,
+    pressure_hpa: Optional[float] = None,
+    kp: Optional[float] = None,
     lod_ms: Optional[float] = None,
 ) -> PrecursorRisk:
     """
@@ -189,12 +189,15 @@ def compute_fantasma(
     fantasma_solo_sur = ((min(bz, 0.0) ** 2) if bz is not None else 0.0) + wind_contribution + schumann_contribution
 
     pressure_modifier = 0.0
-    if pressure_hpa < 1008.0:
+    # None = OWM no trajo presión: el modificador se salta y components lleva
+    # el NULL honesto. Con 1013.0 el número era idéntico — la mentira estaba
+    # en los components, que persistían "presión medida" sin medición.
+    if pressure_hpa is not None and pressure_hpa < 1008.0:
         pressure_modifier = min(3.0, (1008.0 - pressure_hpa) / 5.0)
         fantasma += pressure_modifier
 
     kp_modifier = 1.0
-    if kp >= 5.0:
+    if kp is not None and kp >= 5.0:
         kp_modifier = 1.0 + (kp - 5.0) * 0.1
         fantasma *= kp_modifier
 
@@ -239,9 +242,9 @@ def compute_risk_from_signals(
     bz: Optional[float] = None
     viento: Optional[float] = None
     sch_wpc: Optional[float] = None
-    kp = 0.0
+    kp: Optional[float] = None
     lod_ms: Optional[float] = None
-    pressure_hpa = 1013.0
+    pressure_hpa: Optional[float] = None
 
     for sig in agent_signals:
         data = sig if isinstance(sig, dict) else getattr(sig, "data", {})
@@ -252,13 +255,14 @@ def compute_risk_from_signals(
             viento = data["plasma_speed"]
         if data.get("schumann_activity_pct") is not None:
             sch_wpc = data["schumann_activity_pct"] / 100.0
-        if "kp_mean" in data:
+        if data.get("kp_mean") is not None:
             kp = data["kp_mean"]
-        if "lod_anomaly_ms" in data:
+        if data.get("lod_anomaly_ms") is not None:
             lod_ms = data["lod_anomaly_ms"]
 
     if atmospheric:
-        pressure_hpa = atmospheric.get("mean_pressure", 1013.0)
+        # Sin media de presión en el gradiente → None (regla 7/8), no 1013.0.
+        pressure_hpa = atmospheric.get("mean_pressure")
 
     return compute_fantasma(
         bz=bz, viento=viento, sch_wpc=sch_wpc,
@@ -268,6 +272,10 @@ def compute_risk_from_signals(
 
 def format_risk_report(risk: PrecursorRisk) -> str:
     """Format risk for Telegram alert dispatch."""
+    # Sin dato → "sin dato", no un 1013/0 con formato (regla 7/8). El mismo
+    # trato que ya recibían Bz/viento/Schumann/LOD en este reporte.
+    _p = risk.components.get("pressure_hpa")
+    _k = risk.components.get("kp")
     lines = [
         f"<b>PRECURSOR RISK: {risk.risk_level}</b>",
         f"Fantasma Index: <code>{risk.fantasma:.2f}</code>",
@@ -278,8 +286,10 @@ def format_risk_report(risk: PrecursorRisk) -> str:
         f"  Schumann = <code>{risk.schumann_contribution:.2f}</code> ({_sch_txt(risk.components.get('schumann_wpc'))})",
         "",
         "<b>Modifiers:</b>",
-        f"  Pressure = <code>+{risk.pressure_modifier:.2f}</code> ({risk.components.get('pressure_hpa', 1013):.0f} hPa)",
-        f"  Kp = <code>×{risk.kp_modifier:.2f}</code> (Kp={risk.components.get('kp', 0):.1f})",
+        f"  Pressure = <code>+{risk.pressure_modifier:.2f}</code> "
+        f"({'sin dato' if _p is None else f'{_p:.0f} hPa'})",
+        f"  Kp = <code>×{risk.kp_modifier:.2f}</code> "
+        f"({'sin dato' if _k is None else f'Kp={_k:.1f}'})",
         f"  LOD = <code>+{risk.lod_modifier:.2f}</code> ({_lod_txt(risk.components.get('lod_ms'))})",
     ]
     return "\n".join(lines)

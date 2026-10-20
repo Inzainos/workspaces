@@ -12,6 +12,8 @@ Alerts: Telegram dispatch when precursor risk is elevated
 """
 
 import logging
+import os
+import sqlite3
 import time
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
@@ -60,6 +62,69 @@ class SentinelOrchestrator:
         logger.info(f"=== {config.project_name} v{config.version} ===")
         logger.info(f"Author: {config.author}")
         logger.info(f"Architecture: multi-agent — hierarchical Schumann-correlated consensus")
+
+    def _leer_go_alfa2(self) -> tuple[Optional[float], Optional[Dict], Optional[Dict]]:
+        """Una conexión read-only para el contexto solar/térmico del despacho.
+
+        Devuelve (xray_max_24h, goes_flare, alfa2_thermal):
+          - xray_max: MAX(flux_max) de tbl_xray_vivo en 24 h — alimenta la
+            alerta FULGURACION_* de dispatch_cycle_alerts.
+          - goes_flare: detalle de la hora pico (flux máx/medio/banda) para
+            enriquecer el parte del Centinela; None si no hay ≥ clase C.
+          - alfa2_thermal: zonas con anomalía térmica sin precedente en el
+            último bloque satelital; None si no hay ninguna.
+
+        Ruta de DB con el patrón de ConsensoVigilante (`SENTINEL_DB` + default
+        canónico). La ruta NO sale de la config — `SentinelOmegaConfig` no
+        expone `database_path`/`db_path`, y un getattr silencioso devolvía
+        None (hallado 2026-10-19: la alerta de fulguración jamás despachó
+        por esto, probado contra MockConfig en vez de la config real).
+        Sin dato = None (regla 7: sin medición no se informa).
+        """
+        xray_max: Optional[float] = None
+        goes_flare: Optional[Dict] = None
+        alfa2_thermal: Optional[Dict] = None
+        db_path = os.environ.get(
+            "SENTINEL_DB",
+            "/home/deamon/workspaces/sentinel_omega/data/SENTINEL_OMEGA_PRO.db",
+        )
+        if not db_path or not os.path.exists(db_path):
+            return xray_max, goes_flare, alfa2_thermal
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0)
+        except sqlite3.Error:
+            return xray_max, goes_flare, alfa2_thermal
+        try:
+            row = conn.execute(
+                "SELECT flux_max, flux_avg, banda FROM tbl_xray_vivo "
+                "WHERE timestamp_blk >= datetime('now', '-24 hours') "
+                "ORDER BY flux_max DESC LIMIT 1"
+            ).fetchone()
+            if row and row[0] is not None:
+                xray_max = float(row[0])
+                if xray_max >= 1e-6:
+                    goes_flare = {
+                        "flux_max": xray_max,
+                        "xray_mean": float(row[1] or 0),
+                        "banda": row[2],
+                    }
+            row = conn.execute(
+                "SELECT COUNT(*), MAX(thermal_anomalies) "
+                "FROM tbl_cobertura_satelital "
+                "WHERE timestamp_blk = (SELECT MAX(timestamp_blk) "
+                "                       FROM tbl_cobertura_satelital) "
+                "AND thermal_anomalies > 0"
+            ).fetchone()
+            if row and row[0]:
+                alfa2_thermal = {
+                    "zones_with_anomalies": int(row[0]),
+                    "max_anomalies": int(row[1] or 0),
+                }
+        except sqlite3.Error as exc:
+            logger.warning("lectura GOES/Alfa-2 para despacho falló: %s", exc)
+        finally:
+            conn.close()
+        return xray_max, goes_flare, alfa2_thermal
 
     @classmethod
     def create_with_live_pipelines(cls, config: SentinelOmegaConfig) -> "SentinelOrchestrator":
@@ -276,6 +341,8 @@ class SentinelOrchestrator:
                 except (TypeError, ValueError):
                     sch_act = None
 
+        xray_max, goes_flare, alfa2_thermal = self._leer_go_alfa2()
+
         n = dispatch_cycle_alerts(
             fantasma=fantasma if fantasma is not None else None,
             bz=float(bz) if bz is not None else None,
@@ -288,6 +355,9 @@ class SentinelOrchestrator:
             metadata=getattr(geo, "metadata", None) or {},
             muro_msg=muro_msg,
             elevated_risk_msg=elevated_msg,
+            xray_max=xray_max,
+            goes_flare=goes_flare,
+            alfa2_thermal=alfa2_thermal,
         )
         self._status.alerts_dispatched += n
 

@@ -155,13 +155,17 @@ class PrecursorScanner:
     ) -> List[PrecursorDetection]:
         results = []
         for reading in atmospheric:
-            temp_c = reading.get("temp_c", 20.0)
-            weather_id = reading.get("weather_id", 800)
-            pressure = reading.get("pressure_hpa", 1013.0)
+            # Sin dato → sin detección (regla 7/8): un campo ausente ya no
+            # simula tormenta despejada (weather_id 800) ni 20 °C.
+            temp_c = reading.get("temp_c")
+            weather_id = reading.get("weather_id")
+            pressure = reading.get("pressure_hpa")
+            if temp_c is None or weather_id is None:
+                continue
 
             if detect_blue_jet(temp_c, weather_id, pressure):
                 confidence = 0.7
-                if pressure < 1008:
+                if pressure is not None and pressure < 1008:
                     confidence += 0.1
                 if temp_c > 30:
                     confidence += 0.1
@@ -186,8 +190,11 @@ class PrecursorScanner:
     ) -> List[PrecursorDetection]:
         results = []
         for reading in atmospheric:
-            humidity = reading.get("humidity_pct", 50.0)
-            visibility = reading.get("visibility_m", 10000)
+            humidity = reading.get("humidity_pct")
+            visibility = reading.get("visibility_m")
+            # Sin humitud/visibilidad medidas → sin evaluación de niebla.
+            if humidity is None or visibility is None:
+                continue
 
             if detect_niebla_tule(humidity, visibility):
                 confidence = 0.6
@@ -482,10 +489,14 @@ class PrecursorScanner:
     ) -> List[PrecursorDetection]:
         results = []
         for reading in atmospheric:
-            weather_id = reading.get("weather_id", 800)
-            temp_c = reading.get("temp_c", 20.0)
-            pressure = reading.get("pressure_hpa", 1013.0)
-            clouds = reading.get("clouds_pct", 0)
+            weather_id = reading.get("weather_id")
+            temp_c = reading.get("temp_c")
+            pressure = reading.get("pressure_hpa")
+            clouds = reading.get("clouds_pct")
+            # Sin dato → sin evaluación de sprite (regla 7/8): antes
+            # weather_id 800/20 °C simulaban cielo despejado medido.
+            if None in (weather_id, temp_c, pressure, clouds):
+                continue
 
             if detect_sprite_rojo(weather_id, temp_c, pressure, clouds):
                 confidence = 0.65

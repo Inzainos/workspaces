@@ -1,4 +1,7 @@
-"""Report visibility: alfa2 (live-only) and jupiter must appear even with 0 firmas."""
+"""Report visibility: live-only agents must appear even with 0 firmas.
+
+jupiter retired 2026-10-18; alfa2 is the remaining live-only agent.
+"""
 
 import importlib.util
 from pathlib import Path
@@ -17,7 +20,7 @@ def _load_generar():
     return mod
 
 
-def test_alfa2_and_jupiter_appear_without_firmas(tmp_path):
+def test_live_only_agents_appear_without_firmas(tmp_path):
     db = str(tmp_path / "test.db")
     conn = get_connection(db)
     # A backcast bot with firmas so the "Memoria entrenada" section renders.
@@ -41,8 +44,9 @@ def test_alfa2_and_jupiter_appear_without_firmas(tmp_path):
     gr.generar(db, out)
     text = Path(out).read_text()
 
-    # Both live-only agents must be visible even though they have no firmas.
+    # Live-only agent must be visible even though it has no firmas.
     assert "| alfa2 |" in text, "alfa2 missing from report"
-    assert "| jupiter |" in text, "jupiter missing from report"
     # alfa2 shows its live state; with 0 satellite passes it flags the missing feed.
     assert "sin feed satelital" in text
+    # jupiter retired 2026-10-18 — must NOT appear in live agent list.
+    assert "| jupiter |" not in text, "jupiter should not appear (retired)"

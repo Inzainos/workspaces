@@ -503,11 +503,13 @@ def _log_cycle_summary(status, results, repo, config, runner=None):
                 bz=_scalar(risk.components.get("bz_nT"), None),  # sin dato = NULL, no 0
                 viento=_scalar(risk.components.get("wind_kms"), None),  # sin dato = NULL, no 0
                 protones=_prot,
-                kp=_scalar(risk.components.get("kp", 0)),
+                # Sin serie de Kp / sin presión en el gradiente → NULL (regla
+                # 7/8). Antes persistían 0 y 1013 como si estuvieran medidos.
+                kp=_scalar(risk.components.get("kp"), None),
                 lod_ms=_scalar(risk.components.get("lod_ms"), None),  # sin dato = NULL, no 0
                 schumann_hz=_sch_hz_v,  # sin dato = NULL, no 7.83
                 schumann_activity=_sch_wpc * 100 if _sch_wpc is not None else None,  # sin dato = NULL, no 0
-                presion_hpa=_scalar(risk.components.get("pressure_hpa", 1013)),
+                presion_hpa=_scalar(risk.components.get("pressure_hpa"), None),
                 fantasma=_scalar(risk.fantasma),
                 nivel_riesgo=risk.risk_level,
                 fase_lunar=_fase,
