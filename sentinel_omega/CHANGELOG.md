@@ -1,3 +1,184 @@
+## 2026-10-19 (noche) — Defaults benignos fuera de la cadena OWM + forecast integrado
+
+### Fixed — regla 7/8 en CADA eslabón atmosférico (8 archivos)
+`fetch_weather` publicaba 1013 hPa/20 °C/cielo despejado si OWM omitía un
+campo; `fetch_air_quality` reportaba gases ausentes como 0.0 «medidos» y
+un AQI 0 (imposible: la escala OWM es 1–5); el gradiente con <2 lecturas
+devolvía media 1013.0; `layer_runners` alimentaba el **término de presión
+del Fantasma** con ese default y `launcher` lo persistía como medido; el
+scanner evaluaba niebla/blue-jet/sprite con humedad 50 %/cielo despejado
+inventados; beta2 sumaba estrés con «presiones» que no existían. Fix:
+campo ausente = `None` en toda la cadena, modificadores saltados con None,
+persistencia NULL, reporte «sin dato». El valor del fantasma NO cambia
+(1013/0 no activaban los modificadores; None los salta) — lo que cambia
+es que ya no se persiste calma falsa.
+
+### Added — lo que OWM ya entregaba y se tiraba
+- Campos nuevos por lectura (cero llamadas extra): `wind_gust_ms`,
+  `rain_1h`/`snow_1h`, `grnd_level_hpa` (presión a nivel de estación),
+  `data_ts`.
+- `fetch_forecast()`: endpoint `/data/2.5/forecast` (5 días/3 h, incluido
+  en la misma key, nunca usado) → resumen por nodo (presión mín 24/48 h,
+  caída pronosticada, lluvia, ráfaga máx), TTL 3 h, integrado al ingest
+  de beta2 (`Forecast present: True`). **Sin regla de alerta aún**
+  (regla 9: primero observar la distribución, luego calibrar). One Call
+  3.0 (alertas de agencias, candidato a reemplazar el NHC 404) requiere
+  suscripción del operador — anotado.
+
+### Verificación
+Suite: solo los 2 rojos deliberados del baseline (`test_fantasma` 13/13,
+`test_precursor` 164/164). Smoke HTTP real: forecast tlaxcala (mín
+1016 hPa/48 h, 40 pasos), `gust`/`grnd_level` vivos, `rain_1h=None`
+honesto; gradiente sin presiones → `mean_pressure: None` + warning.
+
+---
+
+## 2026-10-19 (tarde) — Concilio a user-units y atención solar con fallback libre
+
+### Changed — `consensus-telegram`/`consensus-web`: user units únicas, system units viejas enmascaradas
+Existían como **system units** (`/etc/systemd/system/`, enabled,
+`Restart=always`) — el `sudo systemctl` del AGENTS.md era de su época.
+Creadas las equivalentes **user units** (`~/.config/systemd/user/`,
+Linger=yes; sin EnvironmentFile, se auto-cargan el .env con
+`load_dotenv`). Tras el reinicio de WSL de esa tarde las system units
+despertaron y duplicaron todo: dos pollers de `getUpdates` (**409
+Conflict** medidos, 60 en 45 min) y la web del sistema tomando el
+puerto 8002 (la user unit en crash-loop EADDRINUSE). El operador aplicó
+stop + mask manual (mv del archivo + `ln -s /dev/null` — `systemctl
+mask` solo se niega si el archivo de unit existe y no se pasó `--force`).
+Verificado: dos procesos vivos == MainPIDs de las user units, 0
+conflictos post-mask, cola drenada por el bot único. Home `AGENTS.md`
+corregido a `systemctl --user` con la historia.
+
+### Added — `atencion_wiki.py`: atención solar vía Wikipedia pageviews
+`fetch_solar_storm_trends` (pytrends) devuelve HTTP 400 de forma
+**intermitente** — medido: días seguidos en 400 y recuperación espontánea
+(este ciclo trajo 93 puntos). Nueva
+`infrastructure/api/atencion_wiki.py`: pageviews diarios (agent=user) de
+Solar_flare/Geomagnetic_storm/Solar_wind en en.wikipedia, MISMO contrato
+[date, solar_interest] (max entre artículos), keyless. Cableada como
+**fallback** en `fetch_jupiter_data`: Trends primero, Wikipedia cuando
+Google throttlea. **X API descartada**: su capa gratuita solo permite
+publicar; el endpoint de búsqueda/conteo —lo único que mide atención—
+cuesta ~$200/mes.
+
+### Changed — `tbl_trends_vivo.fuente`: la escala ya no se mezcla en silencio
+Trends es 0–100; Wikipedia pageviews son cientos–miles. Añadida columna
+`fuente` (migración forward-only: ALTER TABLE + UPDATE de las 119 filas
+históricas a `'trends'`), escrita por `_persist_xray_trends` desde
+`trends_fuente` del pipeline. El consumidor del dashboard
+(`/api/telemetry` trends) ahora muestra las últimas 5 filas con su fuente
+y la nota explica que las escalas NO son comparables. Impacto del cambio
+de escala en `trends_mean` de delta documentado en la bitácora: ONNX sin
+efecto (compuerta los deshabilitó) y la dimensión ya era degenerada en
+firmas (la tabla llevaba días congelada con varianza cero).
+
+---
+
+## 2026-10-19 — Revisión punta a punta: tres bugs bajo el "todo funciona"
+
+Pedido del operador: revisar el pipeline de punta a punta, empezando por
+logs. Los logs cantaron primero. Detalle completo en
+`estado/BITACORA_2026-10-19.md`.
+
+### Fixed — `layer_runners._persist_xray_trends`: NameError congelaba GOES 47 h
+La guarda interna decía `jupiter_data` tras renombrar el parámetro a
+`atencion_data`. El `except` "non-blocking" del llamador lo tragó dos días:
+`tbl_xray_vivo` congelada en 10-18 00:00 (alfa2 en memoria sí veía el xray
+fresco; lo muerto era la persistencia). El fetch de 7 días de NOAA rellenó
+el gap solo: 730 → 777 filas en el primer ciclo post-fix.
+
+### Fixed — `orchestrator._get_xray_max` leía config inexistente
+`SentinelOmegaConfig` no expone `database_path`/`db_path`; el getattr
+silencioso devolvía None y **FULGURACION_M jamás despachó** — con una
+fulguración M-class real activa (1,68e-05 W/m²) sin pagina. Refactor a
+`_leer_go_alfa2()`: una conexión read-only para (xray_max, goes_flare,
+alfa2_thermal), ruta por el patrón de `ConsensoVigilante`
+(`SENTINEL_DB` + default canónico). Los bloques goes_flare/alfa2_thermal
+de `_analyze_results` tenían el mismo vicio (`load_config().database_path`
+tragado por except) — reescritos contra el lector único. Verificado contra
+la config REAL (la primera verificación fue contra MockConfig — regla 0
+violada).
+
+### Fixed — etiqueta del digesto mentía sobre la ventana
+La línea de fulguración decía "· 6 h" cuando `_flare_reciente` lee 24 h.
+Corregida. El digesto ahora renderiza: `fulguración GOES clase M (máx
+1.7e-05 W/m² · 24 h)`.
+
+### Cadena verificada contra un flare M-class REAL
+fetch NOAA → persist → alfa2 watch (Juez) → `_leer_go_alfa2` →
+`format_fulguracion_alert` → AlertService → vigilante immediate (no buffer)
+→ cola compartida (stats `last_alert` 17:58:55) → bot del Concilio →
+Telegram. Anti-spam: cooldown 30 min por tipo (`IMMEDIATE_COOLDOWN_S`).
+
+### Nota operativa
+`consensus-telegram`/`consensus-web` corren como procesos directos (PID
+444/445), no como systemd units — `systemctl status consensus-telegram`
+da un falso "caído". Google Trends responde 400 (externo, preexistente):
+`tbl_trends_vivo` al día 17-oct por eso, y `trends_mean` de delta lee la
+última lectura real.
+
+---
+
+## 2026-10-18 — Enriquecimiento total: reportes, alertas, Telegram y dashboard
+
+**Objetivo**: Retirar jupiter (2026-10-18), enriquecer con GOES X-ray (Alfa-2 solar) y Alfa-2 térmico (Sentinel-1/2) en reportes, alertas, Telegram y dashboard.
+
+### Changed — Retiro de jupiter (medido, no especulado)
+- `deploy/generar_reporte.py`: `BOTS_RETIRADOS = {"jupiter"}` + filtro en todas las secciones
+- `deploy/aciertos_reporte.py`: `AND bot_name NOT IN ('jupiter')` en SQL total y por-bot
+- `deploy/reporte_ejecutivo.py`: `BOTS_ORDEN` actualizado (8 bots vivos, sin jupiter)
+- `tests/test_reporte_agentes.py`: test actualizado a `test_live_only_agents_appear_without_firmas`
+- `sentinel_omega/infrastructure/dashboard/api.py`: 4 referencias en comentarios/notas → "jupiter retirado"
+- **Resultado**: `grep -c jupiter estado/REPORTE.md` → 0; narrativa "8 bots especializados" presente
+
+### Added — GOES X-ray (Alfa-2 solar) en reportes
+- `deploy/generar_reporte.py`: sección "🌤️ GOES X-ray — Fulguración solar" (clase C/M/X, flux máx, ventana 24h)
+- `deploy/reporte_ejecutivo.py`: misma sección + contexto NOAA
+- `deploy/reporte_periodico.py`: `--comparativo`, `--semanal`, `--mensual` incluyen GOES + Alfa-2
+
+### Added — Alfa-2 térmico (Sentinel-1/2) en reportes
+- `deploy/generar_reporte.py`: tabla de zonas con anomalías térmicas (precedente de zona)
+- `deploy/reporte_ejecutivo.py`: misma tabla con cobertura y pases limpios/totales
+- `deploy/reporte_periodico.py`: todas las variantes incluyen Alfa-2 térmico
+
+### Changed — Formato nodos en todos los reportes y dashboard
+- **Antes**: `Tonga-Kermadec (Nodo 26)` con coords `(lat, lon)`
+- **Ahora**: `Tonga-Kermadec (Nodo 26)` — nombre principal + número de nodo como referencia
+- Archivos: `generar_reporte.py`, `reporte_ejecutivo.py`, `reporte_periodico.py`, `api.py` (cimática JOIN), `SenalesTab.tsx`
+
+### Added — Alertas & Telegram enriquecidos
+- `telegram.py`: `format_fulguracion_alert()` → impacto (ALTO/MODERADO/BAJO) + detalles (flux_mean, duración, región NOAA)
+- `format_centinela_threat()`: params `goes_flare`, `alfa2_thermal` → cada alerta incluye contexto solar/térmico
+- `dispatch_cycle_alerts()`: params `goes_flare`, `alfa2_thermal`
+- `orchestrator.py`: `_get_xray_max()` + lee GOES/Alfa-2 en ciclo → pasa a dispatcher
+- `consenso_vigilante.py`: `_flare_reciente()` + `FULGURACION_X/M` en `_ALWAYS_IMMEDIATE_TYPES` → page inmediato
+
+### Added — Dashboard API endpoints enriquecidos
+- `/api/telemetry`: GOES `flux_class` + Copernicus `zones_with_anomalies[]` (con zona, anomalías, cobertura, pases)
+- `/api/alertas`: `flare_alerts[]` (M/X class 24h)
+- `/api/health/apis`: **goes** (flare_class_24h, flux_max_24h) + **copernicus** (zones_with_anomalies, max_anomalies, status WATCH/ALERT/NEUTRAL)
+- `/api/cimatica`: JOIN `TBL_NODOS_TOPOLOGIA` → `nodo_nombre` en items
+- `/api/telemetry/history`: NUEVO endpoint serie 48h con GOES flux + Alfa-2 zones
+
+### Added — Dashboard Front enriquecido
+- **PrincipalTab**: GOES flare en telemetría + columna "Clase" en Alertas (emoji + ALERT/WATCH/INFO)
+- **TelemetriaTab**: 6 KPIs (incluye GOES + Alfa-2) + gráficas históricas GOES/Alfa-2 + tabla con flux_class
+- **SeñalesTab**: `nodo_nombre` en patrones cimáticos (ej: `Tonga-Kermadec (Nodo 26)`)
+- **Build**: ✅ TypeScript + Vite (75 módulos, 369KB)
+
+### Verificación
+| Check | Resultado |
+|-------|-----------|
+| `grep -c jupiter estado/REPORTE.md` | **0** (limpio) |
+| Tests | **1,307 pass / 2 known-fail** (mismo baseline) |
+| 5 Reportes | ✅ Generan + Telegram |
+| Dashboard Build | ✅ TypeScript + Vite |
+| Servicios | ✅ 5/5 `active running` |
+| API Health | GOES STALE + Copernicus NEUTRAL_LIVE + Beta1 LIVE |
+
+---
+
 ## 2026-10-17 — Vigía de Sentinel Omega (sidecar Elixir)
 
 Instalado `sidecar/vigia_sentinel/` — dead man's switch que detecta si el

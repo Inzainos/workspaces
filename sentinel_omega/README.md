@@ -10,8 +10,8 @@ naturales en cuatro dominios: espacio, tierra, atmósfera y financiero"**.
 |---|---|---|---|
 | **Espacio** | Tormentas geomagnéticas (Kp≥5), grietas de escudo (Bz≤−10), viento solar extremo, lluvia de protones | NOAA SWPC, OMNI2 (30 años), GOES X-ray | **8.439 tormentas en historia · scanner vivo · 429 firmas Kp6** |
 | **Tierra** | Enjambres sísmicos, sismicidad por nodo, actividad volcánica (SO2, VEI) | USGS FDSN, NASA MSVOLSO2L4 | **2 enjambres activos ahora · 756+223 firmas de erupciones** |
-| **Atmósfera** | Presión anómala, niebla, química atmosférica (CO/SO2) | OpenWeatherMap (4 estaciones + 6 volcanes) | **Vivo cada ciclo** |
-| **Financiero** | Estrés de mercado (VIX, FGI, volatilidad BTC) | Yahoo Finance, CoinGecko, Binance | **Vivo cada ciclo** |
+| **Atmósfera** | Presión anómala, niebla, química atmosférica (CO/SO2), anticipación barométrica (pronóstico 5d, observacional) | OpenWeatherMap (4 estaciones + 6 volcanes + forecast 5d/3h) | **Vivo cada ciclo** |
+| **Financiero** | Estrés de mercado (VIX, FGI, volatilidad BTC) + atención pública | Yahoo Finance, CoinGecko, Binance, Trends→Wikipedia | **Vivo cada ciclo** |
 
 ## Qué NO hace (medido, no especulado)
 
@@ -38,7 +38,7 @@ Candidatos con física más plausible que Schumann para precursores sísmicos:
 radón, resistividad eléctrica, migración de enjambres, cambios de
 velocidad Vp/Vs.
 
-## Arquitectura (9 bots + Padre + Juez, con lo muerto documentado)
+## Arquitectura (8 bots + Juez, con lo muerto documentado)
 
 Vivos:
 - `alfa1` (espacio: Bz, Kp, viento, protones) — votante
@@ -48,7 +48,7 @@ Vivos:
 - `omega` (ritmo cósmico: luna, Schumann-actividad, acoplamientos) — votante
 - `padre` (consenso jerárquico con corroboración por familia) — árbitro
 - `alfa2` (satélites: térmico por precedente + rayos X GOES clase M/X) — votante
-- `loki` (fractal-bayesiano) — **rutas muertas por construcción** (documentado)
+- `loki` (resonancia de rotación solar: tormenta Kp≥5 → tormenta recurrente 26–29 d; ganancia 3,4× medida — el fractal-bayesiano original murió por ~1e-112)
 
 Retirados (medido, no especulado):
 - `jupiter` (atención colectiva) — **fuera desde 2026-10-18**: 0 alertas en

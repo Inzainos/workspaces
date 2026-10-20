@@ -20,8 +20,8 @@ Esta regla manda sobre todo lo demás.
 |---|---|---|---|
 | **Espacio** | Tormentas geomagnéticas, grietas de escudo, viento solar | Kp, Bz, GOES | 8.439 tormentas en 30 años · scanner vivo |
 | **Tierra** | Enjambres sísmicos, actividad volcánica | USGS, SO2 | 191.592 eventos · 979 firmas de erupciones |
-| **Atmósfera** | Presión anómala, química, niebla | OWM (4 estaciones + 6 volcanes) | Vivo cada ciclo |
-| **Financiero** | Estrés de mercado (contexto, no predicción) | VIX, FGI, BTC | Vivo, techo WATCH |
+| **Atmósfera** | Presión anómala, química, niebla | OWM (4 estaciones + 6 volcanes, campos NULL honestos + pronóstico 5d/3h observacional) | Vivo cada ciclo |
+| **Financiero** | Estrés de mercado (contexto, no predicción) | VIX, FGI, BTC, atención pública (Trends→Wikipedia) | Vivo, techo WATCH |
 
 **Lo que NO hace** (medido, no especulado):
 - NO predice sismos M4.5+ vía Schumann (cerrado en negativo en dos estaciones)
@@ -38,15 +38,19 @@ Orchestrator → GeodynamicLayerRunner → 8 Agents (SNT×5 + Omega + Loki) → 
 │
 ├── Alfa-1 (Geodynamic: Bz, solar wind, seismic) — 30yr training
 │       ↑ validates
-├── Alfa-2 (Satellite: ESA Sentinel) — 14yr training
+├── Alfa-2 (Satélite: térmico por PRECEDENTE de zona + rayos X GOES M→WATCH/X→ALERT)
+│         — acumula en vivo (2026-07→), sin backcast; xray era de jupiter (2026-10-18)
 │
 ├── Beta-1 (The Artist — Cymatic Figure) — 30yr training  ← HEARTBEAT
 │       ↑ validates
-├── Beta-2 (The Analyst — réplica histórica + gas/presión) — 14yr training
+├── Beta-2 (The Analyst — réplica histórica + gas/presión OWM con NULLs
+│           honestos + forecast 5d/3h observacional, sin regla aún) — 14yr training
 │
-├── Delta  (Fin stress — WATCH si combined>0.6; NUNCA ALERT) — 10yr training
+├── Delta  (Fin stress — WATCH si combined>0.6; NUNCA ALERT; atención pública
+│           trends_mean: Trends→Wikipedia fallback con `fuente` marcada) — 10yr training
 │
-├── Loki  (Fractal-Bayesiano: Gauss-Jordan→Fourier→Bayes, nodo Tlaxcala)
+├── Loki  (Resonancia de rotación solar: tormenta Kp≥5 hace 26–29 d,
+│           ganancia 3,4× medida; el Gauss-Jordan→φ murió por ~1e-112)
 ├── Omega  (Memoria/correlación: ritmo cósmico — luna, Schumann, envolvente
 │           solar, acoplamiento Schumann↔mercado) — 30yr, NO es agente en vivo
 │
@@ -80,7 +84,12 @@ sin leer un dato de Schumann, y con su ruta viva al 0,02 % el sistema dio
 
 ## Key formulas
 
-- **Fantasma**: `(abs(bz)^2) + (viento*0.02) + (sch_wpc*1.5)` + pressure/Kp/LOD modifiers
+- **Fantasma**: `(abs(bz)^2) + (viento*0.02) + (sch_wpc*1.5)` + pressure/Kp/LOD modifiers.
+  Los modificadores de presión/Kp se **saltan con None** (2026-10-19): sin
+  dato de OWM o sin serie de Kp, `components` lleva NULL y el reporte dice
+  «sin dato» — antes un default benigno (1013 hPa / Kp 0) persistía calma
+  falsa en `TBL_PRECURSORES_COSMICOS` (regla 7/8). El valor del índice no
+  cambia; la honestidad sí.
 - **Risk levels**: LOW (<5), MODERATE (5-15), HIGH (15-30), CRITICAL (>=30)
 - **Asymmetric loss**: Miss penalty = 10x, False alarm = 1x
 - **Beta-1 (honesto)**: FFT PLANO del Kp (`kp_spectral_features`) — su única
@@ -371,7 +380,9 @@ sentinel_omega/
     reprueba sus eventos con la ventana desplazada atrás y se queda con el
     desplazamiento más temprano en que aún emparejaba. Escribe
     `TBL_FIRMAS.lag_promedio_h`/`lag_n` (por firma) y `tbl_lag_anticipacion`
-    (por clase). Los nueve bots y resolución de 1 h desde el 2026-09-27.
+    (por clase). Los nueve bots de entonces —la historia de jupiter
+    (retirado 2026-10-18) se conserva en TBL_FIRMAS— y resolución de 1 h
+    desde el 2026-09-27.
     **Tres cosas que cambiaron el 2026-10-08 y hay que saber antes de tocarlo**
     (corre en ~240 s, no en 21 s; se puede repoblar sin rebuild):
     * **El presupuesto se cuenta en FIRMAS, no en sondeos de evento.** Se
@@ -489,6 +500,15 @@ Backcast tables (1H resolution, 1994-2025):
 - `tbl_psique_financiera` — BTC price, volatility (2014+)
 - `tbl_enjambre_telemetria` — Schumann resonance per node
 - `tbl_nodo_estado_dinamico` — Node charge/tension (capped at 1.0)
+
+Live-feed tables (escritas por el ciclo, leídas por digesto/reports/dashboard):
+- `tbl_xray_vivo` — GOES X-ray por hora (flux_max/avg/banda) desde 2026-09-17;
+  alimenta a alfa2 (xray_*) vía `_persist_xray_trends`
+- `tbl_trends_vivo` — atención solar diaria. **Columna `fuente`** (2026-10-19):
+  `'trends'` (escala 0–100 de Google) o `'wiki'` (pageviews crudos de
+  Wikipedia, fallback cuando Trends da 400) — las escalas NO son comparables
+- `tbl_cobertura_satelital` — cobertura/térmico por zona de la rotación alfa2
+- `tbl_schumann_vivo` — actividad Schumann viva (hz retirado: NULL)
 
 Triggers: `trg_nodo_saturacion` + `trg_procesar_saturacion` cap saturation at 1.0
 
