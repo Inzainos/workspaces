@@ -67,6 +67,7 @@ sentinel_omega/data/backups/
 # operador hasta una hora sin reporte --- justo el silencio que ese arreglo
 # venía a evitar.
 sentinel_omega/data/estado_digesto.json
+sentinel_omega/data/auto_fix_estado.json
 sentinel_omega/data/schumann_sos70/
 sentinel_omega/data/reporte_padre_*.txt
 # Schumann de Sierra Nevada (UGR): la DB la cubre `*.db`, pero el `Npz.zip`
