@@ -117,8 +117,14 @@ de horas vivas no-neutral.
   promoción va solo por RECURRENCIA (`ESTADO_POR_RECURRENCIA`), así que un
   patrón que reaparece en calma se consolidaba igual que uno que precede
   eventos. `exigible` es el hecho MEDIDO de que la firma empareja eventos más
-  que calma (`discriminacion > 0,05`). Medido: de **23.248 consolidadas solo
-  982 son exigibles (4,2 %)**. `consolidadas()` devuelve las exigibles.
+  que calma — desde el 2026-10-08 decide el **lift relativo**
+  `(pe+1/n)/(pc+1/n) >= DISC_LIFT_MINIMO=2,0` más un suelo de aciertos
+  (`mantenimiento`; el absoluto `discriminacion > 0,05` se JUBILÓ ese día:
+  mataba al padre —con pe 0,0040 nunca podía pasarlo— y premiaba a alfa1
+  por disparar mucho sin distinguir). Medido el 18-oct contra
+  `TBL_FIRMAS`: **23.274 consolidadas, 11.377 exigibles (49 %)**
+  (`COALESCE(exigible,1)=1`; NULL = sin medir, no se demota en silencio).
+  `consolidadas()` devuelve las exigibles.
 - **El lag de una firma anticipa o solo persiste**, y son cosas distintas
   (medido el 2026-10-08). `_lag_detectado` barre hacia atrás desde el evento y
   toma el offset más lejano donde el patrón aún se reconoce; sondeado también
