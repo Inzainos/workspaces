@@ -409,6 +409,49 @@ def comparativo(conn) -> tuple:
     def _v(d, k):
         return d.get(k) if d else None
 
+    # GOES X-ray (Alfa-2 solar) — últimas 24 h
+    try:
+        goes_row = conn.execute(
+            "SELECT MAX(flux_max), MAX(timestamp_blk) FROM tbl_xray_vivo "
+            "WHERE timestamp_blk >= datetime('now', '-24 hours')"
+        ).fetchone()
+        if goes_row and goes_row[0] is not None:
+            flux_max = float(goes_row[0])
+            goes_ts = goes_row[1]
+            if flux_max >= 1e-6:
+                clase = "X" if flux_max >= 1e-4 else "M" if flux_max >= 1e-5 else "C"
+                emoji = "☀️" if clase in ("M", "X") else "🌤️"
+                cim_goes = f"## {emoji} GOES X-ray — Fulguración solar (Alfa-2)\n\n"
+                cim_goes += f"> Clase NOAA: **{clase}** (flux máx {flux_max:.1e} W/m²) a las {goes_ts}.\n"
+                cim_goes += f"> **M-class → WATCH**, **X-class → ALERT** (Alfa-2 vivo desde 2026-10-18).\n"
+            else:
+                cim_goes = f"## 🌤️ GOES X-ray — Sin fulguración significativa\n\n"
+                cim_goes += f"> Flux máx 24 h: **{flux_max:.1e} W/m²** a las {goes_ts} (< clase C).\n"
+    except Exception:
+        cim_goes = ""
+
+    # Alfa-2 Térmico — anomalías por precedente de zona
+    try:
+        cob = conn.execute(
+            "SELECT zona, thermal_anomalies, coverage_score, clear_passes, total_passes "
+            "FROM tbl_cobertura_satelital "
+            "WHERE timestamp_blk = (SELECT MAX(timestamp_blk) FROM tbl_cobertura_satelital)"
+        ).fetchall()
+        if cob:
+            zonas_sp = [(r[0], r[1], r[2], r[3], r[4]) for r in cob if r[1] and r[1] > 0]
+            if zonas_sp:
+                cim_alfa2 = "## 🛰️ Alfa-2 · Anomalías térmicas por precedente de zona\n\n"
+                cim_alfa2 += "| Zona | Anomalías | Cobertura | Pases limpios / totales |\n"
+                cim_alfa2 += "|---|---:|---:|---:|\n"
+                for z, anom, cov, clear, tot in zonas_sp:
+                    cim_alfa2 += f"| {z} | **{anom}** | {cov:.2f} | {clear} / {tot} |\n"
+            else:
+                cim_alfa2 = ""
+        else:
+            cim_alfa2 = ""
+    except Exception:
+        cim_alfa2 = ""
+
     lineas = [
         f"# 🔄 Comparativo diario — {hoy_str} vs {ayer_str}",
         f"*Corte {ahora.strftime('%H:%M')} hora MX*", "",
@@ -435,13 +478,20 @@ def comparativo(conn) -> tuple:
         # el sistema acertaba.
         f"| …y su ganancia (Molchan) | {_gan_txt(gan_hoy)} | "
         f"{_gan_txt(gan_ayer)} | "
-        f"{_delta_txt(gan_hoy.get('ganancia'), gan_ayer.get('ganancia'), '{:+.2f}') if None not in (gan_hoy.get('ganancia'), gan_ayer.get('ganancia')) else '—'} |",
+        f"{_delta_txt(gan_hoy.get('ganancia'), gan_ayer.get('ganancia'), '{:+.2f}') if gan_hoy and gan_ayer and None not in (gan_hoy.get('ganancia'), gan_ayer.get('ganancia')) else '—'} |",
         f"| Patrones cimáticos (total / nuevos 24h) | "
         f"{cim[0]} | — | +{cim[1] or 0} |",
         "",
         _lectura_rapida(_v(hoy, "fantasma_media"), _v(hoy, "breaches"), viva_hoy,
                         gan_hoy), "",
     ]
+
+    if cim_goes:
+        lineas.append(cim_goes)
+        lineas.append("")
+    if cim_alfa2:
+        lineas.append(cim_alfa2)
+        lineas.append("")
 
     aciertos_sec, aciertos_imgs = _seccion_aciertos(DB_DEFAULT, 1, "Aciertos — Últimas 24 horas")
     if aciertos_sec:
@@ -499,8 +549,54 @@ def _resumen_rango(conn, n_dias, titulo, archivo, prefijo_grafica):
         f"**{f'{viva:.0%}' if viva is not None else '—'}** "
         f"(n={n_viva} resueltas)",
         "",
-        "## Cimática",
     ]
+
+    # GOES X-ray (Alfa-2 solar) — últimas 24 h
+    try:
+        goes_row = conn.execute(
+            "SELECT MAX(flux_max), MAX(timestamp_blk) FROM tbl_xray_vivo "
+            "WHERE timestamp_blk >= datetime('now', '-24 hours')"
+        ).fetchone()
+        if goes_row and goes_row[0] is not None:
+            flux_max = float(goes_row[0])
+            goes_ts = goes_row[1]
+            if flux_max >= 1e-6:
+                clase = "X" if flux_max >= 1e-4 else "M" if flux_max >= 1e-5 else "C"
+                emoji = "☀️" if clase in ("M", "X") else "🌤️"
+                lineas.append(f"## {emoji} GOES X-ray — Fulguración solar (Alfa-2)")
+                lineas.append("")
+                lineas.append(f"> Clase NOAA: **{clase}** (flux máx {flux_max:.1e} W/m²) a las {goes_ts}.")
+                lineas.append(f"> **M-class → WATCH**, **X-class → ALERT** (Alfa-2 vivo desde 2026-10-18).")
+                lineas.append("")
+            else:
+                lineas.append(f"## 🌤️ GOES X-ray — Sin fulguración significativa")
+                lineas.append("")
+                lineas.append(f"> Flux máx 24 h: **{flux_max:.1e} W/m²** a las {goes_ts} (< clase C).")
+                lineas.append("")
+    except Exception:
+        pass
+
+    # Alfa-2 Térmico — anomalías por precedente de zona
+    try:
+        cob = conn.execute(
+            "SELECT zona, thermal_anomalies, coverage_score, clear_passes, total_passes "
+            "FROM tbl_cobertura_satelital "
+            "WHERE timestamp_blk = (SELECT MAX(timestamp_blk) FROM tbl_cobertura_satelital)"
+        ).fetchall()
+        if cob:
+            zonas_sp = [(r[0], r[1], r[2], r[3], r[4]) for r in cob if r[1] and r[1] > 0]
+            if zonas_sp:
+                lineas.append("## 🛰️ Alfa-2 · Anomalías térmicas por precedente de zona")
+                lineas.append("")
+                lineas.append("| Zona | Anomalías | Cobertura | Pases limpios / totales |")
+                lineas.append("|---|---:|---:|---:|")
+                for z, anom, cov, clear, tot in zonas_sp:
+                    lineas.append(f"| {z} | **{anom}** | {cov:.2f} | {clear} / {tot} |")
+                lineas.append("")
+    except Exception:
+        pass
+
+    lineas.append("## Cimática")
     for ambito, n, fmax in cim:
         lineas.append(f"- Patrones `{ambito}`: {n} (frecuencia máx {fmax})")
     if consistentes:

@@ -67,6 +67,7 @@ def obtener_aciertos_recientes(db_path: str = DB_DEFAULT, dias: int = 30) -> Lis
     WHERE j.resultado = 'ACIERTO'
       AND j.timestamp >= ?
       AND j.fase = 'viva'
+      AND j.bot_name NOT IN ('jupiter')   -- retirado 2026-10-18; historia viva NO borrada
     ORDER BY j.timestamp DESC
     """
 
@@ -143,6 +144,7 @@ def obtener_estadisticas_aciertos(db_path: str = DB_DEFAULT, dias: int = 90) -> 
         COUNT(*) as total
     FROM TBL_JUEZ_AUDITORIA
     WHERE timestamp >= ? AND fase = 'viva'
+      AND bot_name NOT IN ('jupiter')   -- retirado 2026-10-18; historia viva NO borrada
     """
 
     total_row = conn.execute(total_query, (timestamp_cutoff,)).fetchone()
@@ -157,6 +159,7 @@ def obtener_estadisticas_aciertos(db_path: str = DB_DEFAULT, dias: int = 90) -> 
         ROUND(AVG(ventana_h / 24.0), 1) as dias_anticipacion_promedio
     FROM TBL_JUEZ_AUDITORIA
     WHERE timestamp >= ? AND fase = 'viva' AND resultado IN ('ACIERTO', 'FALLO', 'FALSO_POSITIVO')
+      AND bot_name NOT IN ('jupiter')   -- retirado 2026-10-18; historia viva NO borrada
     GROUP BY bot_name
     ORDER BY aciertos DESC
     """

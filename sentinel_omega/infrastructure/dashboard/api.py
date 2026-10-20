@@ -14,6 +14,7 @@ import sqlite3
 import sys
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -220,11 +221,38 @@ class ReadOnlyRepository(SentinelRepository):
             if str(p.get("nivel_riesgo", "")).upper() in ("HIGH", "CRITICAL")
             or float(p.get("fantasma") or 0) >= 5.0
         ]
+        # Fulguraciones GOES (Alfa-2): M/X class en últimas 24 h = alerta potencial
+        # (Las alertas FULGURACION_X/M se despachan por Telegram vía consensus_vigilante;
+        # aquí mostramos las condiciones que las disparan.)
+        flare_alerts = []
+        try:
+            flare_rows = self._ro_execute(
+                """SELECT timestamp_blk, flux_max, flux_avg
+                   FROM tbl_xray_vivo
+                   WHERE timestamp_blk >= datetime('now', '-24 hours')
+                     AND flux_max >= 1e-5
+                   ORDER BY timestamp_blk DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            for r in flare_rows:
+                flux = float(r[1] or 0)
+                clase = "X" if flux >= 1e-4 else "M"
+                flare_alerts.append({
+                    "timestamp": r[0],
+                    "flux_max": flux,
+                    "flux_avg": float(r[2] or 0),
+                    "flare_class": clase,
+                    "source": "tbl_xray_vivo",
+                    "note": f"GOES {clase}-class flare → Alfa-2 WATCH/ALERT",
+                })
+        except Exception:
+            pass
         return {
             "geo_alerts": alert_cycles,
             "muro_breaches": breaches,
             "hot_detections": hot,
             "hot_fantasma": hot_risk,
+            "flare_alerts": flare_alerts,
         }
 
 
@@ -524,18 +552,23 @@ def cimatica(
     )
     if ambito:
         items = _rows(
-            """SELECT patron_id, substr(clave,1,120) AS clave, ambito, id_nodo, event_class,
-                      frecuencia, primera_vez, ultima_vez
-               FROM tbl_cimatica_patrones WHERE ambito=?
-               ORDER BY ultima_vez DESC LIMIT ?""",
+            """SELECT c.patron_id, substr(c.clave,1,120) AS clave, c.ambito, c.id_nodo, c.event_class,
+                      c.frecuencia, c.primera_vez, c.ultima_vez,
+                      n.nombre AS nodo_nombre
+               FROM tbl_cimatica_patrones c
+               LEFT JOIN TBL_NODOS_TOPOLOGIA n ON c.id_nodo = n.node_id
+               WHERE c.ambito=?
+               ORDER BY c.ultima_vez DESC LIMIT ?""",
             (ambito, limit),
         )
     else:
         items = _rows(
-            """SELECT patron_id, substr(clave,1,120) AS clave, ambito, id_nodo, event_class,
-                      frecuencia, primera_vez, ultima_vez
-               FROM tbl_cimatica_patrones
-               ORDER BY ultima_vez DESC LIMIT ?""",
+            """SELECT c.patron_id, substr(c.clave,1,120) AS clave, c.ambito, c.id_nodo, c.event_class,
+                      c.frecuencia, c.primera_vez, c.ultima_vez,
+                      n.nombre AS nodo_nombre
+               FROM tbl_cimatica_patrones c
+               LEFT JOIN TBL_NODOS_TOPOLOGIA n ON c.id_nodo = n.node_id
+               ORDER BY c.ultima_vez DESC LIMIT ?""",
             (limit,),
         )
     return _jsonable({"total": total, "limit": limit, "ambito": ambito, "by_ambito": by_ambito, "items": items})
@@ -992,7 +1025,7 @@ def modelos() -> Dict[str, Any]:
     # Dos razones distintas para no tener AUC, y la nota las confundía: un bot
     # que PASÓ por la compuerta y no alcanzó la muestra (`motivo` medido) no es
     # lo mismo que uno que nunca fue evaluado. Corregido el 2026-10-08 al ver
-    # el metadato real: alfa2 (38 muestras) y jupiter (53) son del primer caso.
+    # el metadato real: alfa2 (38 muestras) es del primer caso (sin evidencia).
     sin_evidencia = [f["bot"] for f in filas
                      if f["existe"] and not f["medido"] and f["motivo"]]
     sin_metadato = [b for b in sin_medir if b not in sin_evidencia]
@@ -1348,9 +1381,13 @@ def telemetry() -> Dict[str, Any]:
             _scalar("SELECT MAX(timestamp_blk) FROM tbl_xray_vivo", default=None) if _table_exists("tbl_xray_vivo") else None,
             int(_scalar("SELECT COUNT(*) FROM tbl_xray_vivo", default=0) or 0) if _table_exists("tbl_xray_vivo") else 0,
             "tbl_xray_vivo.flux_max",
-            None,
+            {"flux_max": _scalar("SELECT MAX(flux_max) FROM tbl_xray_vivo WHERE timestamp_blk >= datetime('now', '-24 hours')", default=None) if _table_exists("tbl_xray_vivo") else None,
+             "flux_class": ("X" if (_scalar("SELECT MAX(flux_max) FROM tbl_xray_vivo WHERE timestamp_blk >= datetime('now', '-24 hours')", default=0) or 0) >= 1e-4
+                           else "M" if (_scalar("SELECT MAX(flux_max) FROM tbl_xray_vivo WHERE timestamp_blk >= datetime('now', '-24 hours')", default=0) or 0) >= 1e-5
+                           else "C" if (_scalar("SELECT MAX(flux_max) FROM tbl_xray_vivo WHERE timestamp_blk >= datetime('now', '-24 hours')", default=0) or 0) >= 1e-6
+                           else "none")},
             "Fulguraciones GOES persistidas por hora desde 2026-09-17. Desde el "
-            "2026-10-18 alimentan a ALFA-2 (era de jupiter): umbral físico NOAA "
+            "2026-10-18 alimentan a ALFA-2 (jupiter retirado): umbral físico NOAA "
             "--- M-class (≥1e-5 W/m²) WATCH, X-class (≥1e-4) ALERT.",
         ),
         _src(
@@ -1364,19 +1401,27 @@ def telemetry() -> Dict[str, Any]:
             "copernicus", "Copernicus Sentinel-1/2 (Alfa-2)",
             "tbl_cobertura_satelital", cob_ts, cob_n,
             "tbl_cobertura_satelital.coverage_score",
-            {"coverage_score": cob0.get("coverage_score"), "thermal_anomalies": cob0.get("thermal_anomalies"), "clear_passes": cob0.get("clear_passes")},
-            "Así entra la cobertura satelital; Alfa-2 usa coverage_score / anomalías térmicas, no el JPEG crudo.",
+            {"coverage_score": cob0.get("coverage_score"), "thermal_anomalies": cob0.get("thermal_anomalies"), "clear_passes": cob0.get("clear_passes"),
+             "zones_with_anomalies": _rows("SELECT zona, thermal_anomalies, coverage_score, clear_passes, total_passes FROM tbl_cobertura_satelital WHERE timestamp_blk = (SELECT MAX(timestamp_blk) FROM tbl_cobertura_satelital) AND thermal_anomalies > 0 ORDER BY thermal_anomalies DESC") if cob_n else []},
+            "Así entra la cobertura satelital; Alfa-2 usa coverage_score / anomalías térmicas por precedente de zona. ≥1 zona sin precedente → WATCH; ≥3 → ALERT.",
         ),
         _src(
-            "jupiter_trends", "Google Trends (interés solar)",
+            "trends", "Atención solar (Trends → Wikipedia fallback)",
             "tbl_trends_vivo",
             _scalar("SELECT MAX(fecha) FROM tbl_trends_vivo", default=None) if _table_exists("tbl_trends_vivo") else None,
             int(_scalar("SELECT COUNT(*) FROM tbl_trends_vivo", default=0) or 0) if _table_exists("tbl_trends_vivo") else 0,
             "tbl_trends_vivo.solar_interest",
-            None,
-            "Interés de búsqueda solar persistido por día. Desde el 2026-10-18 "
-            "alimenta a DELTA (era de jupiter) como «tendencias», su dominio "
-            "documentado: Bolsa + cripto + tendencias.",
+            (_rows(
+                "SELECT fecha, solar_interest, fuente FROM tbl_trends_vivo "
+                "ORDER BY fecha DESC LIMIT 5"
+            ) if _table_exists("tbl_trends_vivo") else None),
+            "Atención solar diaria. Fuente PRIMARIA: Google Trends (escala "
+            "0–100); FALLBACK desde 2026-10-19: Wikipedia pageviews "
+            "(pageviews crudos) cuando Trends responde 400 — Google "
+            "throttlea por IP y falla por días seguidos. La columna "
+            "`fuente` marca cuál es cuál: las dos escalas NO son "
+            "comparables entre sí. Alimenta a DELTA (jupiter retirado) "
+            "como «tendencias», su dominio documentado.",
         ),
         _src(
             "delta", "Delta / acoplamiento geo-financiero",
@@ -1404,6 +1449,89 @@ def telemetry() -> Dict[str, Any]:
         "precursor": {"timestamp": p0.get("timestamp"), "fantasma": p0.get("fantasma"), "nivel_riesgo": p0.get("nivel_riesgo")} if p0 else None,
         "sources": sources,
     })
+
+
+@app.get("/api/telemetry/history")
+def telemetry_history(limit: int = Query(48, ge=1, le=168)) -> Dict[str, Any]:
+    """Serie histórica de telemetría para gráficas: 48h por defecto."""
+    if not _table_exists("TBL_PRECURSORES_COSMICOS"):
+        return {"history": []}
+    rows = _rows(
+        "SELECT timestamp as ts, bz_nT as bz, viento_km_s as viento, kp, schumann_hz as schumann, "
+        "fantasma, nivel_riesgo, schumann_activity as schumann_act "
+        "FROM TBL_PRECURSORES_COSMICOS ORDER BY timestamp DESC LIMIT ?",
+        (limit,),
+    )
+    # GOES X-ray
+    goes_rows = []
+    if _table_exists("tbl_xray_vivo"):
+        goes_rows = _rows(
+            "SELECT timestamp_blk as ts, flux_max, flux_avg, banda "
+            "FROM tbl_xray_vivo ORDER BY timestamp_blk DESC LIMIT ?",
+            (limit,),
+        )
+    # Alfa-2 térmico
+    alfa2_rows = []
+    if _table_exists("tbl_cobertura_satelital"):
+        alfa2_rows = _rows(
+            "SELECT timestamp_blk as ts, SUM(thermal_anomalies) as zones_anom, "
+            "AVG(coverage_score) as avg_coverage "
+            "FROM tbl_cobertura_satelital "
+            "WHERE timestamp_blk >= datetime((SELECT MAX(timestamp_blk) FROM tbl_cobertura_satelital), ?) "
+            "GROUP BY timestamp_blk ORDER BY timestamp_blk DESC LIMIT ?",
+            (f"-{limit} hours", limit),
+        )
+# Merge by timestamp: convert epoch (TBL_PRECURSORES_COSMICOS) to datetime string
+    # to match tbl_xray_vivo/tbl_cobertura_satelital format "YYYY-MM-DD HH:00"
+    goes_map = {r["ts"]: r for r in goes_rows}
+    # Normalize Alfa-2 timestamps to "YYYY-MM-DD HH:00" format
+    alfa2_map = {}
+    for r in alfa2_rows:
+        ts_raw = r["ts"]
+        # Normalize "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DD HH:MM" to "YYYY-MM-DD HH:00"
+        if " " in ts_raw:
+            parts = ts_raw.split(" ")
+            if len(parts) == 2:
+                date_part, time_part = parts
+                hour = time_part.split(":")[0]
+                ts_norm = f"{date_part} {hour}:00"
+            else:
+                ts_norm = ts_raw
+        else:
+            ts_norm = ts_raw
+        alfa2_map[ts_norm] = r
+    history = []
+    for r in rows:
+        ts = r["ts"]
+        # Convert epoch to "YYYY-MM-DD HH:00" format for matching
+        try:
+            ts_dt = datetime.fromtimestamp(float(ts), tz=timezone.utc)
+            ts_str = ts_dt.strftime("%Y-%m-%d %H:00")
+        except (TypeError, ValueError, OSError):
+            ts_str = str(ts)
+        goes = goes_map.get(ts_str)
+        alfa2 = alfa2_map.get(ts_str)
+        history.append({
+            "ts": ts,
+            "bz": r.get("bz"),
+            "viento": r.get("viento"),
+            "kp": r.get("kp"),
+            "schumann": r.get("schumann"),
+            "schumann_act": r.get("schumann_act"),
+            "fantasma": r.get("fantasma"),
+            "nivel_riesgo": r.get("nivel_riesgo"),
+            "goes_flux_max": goes.get("flux_max") if goes else None,
+            "goes_flux_avg": goes.get("flux_avg") if goes else None,
+            "goes_flux_class": (
+                "X" if goes and goes.get("flux_max", 0) >= 1e-4
+                else "M" if goes and goes.get("flux_max", 0) >= 1e-5
+                else "C" if goes and goes.get("flux_max", 0) >= 1e-6
+                else "none"
+            ) if goes else None,
+            "alfa2_zones_anom": alfa2.get("zones_anom") if alfa2 else 0,
+            "alfa2_avg_coverage": alfa2.get("avg_coverage") if alfa2 else None,
+        })
+    return _jsonable({"history": history})
 
 
 @app.get("/api/unificado")
@@ -1934,16 +2062,19 @@ def api_health() -> Dict[str, Any]:
     now = time.time()
 
     def _edad_horas(valor: Any) -> Optional[float]:
-        """Epoch REAL o texto 'YYYY-MM-DD HH:MM:SS' → horas de antigüedad."""
+        """Epoch REAL o texto 'YYYY-MM-DD HH:MM:SS' / 'YYYY-MM-DD HH:MM' → horas de antigüedad."""
         if valor is None:
             return None
         if isinstance(valor, (int, float)):
             return (now - float(valor)) / 3600.0
-        try:
-            dt = datetime.strptime(str(valor), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-            return (now - dt.timestamp()) / 3600.0
-        except (TypeError, ValueError):
-            return None
+        s = str(valor).strip()
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                dt = datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+                return (now - dt.timestamp()) / 3600.0
+            except (TypeError, ValueError):
+                continue
+        return None
 
     # --- LOCF cache: alfa1/alfa2/beta1/beta2/delta ---
     if _table_exists("tbl_locf_cache"):
@@ -2005,6 +2136,70 @@ def api_health() -> Dict[str, Any]:
                 "valores_distintos": distintos_hz,
                 "muestras": len(sch),
                 **({"nota": nota} if nota else {}),
+            }
+
+    # --- GOES X-ray (Alfa-2 solar) ---
+    if _table_exists("tbl_xray_vivo"):
+        xray = _rows(
+            "SELECT flux_max, flux_avg, timestamp_blk "
+            "FROM tbl_xray_vivo ORDER BY timestamp_blk DESC LIMIT 24"
+        )
+        if xray:
+            edad = _edad_horas(xray[0]["timestamp_blk"])
+            max_flux = max((r["flux_max"] or 0) for r in xray)
+            if max_flux >= 1e-4:
+                flare_class = "X"
+            elif max_flux >= 1e-5:
+                flare_class = "M"
+            elif max_flux >= 1e-6:
+                flare_class = "C"
+            else:
+                flare_class = "none"
+            if edad is not None and edad < 6:
+                estado = "LIVE"
+            elif edad is not None and edad < 24:
+                estado = "STALE"
+            else:
+                estado = "DESCONOCIDO"
+            health["goes"] = {
+                "status": estado,
+                "age_h": round(edad, 1) if edad is not None else None,
+                "flare_class_24h": flare_class,
+                "flux_max_24h": max_flux,
+                "muestras": len(xray),
+            }
+
+    # --- Copernicus Sentinel (Alfa-2 térmico) ---
+    if _table_exists("tbl_cobertura_satelital"):
+        cob = _rows(
+            "SELECT zona, thermal_anomalies, coverage_score, timestamp_blk "
+            "FROM tbl_cobertura_satelital "
+            "WHERE timestamp_blk = (SELECT MAX(timestamp_blk) FROM tbl_cobertura_satelital)"
+        )
+        if cob:
+            total_zones = len(cob)
+            zones_anom = sum(1 for r in cob if r["thermal_anomalies"] and r["thermal_anomalies"] > 0)
+            max_anom = max((r["thermal_anomalies"] or 0) for r in cob)
+            edad = _edad_horas(cob[0]["timestamp_blk"])
+            if max_anom >= 3:
+                estado = "ALERT"
+            elif zones_anom > 0:
+                estado = "WATCH"
+            else:
+                estado = "NEUTRAL"
+            if edad is not None and edad < 24:
+                estado = estado + "_LIVE"
+            elif edad is not None:
+                estado = estado + "_STALE"
+            else:
+                estado = "DESCONOCIDO"
+            health["copernicus"] = {
+                "status": estado,
+                "age_h": round(edad, 1) if edad is not None else None,
+                "zones_total": total_zones,
+                "zones_with_anomalies": zones_anom,
+                "max_anomalies": max_anom,
+                "muestras": total_zones,
             }
 
     return _jsonable(health)

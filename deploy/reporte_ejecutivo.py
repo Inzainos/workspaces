@@ -34,10 +34,9 @@ DB_DEFAULT = str(
 OUT_DEFAULT = str(Path(__file__).parent.parent / "estado" / "REPORTE_EJECUTIVO.md")
 
 VERSION_REPORTE = "1.0-omega"
-# `loki` faltaba (hallado 2026-10-08, el mismo descuido que en
-# `reporte_sentinel.bots_order`): son NUEVE bots y la lista tenia ocho, asi que
-# sus 1.824 firmas no salian en «Desempeno por bot» y la tabla parecia completa.
-BOTS_ORDEN = ["alfa1", "beta1", "alfa2", "beta2", "delta", "jupiter", "loki",
+# `jupiter` retirado 2026-10-18: 0 alertas en 168 ciclos, xray→alfa2, trends→delta.
+# `loki` faltaba (hallado 2026-10-08): son 8 bots vivos y la lista tenia 9.
+BOTS_ORDEN = ["alfa1", "beta1", "alfa2", "beta2", "delta", "loki",
               "omega", "padre"]
 
 # Región de la malla → agrupación operativa de la plantilla
@@ -443,8 +442,8 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     A("|---|---|---|---:|---:|---|---|")
     for i, m in enumerate(matches, 1):
         n = nodos.get(m.get("id_nodo"))
-        zona = (f"{n[0]} ({n[1]:.1f}, {n[2]:.1f})" if n
-                else f"nodo {m.get('id_nodo')}")
+        zona = (f"{n[0]} (Nodo {m.get('id_nodo')})" if n
+                else f"Nodo {m.get('id_nodo')}")
         lag_d = m.get("ventana_tipica_dias") or (
             lags.get(m.get("event_class"), 0) / 24 if lags.get(m.get("event_class")) else None)
         A(f"| {i} | {zona} | {m.get('event_class', '—')} | "
@@ -475,7 +474,74 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
     A("---")
     A("")
 
-    # ══ 6. Señales detectadas ════════════════════════════════════════════════
+    # ══ GOES X-ray (Alfa-2 solar) ══════════════════════════════════════════
+    try:
+        goes_row = conn.execute(
+            "SELECT MAX(flux_max), MAX(timestamp_blk) FROM tbl_xray_vivo "
+            "WHERE timestamp_blk >= datetime('now', '-24 hours')"
+        ).fetchone()
+        if goes_row and goes_row[0] is not None:
+            flux_max = float(goes_row[0])
+            goes_ts = goes_row[1]
+            if flux_max >= 1e-6:
+                clase = "X" if flux_max >= 1e-4 else "M" if flux_max >= 1e-5 else "C"
+                emoji = "☀️" if clase in ("M", "X") else "🌤️"
+                A(f"## {emoji} GOES X-ray — Fulguración solar (Alfa-2)")
+                A("")
+                A(f"> La clase NOAA se deriva del flujo X-ray máximo en la última "
+                  f"hora: **X ≥ 1e-4**, **M ≥ 1e-5**, **C ≥ 1e-6** W/m². "
+                  f"Una fulguración X/M puede preceder a una eyección de masa coronal "
+                  f"(CME) que llegue a la Tierra en 24–72 h. Alfa-2 vigila esto en "
+                  f"vivo: **M-class → WATCH**, **X-class → ALERT** (desde 2026-10-18).")
+                A("")
+                A(f"| Clase | Flux máx (W/m²) | Ventana | Última lectura |")
+                A(f"|---|---:|---|---|")
+                A(f"| **{clase}** | **{flux_max:.1e}** | 24 h | {goes_ts} |")
+                A("")
+            else:
+                A("## 🌤️ GOES X-ray — Sin fulguración significativa")
+                A("")
+                A(f"> Flux X-ray máximo en las últimas 24 h por debajo de clase C "
+                  f"(< 1e-6 W/m²). Valor: **{flux_max:.1e} W/m²** a las {goes_ts}.")
+                A("")
+    except sqlite3.OperationalError:
+        pass
+
+    # ══ Alfa-2 Térmico (Sentinel-1/2 por precedente de zona) ═════════════════
+    try:
+        cob = conn.execute(
+            "SELECT zona, thermal_anomalies, coverage_score, clear_passes, total_passes "
+            "FROM tbl_cobertura_satelital "
+            "WHERE timestamp_blk = (SELECT MAX(timestamp_blk) FROM tbl_cobertura_satelital)"
+        ).fetchall()
+        if cob:
+            zonas_sp = [(r[0], r[1], r[2], r[3], r[4]) for r in cob if r[1] and r[1] > 0]
+            if zonas_sp:
+                A("## 🛰️ Alfa-2 · Anomalías térmicas por precedente de zona")
+                A("")
+                A(f"> Alfa-2 (ESA Sentinel) detecta zonas donde la temperatura actual "
+                  f"supera su **PROPIO máximo histórico** (no un z-score global). "
+                  f"≥1 zona sin precedente → **WATCH**; ≥3 simultáneas → **ALERT**. "
+                  f"Medido: 13 % de horas vivas no-neutral (2026-10-18).")
+                A("")
+                A(f"| Zona | Anomalías | Cobertura | Pases limpios / totales |")
+                A(f"|---|---:|---:|---:|")
+                for z, anom, cov, clear, tot in zonas_sp:
+                    A(f"| {z} | **{anom}** | {cov:.2f} | {clear} / {tot} |")
+                A("")
+            else:
+                A("## 🛰️ Alfa-2 · Sin anomalías térmicas sin precedente")
+                A("")
+                A(f"> No hay zonas con temperatura por encima de su histórico en el "
+                  f"último bloque satelital. Alfa-2 en NEUTRAL.")
+                A("")
+    except sqlite3.OperationalError:
+        pass
+
+    A("---")
+    A("")
+
+    # ══ 6. Señales detectadas ═══════════════════════════════════════════════
     A("## 6. Señales detectadas")
     A("")
     A("### Detecciones del ciclo")
@@ -544,8 +610,9 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
         rec = m.get("recurrencia", 0)
         fort = "ALTA" if rec >= 100 else ("MEDIA" if rec >= 10 else "BAJA")
         lag_d = m.get("ventana_tipica_dias")
+        nodo_display = f"{n[0]} (Nodo {m.get('id_nodo')})" if n else f"Nodo {m.get('id_nodo')}"
         A(f"| {i} | #{m.get('firma_id', '—')} | {m.get('event_class', '—')} | "
-          f"{n[0] if n else m.get('id_nodo')} | {_pct(m.get('similitud'), 0)} | "
+          f"{nodo_display} | {_pct(m.get('similitud'), 0)} | "
           f"{rec:,} | {'~' + _num(lag_d, 0) + 'd' if lag_d else '—'} | {fort} |")
     if not matches:
         A("| — | — | — | — | — | — | — | — |")

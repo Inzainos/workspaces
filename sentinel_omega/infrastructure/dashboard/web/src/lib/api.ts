@@ -111,7 +111,20 @@ export const api = {
       recent: Record<string, unknown>[];
       summary: Record<string, unknown>;
     }>(`/api/aciertos?limit=${limit}`),
-  alertas: (limit = 50) => getJson<Record<string, unknown>>(`/api/alertas?limit=${limit}`),
+  alertas: (limit = 50) => getJson<{
+    geo_alerts: unknown[];
+    muro_breaches: unknown[];
+    hot_detections: unknown[];
+    hot_fantasma: unknown[];
+    flare_alerts: Array<{
+      timestamp: string;
+      flux_max: number;
+      flux_avg: number;
+      flare_class: string;
+      source: string;
+      note: string;
+    }>;
+  }>(`/api/alertas?limit=${limit}`),
   agente: () => getJson<Record<string, unknown>>("/api/agente"),
   ask: (question: string) =>
     postJson<{ answer: string; citations: string[] }>("/api/ask", { question }),
@@ -208,11 +221,33 @@ export const api = {
   telemetry: () => getJson<{
     caption_in: string;
     caption_out: string;
-    sources: Record<string, unknown>[];
+    sources: Array<{
+      id: string;
+      label: string;
+      inbound: Record<string, unknown>;
+      processed: Record<string, unknown>;
+    }>;
     locf_cache_n: number;
     ciclo: Record<string, unknown> | null;
     precursor: Record<string, unknown> | null;
   }>("/api/telemetry"),
+  telemetryHistory: (limit = 48) => getJson<{
+    history: Array<{
+      ts: string;
+      bz: number | null;
+      viento: number | null;
+      kp: number | null;
+      schumann: number | null;
+      schumann_act: number | null;
+      fantasma: number | null;
+      nivel_riesgo: string | null;
+      goes_flux_max: number | null;
+      goes_flux_avg: number | null;
+      goes_flux_class: string | null;
+      alfa2_zones_anom: number;
+      alfa2_avg_coverage: number | null;
+    }>;
+  }>(`/api/telemetry/history?limit=${limit}`),
   /** Matrices Padre+Juez / telemetría / climática */
   heatmaps: () => getJson<Record<string, unknown>>("/api/heatmaps"),
   /** Consenso: ciclos + pesos bots */

@@ -21,6 +21,9 @@ import {
 } from "@/components/ui/data";
 import { fmtTs } from "@/lib/utils";
 
+const flareEmoji = (cls: string) => cls === "X" ? "☀️" : cls === "M" ? "☀️" : cls === "C" ? "🌤️" : "";
+const flareColor = (cls: string) => cls === "X" ? "var(--color-critico)" : cls === "M" ? "var(--color-aviso)" : cls === "C" ? "var(--color-atencion)" : "var(--color-faint)";
+
 /**
  * PRINCIPAL — superficie MONITOR.
  *
@@ -55,6 +58,7 @@ export function PrincipalTab() {
   const cycF = useCallback(() => api.ciclos(60), []);
   const repF = useCallback(() => api.reportes(), []);
   const acF = useCallback(() => api.bots(), []);
+  const telF = useCallback(() => api.telemetry(), []);
 
   const ov = usePoll<Overview>(ovF, 20000);
   const al = usePoll(alF, 20000);
@@ -65,6 +69,7 @@ export function PrincipalTab() {
   const cyc = usePoll(cycF, 20000);
   const rep = usePoll(repF, 60000);
   const ac = usePoll(acF, 60000);
+  const tel = usePoll(telF, 30000);
 
   const d = ov.data;
   const nivel = nivelDe(d?.fantasma?.nivel_riesgo);
@@ -138,10 +143,12 @@ export function PrincipalTab() {
   const geo = ((al.data?.geo_alerts as Record<string, unknown>[]) || []).slice(0, 4);
   const breaches = ((al.data?.muro_breaches as Record<string, unknown>[]) || []).slice(0, 4);
   const hot = ((al.data?.hot_fantasma as Record<string, unknown>[]) || []).slice(0, 4);
+  const flares = ((al.data?.flare_alerts as Record<string, unknown>[]) || []).slice(0, 4);
   const topAlertas = [
     ...geo.map((r) => ({ ...r, _kind: "geo" })),
     ...breaches.map((r) => ({ ...r, _kind: "muro" })),
     ...hot.map((r) => ({ ...r, _kind: "fantasma" })),
+    ...flares.map((r) => ({ ...r, _kind: "flare", flare_class: r.flare_class })),
   ].slice(0, 8);
 
   const caData = (ca.data || {}) as Record<string, unknown>;
@@ -249,6 +256,27 @@ export function PrincipalTab() {
                 </div>
               ))}
             </dl>
+            {/* GOES X-ray flare (Alfa-2) */}
+            {(tel.data?.sources || []).map((src: any) => {
+              if (src.id !== "goes") return null;
+              const flux = src.processed?.value?.flux_max;
+              const cls = src.processed?.value?.flux_class;
+              if (flux == null || cls === "none") return null;
+              return (
+                <div key="goes" className="mt-3.5 flex items-center gap-2 border-t border-border pt-3">
+                  <span className="text-muted text-micro">GOES X-ray</span>
+                  <span
+                    className="mono text-body font-semibold"
+                    style={{ color: flareColor(cls) }}
+                  >
+                    {flareEmoji(cls)} Clase {cls} · {Number(flux).toExponential(1)} W/m²
+                  </span>
+                  <span className="text-micro text-faint ml-auto">
+                    M→WATCH, X→ALERT
+                  </span>
+                </div>
+              );
+            })}
             <div className="mt-3.5 flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3 text-meta">
               <span className="text-muted">
                 Nodos <span className="mono text-body">{d?.counts?.nodos ?? "—"}</span>
@@ -454,12 +482,33 @@ export function PrincipalTab() {
               key: "fantasma",
               label: "Fantasma",
               num: true,
-              render: (r) => <Cifra valor={r.fantasma} digits={2} />,
+              render: (r) => r._kind === "flare" ? <span className="dato-ausente">—</span> : <Cifra valor={r.fantasma} digits={2} />,
+            },
+            {
+              key: "flare_class",
+              label: "Clase",
+              render: (r) => {
+                if (r._kind !== "flare" || !r.flare_class) return <span className="dato-ausente">—</span>;
+                const cls = String(r.flare_class);
+                return (
+                  <span className="mono font-semibold" style={{ color: flareColor(cls) }}>
+                    {flareEmoji(cls)} {cls}
+                  </span>
+                );
+              },
             },
             {
               key: "nivel_riesgo",
               label: "Nivel",
               render: (r) => {
+                if (r._kind === "flare") {
+                  const cls = String(r.flare_class || "");
+                  return (
+                    <span className="mono font-semibold" style={{ color: flareColor(cls) }}>
+                      {cls === "X" ? "ALERT" : cls === "M" ? "WATCH" : "INFO"}
+                    </span>
+                  );
+                }
                 const nv = nivelDe(String(r.nivel_riesgo || r.risk_label || r.geo_signal || ""));
                 const txt = String(r.nivel_riesgo || r.risk_label || r.geo_signal || "");
                 if (!txt) return <span className="dato-ausente">—</span>;

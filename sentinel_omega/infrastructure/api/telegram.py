@@ -585,6 +585,8 @@ def format_centinela_threat(
     wind: float,
     schumann: Optional[float] = None,
     schumann_act: Optional[float] = None,
+    goes_flare: Optional[Dict] = None,
+    alfa2_thermal: Optional[Dict] = None,
 ) -> Optional[Tuple[str, str]]:
     """
     Prioridades Centinela V2. Devuelve (alert_type, html) o None.
@@ -596,9 +598,6 @@ def format_centinela_threat(
     bz = float(bz)
     wind = float(wind)
     schumann = hz_schumann_valido(schumann)
-    # La actividad WPC es lo único medido en vivo desde el retiro del Hz
-    # (2026-10-09). El parte CRÍTICO la reporta con la frecuencia declarada
-    # SIN MEDIR --- nunca como si estuviera medida.
     act_linea = ""
     if schumann_act is not None:
         try:
@@ -607,40 +606,63 @@ def format_centinela_threat(
         except (TypeError, ValueError):
             act_linea = ""
 
+    # GOES flare context
+    flare_line = ""
+    if goes_flare:
+        fx = goes_flare.get("flux_max")
+        cls = goes_flare.get("flare_class")
+        if fx and cls:
+            emoji = "☀️" if cls in ("X", "M") else "🌤️"
+            flare_line = f"\n{emoji} GOES: clase {cls} (flux {fx:.1e} W/m²)"
+
+    # Alfa-2 thermal context
+    thermal_line = ""
+    if alfa2_thermal:
+        n_zones = alfa2_thermal.get("zones_with_anomalies", 0)
+        max_anom = alfa2_thermal.get("max_anomalies", 0)
+        if n_zones > 0:
+            thermal_line = f"\n🛰️ Alfa-2: {n_zones} zona(s) sin precedente térmico (máx {max_anom} anomalías)"
+
     if r >= TH_RISK_CRIT:
         return (
             "CRITICO",
             f"🔴 <b>ALERTA CRÍTICA</b>\n\n"
-            f"⚠️ Fantasma: <b>{r:.2f}</b>\n"
-            f"🧲 Bz: {bz:.1f} nT\n"
-            f"💨 Viento: {wind:.0f} km/s"
-            # `is not None`, no `if schumann`: con el falsy, un 0 medido
-            # desaparecía del parte igual que un None. Aquí sólo llegan Hz
-            # (ver orchestrator.py); antes podía llegar una fracción de WPC.
-            + (f"\n🌐 Schumann: {schumann:.2f} Hz"
-               if schumann is not None else "")
-            + act_linea,
+            f"⚠️ Fantasma: <b>{r:.2f}</b> (CRITICAL ≥0.75)\n"
+            f"🧲 Bz: {bz:.1f} nT {'🔴 SUR' if bz < 0 else '⚪ NORTE'}\n"
+            f"💨 Viento: {wind:.0f} km/s\n"
+            + (f"\n🌐 Schumann: {schumann:.2f} Hz" if schumann is not None else "")
+            + act_linea
+            + flare_line
+            + thermal_line,
         )
     if bz <= TH_BZ_CRACK:
         return (
             "GRIETA",
             f"🛡️ <b>FALLO DE ESCUDO (GRIETA)</b>\n\n"
-            f"Bz colapsado: <b>{bz:.1f} nT</b>\n"
-            f"Posible entrada de energía solar.",
+            f"Bz colapsado: <b>{bz:.1f} nT</b> (sur)\n"
+            f"Posible entrada de energía solar.\n"
+            f"Viento: {wind:.0f} km/s"
+            + flare_line
+            + thermal_line,
         )
     if wind >= TH_WIND_STORM:
         return (
             "TORMENTA",
             f"🌪️ <b>TORMENTA SOLAR</b>\n\n"
             f"Viento: <b>{wind:.0f} km/s</b>\n"
-            f"Presión sobre magnetosfera.",
+            f"Presión sobre magnetosfera.\n"
+            f"Bz: {bz:.1f} nT"
+            + flare_line
+            + thermal_line,
         )
     if r >= TH_RISK_WARN:
         return (
             "ADVERTENCIA",
             f"🟠 <b>ACTIVIDAD ELEVADA</b>\n\n"
-            f"Fantasma: {r:.2f}\n"
-            f"Bz: {bz:.1f} | Viento: {wind:.0f}",
+            f"Fantasma: {r:.2f} (WARN ≥0.60)\n"
+            f"Bz: {bz:.1f} nT | Viento: {wind:.0f} km/s"
+            + flare_line
+            + thermal_line,
         )
     return None
 
@@ -662,6 +684,42 @@ def format_omega_dual_ask(meta: Dict) -> Optional[str]:
     )
 
 
+def format_fulguracion_alert(flux_max: float, flare_details: Optional[Dict] = None) -> Optional[Tuple[str, str]]:
+    """
+    Formatea alerta de fulguración GOES por flujo X-ray máximo.
+    Devuelve (alert_type, html) o None si flux < C-class.
+    """
+    fx = float(flux_max)
+    if fx < 1e-6:  # below C-class
+        return None
+    if fx >= 1e-4:
+        clase, emoji, sev_name = "X", "☀️", "X_CLASS"
+        impacto = "⚠️ <b>ALTO IMPACTO</b>: Eyección de masa coronal probable — posible tormenta geomagnética G3+ en 24-72 h. Revisar Kp/Bz en próximas horas."
+    elif fx >= 1e-5:
+        clase, emoji, sev_name = "M", "☀️", "M_CLASS"
+        impacto = "⚠️ <b>IMPACTO MODERADO</b>: CME posible — vigilar Kp/Bz próximo 24-48 h. Alfa-2 en WATCH."
+    else:
+        clase, emoji, sev_name = "C", "☀️", "C_CLASS"
+        impacto = "ℹ️ <b>BAJO IMPACTO</b>: Fulguración menor — sin CME esperada. Alfa-2 monitorea."
+    
+    detalles_extra = ""
+    if flare_details:
+        if flare_details.get("xray_mean"):
+            detalles_extra += f"\nFlux X-ray medio: <code>{flare_details['xray_mean']:.1e} W/m²</code>"
+        if flare_details.get("duracion_min"):
+            detalles_extra += f"\nDuración estimada: <code>{flare_details['duracion_min']} min</code>"
+        if flare_details.get("region_noaa"):
+            detalles_extra += f"\nRegión NOAA: <code>{flare_details['region_noaa']}</code>"
+    
+    return (
+        f"FULGURACION_{clase}",
+        f"{emoji} <b>FULGURACIÓN GOES CLASE {clase}</b>  <i>(Alfa-2 solar)</i>\n\n"
+        f"Flux X-ray máximo: <b>{fx:.1e} W/m²</b>\n"
+        f"Clase NOAA: <code>{clase}</code> (X≥1e-4, M≥1e-5, C≥1e-6){detalles_extra}\n\n"
+        f"{impacto}",
+    )
+
+
 def dispatch_cycle_alerts(
     *,
     fantasma: Optional[float] = None,
@@ -675,6 +733,9 @@ def dispatch_cycle_alerts(
     metadata: Optional[Dict] = None,
     muro_msg: Optional[str] = None,
     elevated_risk_msg: Optional[str] = None,
+    xray_max: Optional[float] = None,
+    goes_flare: Optional[Dict] = None,
+    alfa2_thermal: Optional[Dict] = None,
 ) -> int:
     """
     Un solo punto de despacho por ciclo: Centinela + consenso + dual-ask + muro.
@@ -708,11 +769,23 @@ def dispatch_cycle_alerts(
         sent += 1
 
     if fantasma is not None and bz is not None and wind is not None:
-        threat = format_centinela_threat(fantasma, bz, wind, schumann, schumann_act)
+        threat = format_centinela_threat(
+            fantasma, bz, wind, schumann, schumann_act,
+            goes_flare=goes_flare,
+            alfa2_thermal=alfa2_thermal,
+        )
         if threat:
             atype, html = threat
             sev = Severity.ROJO if atype in ("CRITICO", "GRIETA") else Severity.AMARILLO
             # Routine centinela watches go to the hourly digest (not a page).
+            _ingest(html, atype, sev)
+
+    # GOES X-ray flare (alfa2 domain): página inmediata para M/X, digest para C
+    if xray_max is not None:
+        flare = format_fulguracion_alert(xray_max, flare_details=goes_flare)
+        if flare:
+            atype, html = flare
+            sev = Severity.ROJO if "X_CLASS" in atype else Severity.AMARILLO
             _ingest(html, atype, sev)
 
     if consensus_signal and consensus_signal.lower() in ("alert", "watch"):

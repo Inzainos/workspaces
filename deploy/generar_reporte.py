@@ -47,6 +47,11 @@ DB_DEFAULT = str(
 )
 OUT_DEFAULT = str(Path(__file__).parent.parent / "estado" / "REPORTE.md")
 
+# Bots retirados del sistema: sus ventanas vivas SON historia del Juez
+# (append-only, conservada en la DB), pero NO parte del sistema que los
+# reportes describen. jupiter fuera desde el 2026-10-18 (ver bitacora).
+BOTS_RETIRADOS = {"jupiter"}
+
 # Traducción de variables técnicas a lenguaje llano (para la sección de factores)
 NOMBRES_LLANOS = {
     "bz_min": "Campo magnético solar (Bz mínimo)",
@@ -316,7 +321,8 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
         # Asertividad viva acumulada y de 7 días — vara canónica: viva_real
         viva_q = (
             "SELECT resultado, COUNT(*) FROM viva_real "
-            "WHERE resultado != 'PENDIENTE' {extra} "
+            "WHERE resultado != 'PENDIENTE' "
+            "AND bot_name NOT IN ('jupiter') {extra} "
             "GROUP BY resultado")
 
         def _viva(extra="", params=()):
@@ -535,6 +541,80 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             )
         lineas.append("")
 
+    # ── GOES X-ray (Alfa-2 solar) ──
+    try:
+        goes_row = conn.execute(
+            "SELECT MAX(flux_max), MAX(timestamp_blk) FROM tbl_xray_vivo "
+            "WHERE timestamp_blk >= datetime('now', '-24 hours')"
+        ).fetchone()
+        if goes_row and goes_row[0] is not None:
+            flux_max = float(goes_row[0])
+            goes_ts = goes_row[1]
+            if flux_max >= 1e-6:
+                clase = "X" if flux_max >= 1e-4 else "M" if flux_max >= 1e-5 else "C"
+                emoji = "☀️" if clase in ("M", "X") else "🌤️"
+                lineas += [
+                    f"## {emoji} GOES X-ray — Fulguración solar (Alfa-2)",
+                    "",
+                    f"> La clase NOAA se deriva del flujo X-ray máximo en la última "
+                    f"hora: **X ≥ 1e-4**, **M ≥ 1e-5**, **C ≥ 1e-6** W/m². "
+                    f"Una fulguración X/M puede preceder a una eyección de masa coronal "
+                    f"(CME) que llegue a la Tierra en 24–72 h. Alfa-2 vigila esto en "
+                    f"vivo: **M-class → WATCH**, **X-class → ALERT** (desde 2026-10-18).",
+                    "",
+                    f"| Clase | Flux máx (W/m²) | Ventana | Última lectura |",
+                    f"|---|---:|---|---|",
+                    f"| **{clase}** | **{flux_max:.1e}** | 24 h | {goes_ts} |",
+                    "",
+                ]
+            else:
+                lineas += [
+                    "## 🌤️ GOES X-ray — Sin fulguración significativa",
+                    "",
+                    "> Flux X-ray máximo en las últimas 24 h por debajo de clase C "
+                    f"(< 1e-6 W/m²). Valor: **{flux_max:.1e} W/m²** a las {goes_ts}.",
+                    "",
+                ]
+    except sqlite3.OperationalError:
+        pass
+
+    # ── Alfa-2 Térmico (Sentinel-1/2 por precedente de zona) ──
+    try:
+        cob = conn.execute(
+            "SELECT zona, thermal_anomalies, coverage_score, clear_passes, total_passes "
+            "FROM tbl_cobertura_satelital "
+            "WHERE timestamp_blk = (SELECT MAX(timestamp_blk) FROM tbl_cobertura_satelital)"
+        ).fetchall()
+        if cob:
+            zonas_sp = [(r[0], r[1], r[2], r[3], r[4]) for r in cob if r[1] and r[1] > 0]
+            if zonas_sp:
+                lineas += [
+                    "## 🛰️ Alfa-2 · Anomalías térmicas por precedente de zona",
+                    "",
+                    "> Alfa-2 (ESA Sentinel) detecta zonas donde la temperatura actual "
+                    "supera su **PROPIO máximo histórico** (no un z-score global). "
+                    "≥1 zona sin precedente → **WATCH**; ≥3 simultáneas → **ALERT**. "
+                    "Medido: 13 % de horas vivas no-neutral (2026-10-18).",
+                    "",
+                    "| Zona | Anomalías | Cobertura | Pases limpios / totales |",
+                    "|---|---:|---:|---:|",
+                ]
+                for z, anom, cov, clear, tot in zonas_sp:
+                    lineas.append(
+                        f"| {z} | **{anom}** | {cov:.2f} | {clear} / {tot} |"
+                    )
+                lineas.append("")
+            else:
+                lineas += [
+                    "## 🛰️ Alfa-2 · Sin anomalías térmicas sin precedente",
+                    "",
+                    "> No hay zonas con temperatura por encima de su histórico en el "
+                    "último bloque satelital. Alfa-2 en NEUTRAL.",
+                    "",
+                ]
+    except sqlite3.OperationalError:
+        pass
+
     # ── Firma matches (memoria de 30 años) ──
     matches = conn.execute(
         "SELECT detalles_json, timestamp FROM TBL_JUEZ_AUDITORIA "
@@ -601,12 +681,9 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 lag_txt = f"~{lag_dias:.0f} días" if lag_dias else "—"
                 nodo = nodos.get(m["id_nodo"])
                 if nodo:
-                    lugar = (
-                        f"**{nodo[0]}** ({nodo[1]:.1f}, {nodo[2]:.1f}) "
-                        f"· nodo {m['id_nodo']}"
-                    )
+                    lugar = f"**{nodo[0]}** (Nodo {m['id_nodo']})"
                 else:
-                    lugar = f"nodo {m['id_nodo']}"
+                    lugar = f"Nodo {m['id_nodo']}"
                 lineas.append(
                     f"| **{m['similitud']:.0%}** `{_barra(m['similitud'], 5)}` | "
                     f"{m['event_class']} | {lugar} | "
@@ -773,18 +850,19 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
         lineas += [
             "## 🧠 Memoria entrenada — lo que el sistema ya aprendió",
             "",
-            "> El sistema son **7 bots especializados**: `alfa1` vigila el "
+            "> El sistema son **8 bots especializados**: `alfa1` vigila el "
             "clima espacial (30 años), `beta1` la resonancia Schumann — el "
             "latido electromagnético de la Tierra (30 años), `alfa2` los "
-            "satélites Sentinel (aprende en vivo, sin backcast), `beta2` la "
-            "desgasificación volcánica y la atmósfera (14 años), `delta` el "
-            "humor de los mercados (10 años), `jupiter` la atención colectiva "
-            "sobre tormentas solares (en vivo), y `padre` arbitra entre todos. "
-            "Cada uno guarda sus propias **firmas** (patrones de vísperas de "
-            "evento). El **peso** es su credibilidad ante el padre: 1.00 = "
-            "normal; baja cuando falla y se recupera cuando acierta; puede "
-            "superar 1.00 solo si detectó algo que el padre dejó pasar. "
-            "`alfa2` y `jupiter` acumulan sus firmas desde los ciclos "
+            "satélites Sentinel y las fulguraciones GOES (aprende en vivo, "
+            "sin backcast), `beta2` la desgasificación volcánica y la "
+            "atmósfera (14 años), `delta` el humor de los mercados y las "
+            "tendencias (10 años), `omega` el ritmo cósmico (30 años), "
+            "`loki` la resonancia de la rotación solar, y `padre` arbitra "
+            "entre todos. Cada uno guarda sus propias **firmas** (patrones "
+            "de vísperas de evento). El **peso** es su credibilidad ante el "
+            "padre: 1.00 = normal; baja cuando falla y se recupera cuando "
+            "acierta; puede superar 1.00 solo si detectó algo que el padre "
+            "dejó pasar. `alfa2` acumula sus firmas desde los ciclos "
             "operativos, no desde el backcast histórico.",
             "",
             "| Bot | Firmas aprendidas | Veces confirmadas | Credibilidad |",
@@ -796,8 +874,10 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
                 f"| {f[0]} | {f[1]:,} | {f[2]:,} | {p:.2f} `{_barra(p / 1.5, 6)}` |"
             )
 
-        # alfa2 y jupiter acumulan firmas en vivo (sin backcast): si aún no tienen
-        # firmas, mostrarlos igual con su estado operativo para que no "desaparezcan".
+        # alfa2 acumula firmas en vivo (sin backcast): si aún no tiene
+        # firmas, mostrarla igual con su estado operativo para que no
+        # "desaparezca". (jupiter fue retirado el 2026-10-18; su historia
+        # viva se conserva en el Juez, no en la memoria activa.)
         mostrados = {f[0] for f in firmas}
         if "alfa2" not in mostrados:
             cob = conn.execute(
@@ -815,9 +895,6 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
             else:
                 estado = f"en vivo · {ciclos} ciclos · {pases} pases observados"
             lineas.append(f"| alfa2 | _{estado}_ | — | {p:.2f} `{_barra(p / 1.5, 6)}` |")
-        if "jupiter" not in mostrados:
-            p = pesos.get("jupiter", 1.0)
-            lineas.append(f"| jupiter | _en vivo · atención colectiva_ | — | {p:.2f} `{_barra(p / 1.5, 6)}` |")
 
         lineas.append("")
 
@@ -833,7 +910,8 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
         # Viva (operación): SOLO filas fase='viva' — vara canónica viva_real
         viva_q = (
             "SELECT bot_name, resultado, COUNT(*) FROM viva_real "
-            "WHERE resultado != 'PENDIENTE' {extra} "
+            "WHERE resultado != 'PENDIENTE' "
+            "AND bot_name NOT IN ('jupiter') {extra} "
             "GROUP BY bot_name, resultado"
         )
 
@@ -944,7 +1022,7 @@ def generar(db_path: str = DB_DEFAULT, out_path: str = OUT_DEFAULT) -> str:
         except sqlite3.OperationalError:
             pass
 
-        for bot in sorted(set(hist) | set(viva) | set(pesos_tbl)):
+        for bot in sorted((set(hist) | set(viva) | set(pesos_tbl)) - BOTS_RETIRADOS):
             h = hist.get(bot)
             bl = str(bot).lower()
             # Un bot sin peso ya NO sale con 1.00: eso le daba credibilidad

@@ -25,6 +25,7 @@ export function SenalesTab() {
   const ci = usePoll(useCallback(() => api.cimatica(50), []), 40000);
   const ca = usePoll(useCallback(() => api.cimaticaAhora(), []), 40000);
   const salud = usePoll(useCallback(() => api.healthApis(), []), 60000);
+  const tel = usePoll(useCallback(() => api.telemetry(), []), 30000);
 
   /** Serie sin inventar ceros: descarta nulos y reporta cuántos eran. */
   const serie = (filas: Record<string, unknown>[] | undefined, campo: string) => {
@@ -236,7 +237,7 @@ export function SenalesTab() {
                 {topPatrones.map((p, i) => (
                   <li key={i} className="grid grid-cols-[minmax(0,1fr)_72px_46px] items-center gap-2.5">
                     <span className="mono truncate text-micro text-body">
-                      {String(p.id_nodo ? `n${p.id_nodo}` : "gen")} · {String(p.event_class || "—")}
+                      {p.nodo_nombre ? `${p.nodo_nombre} (Nodo ${p.id_nodo})` : (p.id_nodo ? `Nodo ${p.id_nodo}` : "gen")} · {String(p.event_class || "—")}
                     </span>
                     <div className="h-1.5 overflow-hidden rounded-full bg-surface-sunken">
                       <div
@@ -259,6 +260,62 @@ export function SenalesTab() {
           </div>
         </div>
       </Panel>
+
+      {/* ---------- Alfa-2 Térmico (Sentinel-1/2 por precedente de zona) ---------- */}
+      {(tel.data?.sources || []).map((src: any) => {
+        if (src.id !== "copernicus") return null;
+        const zones = src.processed?.value?.zones_with_anomalies || [];
+        if (zones.length === 0) return null;
+        return (
+          <Panel
+            key="alfa2-thermal"
+            titulo="Alfa-2 · Anomalías térmicas por precedente de zona"
+            meta="ESA Sentinel-1/2 · tbl_cobertura_satelital"
+            nota="Alfa-2 detecta zonas donde la temperatura actual supera su PROPIO máximo histórico (no un z-score global). ≥1 zona → WATCH; ≥3 simultáneas → ALERT. Medido: 13 % de horas vivas no-neutral (2026-10-18)."
+          >
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                {zones.map((z: any, i: number) => (
+                  <div
+                    key={`${z.zona}-${i}`}
+                    className="rounded-lg border bg-surface p-3"
+                    style={{
+                      borderColor: z.thermal_anomalies >= 3
+                        ? "color-mix(in oklch, var(--color-critico) 40%, transparent)"
+                        : "color-mix(in oklch, var(--color-aviso) 40%, transparent)",
+                    }}
+                  >
+                    <div className="mono text-body font-semibold text-foreground">
+                      {z.zona}
+                    </div>
+                    <div className="mt-1.5 grid grid-cols-2 gap-2 text-micro">
+                      <span className="text-faint">Anomalías</span>
+                      <span
+                        className="mono text-right font-semibold"
+                        style={{
+                          color: z.thermal_anomalies >= 3
+                            ? "var(--color-critico)"
+                            : "var(--color-aviso)",
+                        }}
+                      >
+                        {z.thermal_anomalies}
+                      </span>
+                      <span className="text-faint">Cobertura</span>
+                      <span className="mono text-right text-body">
+                        {Number(z.coverage_score).toFixed(2)}
+                      </span>
+                      <span className="text-faint col-span-2">Pases</span>
+                      <span className="mono text-right text-body col-span-2">
+                        {z.clear_passes} / {z.total_passes}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Panel>
+        );
+      })}
     </div>
   );
 }

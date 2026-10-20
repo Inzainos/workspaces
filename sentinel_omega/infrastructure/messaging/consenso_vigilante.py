@@ -68,7 +68,8 @@ DIGEST_STATE_FILE = "estado_digesto.json"
 
 # Alert types that are always unprecedented (loop / health).
 _ALWAYS_IMMEDIATE_TYPES = frozenset(
-    {"SYSTEM_DEAD", "DEAD", "FALLO", "FALLO_CICLO"}
+    {"SYSTEM_DEAD", "DEAD", "FALLO", "FALLO_CICLO",
+     "FULGURACION_X", "FULGURACION_M"}   # GOES flares: page immediately
 )
 
 # Routine types that never page, even if severity is rojo/amarillo.
@@ -645,6 +646,34 @@ class ConsensoVigilante:
         activa = float(kp_max) >= tormenta_kp_min()
         return {"activa": activa, "kp_max": float(kp_max), "kp_min_umbral": tormenta_kp_min()}
 
+    def _flare_reciente(self) -> Optional[float]:
+        """Máx flux X-ray (W/m²) de tbl_xray_vivo en las últimas 24 h.
+
+        Ventana de 24 h: absorbe el retraso del escritor de bloques GOES
+        (hasta ~1,5 h) y cubre la persistencia horaria. Solo lectura (mode=ro).
+        Devuelve None si no hay dato (regla 7: sin medición no se informa).
+        """
+        path = self.db_path
+        if not path or not os.path.exists(path):
+            return None
+        try:
+            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
+        except sqlite3.Error:
+            return None
+        try:
+            row = conn.execute(
+                "SELECT MAX(flux_max) FROM tbl_xray_vivo "
+                "WHERE timestamp_blk >= datetime('now', ?)",
+                (f"-24 hours",),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            logger.debug("consulta xray falló: %s", exc)
+            return None
+        finally:
+            conn.close()
+        fx = row[0] if row else None
+        return float(fx) if fx is not None else None
+
     def maybe_flush(self, snapshot: Optional[Dict[str, Any]] = None) -> Optional[DispatchRecord]:
         """Flush the hourly digest if the timer is due. Always sends when due,
         even if the buffer is empty (calm hour still gets a concentrado).
@@ -1029,6 +1058,14 @@ class ConsensoVigilante:
                 tel_bits.append(f"Kp {float(kp):.1f} (tormenta geomagnética 0–9)")
             except (TypeError, ValueError):
                 tel_bits.append(f"Kp {kp} (tormenta geomagnética 0–9)")
+        # GOES X-ray (alfa2): clase física NOAA; solo muestra si hay fulguración ≥ C
+        fx = self._flare_reciente()
+        if fx is not None and fx >= 1e-6:
+            try:
+                clase = "X" if fx >= 1e-4 else "M" if fx >= 1e-5 else "C"
+                tel_bits.append(f"fulguración GOES clase {clase} (máx {fx:.1e} W/m² · 24 h)")
+            except (TypeError, ValueError):
+                pass
         tel_line = (
             "🛰 <b>Telemetría:</b> " + " · ".join(tel_bits)
             if tel_bits
