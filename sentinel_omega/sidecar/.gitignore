@@ -1,0 +1,5 @@
+# Estado vivo del vigía: lo reescribe el servicio en cada chequeo (como
+# data/ del sistema principal, regla 3). _build es artefacto de mix.
+_build/
+logs/
+state.json
