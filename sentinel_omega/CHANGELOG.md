@@ -1,3 +1,44 @@
+## 2026-10-21 (tarde) — GO: cimática espectral integrada como EVIDENCIA viva
+
+Adenda del audit en `estado/cimatica_firmas/AUDIT_cimatica_firmas_2026-10-21.md`
+(§ ADENDA post-GO).
+
+### Added — `core/firmas/cimatica_espectral.py` (capa operacional, config solo-clima)
+- `construir_centroides()`: vísperas muestreadas (misma semilla del audit) →
+  huellas solo-clima (40 dims) → z-score del corpus → centroides por familia
+  persistidos en `tbl_cimatica_tonos` (meta con mu/sd/config; forward-only).
+  Construidos contra producción: sismico 2.828 · solar 449 · volcánico 636.
+- `tono_actual()`: huella de la ventana viva (ancla = última hora CON DATO,
+  no el reloj) → distancia z-scoreada a los centroides. Centroide corrupto o
+  dims insuficientes → familia no comparable (None visible, no tumba el ciclo).
+- `audit_tono_eventos()`: el veredicto de producción — cada evento M4.5+
+  vivo se puntúa contra el tono de SU víspera; la contraparte viva del LOO.
+
+### Integrated — P2H + MiniApp heredan el tono cada ciclo
+`snapshot_2h` de plantillas incluye `tono` (try/except con log visible);
+la P2H imprime «🎼 Cimática espectral: régimen X (distancias)» y la MiniApp
+una celda «Cimática | régimen». Cero cambios al launcher — fluye por la
+cascada existente. Verificado en producción tras reinicio.
+
+### Medido en el cableado (adenda, más fuerte que el LOO)
+- **Concordancia viva (593 eventos, 30 d): 94% «volcánico»** en vísperas
+  sísmicas — como evidencia de familia, errónea; documentada antes de rotular.
+- **Holdout temporal (≤2015 → 2020-25): familia 47.8%** · volcánico 63% ·
+  solar 49% · **sismico 25%** — la víspera sísmica es climáticamente
+  indistinguible del fondo quieto (el hallazgo fundacional negativo, otra vez).
+- Los centroides separan por **Kp/viento** (quietud): el «volcánico» ES el
+  fondo quieto y la era viva es quieta. **El tono lee el RÉGIMEN de clima
+  espacial, no la familia del evento** — por eso la línea de producción
+  reporta el vector de distancias con las etiquetas de víspera, y el audit
+  de producción sigue acumulando.
+
+### Tests
+`test_cimatica_espectral.py`: 8/8 (huella/bins, cobertura→None, armónico
+correcto bajo Hann, centroides por régimen, tono sin centroides→None,
+identificación del régimen vivo, centroide corrupto→None, audit concordancia).
+
+---
+
 ## 2026-10-21 (mañana) — Motor cimático de la tela SNT medido sobre las firmas
 
 Detalle y veredicto en `estado/cimatica_firmas/AUDIT_cimatica_firmas_2026-10-21.md`.

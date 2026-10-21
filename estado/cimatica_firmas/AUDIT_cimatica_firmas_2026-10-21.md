@@ -128,4 +128,39 @@ loo_resumen.json, fig_cimatica_firmas_tonos.png).
 
 ---
 
+## ADENDA (post-GO, misma tarde): qué resultó ser el tono
+
+El operador dio GO a la integración como EVIDENCIA y al cablearla viva
+surgieron dos mediciones más fuertes que el LOO — ambas documentadas
+antes de reportar la línea en producción:
+
+**1. Concordancia viva (audit_tono_eventos, 593 eventos M4.5+ de los
+últimos 30 días):** el tono de la víspera dijo «volcánico» en **557/593
+(94%)** — tasa sismico 3.2%. Como corroboración de familia habría sido
+activamente errónea.
+
+**2. Holdout temporal (centroides ≤2015, prueba 2020-2025, n=316):**
+familia 47.8% (vs 51.2% en-era) — el tono sostiene, pero la confusión
+dice el qué: volcánico 63%, solar 49%, **sismico 25%**. La víspera
+sísmica es climáticamente indistinguible del fondo quieto — que es
+exactamente la física esperada (el hallazgo fundacional negativo del
+workspace: los sismos no correlacionan con el clima espacial).
+
+**Qué separa los centroides (dump de dims):** kp_promedio y
+viento_solar en todos los bins — sísmico +0.17 z, volcánico −0.6 z. El
+centroide «volcánico» ES el fondo quieto (las erupciones no correlacionan
+con clima espacial) y la era viva 2026 es quieta (viento 418 vs 430
+km/s del backcast), por eso la ventana viva cae ahí.
+
+**Conclusión de la adenda:** el motor lee el **RÉGIMEN de clima espacial**
+— la figura identifica el tono (quieto/turbulento), no el instrumento
+(familia del evento), igual que la tela SNT predicía su propia lectura.
+La línea de producción se rotula honesta: «Cimática espectral: régimen
+volcánico (volcanico 5.65 · solar 6.19 · sismico 6.32)» — las etiquetas
+son las vísperas del corpus; el payload es el VECTOR de distancias. El
+audit de producción (`audit_tono_eventos`) sigue acumulando la
+concordancia real por evento.
+
+---
+
 *Sentinel Omega · Fractal Core Research · 2026-10-21*

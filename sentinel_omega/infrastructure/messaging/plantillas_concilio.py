@@ -139,6 +139,18 @@ def snapshot_2h(conn: sqlite3.Connection) -> Dict[str, Any]:
         snap["goes_clase"] = None
         snap["goes_flux_max_24h"] = None
 
+    # Cimática espectral (tela SNT sobre firmas, audit 2026-10-21): el
+    # tono de la ventana viva. Entra como EVIDENCIA — lee el RÉGIMEN de
+    # clima espacial, no la familia del evento (la víspera sísmica es
+    # climáticamente indistinguible del fondo quieto: holdout temporal
+    # sismico 25%, volcanico 63%). Sin centroides → None visible.
+    try:
+        from sentinel_omega.core.firmas.cimatica_espectral import tono_actual
+        snap["tono"] = tono_actual(conn)
+    except Exception as exc:  # noqa: BLE001 — la plantilla sale igual
+        logger.warning("plantillas: tono cimático ilegible: %s", exc)
+        snap["tono"] = None
+
     try:
         row = conn.execute(
             "SELECT COUNT(*), MAX(thermal_anomalies) FROM tbl_cobertura_satelital "
@@ -246,6 +258,18 @@ def _render_p2h(snap: Dict[str, Any]) -> str:
     term = snap.get("termico")
     if term and term.get("zonas"):
         L.append(f"🛰️ Térmico Alfa-2: {term['zonas']} zona(s) sin precedente (máx {term['max']})")
+    tono = snap.get("tono")
+    if tono:
+        # El tono lee el RÉGIMEN de clima espacial (audit 2026-10-21):
+        # las etiquetas son las vísperas del corpus, no una predicción
+        # de familia — la víspera sísmica es indistinguible del fondo.
+        dists = " · ".join(
+            f"{f} {_f(d, 2)}" for f, d in sorted(
+                ((f, d) for f, d in (tono.get("dist") or {}).items()
+                 if d is not None), key=lambda kv: kv[1]))
+        if dists:
+            L.append(f"🎼 Cimática espectral: régimen <b>{tono.get('tono')}</b> "
+                     f"({dists})")
     L.append("")
     sen = snap.get("senales") or []
     if sen:

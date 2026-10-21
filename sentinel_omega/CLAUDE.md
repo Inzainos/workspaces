@@ -507,6 +507,17 @@ nodos, el countdown y la vara del Juez vivan una sola vez. El endpoint
   Todo alta/incremento dispara la revisión del Padre; patrón nuevo con
   Padre activo o frecuencia consistente (≥3) con evento asociado → alerta
   por Telegram. Módulo: `core/firmas/cimatica.py`.
+- **Capa espectral** (2026-10-21, motor de la tela SNT sobre firmas):
+  `core/firmas/cimatica_espectral.py` — el TONO de la ventana viva (14 d
+  como serie → fase → detrend/Hann → FFT → huella → distancia a
+  centroides de víspera por familia, `tbl_cimatica_tonos`). Entra como
+  EVIDENCIA en P2H/MiniApp, nunca como compuerta. Medido (audit
+  `estado/cimatica_firmas/`): LOO familia 46.8% vs placebo 32.9%,
+  solo-clima 51.2% — pero holdout temporal y concordancia viva (94%
+  «volcánico» en vísperas sísmicas) muestran que lee el RÉGIMEN de clima
+  espacial (quietud Kp/viento), no la familia del evento. El vector de
+  distancias es el payload; `audit_tono_eventos()` acumula la
+  concordancia real de producción.
 - **El correo ya no existe.** `infrastructure/api/correo.py` se borró el
   2026-09-15 y las variables SMTP están comentadas. `tbl_correo_salida` sigue en
   la base pero **cero código la referencia**: vestigio conservado a propósito
