@@ -787,6 +787,52 @@ class GeodynamicLayerRunner:
             return None
         return estado_resonancia(repo._execute)
 
+    def _persistir_operativa(
+        self, alfa1_data: Dict, beta1_data: Dict, atencion_data: Optional[Dict]
+    ) -> Dict[str, str]:
+        """Frontera ÚNICA de persistencia del ciclo (ítem 1, 2026-10-20 —
+        Cosmic Python, Unit of Work adaptado a SQLite de escritor único).
+
+        El bug del 10-19: el NameError de `_persist_xray_trends` vivió dos
+        días escondido en un `except` "non-blocking" de cuatro silencios
+        independientes. La frontera NO vuelve transaccional lo que no puede
+        serlo (SQLite con un solo escritor y ciclos de 5 min: una tx larga
+        pelearía el candado) — lo que hace es IMPOSIBLE el silencio:
+
+        - UNA línea estructurada por ciclo con el destino de cada ítem
+          (ok / <error corto>), siempre al mismo nivel de log.
+        - Un ítem caído degrada el ciclo, no lo tumba (fail-soft se
+          conserva: el sistema sigue midiendo lo demás).
+        - TODOS caídos = ERROR + CONSENSO_PERSIST_TOTAL_FAIL (señal apta
+          para el vigilante, no un warning que nadie relee).
+        """
+        tareas = (
+            ("sismos", lambda: self._persist_sismos(beta1_data)),
+            ("clima", lambda: self._persist_clima(alfa1_data)),
+            ("goes_trends", lambda: self._persist_xray_trends(atencion_data)),
+        )
+        resultados: Dict[str, str] = {}
+        for nombre, fn in tareas:
+            try:
+                fn()
+                resultados[nombre] = "ok"
+            except Exception as exc:  # noqa: BLE001 — la frontera es el punto
+                # de captura DELIBERADO; lo que importa es que se VEA.
+                resultados[nombre] = f"{type(exc).__name__}: {str(exc)[:120]}"
+        caidos = [n for n, r in resultados.items() if r != "ok"]
+        if caidos:
+            if len(caidos) == len(tareas):
+                logger.error(
+                    "CONSENSO_PERSIST_TOTAL_FAIL ciclo completo: %s", resultados
+                )
+            else:
+                logger.warning(
+                    "Ciclo persistido PARCIAL: %s", resultados
+                )
+        else:
+            logger.info("Ciclo persistido OK: %s", resultados)
+        return resultados
+
     def run(self, financial_data: Optional[Dict] = None) -> ConsensusResult:
         logger.info("=== Sentinel Omega Cycle ===")
 
@@ -797,11 +843,18 @@ class GeodynamicLayerRunner:
         beta2_data = self.pipeline.fetch_beta2_data()
         delta_data = self.pipeline.fetch_delta_data()
 
-        # El fetch de Beta-1 ya trajo el catálogo USGS: registrarlo en la
-        # operativa que lee el Juez (antes se descartaba → Juez ciego).
-        self._persist_sismos(beta1_data)
-        # Ídem con la telemetría de Alfa-1 → tbl_clima_espacial_raw.
-        self._persist_clima(alfa1_data)
+        # GOES X-ray + Google Trends (2026-10-18: jupiter RETIRADO; el fetch
+        # y la persistencia SIGUEN porque alimentan la memoria de alfa2
+        # (xray_*) y delta (trends_mean) vía tbl_xray_vivo / tbl_trends_vivo).
+        atencion_data: Optional[Dict] = None
+        try:
+            atencion_data = self.pipeline.fetch_jupiter_data()
+        except Exception as e:
+            logger.warning(f"GOES/Trends fetch failed (non-blocking): {e}")
+
+        # Frontera única de persistencia (antes: cuatro try/except dispersos,
+        # cada uno con su propio formato de silencio).
+        self._persistir_operativa(alfa1_data, beta1_data, atencion_data)
 
         risk = self._compute_precursor_risk(alfa1_data, beta1_data, beta2_data)
 
@@ -829,16 +882,10 @@ class GeodynamicLayerRunner:
             self.delta.analyze(),
         ]
 
-        # GOES X-ray + Google Trends (2026-10-18: jupiter RETIRADO; el fetch
-        # y la persistencia SIGUEN porque alimentan la memoria de alfa2
-        # (xray_*) y delta (trends_mean) vía tbl_xray_vivo / tbl_trends_vivo).
-        atencion_data: Optional[Dict] = None
-        try:
-            atencion_data = self.pipeline.fetch_jupiter_data()
-            self._persist_xray_trends(atencion_data)
-        except Exception as e:
-            logger.warning(f"GOES/Trends layer failed (non-blocking): {e}")
-
+        # GOES X-ray: ya se trajo al ARRIBA (fetch + persistencia en la
+        # frontera `_persistir_operativa`, ítem 1). Aquí solo se entrega a
+        # alfa2 — el bot satelital decide con la señal solar (decisión del
+        # operador, 2026-10-18).
         if self._enable_satellite and self.alfa2:
             try:
                 # Cobertura GLOBAL por rotación (2026-10-02). Antes se pedían

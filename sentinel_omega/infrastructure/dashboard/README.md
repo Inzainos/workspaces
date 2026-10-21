@@ -68,7 +68,7 @@ centrado con tres tarjetas iguales es el error más común y el más caro.
 | Pestaña | Superficie | Qué implica |
 |---|---|---|
 | Presentación | **Decide/Learn** | la única donde un hero es correcto |
-| Principal | **Monitor** | densidad, lectura de reojo, sin hero |
+| Principal | **Monitor** | densidad, lectura de reojo, sin hero — con las **Señales vivas con countdown** (reestructuración 2026-10-20: el leading que anticipa, `/api/estado-vivo`) y la **Cimática como figura** (clave → SVG determinista tipo Chladni, `CimaticaFigura.tsx`) |
 | Loki | **Monitor** | resonancia del ciclo mayor: el estado medido del rediseño 2026-10-12 (KPI de resonancia, posterior, última tormenta, reasoning vivo) |
 | Padre+Juez | **Compare** | los 4 KPI del nulo del lag + veredictos del Juez fase viva |
 | Predicciones | **Monitor** | estado de precursores y ventana |

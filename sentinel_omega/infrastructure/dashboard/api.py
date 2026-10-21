@@ -43,22 +43,11 @@ STALE_SECONDS = 600.0
 
 
 def _resolve_db() -> Path:
-    """Prefer SENTINEL_DB, then prod DB, then this tree's data/. Never default to Dev."""
-    env = os.environ.get("SENTINEL_DB")
-    if env:
-        return Path(env)
-    prod = Path("/home/deamon/workspaces/sentinel_omega/data/SENTINEL_OMEGA_PRO.db")
-    for cand in (
-        prod,
-        _PKG_DIR / "data" / "SENTINEL_OMEGA_PRO.db",
-        _REPO_ROOT / "data" / "SENTINEL_OMEGA_PRO.db",
-    ):
-        # Skip any path under workspaces-dev unless explicitly set via SENTINEL_DB
-        if "workspaces-dev" in str(cand):
-            continue
-        if cand.exists():
-            return cand
-    return prod
+    """Puerto compartido (infrastructure/database/ruta_db.py) desde el
+    2026-10-20 — antes esta lógica vivía solo aquí y duplicada como default
+    hardcodeado en consenso_vigilante y orchestrator."""
+    from sentinel_omega.infrastructure.database.ruta_db import ruta_db_canonica
+    return Path(ruta_db_canonica())
 
 
 
@@ -2035,6 +2024,35 @@ def clima_espacial(limit: int = Query(80, ge=1, le=400)) -> Dict[str, Any]:
         "caption": "OMNI-ish Bz/Kp/viento/protones. Solo lectura.",
     })
 
+
+
+@app.get("/api/estado-vivo")
+def estado_vivo() -> Dict[str, Any]:
+    """El snapshot unificado del launcher (fresco ≤5 min) — UNA llamada.
+
+    Reestructuración del tablero (2026-10-20, libros de KPIs/UX): las
+    señales vivas con countdown, la auditoría con ganancia, la serie de
+    fantasma, cimática y sismos viajan JUNTAS en el JSON que el launcher
+    refresca cada ciclo con el código del paquete (core/nodos,
+    baseline) — el tablero pasa de 9 polls a 1 por esta parte. La edad
+    se sirve explícita: frescura visible, no disfrazada (regla 7/8).
+    """
+    import time as _t
+    ruta = Path("/home/deamon/workspaces/estado/miniapp_estado.json")
+    if not ruta.is_file():
+        return {"ok": False, "error": "snapshot ausente (launcher sin correr)",
+                "edad_s": None}
+    try:
+        data = json.loads(ruta.read_text(encoding="utf-8"))
+    except Exception as e:
+        return {"ok": False, "error": f"snapshot ilegible: {e}",
+                "edad_s": None}
+    data["ok"] = True
+    try:
+        data["edad_s"] = round(_t.time() - float(data.get("ts", 0)), 0)
+    except (TypeError, ValueError):
+        data["edad_s"] = None
+    return data
 
 
 @app.get("/api/health/apis")

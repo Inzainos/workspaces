@@ -397,6 +397,29 @@ def run(args):
 
                 _log_cycle_summary(status, results, repo, config, runner=orch._runner)
 
+                # Plantillas cascada del Concilio (2026-10-20): P2H cada 3 h,
+                # P6H cada 6, P12H cada 12, P24H a medianoche — la marca en
+                # data/estado_plantillas.json evita dobles corridas. Y el
+                # snapshot de la MiniApp (fresco cada ciclo, ≤5 min).
+                try:
+                    from sentinel_omega.infrastructure.messaging.plantillas_concilio import (
+                        correr_debidas,
+                        refrescar_miniapp,
+                    )
+                    # Scope del loop: la conexión vive en el repo (`conn` solo
+                    # existe dentro de _auditar_ciclo — el NameError medido
+                    # en cada ciclo desde las 10:12 nació de eso).
+                    _conn_pl = getattr(repo, "_conn", None)
+                    if _conn_pl is not None:
+                        refrescar_miniapp(_conn_pl)
+                        hechas = correr_debidas(_conn_pl, str(db_path))
+                        if hechas:
+                            logger.info(
+                                "PLANTILLAS Concilio generadas: %s", hechas
+                            )
+                except Exception as _exc:
+                    logger.warning("Plantillas Concilio (no bloqueante): %s", _exc)
+
             except Exception as e:
                 logger.error(f"Cycle failed: {e}", exc_info=True)
 
@@ -1245,6 +1268,69 @@ def _auditar_ciclo(geo, repo, runner) -> None:
                     f"({lugar}, nodo {m['id_nodo']}, "
                     f"vista {m['recurrencia']} veces){ventana}"
                 )
+
+                # ── Aviso individual por SEÑAL VIVA (2026-10-20) ─────────────
+                # Pedido del operador: alertas individuales con sitio completo
+                # (nombre → nodo → coords), evento y LAG RESTÁNDOSE. Hasta hoy
+                # las firmas emparejadas solo vivían en el journal — el 93%
+                # de parecido con vísperas de sismo no llegaba al teléfono.
+                # Dedup por ANCLA (misma vara que el countdown): la señal
+                # NUEVA pagina una vez con todo su contexto; la persistente
+                # no re-pagina cada ciclo — su countdown fluye por las
+                # plantillas P2H/P6H cada 3–6 h (diseño del operador).
+                try:
+                    from datetime import datetime as _dt, timedelta as _td, timezone as _tzn
+                    from sentinel_omega.core.nodos import (
+                        formato_lag as _fmt_lag,
+                        lag_restante_h as _lag_db,
+                        sitio_nodo as _sitio,
+                    )
+                    from sentinel_omega.infrastructure.api.telegram import send_alert
+                    _ahora = time.time()
+                    _rest, _ancla = _lag_db(
+                        conn,
+                        ventana_tipica_h=m.get("ventana_tipica_h"),
+                        ahora_ts=_ahora,
+                        id_nodo=m.get("id_nodo"),
+                        event_class=str(m.get("event_class") or ""),
+                        timestamp_actual=0.0,
+                    )
+                    _edad_ancla_h = (
+                        (_ahora - _ancla) / 3600.0
+                        if _ancla is not None else None
+                    )
+                    if _edad_ancla_h is not None and _edad_ancla_h <= 0.2:
+                        # Ancla de hace ≤12 min: señal NUEVA → aviso individual.
+                        _sit = _sitio(
+                            m.get("nodo_nombre"), m.get("id_nodo"),
+                            m.get("nodo_lat"), m.get("nodo_lon"),
+                        )
+                        _lag_txt = (
+                            f"⏳ <b>Lag restante:</b> <code>{_fmt_lag(_rest)}</code>"
+                            + (
+                                f" → {(_dt.now(_tzn.utc) + _td(hours=max(_rest, 0))).strftime('%d/%m %H:%M')} UTC"
+                                if _rest is not None else ""
+                            )
+                        )
+                        _html = (
+                            f"📡 <b>SEÑAL VIVA — {m['event_class']}</b>\n\n"
+                            f"🎯 <b>{_sit}</b>\n"
+                            f"🧲 Parecido <b>{m['similitud']:.0%}</b> · "
+                            f"vista <b>{m['recurrencia']:,}×</b> en la historia\n"
+                            + (_lag_txt + "\n" if _rest is not None else
+                               "⏳ Sin lag medido — el patrón no demostró anticipar\n")
+                            + f"\n<i>La memoria reconoce el presente; el countdown "
+                            f"se actualiza en las plantillas P2H/P6H.</i>"
+                        )
+                        send_alert(_html)
+                        logger.info(
+                            "AVISO SEÑAL VIVA despachado: %s en %s (lag %s)",
+                            m["event_class"], _sit, _fmt_lag(_rest),
+                        )
+                except Exception as _exc:
+                    logger.warning(
+                        "Aviso de señal viva falló (non-blocking): %s", _exc
+                    )
 
         muro_lags = {}
         try:

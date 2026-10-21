@@ -1,3 +1,164 @@
+## 2026-10-21 (madrugada) — Auditoría de despliegue + fix: convergencia del muro de lags
+
+Detalle y verificación en `estado/BITACORA_2026-10-21.md`.
+
+### Fixed — `muro_lags` invisible en plantillas y MiniApp (Real 10)
+`plantillas_concilio.py` seleccionaba `dias_restantes` de
+`tbl_muro_lags_estado` — columna que **no existe**: es valor calculado en
+lectura (contrato de `/api/muro_lags`). El `sqlite3.OperationalError` caía
+en un `except` silencioso y la línea «🕐 Convergencia: faltan ~N–M d» jamás
+salió, ni en P2H ni en `miniapp_estado.json`, pese a fila activa en la
+tabla. Fix: cálculo en lectura espejo del API. Verificado punta a punta
+contra DB real y en producción tras reinicio: `[4, 6]` días
+(2026-10-25 → 2026-10-27, SISMO_M4/M5).
+
+### Fixed — `test_fetch_goes_xray` (Real 12: el instrumento, no el código)
+El mock seteaba `resp.json()` pero el fetch lee `resp.text` (parse
+defensivo del 10-20). `_mock_response` ahora expone `resp.text` como JSON
+serializado, como una respuesta real. Suite: **1.339 pasan, 0 fallos**
+(fuera de los 2 rojos deliberados de alfa1, que no corrían en la pasada).
+
+### Verified — despliegue del 10-20 completo y vivo
+Timestamps arranque-vs-edición de los 5 servicios tocados: cero archivos
+editados después del arranque. Cascada de plantillas disparada de forma
+natural: **primera P24H** a medianoche junto con P6H/P12H. Logs sin
+errores («Ciclo persistido OK» ×226).
+
+---
+
+## 2026-10-20 (noche) — Reestructuración del dashboard: señales con countdown, cimática como figura
+
+### Added — `/api/estado-vivo` + panel «Señales vivas · lag restándose»
+El leading que faltaba en el Monitor: cada firma emparejada como tarjeta
+con **sitio completo** (nombre → nodo → coords, formato `core/nodos`),
+evento, parecido/repeticiones y el **countdown restándose en vivo**
+(cliente ticka cada segundo desde `lag_restante_h` + ts del snapshot;
+ancla en la primera detección continua — no re-proyecta). Colores por
+urgencia: >72 h calma · 24–72 atención · <24 aviso · vencida neutra —
+siempre dentro de la regla «saturado = riesgo». «Sin lag medido» se ve
+distinto (ausente ≠ cero, al pixel). El endpoint sirve el JSON del
+launcher (≤5 min, `edad_s` explícito) — una llamada que consolida lo que
+antes pedían varios polls.
+
+### Added — `CimaticaFigura.tsx`: la clave cimática hecha FIGURA
+Hasta hoy la cimática se mostraba como hash crudo (un muro de texto
+ilegible). Ahora la clave se dibuja como **figura geométrica
+determinista** (FNV-1a → PRNG → 16 nodos perturbados sobre anillos,
+espejo vertical como las placas de Chladni, curvas suavizadas): la misma
+clave SIEMPRE dibuja la misma figura — reconocible de reojo, que es el
+punto de la cimática (libro/skill de ~/conocimiento). Color de la rampa
+neutra: la figura es dato, no estado de riesgo.
+
+### Changed — Cimática ahora (PrincipalTab)
+La figura al lado de la clave (rotulada «la semilla de la figura») +
+patrones y biblioteca en la misma superficie.
+
+### Verificación
+Build verde (76 módulos); navegador real (Playwright): 5 señales con
+sitio/countdown renderizadas, figura SVG presente, endpoint con 98 s de
+frescura y 5 señales. Suite: baseline.
+
+---
+
+## 2026-10-20 (tarde) — Interfaces del operador: countdowns, plantillas cascada y MiniApp
+
+Detalle y verificación en `estado/BITACORA_2026-10-20.md` §9.
+
+### Added — `core/nodos.py`: el formato canónico de sitio y el countdown
+`sitio_nodo()`: «Indonesia Java (Nodo 25 · -7.5, 110.0)» — nombre primero,
+una sola fuente de verdad (alertas, digesto, plantillas, MiniApp).
+`lag_restante_h()`: el countdown POR SEÑAL con ancla derivada del
+historial continuo del padre (sin estado en memoria; sobrevive reinicios;
+no re-proyecta desde ahora). Cableado en `format_precursor_alert` y en
+las líneas de precursores del digesto (lag RESTANDO en render).
+
+### Added — Plantillas cascada para el Concilio (messaging/plantillas_concilio.py)
+P2H cada 3 h (estado), P6H cada 6 h (comportamiento: junta las P2H previas,
+tendencias, señales que entran/salen/persisten), P12H (comparativo medio
+día), P24H (medianoche). Cadena por JSON en `estado/plantillas/`, MD
+legible, marca de cadencia `data/estado_plantillas.json` (patrón del
+digesto), dispatch por la cola de Telegram. **Disparo natural verificado
+a las 12:00:00 local: ['p2h','p6h','p12h'] con formato completo.**
+
+### Added — `estado/miniapp_estado.json`: el snapshot que sirve la MiniApp
+El launcher lo refresca cada ciclo (≤5 min) con TODO lo que la MiniApp
+muestra — estado, señales con countdown, auditoría con ganancia
+(calculada con el código de ESTE repo; el Concilio solo lo sirve). Sin
+duplicación de algoritmos entre repos: el JSON es el contrato.
+
+### Changed — MiniApp rediseñada (sirve el Concilio, calcula Sentinel)
+Hero leading, señales con countdown TICKANDO cada segundo, sparkline con
+umbrales 12/29, cimática, sismos, auditoría con la trinidad honesta
+(asertividad + muda + ganancia JUNTAS), chat Rápida/Tarea con el
+chatbot del sistema (ruta por intención + árbitro 4b — saga completa en
+el CHANGELOG del Concilio v3.0.7). Verificada en navegador real.
+
+### Fixed — hook de plantillas: `name 'conn' is not defined`
+Reventó EN CADA CICLO desde las 10:12 (scope: `conn` vive en
+`_auditar_ciclo`; en el loop principal es `repo._conn`) — la cascada y el
+refresh de la MiniApp quedaban muertos con el warning no-bloqueante
+tragándolo. Otra vez la regla 10: el silencio "no bloqueante" escondió
+un hook entero muerto.
+
+### OCR completado
+Estadística Práctica (726 KB), Battaner (336 KB) y Rosen (879 págs,
+2.9 MB) ya son grep-able — `~/conocimiento/INDICE.md` sin ⚠ pendientes.
+
+---
+
+## 2026-10-20 — «Aplicaremos todo»: el plan de la biblioteca ejecutado
+
+Detalle y verificación en `estado/BITACORA_2026-10-20.md`.
+
+### Added — `infrastructure/database/ruta_db.py`: el puerto de la DB
+Una sola fuente de verdad para la ruta canónica (`SENTINEL_DB` → prod →
+árbol, nunca workspaces-dev implícito) + `abrir_readonly()`. Migrados
+dashboard api, `consenso_vigilante` y `orchestrator`, que cargaban tres
+defaults hardcodeados gemelos — la familia del bug del MockConfig.
+
+### Added — `core/plausibilidad.py`: invariante de rango físico en ingesta
+Rangos de IMPOSIBILIDAD (no de rareza): OWM presión/temp/humedad/gases
+(incl. AQI 1–5 — el 0 imposible ya no pasa), GOES flux, Kp 0–9, Bz ±200,
+y como invariante en `compute_fantasma` (Bz=999 de API corrupta ya no
+hace fantasma=998001). 8 tests; wiring OWM+GOES+fantasma. Empezó en
+infrastructure y se MUDÓ a core (core no importa de infra — skill
+Cosmic Python). **Regla 9 en vivo contra el propio validador**: su piso
+de flux 1e-9 anuló 4+ lecturas REALES de sol quieto (9,99e-10) en el
+primer ciclo → piso corregido a 1e-11, bloques re-llenados solos por el
+fetch 7d + INSERT OR IGNORE (791 filas, 0 NULL, 0 falsos positivos).
+
+### Changed — `layer_runners`: frontera única de persistencia (UoW adaptado)
+`_persistir_operativa()`: UNA línea estructurada por ciclo (ok/parcial/
+total-fail), fail-soft conservado pero silencio imposible; fetch GOES
+adelantado al arranque para que alfa2 no dependa de la persistencia.
+Motivación: el NameError del 10-19 vivió 2 días en uno de los cuatro
+silencios que esto reemplaza. Verificado en producción: `Ciclo persistido
+OK: {'sismos','clima','goes_trends'}`.
+
+### Added — `deploy/medir_similitud_geometria.py`: geometría del umbral 0,80
+Con la métrica DEL engine sobre 131.468 pares intra-nodo reales: **el
+0,80 cae en el P97** (solo 3,1 % de las firmas de un mismo nodo se
+reconocen entre sí), dimensionalidad efectiva ~26 de 55, y el espacio
+**NO es euclidiano** (Schoenberg 18,7 % energía negativa). Mapa MDS:
+`estado/graficas/firma_espacio.png`. El umbral NO se tocó — la mesa para
+calibrarlo por nodo queda servida con números.
+
+### Added — `docs/JUEZ_INCENTIVOS_NASH.md`: diagnosis de incentivos
+Con pérdida 10:1, alertar es dominante para p>1/11: la ganancia 0,88× es
+el equilibrio que las reglas crean. Cuatro opciones de mechanism design
+(A–D), recomendación D→B. Ninguna aplicada — requiere GO.
+
+### Changed — Frontend (UX Reader + KPI Guide, quirúrgico)
+Encuadre leading/lagging explícito en PrincipalTab (la ganancia habla
+del PASADO, la franja del AHORA) y columna Origen en lenguaje de usuario
+(Ciclo/Muro/Fantasma/Fulguración). Build verde; sistema de diseño intacto.
+
+### Pendiente operador
+OCR de los 2 escaneados: `sudo apt install -y tesseract-ocr
+tesseract-ocr-spa` + `pip install pytesseract pdf2image`.
+
+---
+
 ## 2026-10-19 (noche) — Defaults benignos fuera de la cadena OWM + forecast integrado
 
 ### Fixed — regla 7/8 en CADA eslabón atmosférico (8 archivos)

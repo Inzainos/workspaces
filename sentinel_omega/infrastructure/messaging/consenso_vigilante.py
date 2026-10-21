@@ -468,10 +468,10 @@ class ConsensoVigilante:
         # horaria real (read-only).
         self._tormenta_fn = tormenta_fn
         self._now = now_fn
-        self.db_path = db_path or os.environ.get(
-            "SENTINEL_DB",
-            "/home/deamon/workspaces/sentinel_omega/data/SENTINEL_OMEGA_PRO.db",
-        )
+        # Ruta por el PUERTO compartido (2026-10-20, ítem 2): antes un default
+        # hardcodeado gemelo del que vivía en el orquestador y el dashboard.
+        from sentinel_omega.infrastructure.database.ruta_db import ruta_db_canonica
+        self.db_path = db_path or str(ruta_db_canonica())
         self._snapshot_fn = snapshot_fn
         self.buffer: List[BufferedAlert] = []
         # Se LEE del disco, no nace en cero: ver `DIGEST_STATE_FILE`. Sin esto
@@ -1073,6 +1073,41 @@ class ConsensoVigilante:
         )
 
         if precursores:
+            # Formato canónico de sitio + COUNTDOWN del lag (2026-10-20):
+            # «Tonga-Kermadec (Nodo 26 · -20.0, 175.0) · faltan ~108 h»,
+            # anclado a la primera detección continua de esa señal.
+            from sentinel_omega.core.nodos import (
+                formato_lag,
+                lag_restante_h as lag_restante_db,
+            )
+            conn_ro = None
+            try:
+                if self.db_path and os.path.exists(self.db_path):
+                    conn_ro = sqlite3.connect(
+                        f"file:{self.db_path}?mode=ro", uri=True, timeout=5.0)
+            except sqlite3.Error:
+                conn_ro = None
+
+            def _lag_linea(row) -> str:
+                lag_s = ""
+                vh = row.get("lag_horas")
+                if vh and conn_ro is not None:
+                    try:
+                        rest, _ = lag_restante_db(
+                            conn_ro,
+                            ventana_tipica_h=float(vh),
+                            ahora_ts=time.time(),
+                            id_nodo=row.get("id_nodo"),
+                            event_class=str(row.get("event_class") or ""),
+                        )
+                        if rest is not None:
+                            lag_s = f" · lag {formato_lag(rest)}"
+                    except Exception:  # noqa: BLE001 — el digesto sale igual
+                        pass
+                elif vh:
+                    lag_s = f" · lag típica {formato_lag(float(vh))}"
+                return lag_s
+
             prec_lines = ["📡 <b>Precursores (detalle):</b>"]
             for row in precursores[:8]:
                 tipo = row.get("display_name") or row.get("tipo") or "?"
@@ -1085,26 +1120,24 @@ class ConsensoVigilante:
                     except (TypeError, ValueError):
                         conf_s = str(conf)
                 lugar = row.get("lugar") or row.get("zona") or ""
-                lag_h = row.get("lag_horas")
-                lag_s = ""
-                if lag_h:
-                    try:
-                        lh = float(lag_h)
-                        lag_s = f" · lag ~{lh:.0f}h"
-                    except (TypeError, ValueError):
-                        pass
+                lag_s = _lag_linea(row)
                 det = row.get("detalle") or ""
                 line = "  · <b>%s</b>" % tipo
                 if conf_s:
                     line += " · conf <code>%s</code>" % conf_s
                 if lugar:
-                    line += chr(10) + "     📍 " + str(lugar)
+                    from sentinel_omega.core.nodos import sitio_nodo
+                    line += "\n     📍 " + sitio_nodo(
+                        lugar, row.get("id_nodo"),
+                        row.get("lat"), row.get("lon"))
                 if lag_s:
                     line += lag_s
                 if det:
                     line += chr(10) + "     📋 " + str(det)
                 prec_lines.append(line)
             prec_block = chr(10).join(prec_lines)
+            if conn_ro is not None:
+                conn_ro.close()
         else:
             prec_block = "📡 <b>Precursores:</b> ninguno nuevo esta hora — el sistema igual sigue midiendo."
 

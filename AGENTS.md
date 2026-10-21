@@ -79,12 +79,12 @@ herramientas; `sentinel_omega/CLAUDE.md` tiene detalle adicional y
 | Bot | Dominio | Memoria | Rol |
 |-----|---------|---------|-----|
 | `alfa1` | Clima espacial: Bz GSM, viento solar, Kp, protones | 1994→ | votante |
+| `alfa2` | Satélites ESA Sentinel (cobertura, térmico por PRECEDENTE de zona) + **rayos X GOES** (clase M→WATCH, X→ALERT; desde 2026-10-18) | vivo (2026-07→) | votante («vota y avisa», 2026-10-02) |
 | `beta1` | Resonancia Schumann — **el latido**; todo se correlaciona contra él | 1994→ | votante |
 | `beta2` | Desgasificación volcánica / atmósfera (SO₂ sobre baseline natural) | 2012→ | votante |
 | `delta` | Bolsa + cripto + **tendencias** (trends_mean desde 2026-10-18) | 2016→ | votante |
 | `omega` | Ritmo cósmico: fase lunar/sicigias + Schumann + envolvente solar + acoplamiento Schumann↔mercado | 1994→ | votante |
 | `loki` | Fractal-bayesiano: resonancia de rotación solar (Carrington, ganancia 3,4× medida) | 2014→ | votante |
-| `alfa2` | Satélites ESA Sentinel (cobertura, térmico por PRECEDENTE de zona) + **rayos X GOES** (clase M→WATCH, X→ALERT; desde 2026-10-18) | vivo (2026-07→) | votante («vota y avisa», 2026-10-02) |
 | `padre` | Consenso jerárquico cruzado entre familias (aplica pesos) | — | árbitro |
 
 **`jupiter` fue RETIRADO el 2026-10-18** (decisión del operador, sobre medición):
@@ -148,21 +148,31 @@ de horas vivas no-neutral.
   independientes de las del Padre. Reporte propio: `reporte_omega()`.
 - **Pérdida asimétrica:** el sistema prefiere sobre-alertar a sub-alertar.
 
+## Estado medido 2026-10-11 (Pivote estratégico)
+
+- **NO predice sismos M4.5+ vía Schumann**: hipótesis central cerrada en negativo en 2 estaciones independientes (Granada 2013-2017, Eskdalemuir 2025).
+- **NO tiene modelos ONNX aprobados**: compuerta de habilidad negó a los 7 (AUC ~0.5 vs nulo-por-nodo 0.899).
+- **NO mide frecuencia Schumann en vivo**: retirada 2026-10-09; solo ACTIVIDAD (intensidad WPC Tomsk).
+- **Arquitectura viva**: 8 bots votantes + Juez. `jupiter` RETIRADO 2026-10-18 (0 alertas en 168 ciclos, 0 exigibles).
+- **Firmas (medido 18-oct)**: 23.274 consolidadas, 11.377 exigibles (49%). `exigible` = lift relativo ≥2.0 + suelo aciertos.
+- **Familias**: `space_weather` (alfa1/alfa2), `schumann_cymatics` (beta1/beta2), `financial_sentiment` (delta). Consenso: ≥2 familias + ≥2 alertas + corroboración schumann_cymatics > 0.3.
+
 ## Qué es este repo
 
-**Sentinel Omega** — plataforma de detección de **precursores de eventos
-naturales** (sismos, actividad volcánica, tormentas solares, tsunamis).
-Autor: Elán Zainos Corona (Fractal Core Research). Sucesor de la familia TITAN
-V32/V46/V53.
+**Sentinel Omega** — plataforma de detección de **anomalías naturales multi-dominio** (espacio, tierra, atmósfera, financiero) — **pivote estratégico 2026-10-11**: ya no "predecir sismos vía Schumann".  
+Autor: Elán Zainos Corona (Fractal Core Research). Sucesor de la familia TITAN V32/V46/V53.
 
-Alcance: **únicamente precursores de eventos naturales.** No mezclar aquí:
-- **Genómica** → va en el repo *SNT Genómica*.
+**Alcance**: **Anomalías naturales en 4 dominios**, NO predicción puntual de sismos. No mezclar aquí:
+- **Genómica** → va en el repo *SNT Genómica* (separado).
 - **Sentinel Titan** (lotería / "Elite") → va en otra rama, no en `main`.
-- De lo financiero, este repo **sí** usa bolsa, cripto y tendencias (el bot
-  `delta`, "el humor de la tierra") como una señal precursora más.
+- De lo financiero, este repo **sí** usa bolsa, cripto y tendencias (el bot `delta`, "el humor de la tierra") como una señal precursora más.
 
-SNT (Shadow Node Theory) se usa **solo como framework matemático**
-(ley de potencia `R(t) = a·t^b`), no como propósito del sistema.
+**Estado medido (2026-10-11):**
+- **NO predice sismos M4.5+ vía Schumann**: hipótesis central cerrada en negativo en 2 estaciones independientes (Granada 2013-2017, Eskdalemuir 2025).
+- **NO tiene modelos ONNX aprobados**: compuerta de habilidad negó a los 7 (AUC ~0.5 vs nulo-por-nodo 0.899).
+- **NO mide frecuencia Schumann en vivo**: retirada 2026-10-09; solo ACTIVIDAD (intensidad WPC Tomsk).
+
+SNT (Shadow Node Theory) se usa **solo como framework matemático** (ley de potencia `R(t) = a·t^b`), no como propósito del sistema.
 
 ## Estructura de alto nivel
 
@@ -177,7 +187,7 @@ estado/             Reportes publicados: REPORTE.md (último) + historial/AAAA/M
 
 ```bash
 # Tests — SIEMPRE desde la raíz del workspace, nunca desde dentro de sentinel_omega/
-.venv/bin/python -m pytest sentinel_omega/tests/ -q   # 1.342 tests; 2 fallan (rojos deliberados de alfa1, 2026-10-11)
+.venv/bin/python -m pytest sentinel_omega/tests/ -q   # 1.309 tests; 2 fallan (rojos deliberados de alfa1, 2026-10-11)
 # El intérprete importa: `sentinel_omega/.venv` es un resto huérfano sin eodag
 # ni pytrends y da 4 fallos que son suyos. El servicio usa `workspaces/.venv`.
 

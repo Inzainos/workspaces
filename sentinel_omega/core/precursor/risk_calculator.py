@@ -136,6 +136,10 @@ def compute_fantasma(
 
     Core: fantasma = (viento * 0.02) + (abs(bz) ** 2) + (sch_wpc * 1.5)
 
+    Invariante de dominio (ítem 3, 2026-10-20): entradas físicamente
+    imposibles → None (regla 7/8). Un Bz de 999 nT de una API corrupta
+    haría fantasma = 998001 con toda su cara.
+
     Modifiers applied post-core:
     - Low pressure (<1008 hPa) adds up to 3.0
     - Kp >= 5 (storm level) multiplies by up to 1.5×
@@ -148,6 +152,17 @@ def compute_fantasma(
       term, and PREC stores schumann_hz / schumann_activity as NULL, never
       the old 7.83 / 0 placeholder.
     """
+    # Invariante de dominio (ítem 3, 2026-10-20): validación de plausibilidad
+    # ANTES de la fórmula — rangos físicos del core/plausibilidad.py.
+    from sentinel_omega.core.plausibilidad import validar
+
+    bz = validar("bz_nT", bz, origen="fantasma")
+    viento = validar("viento_solar_kms", viento, origen="fantasma")
+    sch_wpc = validar("schumann_wpc", sch_wpc, origen="fantasma")
+    kp = validar("kp", kp, origen="fantasma")
+    pressure_hpa = validar("pressure_hpa", pressure_hpa, origen="fantasma")
+    if lod_ms is not None:
+        lod_ms = validar("lod_ms", lod_ms, origen="fantasma")
     # Sobre `abs(bz) ** 2`, que parece un error y NO lo es --- esto costó una
     # medición y merece quedar escrito.
     #

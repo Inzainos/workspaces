@@ -74,5 +74,11 @@ El valor del proyecto ya no está en una predicción que no existe. Está en:
 1. **La plataforma multi-dominio** — espacio + tierra + atmósfera + financiero
 2. **La disciplina de medición honesta** — regla cero, modelo nulo, bitácoras
 3. **El auto-diagnóstico y reparación** — un sistema que se vigila a sí mismo
+4. **Las superficies operativas** (2026-10-20) — alertas individuales con
+   sitio completo y **lag restándose**; plantillas cascada para el
+   Concilio (P2H estado / P6H comportamiento / P12H / P24H comparativos);
+   MiniApp informativa con chatbot del sistema (Concilio, vía el
+   árbitro); tablero React con señales vivas con countdown y cimática
+   dibujada como figura determinista
 
 Autor: Elán Zainos Corona (Fractal Core Research)

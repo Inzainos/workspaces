@@ -508,20 +508,29 @@ def format_precursor_alert(
     lon: Optional[float] = None,
     lugar: Optional[str] = None,
     lag_horas: Optional[float] = None,
+    id_nodo=None,
+    lag_restante_h: Optional[float] = None,
 ) -> str:
     ahora = datetime.now(timezone.utc)
+    # Formato canónico de sitio (2026-10-20): el nombre primero, el nodo
+    # y sus coordenadas — nunca el número pelado.
+    from sentinel_omega.core.nodos import sitio_nodo, formato_lag
+
     location = ""
-    if lugar:
-        location = f"\n<b>Zona:</b> {lugar}"
-    if lat is not None and lon is not None:
-        location += f"\n<b>Coords:</b> {lat:.2f}, {lon:.2f}"
+    if lugar or id_nodo is not None:
+        location = f"\n<b>Zona:</b> {sitio_nodo(lugar, id_nodo, lat, lon)}"
 
     ventanas = ""
-    if lag_horas and lag_horas > 0:
-        h = int(lag_horas)
+    if lag_restante_h is not None:
+        # El COUNTDOWN vivo: se resta desde la primera detección.
         ventanas = (
-            f"\n<b>Ventana típica firma:</b> ~{h}h "
-            f"→ {(ahora + timedelta(hours=h)).strftime('%d/%m %H:%M')} UTC\n"
+            f"\n<b>Lag restante:</b> <code>{formato_lag(lag_restante_h)}</code>"
+            f" → {(ahora + timedelta(hours=max(lag_restante_h, 0))).strftime('%d/%m %H:%M')} UTC\n"
+        )
+    elif lag_horas and lag_horas > 0:
+        ventanas = (
+            f"\n<b>Lag típica de la señal:</b> <code>{formato_lag(lag_horas)}</code>"
+            f" → {(ahora + timedelta(hours=lag_horas)).strftime('%d/%m %H:%M')} UTC\n"
         )
     else:
         ventanas = (

@@ -218,6 +218,35 @@ export const api = {
       name ? `/api/reportes?name=${encodeURIComponent(name)}` : "/api/reportes",
     ),
   unificado: () => getJson<Record<string, unknown>>("/api/unificado"),
+  /** Estado vivo unificado del launcher (reestructuración 2026-10-20) */
+  estadoVivo: () => getJson<{
+    ok: boolean;
+    ts: number;
+    edad_s: number | null;
+    ciclo: {
+      timestamp: number; geo_signal: string; geo_confidence: number;
+      fantasma: number; nivel_riesgo: string; precursors_count: number;
+      precursor_types: string | null; muro_walls_active: number; muro_breach: number;
+    } | null;
+    telemetria: Record<string, number | null> | null;
+    goes_clase: string | null;
+    termico: { zonas: number; max: number } | null;
+    senales: Array<{
+      sitio: string; id_nodo: number; evento: string;
+      similitud: number | null; recurrencia: number | null;
+      lag_inicial_h: number | null; lag_restante_h: number | null; ancla_ts: number | null;
+    }>;
+    muro_lags: { clases: string; fecha_inicio: string; fecha_fin: string;
+                 dias_restantes: [number, number] } | null;
+    auditoria: {
+      aciertos: number; fallos: number; falsos_positivos: number;
+      ganancia: number | null; asertividad: number | null; asertividad_muda: number | null;
+    };
+    cimatica_total: number | null;
+    cimatica_top: Array<{ frecuencia: number; event_class: string | null; ambito: string | null }>;
+    serie_fantasma: Array<{ ts: number; fantasma: number; nivel: string }>;
+    sismos_recientes: Array<{ ts: number; mag: number; lugar: string }>;
+  }>("/api/estado-vivo"),
   telemetry: () => getJson<{
     caption_in: string;
     caption_out: string;

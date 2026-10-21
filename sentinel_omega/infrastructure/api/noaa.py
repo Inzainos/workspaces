@@ -74,11 +74,43 @@ def fetch_goes_xray() -> Optional[pd.DataFrame]:
     try:
         resp = get_session().get(url, timeout=TIMEOUT)
         resp.raise_for_status()
-        data = resp.json()
+        # Parse defensivo (2026-10-20): este archivo RODANTE lo reescribe
+        # NOAA cada minuto, y ocasionalmente el cuerpo llega con datos
+        # extra tras el documento — medido a las 12:53: «Extra data: line 1
+        # column 4591209» costó DOS CICLOS de GOES completos porque
+        # `resp.json()` tira el fetch entero. `raw_decode` toma el primer
+        # documento JSON completo; el sobrante se descarta con UN log
+        # (regla 10: el fallo se ve, pero no se paga con el ciclo).
+        import json as _json
+        try:
+            data = _json.loads(resp.text)
+        except _json.JSONDecodeError:
+            try:
+                data, _consumido = _json.JSONDecoder().raw_decode(resp.text)
+                logger.warning(
+                    "GOES: cuerpo con datos extra tras el documento JSON "
+                    "(%d chars) — documento completo usado, sobrante descartado",
+                    len(resp.text))
+            except _json.JSONDecodeError as e:
+                logger.error("GOES X-ray fetch: JSON ilegible: %s", e)
+                return None
         df = pd.DataFrame(data)
         if "time_tag" in df.columns and "flux" in df.columns:
             df["time_tag"] = pd.to_datetime(df["time_tag"])
             df["flux"] = pd.to_numeric(df["flux"], errors="coerce")
+            # Plausibilidad (ítem 3, 2026-10-20) EN BLOQUE: el filtro por
+            # valor reventaba el log — 28 WARNING por ciclo por los 0.0 de
+            # lecturas electron-contaminadas (medido). NULL por lectura
+            # inválida (regla 7/8), UN log resumen por fetch.
+            from sentinel_omega.core.plausibilidad import RANGOS
+            _lo, _hi, _ = RANGOS["goes_flux"]
+            _antes = int(df["flux"].notna().sum())
+            df["flux"] = df["flux"].where((df["flux"] >= _lo) & (df["flux"] <= _hi))
+            _nulos = _antes - int(df["flux"].notna().sum())
+            if _nulos:
+                logger.info(
+                    "GOES: %d registros con flux implausible (0.0/piso "
+                    "sensor/electrón-contaminado) → NULL", _nulos)
             logger.info(f"Fetched {len(df)} GOES X-ray records")
             return df[["time_tag", "flux", "energy"]].sort_values("time_tag")
     except Exception as e:

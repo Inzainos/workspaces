@@ -109,10 +109,16 @@ sin leer un dato de Schumann, y con su ruta viva al 0,02 % el sistema dio
 
 ## Dashboard (React Vite + FastAPI 8787)
 
-- Dev: Vite 6.4.3, proxy `/api`→8787. Build: 67 módulos, 333KB/102KB gzip → `dist/`.
+- Dev: Vite 6.4.3, proxy `/api`→8787. Build: 76 módulos → `dist/`.
 - API: `infrastructure/dashboard/api.py` + 13 compat aliases sin `/api`
   (`/health`, `/kpis`, `/telemetry/*`, `/consenso/*`, `/analysis/*`, `/agents/*`,
   `/system/*`). CORS para 5173/5174/4173.
+- **`/api/estado-vivo`** (2026-10-20): sirve el JSON unificado del launcher
+  (`estado/miniapp_estado.json`, ≤5 min) — señales vivas con countdown,
+  auditoría con ganancia, serie, cimática, sismos; `edad_s` explícito.
+  El Principal lo usa para el panel «Señales vivas · lag restándose»
+  (`SeñalesVivas.tsx`, tick client-side) y la cimática se dibuja como
+  FIGURA determinista (`CimaticaFigura.tsx`, clave → SVG tipo Chladni).
 - **Diseño y contratos de dato: `infrastructure/dashboard/README.md`.** Léelo
   antes de tocar un tab: tiene el sistema de color (saturado = riesgo, y nada
   más), las superficies por pestaña y los pozos conocidos.
@@ -406,6 +412,25 @@ sentinel_omega/
       Consulta compartida: `signature_engine.resumen_nulo_lag(conn)`, usada por
       `/api/lag` y los tres reportes para que no vuelvan a desincronizarse.
   - `infrastructure/pipeline/mantenimiento.py` — barrido diario/correlaciones/sesgo/poda.
+  - `core/nodos.py` — EL formato canónico de sitio («Indonesia Java
+    (Nodo 25 · -7.5, 110.0)»: nombre → nodo → coords) y el COUNTDOWN por
+    señal (`lag_restante_h`: ancla en la primera detección continua del
+    padre, derivada de la DB — sobrevive reinicios, no re-proyecta).
+    Alertas, digesto, plantillas, MiniApp y tablero lo comparten.
+  - `core/plausibilidad.py` — invariante de rango físico en ingesta
+    (IMPOSIBILIDAD, no rareza; regla 7/8). Cableado en OWM, GOES y como
+    primera línea de `compute_fantasma`. El piso de GOES flux se calibró
+    CONTRA EL DATO REAL (1e-9 anulaba el sol quieto → 1e-11, medido).
+  - `infrastructure/database/ruta_db.py` — el PUERTO de la DB:
+    `ruta_db_canonica()` (SENTINEL_DB → prod → árbol, nunca workspaces-dev
+    implícito) + `abrir_readonly()`. Vigilante, orquestador y dashboard
+    lo usan; ningún default hardcodeado gemelo.
+  - `infrastructure/messaging/plantillas_concilio.py` — la cascada
+    P2H/P6H/P12H/P24H + `snapshot_miniapp()` (el JSON que sirve la
+    MiniApp; lo refresca el launcher cada ciclo).
+  - `deploy/medir_similitud_geometria.py` — geometría del umbral 0,80
+    (EDG): P97 intra-nodo, ~26 dims efectivas, no euclidiano (Schoenberg).
+    La mesa servida para calibrar el umbral por nodo.
 - Reporting:
   - `infrastructure/pipeline/reporte_sentinel.py` — reportes general/padre/omega.
   - `infrastructure/pipeline/reporte_engine.py` — envoltura DRY + versionado estado/historial.
@@ -453,6 +478,26 @@ ALPHA_VANTAGE_KEY     — Stock market data
 - **Fin de mes 12:30pm MX** — reporte mensual.
 - **Cada corrida** — despacho del digest (`deploy/enviar_correos.py`, que pese al
   nombre despacha por **Telegram**).
+
+### Plantillas cascada del Concilio (2026-10-20 — locales, no GitHub Actions)
+
+Las genera el LAUNCHER cada ciclo si tocan (marca en
+`data/estado_plantillas.json`, patrón del digesto), por la cola de
+Telegram; los JSON de la cadena viven en `estado/plantillas/`:
+
+- **P2H** (horas múltiplo de 3): estado de la Tierra + señales vivas con
+  sitio completo (`core/nodos.py`) y **lag restándose**.
+- **P6H** (múltiplo de 6): comportamiento — junta las P2H previas,
+  tendencias del fantasma, señales que entran/salen/persisten.
+- **P12H** (múltiplo de 12): comparativo de medio día. **P24H** (medianoche):
+  comparativo del día.
+
+Y en CADA ciclo el launcher escribe `estado/miniapp_estado.json`
+(≤5 min de frescura): TODO lo que sirve la MiniApp del Concilio
+(estado, señales con countdown, auditoría con ganancia, serie, cimática,
+sismos) — calculado con el código de ESTE paquete para que el formato de
+nodos, el countdown y la vara del Juez vivan una sola vez. El endpoint
+`/api/estado-vivo` del tablero también lo sirve (con `edad_s` explícito).
 
 ## Cimática (el canal es Telegram)
 

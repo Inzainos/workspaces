@@ -84,10 +84,12 @@ class SentinelOrchestrator:
         xray_max: Optional[float] = None
         goes_flare: Optional[Dict] = None
         alfa2_thermal: Optional[Dict] = None
-        db_path = os.environ.get(
-            "SENTINEL_DB",
-            "/home/deamon/workspaces/sentinel_omega/data/SENTINEL_OMEGA_PRO.db",
-        )
+        # Puerto compartido (2026-10-20, ítem 2 del plan de mejoras): la ruta
+        # ya NO se inventa desde la config (SentinelOmegaConfig no la expone
+        # — bug del 10-19) ni se duplica hardcodeada: sale del mismo módulo
+        # que usan vigilante y dashboard.
+        from sentinel_omega.infrastructure.database.ruta_db import ruta_db_canonica
+        db_path = str(ruta_db_canonica())
         if not db_path or not os.path.exists(db_path):
             return xray_max, goes_flare, alfa2_thermal
         try:

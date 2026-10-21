@@ -7,12 +7,20 @@ completa (código, despliegue, reportes y automatizaciones).
 ## Pivote estratégico (2026-10-11)
 
 El proyecto pasa de "predecir sismos vía Schumann" a **"detectar y
-caracterizar anomalías naturales en cuatro dominios"**. La hipótesis
-central (Schumann → sismo) fue medida y cerrada en negativo en DOS
-estaciones independientes; la plataforma multi-dominio (espacio, tierra,
-atmósfera, financiero) ya existe y funciona — solo estaba mirando al otro
-lado. Ver `sentinel_omega/README.md` para el detalle.
+caracterizar anomalías naturales en cuatro dominios: espacio, tierra,
+atmósfera y financiero"**. La hipótesis central (Schumann → sismo) fue medida
+y cerrada en negativo en DOS estaciones independientes; la plataforma
+multi-dominio ya existe y funciona. Ver `sentinel_omega/README.md` para el
+detalle.
 
+## Estado medido 2026-10-11 (Pivote estratégico)
+
+- **NO predice sismos M4.5+ vía Schumann**: hipótesis cerrada en negativo en Granada (2013-2017) y Eskdalemuir (2025).
+- **NO tiene modelos ONNX aprobados**: compuerta de habilidad negó a los 7 (AUC ~0.5 vs nulo-por-nodo 0.899).
+- **NO mide frecuencia Schumann en vivo**: retirada 2026-10-09; solo ACTIVIDAD (intensidad WPC Tomsk).
+- **Arquitectura**: 8 bots votantes (alfa1, alfa2, beta1, beta2, delta, omega, loki, padre) + Juez. **jupiter RETIRADO 2026-10-18**.
+- **Firmas**: 23.274 consolidadas, 11.377 exigibles (49%) — lift relativo ≥2.0 + suelo aciertos.
+- **Familias**: space_weather (alfa1/alfa2), schumann_cymatics (beta1/beta2), financial_sentiment (delta). Consenso: ≥2 familias + ≥2 alertas + corroboración schumann_cymatics > 0.3.
 
 ## Estado reciente (2026-10-08) — el modelo nulo
 

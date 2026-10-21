@@ -131,7 +131,13 @@ def fetch_weather(
 
         # Sin defaults: campo ausente = None (regla 7/8). Antes un JSON sin
         # "pressure" se publicaba como 1013 hPa — calma falsa en cadena.
-        def _f(v) -> Optional[float]:
+        # Plausibilidad física (ítem 3, 2026-10-20): API corrupta → NULL.
+        from sentinel_omega.infrastructure.api.plausibilidad import validar
+
+        def _f(n, v) -> Optional[float]:
+            return validar(n, _f_raw(v), origen=station_name)
+
+        def _f_raw(v) -> Optional[float]:
             try:
                 return float(v) if v is not None else None
             except (TypeError, ValueError):
@@ -141,22 +147,22 @@ def fetch_weather(
             station=station_name,
             lat=lat,
             lon=lon,
-            pressure_hpa=_f(main.get("pressure")),
-            temp_c=_f(main.get("temp")),
-            humidity_pct=_f(main.get("humidity")),
-            visibility_m=_f(data.get("visibility")),
-            wind_speed_ms=_f(wind.get("speed")),
-            wind_deg=_f(wind.get("deg")),
-            clouds_pct=_f(clouds.get("all")),
+            pressure_hpa=_f("pressure_hpa", main.get("pressure")),
+            temp_c=_f("temp_c", main.get("temp")),
+            humidity_pct=_f("humidity_pct", main.get("humidity")),
+            visibility_m=_f("visibility_m", data.get("visibility")),
+            wind_speed_ms=_f("wind_speed_ms", wind.get("speed")),
+            wind_deg=_f_raw(wind.get("deg")),
+            clouds_pct=_f("clouds_pct", clouds.get("all")),
             weather_id=(
                 int(weather_list[0].get("id"))
                 if weather_list and weather_list[0].get("id") is not None
                 else None
             ),
-            wind_gust_ms=_f(wind.get("gust")),
-            rain_1h=_f(rain.get("1h")),
-            snow_1h=_f(snow.get("1h")),
-            grnd_level_hpa=_f(main.get("grnd_level")),
+            wind_gust_ms=_f("wind_gust_ms", wind.get("gust")),
+            rain_1h=_f("rain_1h", rain.get("1h")),
+            snow_1h=_f("snow_1h", snow.get("1h")),
+            grnd_level_hpa=_f("grnd_level_hpa", main.get("grnd_level")),
             data_ts=data.get("dt"),
         )
         faltantes = sum(
@@ -203,14 +209,17 @@ def fetch_air_quality(
         components = data["list"][0].get("components", {})
         # Sin defaults: gas ausente = None (regla 7/8). Antes 0.0 "medido";
         # y aqi 0 es un valor IMPOSIBLE (la escala OWM es 1-5).
+        # Plausibilidad física (ítem 3, 2026-10-20): gas absurdo → NULL.
+        from sentinel_omega.infrastructure.api.plausibilidad import validar
+
         result: Dict[str, Optional[float]] = {
-            "co": components.get("co"),
-            "so2": components.get("so2"),
-            "no2": components.get("no2"),
-            "pm2_5": components.get("pm2_5"),
-            "pm10": components.get("pm10"),
-            "o3": components.get("o3"),
-            "aqi": data["list"][0].get("main", {}).get("aqi"),
+            "co": validar("co", components.get("co")),
+            "so2": validar("so2", components.get("so2")),
+            "no2": validar("no2", components.get("no2")),
+            "pm2_5": validar("pm2_5", components.get("pm2_5")),
+            "pm10": validar("pm10", components.get("pm10")),
+            "o3": validar("o3", components.get("o3")),
+            "aqi": validar("aqi", data["list"][0].get("main", {}).get("aqi")),
         }
         logger.info(f"OWM AQ: CO={result['co']}, SO2={result['so2']}, AQI={result['aqi']}")
         return result

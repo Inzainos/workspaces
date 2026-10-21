@@ -167,8 +167,12 @@ class Beta2Agent(BaseAgent):
         pressure_score = self._pressure_stress()
         chemical_score = self._chemical_stress()
         node_anomalies = self._global_node_anomalies()
+        # Niebla: solo lecturas CON visibilidad medida (regla 7/8). El viejo
+        # default 10000 no solo inventaba "sin niebla": con visibility=None
+        # (OWM sin el campo) crasheaba la comparación.
         fog_detected = any(
-            r.get("visibility_m", 10000) < self.FOG_VISIBILITY_THRESHOLD
+            (v := r.get("visibility_m")) is not None
+            and v < self.FOG_VISIBILITY_THRESHOLD
             for r in self._atmospheric_readings
         )
         combined_stress = (pressure_score * 0.4) + (chemical_score * 0.4) + min(0.2, len(node_anomalies) * 0.1)

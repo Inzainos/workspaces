@@ -31,6 +31,10 @@ def _mock_response(json_data, status_code=200):
     resp.status_code = status_code
     resp.ok = status_code == 200
     resp.json.return_value = json_data
+    # `.text` debe ser el JSON serializado, como en una respuesta real:
+    # fetch_goes_xray parsea `resp.text` con raw_decode defensivo (2026-10-20),
+    # no `resp.json()` — sin esto el mock crashea con "not MagicMock".
+    resp.text = json.dumps(json_data)
     resp.raise_for_status.return_value = None
     return resp
 

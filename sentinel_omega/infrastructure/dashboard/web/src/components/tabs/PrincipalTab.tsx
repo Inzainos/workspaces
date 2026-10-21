@@ -5,6 +5,8 @@ import { AskBox } from "@/components/AskBox";
 import { DataTable } from "@/components/DataTable";
 import { LineSpark, SimplePie } from "@/components/charts/Sparkline";
 import { Map2D } from "@/components/maps/Map2D";
+import { SeñalesVivas, type SeñalViva } from "@/components/SeñalesVivas";
+import { CimaticaFigura } from "@/components/CimaticaFigura";
 import {
   Panel,
   Metrica,
@@ -23,6 +25,14 @@ import { fmtTs } from "@/lib/utils";
 
 const flareEmoji = (cls: string) => cls === "X" ? "☀️" : cls === "M" ? "☀️" : cls === "C" ? "🌤️" : "";
 const flareColor = (cls: string) => cls === "X" ? "var(--color-critico)" : cls === "M" ? "var(--color-aviso)" : cls === "C" ? "var(--color-atencion)" : "var(--color-faint)";
+// Nielsen #2 («lenguaje del usuario, no del sistema»): el _kind crudo es
+// jerga interna; el Origen se lee en español (ítem frontend, 2026-10-20).
+const ETIQUETA_ORIGEN: Record<string, string> = {
+  geo: "Ciclo",
+  muro: "Muro",
+  fantasma: "Fantasma",
+  flare: "Fulguración",
+};
 
 /**
  * PRINCIPAL — superficie MONITOR.
@@ -59,6 +69,10 @@ export function PrincipalTab() {
   const repF = useCallback(() => api.reportes(), []);
   const acF = useCallback(() => api.bots(), []);
   const telF = useCallback(() => api.telemetry(), []);
+  // Reestructuración 2026-10-20: el ESTADO VIVO del launcher — señales con
+  // countdown + auditoría + serie, en UNA llamada (antes: 3 polls separados
+  // que no tenían las señales). Libro de KPIs: el leading en una superficie.
+  const evF = useCallback(() => api.estadoVivo(), []);
 
   const ov = usePoll<Overview>(ovF, 20000);
   const al = usePoll(alF, 20000);
@@ -70,6 +84,7 @@ export function PrincipalTab() {
   const rep = usePoll(repF, 60000);
   const ac = usePoll(acF, 60000);
   const tel = usePoll(telF, 30000);
+  const ev = usePoll(evF, 30000);
 
   const d = ov.data;
   const nivel = nivelDe(d?.fantasma?.nivel_riesgo);
@@ -161,6 +176,10 @@ export function PrincipalTab() {
   return (
     <div className="space-y-5">
       {/* ================= 1. FRANJA DE ESTADO ================= */}
+      {/* KPI Guide (ítem frontend 2026-10-20): esta franja es LEADING —
+          el estado presente que anticipa. La de abajo es LAGGING — los
+          resultados medidos del pasado. Confundir las dos es leer la
+          ganancia como si hablara del ahora. */}
       <section
         className="overflow-hidden rounded-lg border bg-surface"
         style={{
@@ -173,7 +192,7 @@ export function PrincipalTab() {
           <div className="bg-surface p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="etiqueta">Índice Fantasma</div>
+                <div className="etiqueta">Índice Fantasma <span className="text-faint">· señal en vivo (leading)</span></div>
                 <div
                   className="mt-1 text-[length:var(--text-hero-num)] font-bold leading-[1.02] tracking-tight tnum"
                   style={{ color: colorNivel(nivel) }}
@@ -296,10 +315,24 @@ export function PrincipalTab() {
         </div>
       </section>
 
+      {/* ================= 1bis. SEÑALES VIVAS CON COUNTDOWN =================
+          Reestructuración 2026-10-20 (KPI Guide: el leading que anticipa):
+          el estado del hero es el AHORA; estas señales son el HACIA DÓNDE —
+          qué firmas de víspera empareja la memoria y cuánto dice la
+          historia que falta, restándose en vivo desde la primera
+          detección continua. */}
+      {ev.data?.ok && (
+        <SeñalesVivas
+          señales={(ev.data.senales || []) as unknown as SeñalViva[]}
+          tsSnapshot={Number(ev.data.ts)}
+          edadS={ev.data.edad_s != null ? Number(ev.data.edad_s) : null}
+        />
+      )}
+
       {/* ================= 2. HONESTIDAD DEL SISTEMA ================= */}
       <Panel
         titulo="¿El sistema aporta información?"
-        meta="viva_real · juez"
+        meta="viva_real · juez — RESULTADOS (lagging)"
         nota={
           <>
             La <b className="text-body">asertividad</b> cuenta como acierto cada silencio en el que no
@@ -430,33 +463,38 @@ export function PrincipalTab() {
         <Panel
           titulo="Cimática ahora"
           meta="tbl_cimatica_patrones"
-          nota="La figura actual se compara contra la biblioteca histórica. Sin biblioteca no hay comparación posible: el conteo de patrones por sí solo no valida nada."
+          nota="La FIGURA es la clave hecha visible (determinista: la misma clave siempre dibuja lo mismo, como una placa de Chladni). Se compara contra la biblioteca histórica; sin biblioteca no hay comparación posible: el conteo solo no valida nada."
         >
-          <div className="space-y-3.5">
-            <Metrica
-              etiqueta="Patrones aprendidos"
-              valor={
-                ci.data?.total != null
-                  ? Number(ci.data.total).toLocaleString("es-MX")
-                  : <span className="dato-ausente">—</span>
-              }
-              contexto="claves cimáticas registradas"
-            />
-            <div className="border-t border-border pt-3">
-              <div className="etiqueta">Biblioteca de referencia</div>
-              {bibliotecaPresente ? (
-                <div className="mono mt-1 text-[length:var(--text-read)] font-semibold text-foreground">
-                  {Number(caData.biblioteca_n ?? 0).toLocaleString("es-MX")} figuras
+          <div className="flex flex-col gap-3.5">
+            <div className="flex items-start gap-4">
+              <CimaticaFigura clave={caData.current_clave ? String(caData.current_clave) : null} size={132} />
+              <div className="min-w-0 flex-1 space-y-3">
+                <Metrica
+                  etiqueta="Patrones aprendidos"
+                  valor={
+                    ci.data?.total != null
+                      ? Number(ci.data.total).toLocaleString("es-MX")
+                      : <span className="dato-ausente">—</span>
+                  }
+                  contexto="claves cimáticas registradas"
+                />
+                <div>
+                  <div className="etiqueta">Biblioteca de referencia</div>
+                  {bibliotecaPresente ? (
+                    <div className="mono mt-1 text-[length:var(--text-read)] font-semibold text-foreground">
+                      {Number(caData.biblioteca_n ?? 0).toLocaleString("es-MX")} figuras
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-meta leading-snug" style={{ color: "var(--color-aviso)" }}>
+                      Tabla ausente en esta base — no es una biblioteca vacía, es que nunca se creó.
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="mt-1 text-meta leading-snug" style={{ color: "var(--color-aviso)" }}>
-                  Tabla ausente en esta base — no es una biblioteca vacía, es que nunca se creó.
-                </div>
-              )}
+              </div>
             </div>
             {caData.current_clave ? (
               <div className="border-t border-border pt-3">
-                <div className="etiqueta">Clave actual</div>
+                <div className="etiqueta">Clave actual (la semilla de la figura)</div>
                 <p className="mono mt-1 break-all text-micro leading-relaxed text-muted">
                   {String(caData.current_clave).slice(0, 180)}
                   {String(caData.current_clave).length > 180 ? "…" : ""}
@@ -476,7 +514,7 @@ export function PrincipalTab() {
           densa
           empty="Sin alertas activas. En un sistema de precursores esto es lo normal, no un fallo."
           columns={[
-            { key: "_kind", label: "Origen" },
+            { key: "_kind", label: "Origen", render: (r) => ETIQUETA_ORIGEN[String(r._kind)] ?? String(r._kind) },
             { key: "timestamp", label: "Cuándo", render: (r) => fmtTs(r.timestamp) },
             {
               key: "fantasma",
