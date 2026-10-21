@@ -1,3 +1,34 @@
+## 2026-10-21 (mañana) — Motor cimático de la tela SNT medido sobre las firmas
+
+Detalle y veredicto en `estado/cimatica_firmas/AUDIT_cimatica_firmas_2026-10-21.md`.
+
+### Added — `deploy/medir_cimatica_firmas.py`: la prueba LOO de la tela sobre las ventanas del Padre
+El pedido del operador: «meterle el motor cimático a las firmas del padre».
+El motor vive en el repo SNT (`tela_cimatica.py`, auditado hoy) y este
+experimento lo corre sobre las ventanas de 14 días que entrenaron las firmas
+(4,145 anclas: M4.5+ estratificado + erupciones + tormentas), ANTES de tocar
+el consenso. Trayectoria (336 h) → fase → detrend+Hann → FFT → huella.
+
+### Medido (con dos bugs corregidos en vivo, documentados en el audit)
+- **Familia (el tono): 46.8% vs placebo 32.9%** — señal real ~+2 se; el
+  clima solo da 51.2%, el enjambre solo 46.1%. La víspera volcánica es lo
+  más distinguible (VEI3 35%, volcánico 48%) — corroboración ortogonal a
+  beta2, sin circularidad.
+- **Clase: al nulo** (18.4% vs 19.3%) — el 24.8% inicial era artefacto.
+- **Nodo: muerto** (1.4% vs 10.9%) — el tono no localiza; misma lección
+  que la tela (tono, no instrumento) y que la compuerta ONNX.
+- Los bugs del viaje: la serie de enjambre anulada por un gate de cobertura
+  pensado para series continuas (la tabla es evento-sparse: hora sin fila =
+  0 temblores) y centroides envenenados por NaN (`mean` en vez de `nanmean`
+  — 232 ventanas de 1994 mataban el tono de clima de todos los grupos).
+
+### Decisión pendiente del operador
+Integración como EVIDENCIA (lectura de tono por ciclo, reportada y medida
+por el Juez), no como compuerta: el tono no localiza ni separa clases
+sísmicas, pero el régimen familiar (sobre todo volcánico) puede corroborar.
+
+---
+
 ## 2026-10-21 (madrugada) — Auditoría de despliegue + fix: convergencia del muro de lags
 
 Detalle y verificación en `estado/BITACORA_2026-10-21.md`.
