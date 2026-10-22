@@ -32,3 +32,37 @@ export function apiGet(path: string): Promise<any> {
 export function apiPost(path: string, body: any): Promise<any> {
   return apiRequest("POST", path, body)
 }
+
+/**
+ * Objeto api con métodos para cada endpoint del dashboard.
+ * Mapea los nombres que usan las pestañas a las rutas de FastAPI.
+ */
+export const api = {
+  overview: (params?: string) => apiGet(`/api/overview${params ? `?${params}` : ""}`),
+  healthApis: () => apiGet("/api/health/apis"),
+  telemetry: () => apiGet("/api/telemetry"),
+  telemetryHistory: (limit = 48) => apiGet(`/api/telemetry/history?limit=${limit}`),
+  climaEspacial: (limit = 80) => apiGet(`/api/sismos?limit=${limit}`),
+  schumannVivo: (limit = 120) => apiGet(`/api/cimatica?vivo=1&limit=${limit}`),
+  delta: (limit = 80) => apiGet(`/api/bots?bot=delta&limit=${limit}`),
+  cimaticaAhora: () => apiGet("/api/cimatica/ahora"),
+  cimatica: (params?: string) => apiGet(`/api/cimatica${params ? `?${params}` : ""}`),
+  precursores: (limit = 80) => apiGet(`/api/precursores?limit=${limit}`),
+  muro: () => apiGet("/api/muro"),
+  muroLags: () => apiGet("/api/muro_lags"),
+  firmas: (params?: string) => apiGet(`/api/firmas${params ? `?${params}` : ""}`),
+  bots: (limit = 50) => apiGet(`/api/bots?limit=${limit}`),
+  juez: (limit = 80, fase = "viva") => apiGet(`/api/juez?limit=${limit}&fase=${fase}`),
+  layers: () => apiGet("/api/layers"),
+  modelos: () => apiGet("/api/modelos"),
+  reportes: (name?: string) => apiGet(`/api/reportes${name ? `?name=${encodeURIComponent(name)}` : ""}`),
+  nodos: () => apiGet("/api/nodos"),
+  sismos: (limit = 50) => apiGet(`/api/sismos?limit=${limit}`),
+  agents: () => apiGet("/api/agente"),
+  estado: () => apiGet("/api/overview"),
+  estadoVivo: () => apiGet("/api/consenso"),
+  padron: (limit = 50) => apiGet(`/api/bots?bot=padron&limit=${limit}`),
+  loki_kp: (limit = 50) => apiGet(`/api/bots?bot=loki&limit=${limit}`),
+  heatmaps: () => apiGet("/api/heatmaps"),
+  consenso: (limit = 50) => apiGet(`/api/consenso?limit=${limit}`),
+};

@@ -59,20 +59,20 @@ export function PresentacionTab() {
             <div className="flex items-baseline gap-2">
               <span className="mono texto-micro texto-desvanecido">Bz, viento solar, Kp, protones</span>
             </div>
+            <div className="flex items-start gap-2">
+              <span className="mono texto-principal fuente-negrita">🌍</span>
+              <span>Tierra</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="mono texto-principal fuente-negrita">🌤️</span>
+              <span className="mono texto-micro texto-desvanecido">Atmósfera</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="mono texto-principal fuente-negrita">📈</span>
+              <span className="mono texto-micro texto-desvanecido">Financiero</span>
+            </div>
           </div>
-          <div className="flex items-start gap-2">
-            <span className="mono texto-principal fuente-negrita">🌍</span>
-            <span>Tierra</span>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="mono texto-principal fuente-negrita">🌤️</span>
-            <span className="mono texto-micro texto-desvanecido">Atmósfera</span>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="mono texto-principal fuente-negrita">📈</span>
-            <span className="mono texto-micro texto-desvanecido">Financiero</span>
-          </div>
-        </div>
+        </Panel>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         <Panel

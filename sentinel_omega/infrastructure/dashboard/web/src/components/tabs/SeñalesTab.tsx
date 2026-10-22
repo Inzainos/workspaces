@@ -13,17 +13,17 @@ import { fmtTs } from "@/lib/utils";
 import { Gauge } from "@/components/charts/componentes";
 
 export function SeñalesTab() {
-  const sch = useCallback(() => api.schumannVivo(120), []);
-  const clima = useCallback(() => api.climaEspacial(80), []);
-  const delta = useCallback(() => api.delta(80), []);
-  const ca = useCallback(() => api.cimaticaAhora(), []);
-  const salud = useCallback(() => api.telemetry(), []);
+  const schFn = useCallback(() => api.schumannVivo(120), []);
+  const climaFn = useCallback(() => api.climaEspacial(80), []);
+  const deltaFn = useCallback(() => api.delta(80), []);
+  const caFn = useCallback(() => api.cimaticaAhora(), []);
+  const saludFn = useCallback(() => api.telemetry(), []);
   const tel = usePoll(useCallback(() => api.telemetry(), []), 30000);
 
-  const sch = usePoll(sch, 30000);
-  const climaData = usePoll(clima, 30000);
-  const deltaData = usePoll(delta, 30000);
-  const caData = usePoll(ca, 40000);
+  const sch = usePoll(schFn, 30000);
+  const climaData = usePoll(climaFn, 30000);
+  const deltaData = usePoll(deltaFn, 30000);
+  const caData = usePoll(caFn, 40000);
 
   const schS = sch.data?.items?.map((r: any) => ({ v: Number(r.schumann_hz) })).filter((p: any) => !esAusente(p.v)) || [];
   const climaItems = clima.data?.items || [];

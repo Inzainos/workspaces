@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
 import { Panel, Metrica, Cifra, BarraVeredictos, SinDatos, BannerError, nivelDe, colorNivel, accionNivel, esAusente } from "@/components/ui/data";
 import { SeñalesVivas } from "@/components/SeñalesVivas";
-import { SankeyDiagrama } from "@/components/diagrams/SankeyDiagrama";
+import { SankeyDiagram } from "@/components/diagrams/SankeyDiagram";
 import { HeatmapChart } from "@/components/charts/HeatmapChart";
 import { fmtTs } from "@/lib/utils";
 import { Gauge } from "@/components/charts/componentes";
@@ -143,7 +143,7 @@ export function SintesisTab() {
           </div>
 
           <div className="h-full">
-            <SankeyDiagrama
+            <SankeyDiagram
               nodos={[
                 { nombre: "Omega", voto: d?.omega?.voto ?? 0 },
                 { nombre: "Padre", valor: d?.padre?.pesos?.padre ?? 0 },

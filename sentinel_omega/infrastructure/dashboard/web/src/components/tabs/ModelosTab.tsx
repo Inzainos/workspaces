@@ -7,7 +7,7 @@ import { usePoll } from "@/hooks/usePoll";
 import { Panel, Metrica, Cifra, SinDatos, BannerError } from "@/components/ui/data";
 import { fmtTs } from "@/lib/utils";
 
-export function PrediccionesTab() {
+export function ModelosTab() {
   const mlF = useCallback(() => api.muroLags(), []);
   const ml = usePoll(mlF, 20000);
 
@@ -66,7 +66,7 @@ export function PrediccionesTab() {
                   <tr key={nodo.id} className="hover:bg-surface-sunken">
                     <td className="mono texto-micro texto-desvanecido">{nodo.nombre || nodo.id}</td>
                     <td className="mono texto-principal fuente-negrita">{nodo.estado || "desconocido"}</td>
-                    <td className="mono texto-principal fuente-negrita">{nodo.saturacion?.toFixed(2) ?? "—"}</span>
+                    <td className="mono texto-principal fuente-negrita">{nodo.saturacion?.toFixed(2) ?? "—"}</td>
                     <td className="mono texto-micro texto-desvanecido">{fmtTs(nodo.ultima_actualizacion)}</td>
                   </tr>
                 ))}
@@ -101,8 +101,8 @@ export function PrediccionesTab() {
               {d?.ultima_actualizacion ? new Date(d.ultima_actualizacion).toLocaleString("es-MX") : "—"}
             </span>
           </div>
-        </div>
-      </Panel>
+        </Panel>
+      </div>
     </div>
   );
 }

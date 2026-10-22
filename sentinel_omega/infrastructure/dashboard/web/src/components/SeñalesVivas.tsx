@@ -33,8 +33,8 @@ export function SeñalesVivas({
           <span>Sin señales activas</span>
         </div>
       </div>
-    </div>
-  )
+    );
+  }
 
   const ordenadas = [...señales].sort((a, b) => Number(b.valor) - Number(a.valor))
   const niveles = {
@@ -61,16 +61,16 @@ export function SeñalesVivas({
             <span className="mono texto-principal fuente-negrita texto-[0.7rem]">{s.tipo}</span>
             <span className="mono texto-meta texto-desvanecido">•</span>
             <span className="mono texto-principal fuente-negrita">{s.valor.toFixed(2)}</span>
-            <span className="mono texto-meta texto-desvanecido">@ ${nodo.nodo || "nodo"}</span>
-            <span className={`mono texto-micro px-1 py-0.5 rounded bg-${nivel === "CRITICAL" ? "rose-500/20" : nivel === "HIGH" ? "orange-500/20" : "var(--color-surface-sunken)"} text-${nivel === "CRITICAL" ? "texto-rose-400" : nivel === "HIGH" ? "texto-orange-400" : "texto-desvanecido"}`}>
+            <span className="mono texto-meta texto-desvanecido">@ {s.nodo || "nodo"}</span>
+            <span className={`mono texto-micro px-1 py-0.5 rounded ${nivel === "CRITICAL" ? "bg-rose-500/20 text-rose-400" : nivel === "HIGH" ? "bg-orange-500/20 text-orange-400" : "bg-surface-sunken text-desvanecido"}`}>
               {nivel}
             </span>
             <span className="ml-auto mono texto-desvanecido texto-[0.65rem]">
               {fmtTs(s.timestamp || s.ts || Date.now())}
             </span>
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
-  )
+  );
 }

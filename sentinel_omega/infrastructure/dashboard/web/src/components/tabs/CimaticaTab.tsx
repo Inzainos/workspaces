@@ -101,7 +101,8 @@ export function CimaticaTab() {
                 </div>
               ))}
             </div>
-          ) : (
+          </div>
+        ) : (
             <SinDatos título="Sin patrones cimáticos" detalle="La tabla tbl_cimatica_patrones está vacía." />
           )}
         </Panel>
@@ -113,6 +114,5 @@ export function CimaticaTab() {
           </p>
         </div>
       </div>
-    </div>
   );
 }

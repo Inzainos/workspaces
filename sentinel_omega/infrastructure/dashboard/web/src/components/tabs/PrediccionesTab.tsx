@@ -86,14 +86,13 @@ export function PrediccionesTab() {
             <div key={i} className="flex items-center gap-3 p-2 rounded-lg border border-border bg-superficie-sunken">
               <span className="mono texto-micro texto-desvanecido w-20">{c.tipo}</span>
               <div className="flex-1 h-2 bg-surface-sunken rounded-full">
-                <div className="h-full bg-indigo-500/60 rounded-lg" style={{ width: `${ciudad.porcentaje || 0}%` }}></div>
+                <div className="h-full bg-indigo-500/60 rounded-lg" style={{ width: `${c.porcentaje || 0}%` }}></div>
               </div>
-              <span className="mono texto-principal fuente-negrita">{c.cantidad.toLocaleString("es-MX")}</span>
+              <span className="mono texto-principal fuente-negrita">{c.cantidad?.toLocaleString("es-MX") ?? "—"}</span>
             </div>
           ))}
         </div>
-        </Panel>
-      </div>
+      </Panel>
     </div>
   );
 }

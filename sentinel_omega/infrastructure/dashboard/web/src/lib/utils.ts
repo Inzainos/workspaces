@@ -1,6 +1,15 @@
 /**
  * Utilidades generales para Sentinel Omega
  */
+
+/**
+ * Fusiona clases CSS condicionales (patrón clsx/twMerge).
+ * Los valores falsy se descartan.
+ */
+export function cn(...classes: (string | undefined | null | false | 0)[]): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 export function fmtNum(valor: number | string | undefined | null, decimales = 2): string {
   if (valor === null || valor === undefined || Number.isNaN(Number(valor))) return "—"
   return Number(valor).toLocaleString("es-MX", { minimumFractionDigits: decimales, maximumFractionDigits: decimales })

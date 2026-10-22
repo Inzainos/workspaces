@@ -69,7 +69,7 @@ export function LokiTab() {
         <div className="space-y-2">
           {kp_items.slice(0, 10).map((k, i) => (
             <div key={i} className="flex items-center gap-2 p-2 rounded-lg border border-border bg-surface-sunken">
-              <span className="mono texto-micro texto-desvanecido w-20">{c.fecha}</td>
+              <span className="mono texto-micro texto-desvanecido w-20">{c.fecha}</span>
               <span className="mono texto-principal fuente-negrita">{c.kp_mean.toFixed(2)}</span>
               <span className={`mono texto-micro texto-desvanecido ${c.kp_mean >= 5 ? "texto-critico" : "texto-calma"}`}>
                 {c.kp_mean >= 5 ? "Kp≥5" : "Estable"}
