@@ -5,6 +5,18 @@ import { NavLink } from "react-router-dom"
 import { cn } from "@/lib/utils"
 
 export function BarraNav() {
+  const items = [
+    { to: "/principal", label: "Principal" },
+    { to: "/sintesis", label: "Síntesis" },
+    { to: "/predicciones", label: "Predicciones" },
+    { to: "/mapas", label: "Mapas" },
+    { to: "/senales", label: "Señales" },
+    { to: "/cimatica", label: "Cimática" },
+    { to: "/modelos", label: "Modelos" },
+    { to: "/padrejuez", label: "Padre+Juez" },
+    { to: "/reportes", label: "Reportes" },
+  ]
+
   return (
     <nav className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-sunken">
       <div className="flex items-center gap-3">
@@ -19,84 +31,21 @@ export function BarraNav() {
           <span className="mono texto-micro texto-desvanecido">v2.0.0 - Plataforma de detección</span>
         </div>
       </div>
-      <nav className="flex gap-3">
-        <NavLink
-          to="/principal"
-          className={({ isActive }) =>
-            cn(
-              "px-3 py-2 texto-micro texto-desvanecido hover:bg-surface-sunken hover:texto-principal",
-              isActive && "texto-esmeralda-400 bg-surface/50",
-            )
-          }
-        >
-          Principal
-        </NavLink>
-        <NavLink
-          to="/sintesis"
-          className={({ isActive }) =>
-            cn(
-              "px-3 py-2 texto-micro texto-desvanecido hover:bg-surface-sunken hover:texto-principal",
-              isActive && "texto-esmeralda-400 bg-surface/50",
-            )
-          }
-        >
-          Síntesis
-        </NavLink>
-        <NavLink
-          to="/mapas"
-          className={({ isActive }) =>
-            cn(
-              "px-3 py-2 texto-micro texto-desvanecido hover:bg-surface-sunken hover:texto-principal",
-              isActive && "texto-esmeralda-400 bg-surface/50",
-            )
-          }
-        >
-          Mapas
-        </NavLink>
-        <NavLink
-          to="/senales"
-          className={({ isActive }) =>
-            cn(
-              "px-3 py-2 texto-micro texto-desvanecido hover:bg-surface-sunken hover:texto-principal",
-              isActive && "texto-esmeralda-400 bg-surface/50",
-            )
-          }
-        >
-          Señales
-        </NavLink>
-        <NavLink
-          to="/modelos"
-          className={({ isActive }) =>
-            cn(
-              "px-3 py-2 texto-micro texto-desvanecido hover:bg-surface-sunken hover:texto-principal",
-              isActive && "texto-esmeralda-400 bg-surface/50",
-            )
-          }
-        >
-          Modelos
-        </NavLink>
-        <NavLink
-          to="/reportes"
-          className={({ isActive }) =>
-            cn(
-              "px-3 py-2 texto-micro texto-desvanecido hover:bg-surface-sunken hover:texto-principal",
-              isActive && "texto-esmeralda-400 bg-surface/50",
-            )
-          }
-        >
-          Reportes
-        </NavLink>
-        <NavLink
-          to="/cimatica"
-          className={({ isActive }) =>
-            cn(
-              "px-3 py-2 texto-micro texto-desvanecido hover:bg-surface-sunken hover:texto-principal",
-              isActive && "texto-esmeralda-400 bg-surface/50",
-            )
-          }
-        >
-          Cimática
-        </NavLink>
+      <nav className="flex gap-1 flex-wrap">
+        {items.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={({ isActive }) =>
+              cn(
+                "px-3 py-2 texto-micro texto-desvanecido hover:bg-surface-sunken hover:texto-principal",
+                isActive && "texto-esmeralda-400 bg-surface/50",
+              )
+            }
+          >
+            {item.label}
+          </NavLink>
+        ))}
       </nav>
     </nav>
   )

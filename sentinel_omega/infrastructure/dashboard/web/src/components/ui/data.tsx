@@ -484,3 +484,66 @@ export function BannerError({ mensaje }: { mensaje: string }) {
     </div>
   );
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TablaDatos: tabla genérica con columnas configurables
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+interface Columna {
+  clave: string;
+  etiqueta?: string;
+  nombre?: string;
+  num?: boolean;
+  render?: (fila: any) => React.ReactNode;
+}
+
+export function TablaDatos({
+  filas,
+  columnas,
+  densa = false,
+  vacío = "Sin datos",
+}: {
+  filas: any[];
+  columnas: Columna[];
+  densa?: boolean;
+  vacío?: string;
+}) {
+  if (!filas || filas.length === 0) {
+    return <SinDatos titulo={vacío} />;
+  }
+
+  const pad = densa ? "px-2 py-1" : "px-3 py-2";
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border/50">
+            {columnas.map((col) => (
+              <th
+                key={col.clave}
+                className={`${pad} text-left text-xs font-medium text-muted uppercase tracking-wider ${col.num ? "text-right" : ""}`}
+              >
+                {col.etiqueta || col.nombre || col.clave}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {filas.map((fila, i) => (
+            <tr key={i} className="border-b border-border/30 hover:bg-surface-sunken/50">
+              {columnas.map((col) => (
+                <td
+                  key={col.clave}
+                  className={`${pad} ${col.num ? "text-right mono tnum" : ""}`}
+                >
+                  {col.render ? col.render(fila) : String(fila[col.clave] ?? "—")}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

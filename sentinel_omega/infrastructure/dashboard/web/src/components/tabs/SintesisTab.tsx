@@ -5,7 +5,7 @@
 import { useCallback } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { Panel, Metrica, Cifra, BarraVeredictos, SinDatos, BannerError, nivelDe, colorNivel, accionNivel, esAusente } from "@/components/ui/data";
+import { Panel, Metrica, Cifra, BarraVeredictos, SinDatos, BannerError, TablaDatos, nivelDe, colorNivel, accionNivel, esAusente } from "@/components/ui/data";
 import { SeñalesVivas } from "@/components/SeñalesVivas";
 import { SankeyDiagram } from "@/components/diagrams/SankeyDiagram";
 import { HeatmapChart } from "@/components/charts/HeatmapChart";
@@ -204,7 +204,7 @@ export function SintesisTab() {
               <span className="mono texto-principal fuente-negrita">{m.nombre}</span>
               <div className="flex items-center gap-2">
                 <span className={`mono texto-micro ${m.aprobado ? "texto-esmeralda-400" : d?.firmas?.consolidadas?.value === 0 ? "texto-orange-400" : "texto-rose-400"}`}>
-                  {m.aprobado ? "Aprobado" : m.jupiter.fase_viva === "rechazado" ? "Rechazado" : "No verificado"}
+                  {m.aprobado ? "Aprobado" : m.jupiter?.fase_viva === "rechazado" ? "Rechazado" : "No verificado"}
                 </span>
                 <span className="mono texto-micro texto-desvanecido">
                   {m.asertividad_promedio?.toFixed(2) ?? "—"}
