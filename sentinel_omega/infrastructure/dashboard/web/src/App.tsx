@@ -3,6 +3,7 @@
  * Aplicación principal de detección de anomalías naturales
  */
 import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom"
+import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { BarraNav } from "@/components/BarraNav"
 import { BarraLateral } from "@/components/BarraLateral"
 import { PresentacionTab } from "@/components/tabs/PresentacionTab"
@@ -34,6 +35,7 @@ export default function App() {
 
           {/* Contenido principal */}
           <main className="flex-1 overflow-y-auto p-6 bg-surface">
+            <ErrorBoundary>
             <Routes>
               <Route path="/" element={<PresentacionTab />} />
               <Route path="presentacion" element={<PresentacionTab />} />
@@ -52,6 +54,7 @@ export default function App() {
               <Route path="watchdog" element={<WatchdogTab />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+            </ErrorBoundary>
           </main>
         </div>
       </div>
