@@ -1,30 +1,30 @@
-import { useCallback, useMemo, useState } from "react";
-import { api } from "@/lib/api";
-import { usePoll } from "@/hooks/usePoll";
-import { Map2D } from "@/components/maps/Map2D";
-import { Globe3D } from "@/components/maps/Globe3D";
-import { colorRiesgoSat } from "@/components/maps/shared";
-import { Panel, Metrica, esAusente } from "@/components/ui/data";
-import type { NodoMapa, SismoMapa } from "@/components/maps/shared";
-
 /**
  * MAPAS — superficie EXPLORE: mapa primero, controles al margen.
  *
  * Correcciones de dato vivas aquí:
- * - `Number(nd.saturacion ?? ... ?? 0)` convertía un nodo SIN medición en un
- *   nodo con saturación 0.00 (88 de 125 en cero: la diferencia importa). Ahora
- *   `medido` conserva la verdad y `sat` alimenta los mapas.
+ * - `Number(nd.saturacion ?? ... ?? 0)` convertía un nodo sin medición en
+ *   un nodo con saturación 0.00 (benigno vs importante). Ahora `medido`
+ *   conserva la verdad.
  * - `Number(nd.lat)` con `lat: null` da 0, no NaN: un nodo sin coordenadas
- *   pasaría el filtro `Number.isFinite` y caería en (0,0). Guard explícito.
- * - Los sismos traen `depth_km` y `timestamp` del catálogo: profundidad y
- *   recencia viajan al mapa en vez de descartarse.
+ *   pasaría el filtro y caería en (0,0). Guard explícito.
+ * - Los sismos traen `depth_km` y `timestamp`: profundidad y recencia
+ *   viajan al mapa en vez de descartarse.
  */
+import { useCallback, useMemo } from "react";
+import { api } from "@/lib/api";
+import { usePoll } from "@/hooks/usePoll";
+import { Mapa2D } from "@/components/maps/Map2D";
+import { Globo3D } from "@/components/maps/Globe3D";
+import { colorRiesgoSat } from "@/components/maps/shared";
+import { Panel, Metrica, esAusente } from "@/components/ui/data";
+import type { NodoMapa, SismoMapa } from "@/components/maps/shared";
+
 export function MapasTab() {
   const n = usePoll(useCallback(() => api.nodos(), []), 30000);
   const s = usePoll(useCallback(() => api.sismos(4.5, 60), []), 30000);
   const [focus, setFocus] = useState<string | null>(null);
 
-  const nodes = useMemo<NodoMapa[]>(
+  const nodos = useMemo<NodoMapa[]>(
     () =>
       (n.data || [])
         .map((nd) => {
@@ -36,7 +36,6 @@ export function MapasTab() {
             lon,
             tipo: String(nd.tipo || ""),
             label: String(nd.nombre || ""),
-            // `sat` alimenta los mapas; `medido` conserva la verdad.
             sat: esAusente(bruto) ? 0 : Number(bruto),
             medido: !esAusente(bruto),
             region: nd.region == null ? undefined : String(nd.region),
@@ -48,7 +47,7 @@ export function MapasTab() {
     [n.data],
   );
 
-  const quakes = useMemo<SismoMapa[]>(
+  const sismos = useMemo<SismoMapa[]>(
     () =>
       (s.data?.items || [])
         .map((q) => {
@@ -59,7 +58,7 @@ export function MapasTab() {
             lon,
             mag: esAusente(q.magnitude) ? undefined : Number(q.magnitude),
             label: String(q.region || ""),
-            depthKm: esAusente(q.depth_km) ? undefined : Number(q.depth_km),
+            profundidadKm: esAusente(q.depth_km) ? undefined : Number(q.depth_km),
             ts: esAusente(q.timestamp) ? undefined : Number(q.timestamp),
           } satisfies SismoMapa;
         })
@@ -67,111 +66,109 @@ export function MapasTab() {
     [s.data],
   );
 
-  const counts = useMemo(() => {
-    const c = { real: 0, ghost: 0, geobateria: 0 };
-    for (const nd of nodes) {
-      const t = (nd.tipo ?? "").toLowerCase();
-      if (t.includes("ghost") || t.includes("fantasma")) c.ghost++;
-      else if (t.includes("geo")) c.geobateria++;
-      else c.real++;
+  const contados = useMemo(() => {
+    const c = { reales: 0, fantasmas: 0, geoBatería: 0 };
+    for (const nd of nodos) {
+      const t = (nd.tipo || "").toLowerCase();
+      if (t.includes("fantasma") || t.includes("fantasma")) c.fantasmas++;
+      else if (t.includes("geo")) c.geoBatería++;
+      else c.reales++;
     }
     return c;
-  }, [nodes]);
+  }, [nodos]);
 
   const conCarga = useMemo(
-    () => [...nodes].filter((x) => x.medido && (x.sat ?? 0) > 0).sort((a, b) => (b.sat ?? 0) - (a.sat ?? 0)),
-    [nodes],
+    () => [...nodos].filter((x) => x.medido && (x.sat ?? 0) > 0).sort((a, b) => (b.sat ?? 0) - (a.sat ?? 0)),
+    [nodos],
   );
-  const enReposo = nodes.filter((x) => x.medido && x.sat === 0).length;
+  const enReposo = nodos.filter((x) => x.medido && x.sat === 0).length;
   const topSat = conCarga.slice(0, 8);
   const totalSismos = s.data?.total_matching;
 
   return (
     <div className="space-y-5">
       <Panel
-        titulo="Malla UVG-125 y sismos recientes"
-        meta={
-          totalSismos != null
-            ? `Mercator · últimos ${quakes.length} de ${totalSismos.toLocaleString("es-MX")} sismos M≥4.5`
-            : "Mercator · M≥4.5"
-        }
-        nota="Nodos reales, Ghost (teóricos) y geobatería; los anillos son sismos con coordenadas del catálogo USGS — el color va por magnitud y la opacidad decae con la antigüedad. No es un mapa de alertas oficiales: muestra dónde mira el sistema, no dónde va a temblar."
+        detalle="Malla UVG-125 y sismos recientes"
+        objetivo={sismos.length ? `${sismos.length} sismos M≥4.5` : "ningún sismo reciente"}
+        riesgo={nodos.some((n) => (n.sat ?? 0) > 0.8) ? "ALTO" : "BAJO"}
+        acción="revisar nodos críticos"
       >
-        <Map2D
-          nodes={nodes}
-          quakes={quakes}
-          highlight={{ lat: 19.31, lon: -98.23, label: "Tlaxcala" }}
-          focus={focus}
+        <MapaFractal
+          nodos={nodos}
+          sismos={sismos}
+          altura={520}
+          foco={focus}
+          setFoco={setFocus}
         />
+        <div className="grid gap-4 md:grid-cols-[repeat(auto-fit,minmax(0,1fr))]">
+          <Metrica
+            detalle="Nodos vivos"
+            objetivo={`${nodos.length} nodos · ${contdos.reales} reales · ${contdos.fantasmas} fantasmas · ${contdos.geoBatería} geobatería`}
+            riesgo={contdos.fantasmas > 0 ? "MEDIO" : "BAJO"}
+            acción="revisar mapa"
+            sha256={undefined}
+          />
+          <Metrica
+            detalle="Sismos M≥4.5"
+            objetivo={`${sismos.length} detectados · ${totalSismos ?? "?"} en ventana`}
+            riesgo={sismos.length > 5 ? "ALTO" : "BAJO"}
+            acción="revisar mapa"
+            sha256={undefined}
+          />
+          <Metrica
+            detalle="Nodos con carga"
+            objetivo={`${conCarga.length} con señal · ${enReposo} sin carga`}
+            riesgo={conCarga.length > 5 ? "MEDIO" : "BAJO"}
+            acción="inspeccionar"
+            sha256={topSat[0]?.topSat?.nodo?.substring(0,16)}
+          />
+        </div>
       </Panel>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-        <Panel
-          titulo="Globo — tensión por nodo"
-          meta="arrastra para rotar"
-          nota="El radio y el aro de cada nodo crecen con su saturación acumulada (tope 1.0) y el aro va en la rampa de riesgo. Un nodo sin lectura se dibuja hueco y neutro, no cargado."
-        >
-          <Globe3D nodes={nodes} quakes={quakes} focus={focus} />
-        </Panel>
-
-        <div className="space-y-5">
-          <Panel
-            titulo="Nodos con más tensión"
-            meta={`${conCarga.length} con carga`}
-            nota={
-              enReposo > 0
-                ? `${enReposo} nodos medidos están en reposo (saturación 0.00) y ${
-                    nodes.length - conCarga.length - enReposo
-                  } no tienen lectura. Un cero medido y una casilla vacía no son lo mismo. Pasa el cursor por la lista para ubicar el nodo en ambos mapas.`
-                : "Pasa el cursor por la lista para ubicar el nodo en ambos mapas."
-            }
-          >
-            {topSat.length ? (
-              <ul className="space-y-2.5">
-                {topSat.map((nd, i) => {
-                  const color = colorRiesgoSat(nd.sat ?? 0);
-                  return (
-                    <li
-                      key={i}
-                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded px-1 transition-colors hover:bg-surface-raised"
-                      onMouseEnter={() => setFocus(nd.label || null)}
-                      onMouseLeave={() => setFocus(null)}
-                      title={nd.region ? `${nd.label} · ${nd.region}` : nd.label}
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="w-28 shrink-0 truncate text-meta text-body" title={nd.label}>
-                          {nd.label || "nodo"}
-                        </span>
-                        <div className="h-1.5 min-w-[60px] flex-1 overflow-hidden rounded-full bg-surface-sunken">
-                          <div
-                            className="h-full rounded-full"
-                            style={{ width: `${Math.min(100, (nd.sat ?? 0) * 100)}%`, background: color }}
-                          />
-                        </div>
-                      </div>
-                      <span className="mono shrink-0 text-meta tabular-nums" style={{ color }}>
-                        {(nd.sat ?? 0).toFixed(2)}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="py-4 text-center text-meta text-muted">
-                Ningún nodo registra carga acumulada todavía.
-              </p>
-            )}
-          </Panel>
-
-          <Panel titulo="Composición de la malla" meta="125 nodos">
-            <div className="grid grid-cols-3 gap-4">
-              <Metrica etiqueta="Reales" jerarquia="compacta" valor={counts.real} contexto="medición directa" />
-              <Metrica etiqueta="Ghost" jerarquia="compacta" valor={counts.ghost} contexto="teóricos" />
-              <Metrica etiqueta="Geobatería" jerarquia="compacta" valor={counts.geobateria} contexto="acumuladores" />
-            </div>
-          </Panel>
-        </div>
-      </div>
+      {/* ================= TOP NODOS POR CARGA ================= */}
+      <Panel
+        detalle="Top nodos por carga"
+        objetivo={`Top ${topSat.length} de ${nodos.length} nodos`}
+        riesgo={topSat[0]?.sat ?? 0 > 0.8 ? "ALTO" : "BAJO"}
+        acción="inspeccionar nodo"
+      >
+        {topSat.length ? (
+          <div className="space-y-2">
+            {topSat.map((n, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 p-2 rounded-lg border border-border bg-surface-sunken"
+              >
+                <div className="mono texto-principal fuente-negrita">{n.label}</div>
+                <div className="flex-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="mono texto-meta">Lat:</span>
+                    <span className="mono texto-principal fuente-negrita">{n.lat?.toFixed(4)}</span>
+                    <span className="mono texto-meta">Lon:</span>
+                    <span className="mono texto-principal fuente-negrita">{n.lon?.toFixed(4)}</span>
+                  </div>
+                  <div className="w-full h-2 bg-surface bg-fondo mt-1 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-var(--color-calma) via-var(--color-aviso) to-var(--color-critico)"
+                      style={{ width: `${(n.sat ?? 0) * 100}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex items-baseline gap-2 mt-1 texto-micro texto-muteado">
+                    <span>Saturación: {(n.sat ?? 0).toFixed(2)}</span>
+                    <span>{n.medido ? "medido" : "no medido"}</span>
+                    {n.updated && <span>{new Date(n.updated).toLocaleDateString("es-MX")}</span>}
+                  </div>
+                </div>
+                <div className="mono texto-principal fuente-negrita">
+                  {(n.sat ?? 0).toFixed(2)}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <SinDatos título="Sin nodos con carga" />
+        )}
+      </Panel>
     </div>
   );
 }

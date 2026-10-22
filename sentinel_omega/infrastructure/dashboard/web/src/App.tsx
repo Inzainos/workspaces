@@ -1,93 +1,58 @@
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { HealthStrip } from "@/components/HealthStrip";
-import { PresentacionTab } from "@/components/tabs/PresentacionTab";
-import { PrincipalTab } from "@/components/tabs/PrincipalTab";
-import { LokiTab } from "@/components/tabs/LokiTab";
-import { PadreJuezTab } from "@/components/tabs/PadreJuezTab";
-import { PrediccionesTab } from "@/components/tabs/PrediccionesTab";
-import { MapasTab } from "@/components/tabs/MapasTab";
-import { SenalesTab } from "@/components/tabs/SenalesTab";
-import { ModelosTab } from "@/components/tabs/ModelosTab";
-import { ReportesTab } from "@/components/tabs/ReportesTab";
-
 /**
- * Sentinel Omega — 7 pestañas.
- *
- * Cada pestaña se diseñó contra UNA superficie, y eso manda sobre la
- * composición (no al revés):
- *
- *   Presentación → Decide/Learn — la única donde un hero es correcto.
- *   Principal    → Monitor      — densidad y lectura de reojo, sin hero.
- *   Predicciones → Monitor
- *   Mapas        → Explore
- *   Señales      → Monitor
- *   Modelos      → Compare      — bots enfrentados, columnas alineadas.
- *   Reportes     → Explore
- *
- * El arranque es `principal`: quien abre esto quiere ver el estado, no que le
- * expliquen el producto.
+ * Sentinel Omega - Dashboard Principal
+ * Aplicación principal de detección de anomalías naturales
  */
+import { Navigate, Routes, Route } from "react-router-dom"
+import BarraNav from "@/components/BarraNav"
+import BarraLateral from "@/components/BarraLateral"
+import PresentacionTab from "@/components/tabs/PresentacionTab"
+import SintesisTab from "@/components/tabs/SintesisTab"
+import PrincipalTab from "@/components/tabs/PrincipalTab"
+import LokiTab from "@/components/tabs/LokiTab"
+import PadreJuezTab from "@/components/tabs/PadreJuezTab"
+import PrediccionesTab from "@/components/tabs/PrediccionesTab"
+import MapasTab from "@/components/tabs/MapasTab"
+import SeñalesTab from "@/components/tabs/SeñalesTab"
+import ModelosTab from "@/components/tabs/ModelosTab"
+import ReportesTab from "@/components/tabs/ReportesTab"
+import CimaticaTab from "@/components/tabs/CimaticaTab"
+import PadrónTab from "@/components/tabs/PadrónTab"
+import ConcilioTab from "@/components/tabs/ConcilioTab"
+import WatchdogTab from "@/components/tabs/WatchdogTab"
+
 export default function App() {
   return (
-    <div className="min-h-screen">
-      <a
-        href="#contenido"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded focus:bg-surface-raised focus:px-3 focus:py-2"
-      >
-        Saltar al contenido
-      </a>
+    <div className="flex h-screen bg-surface">
+      {/* Barra lateral */}
+      <BarraLateral />
 
-      <header className="sticky top-0 z-20 border-b border-border bg-[color:var(--color-base-900)]/92 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-5 py-2.5">
-          <div className="flex items-center gap-2.5">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M12 2 4 6v6c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"
-                stroke="var(--color-accent)"
-                strokeWidth="1.6"
-                strokeLinejoin="round"
-              />
-              <path d="M12 8v5M12 16v.6" stroke="var(--color-accent)" strokeWidth="1.6" strokeLinecap="round" />
-            </svg>
-            <div className="leading-tight">
-              <div className="text-body font-semibold text-foreground">Sentinel Omega</div>
-              <div className="text-micro text-faint">
-                Precursores de eventos naturales · lectura, no predicción
-              </div>
-            </div>
-          </div>
-          <HealthStrip />
-        </div>
-      </header>
+      {/* Área principal */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Barra de navegación superior */}
+        <BarraNav />
 
-      <main id="contenido" className="mx-auto max-w-[1600px] px-5 pb-16 pt-5">
-        <Tabs defaultValue="principal">
-          <TabsList>
-            <TabsTrigger value="presentacion">Presentación</TabsTrigger>
-            <TabsTrigger value="principal">Principal</TabsTrigger>
-            <TabsTrigger value="loki">Loki</TabsTrigger>
-            <TabsTrigger value="padrejuez">Padre+Juez</TabsTrigger>
-            <TabsTrigger value="predicciones">Predicciones</TabsTrigger>
-            <TabsTrigger value="mapas">Mapas</TabsTrigger>
-            <TabsTrigger value="senales">Señales</TabsTrigger>
-            <TabsTrigger value="modelos">Modelos</TabsTrigger>
-            <TabsTrigger value="reportes">Reportes</TabsTrigger>
-          </TabsList>
-          <TabsContent value="presentacion"><PresentacionTab /></TabsContent>
-          <TabsContent value="principal"><PrincipalTab /></TabsContent>
-          {/* Montadas el 2026-10-12: LokiTab existía desde el origen y
-              PadreJuezTab recibió los 4 KPI del nulo del lag el 10-08 —
-              ambas INVISIBLES porque App.tsx nunca las montó (la trampa
-              del 25-sep, otra vez). */}
-          <TabsContent value="loki"><LokiTab /></TabsContent>
-          <TabsContent value="padrejuez"><PadreJuezTab /></TabsContent>
-          <TabsContent value="predicciones"><PrediccionesTab /></TabsContent>
-          <TabsContent value="mapas"><MapasTab /></TabsContent>
-          <TabsContent value="senales"><SenalesTab /></TabsContent>
-          <TabsContent value="modelos"><ModelosTab /></TabsContent>
-          <TabsContent value="reportes"><ReportesTab /></TabsContent>
-        </Tabs>
-      </main>
+        {/* Contenido principal */}
+        <main className="flex-1 overflow-y-auto p-6 bg-surface">
+          <Routes>
+            <Route path="/" element={<PresentacionTab />} />
+            <Route path="presentacion" element={<PresentacionTab />} />
+            <Route path="sintesis" element={<SintesisTab />} />
+            <Route path="principal" element={<PrincipalTab />} />
+            <Route path="loki" element={<LokiTab />} />
+            <Route path="padrejuez" element={<PadreJuezTab />} />
+            <Route path="predicciones" element={<PrediccionesTab />} />
+            <Route path="mapas" element={<MapasTab />} />
+            <Route path="senales" element={<SeñalesTab />} />
+            <Route path="modelos" element={<ModelosTab />} />
+            <Route path="reportes" element={<ReportesTab />} />
+            <Route path="cimatica" element={<CimaticaTab />} />
+            <Route path="padron" element={<PadrónTab />} />
+            <Route path="concilio" element={<ConcilioTab />} />
+            <Route path="watchdog" element={<WatchdogTab />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+      </div>
     </div>
-  );
+  )
 }

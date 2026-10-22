@@ -1,31 +1,23 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
+    "lib": ["ESNext", "DOM"],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
     "isolatedModules": true,
-    "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
-    "noUnusedLocals": false,
+    "noUnusedLocals": true,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "moduleDetection": "auto"
   },
   "include": ["src"],
-  "exclude": [
-    "src/components/tabs/AgentesTab.tsx",
-    "src/components/tabs/AnalisisTab.tsx",
-    "src/components/tabs/ConsensoTab.tsx",
-    "src/components/tabs/SistemaTab.tsx",
-    "src/components/tabs/TelemetriaTab.tsx"
-  ]
+  "references": [{ "path": "./tsconfig.node.json" }]
 }

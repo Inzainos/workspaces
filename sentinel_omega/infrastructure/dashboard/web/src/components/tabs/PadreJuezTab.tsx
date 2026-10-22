@@ -1,294 +1,139 @@
-import { useCallback, useMemo } from "react";
+/**
+ * PADRE + JUEZ — superficie MONITOR.
+ *
+ * Padre es el árbitro jerárquico. Juez es el auditor que compara predicción
+ * con realidad. Ambos juntos muestran si el sistema está aprendiendo o
+ * si hay que desconfiar de sus predicciones.
+ */
+import { useCallback } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { Kpi } from "@/components/Kpi";
-import { DataTable } from "@/components/DataTable";
-import { TabIntro, Caption } from "@/components/TabIntro";
-import { Heatmap } from "@/components/charts/Heatmap";
-import { SimpleBars } from "@/components/charts/Sparkline";
-import { EmptyState, ErrorBanner } from "@/components/EmptyState";
-import { fmtNum, fmtTs } from "@/lib/utils";
+import { Panel, Metrica, Cifra, BarraVeredictos, SinDatos, BannerError } from "@/components/ui/data";
+import { fmtTs } from "@/lib/utils";
 
-/**
- * Tab 4 — Padre + Juez: /api/heatmaps + juez + lags + aciertos + last padre prediction + correlaciones.
- */
 export function PadreJuezTab() {
-  const hmF = useCallback(() => api.heatmaps(), []);
-  const juezF = useCallback(() => api.juez(80, "viva"), []);
-  const lagF = useCallback(() => api.lag(), []);
-  const acF = useCallback(() => api.aciertos(50), []);
-  const layersF = useCallback(() => api.layers(), []);
-  const corrF = useCallback(() => api.correlaciones(), []);
+  const padreF = useCallback(() => api.bots(), []);
+  const juezF = useCallback(() => api.juez(100, "viva"), []);
 
-  const hm = usePoll(hmF, 60000);
-  const juez = usePoll(juezF, 20000);
-  const lag = usePoll(lagF, 60000);
-  const ac = usePoll(acF, 30000);
-  const layers = usePoll(layersF, 20000);
-  const corr = usePoll(corrF, 60000);
+  const padre = usePoll(padreF, 30000);
+  const juez = usePoll(juezF, 30000);
 
-  const models = (hm.data?.models_x_models || {}) as Record<string, unknown>;
-  const telem = (hm.data?.telemetry_x_events || {}) as Record<string, unknown>;
-  const climatic = (hm.data?.climatic || {}) as Record<string, unknown>;
-  const padreCorrHm = (hm.data?.padre_corr || {}) as Record<string, unknown>;
-  const omegaCorrHm = (hm.data?.omega_corr || {}) as Record<string, unknown>;
+  const padreData = padre.data?.items as Record<string, unknown>[] || [];
+  const juezData = juez.data?.items as Record<string, unknown>[] || [];
 
-  const bots = (models.bots as string[]) || [];
-  const matrix = (models.matrix as (number | null)[][]) || [];
-  const modelGet = (r: string, c: string) => {
-    const i = bots.indexOf(r);
-    const j = bots.indexOf(c);
-    if (i < 0 || j < 0) return null;
-    const v = matrix[i]?.[j];
-    return v == null ? null : Number(v);
-  };
+  const padreItems = padreData.map((b) => ({
+    nombre: String(b.bot_name || b.nombre || "Desconocido"),
+    peso: Number(b.peso_voto ?? 0),
+    features: Number(b.feature_count ?? 0),
+    fecha_ultimo: String(b.updated_at ?? ""),
+  }));
 
-  const features = (telem.features as string[]) || [];
-  const events = (telem.events as string[]) || [];
-  const tMatrix = (telem.matrix as (number | null)[][]) || [];
-  const telemGet = (r: string, c: string) => {
-    const i = features.indexOf(r);
-    const j = events.indexOf(c);
-    if (i < 0 || j < 0) return null;
-    const v = tMatrix[i]?.[j];
-    return v == null ? null : Number(v);
-  };
+  const juecesConVoto = juezData.filter((r) => r.peso_voto != null && Number(r.peso_voto) > 0).length;
+  const aciertosJ = juezData.filter((r) => String(r.resultado || "").toUpperCase() === "ACIERTO").length;
+  const fallosJ = juezData.filter((r) => String(r.resultado || "").toUpperCase() === "FALLO").length;
+  const fpJ = juezData.filter((r) => String(r.resultado || "").toUpperCase() === "FALSO_POSITIVO").length;
 
-  const padre = layers.data?.padre as Record<string, unknown> | null;
-  const summary = ac.data?.summary || {};
-  const ant = lag.data?.anticipacion || [];
-  const fac = lag.data?.factores || [];
-  const nulo = lag.data?.nulo;
-
-  const corrPadre = corr.data?.padre;
-  const corrMap = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of corrPadre?.items || []) {
-      m.set(`${r.patron}|${r.event_class}`, Number(r.fuerza || 0));
-    }
-    return m;
-  }, [corrPadre]);
-
-  if (hm.error && juez.error) return <ErrorBanner message={hm.error || juez.error || ""} />;
-  if (juez.loading && !juez.data && hm.loading && !hm.data) {
-    return <EmptyState title="Cargando Padre + Juez…" />;
-  }
+  if (padre.error) return <BannerError mensaje={padre.error} />;
+  if (padre.loading && !padre.data) return <SinDatos titulo="Cargando bots Padre..." />;
 
   return (
-    <div className="space-y-6">
-      <TabIntro title="Padre + Juez — auditoría y memoria">
-        <p>
-          El Padre valida en cruz y puede avisar. El Juez compara predicción vs realidad (ACIERTO / FALLO / FP) en fase
-          viva. Los heatmaps salen de agregados SQL — nunca se vuelcan los ~2.6M de filas crudas.
-        </p>
-        <p>
-          Calma: muchos ACIERTO y Padre en NO_SIGNAL. Acción: racha de FALLO o Padre con señal alta — revisar Alertas /
-          Muro, no entrenar desde aquí.
-        </p>
-      </TabIntro>
-
-      <div className="grid gap-3 md:grid-cols-5">
-        <Kpi label="ACIERTOS" value={String(summary.aciertos ?? "—")} accent="#10b981" />
-        <Kpi label="FALLOS" value={String(summary.fallos ?? "—")} accent="#ff1744" />
-        <Kpi label="FP" value={String(summary.falsos_positivos ?? "—")} accent="#ff9100" />
-        <Kpi
-          label="ASERTIVIDAD (con silencios)"
-          value={
-            summary.asertividad != null ? `${(Number(summary.asertividad) * 100).toFixed(1)}%` : "—"
-          }
-          hint={
-            summary.asertividad_bot_mudo != null
-              ? `un bot mudo: ${(Number(summary.asertividad_bot_mudo) * 100).toFixed(1)}%`
-              : `${summary.total_resueltos ?? 0} resueltos`
-          }
-        />
-        <Kpi
-          label="GANANCIA REAL"
-          value={summary.ganancia_real != null ? `${Number(summary.ganancia_real).toFixed(2)}×` : "—"}
-          accent="#ff9100"
-          hint={
-            summary.eventos_detectados != null
-              ? `${summary.eventos_detectados}/${summary.eventos_totales} eventos · 1× = no aporta`
-              : "1× = no aporta"
-          }
-        />
-      </div>
-
-      <div className="rounded-lg border border-border px-4 py-3">
-        <div className="text-xs text-muted">Última predicción del Padre (layers)</div>
-        <div className="text-lg font-semibold">{String(padre?.prediccion || "SIN_DATOS")}</div>
-        <div className="text-xs text-muted">
-          conf {fmtNum(padre?.confianza)} · {fmtTs(padre?.timestamp)}
+    <div className="space-y-5">
+      {/* Resumen Padre */}
+      <Panel
+        detalle="Padre — Consenso jerárquico"
+        objetivo={`${padreItems.length} bots · ${padreItems.length > 0 ? padreItems.reduce((a, b) => a + Number(b.peso_voto ?? 0), 0) : 0} pesos totales`}
+        riesgo="BAJO"
+        acción="verificar pesos"
+      >
+        <div className="grid gap-4 md:grid-cols-3">
+          <Metrica
+            detalle="Bots activos"
+            objetivo={`${padreItems.length}`}
+            riesgo={padreItems.length > 0 ? "BAJO" : "ALTO"}
+            acción="revisar lista"
+          />
+          <Metrica
+            detalle="Peso total"
+            objetivo={padreItems.reduce((a, b) => a + Number(b.peso_voto ?? 0), 0).toFixed(2)}
+            riesgo="BAJO"
+            acción="verificar"
+          />
+          <Metrica
+            detalle="Pesos únicos"
+            objetivo={new Set(padreData.map((r) => r.peso_voto)).size}
+            riesgo="BAJO"
+            acción="verificar"
+          />
         </div>
-      </div>
+      </Panel>
 
-      <section className="space-y-2">
-        <h4 className="text-sm font-medium">Heatmap modelos × modelos (asertividad diaria, 30d)</h4>
-        {models.present && bots.length ? (
-          <Heatmap
-            rows={bots}
-            cols={bots}
-            get={modelGet}
-            caption={String(models.caption || "")}
-          />
-        ) : (
-          <EmptyState title="Sin matriz models×models" detail="Juez viva sin días suficientes en común." />
-        )}
-      </section>
+      {/* Veredictos Juez */}
+      <Panel
+        detalle="Juez — Real vs Predicción"
+        objetivo={`${juecesConVoto} con voto · ${aciertosJ} aciertos · ${fallosJ} fallos · ${fpJ} falsos positivos`}
+        riesgo={falsosPositivos > aciertosJ ? "ALTO" : "BAJO"}
+        acción="auditar modelo"
+      >
+        <BarraVeredictos aciertos={aciertosJ} falsosPositivos={fpJ} fallos={fallosJ} />
+      </Panel>
 
-      <section className="space-y-2">
-        <h4 className="text-sm font-medium">Heatmap telemetría × eventos (patrones_correlacion)</h4>
-        {telem.present && features.length ? (
-          <Heatmap
-            rows={features.slice(0, 12)}
-            cols={events.slice(0, 12)}
-            get={telemGet}
-            caption={String(telem.caption || "")}
-          />
-        ) : (
-          <EmptyState title="Sin tbl_patrones_correlacion" detail="" />
-        )}
-      </section>
+      {/* Tabla Padre */}
+      <Panel
+        detalle="Pesos de bots (Padre)"
+        objetivo={`${padreItems.length} bots registrados`}
+        riesgo="BAJO"
+        acción="revisar pesos"
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="text-meta texto-desvanecido border-b border-border pb-2">
+                <th className="texto-izquierda pb-2">Bot</th>
+                <th className="texto-derecha pb-2">Peso</th>
+                <th className="texto-meta texto-desvanecido pb-2">Features</th>
+                <th className="texto-meta texto-desvanecido pb-2">Última actualización</th>
+              </tr>
+            </thead>
+            <tbody>
+              {padreItems.map((bot) => (
+                <tr key={bot.nombre} className="border-b border-border/50 last:border-0">
+                  <td className="texto-principal fuente-negrita">{bot.nombre}</td>
+                  <td className="mono texto-principal fuente-negrita">{bot.peso.toFixed(2)}</td>
+                  <td className="mono texto-meta texto-desvanecido">{bot.features}</td>
+                  <td className="mono texto-meta texto-desvanecido">{fmtTs(bot.fecha_ultimo)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
 
-      <section className="space-y-2">
-        <h4 className="text-sm font-medium">Factores climáticos / lags</h4>
-        <Caption>{String(climatic.caption || "")}</Caption>
-        <DataTable
-          rows={((climatic.lag_climatic as Record<string, unknown>[]) || []).slice(0, 20)}
-          empty="Sin features climáticas en tbl_factores_lag"
-          columns={[
-            { key: "feature", label: "Feature" },
-            { key: "media_rapidas", label: "Rápidas", render: (r) => fmtNum(r.media_rapidas) },
-            { key: "media_lentas", label: "Lentas", render: (r) => fmtNum(r.media_lentas) },
-            { key: "diferencia_norm", label: "Δ norm", render: (r) => fmtNum(r.diferencia_norm) },
-          ]}
-        />
-        {/* El nulo del lag va ANTES de las horas, porque decide si esas horas
-            significan algo. Sin esto el tablero pintaba «SISMO_M4 ~211 h» sin
-            decir que dos de cada tres firmas dan ese número también en calma. */}
-        {nulo?.disponible ? (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium">
-              ¿El lag ANTICIPA o el patrón solo PERSISTE?
-            </h4>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Kpi
-                label="ANTICIPAN DE VERDAD"
-                value={
-                  nulo.pct_especificas != null
-                    ? `${nulo.pct_especificas.toFixed(1)}%`
-                    : "—"
-                }
-                hint={`${nulo.especificas ?? "—"} de ${nulo.con_lag ?? "—"} firmas con lag`}
-                accent="#10b981"
-              />
-              <Kpi
-                label="SOLO PERSISTEN"
-                value={String(nulo.persisten ?? "—")}
-                hint="también emparejan en calma del mismo nodo"
-                accent="#ff9100"
-              />
-              <Kpi
-                label="SIN NULO MEDIDO"
-                value={String(nulo.sin_nulo ?? "—")}
-                hint="lag de una corrida anterior, sin comparador"
-              />
-              <Kpi
-                label="MEDIDAS SIN LAG"
-                value={String(nulo.medidas_sin_lag ?? "—")}
-                hint="el patrón no se ve antes de su evento"
-              />
+      {/* Historial Juez reciente */}
+      <Panel
+        detalle="Últimos veredictos del Juez"
+        objetivo={`${juecesConVoto} con voto`}
+        riesgo={falsosPositivos > 0 ? "MEDIO" : "BAJO"}
+        acción="auditar resultados"
+      >
+        <div className="space-y-2">
+          {juecesData.slice(0, 10).map((j, i) => (
+            <div key={i} className="flex items-center gap-3 p-2 rounded-lg border border-border bg-surface-sunken">
+              <span className="mono texto-principal fuente-negrita">
+                {String(j.resultado || "—").toUpperCase()}
+              </span>
+              <span className="mono texto-meta texto-desvanecido">
+                {j.bot_name || "bot desconocido"}
+              </span>
+              <span className="mono texto-meta texto-desvanecido">
+                {fmtTs(j.timestamp || j.ts || j.fecha)}
+              </span>
+              <span className="mono texto-principal fuente-negrita ml-auto">
+                {j.peso_voto != null ? j.peso_voto.toFixed(2) : "—"}
+              </span>
             </div>
-            <Caption>
-              {nulo.nota} Universo: {nulo.universo}. Fuera de él hay{" "}
-              {nulo.con_lag_fuera_del_universo ?? 0} firmas con lag de corridas
-              anteriores que ya no son exigibles, así que el aviso no las empareja.
-            </Caption>
-          </div>
-        ) : null}
-        {ant.length ? (
-          <SimpleBars
-            data={ant.map((r) => ({ name: r.event_class, h: Number(r.lag_promedio_h || 0) }))}
-            xKey="name"
-            bars={[{ key: "h", color: "#5e6ad2", name: "horas promedio" }]}
-          />
-        ) : null}
-        <DataTable
-          rows={ant}
-          empty="Sin tbl_lag_anticipacion"
-          columns={[
-            { key: "event_class", label: "Evento" },
-            { key: "lag_promedio_h", label: "Promedio h", render: (r) => fmtNum(r.lag_promedio_h, 1) },
-            { key: "lag_min_h", label: "Mín", render: (r) => fmtNum(r.lag_min_h, 1) },
-            { key: "lag_max_h", label: "Máx", render: (r) => fmtNum(r.lag_max_h, 1) },
-            { key: "n_eventos", label: "n" },
-          ]}
-        />
-        <Caption>{lag.data?.anticipacion_nota}</Caption>
-        <DataTable
-          rows={fac.slice(0, 25)}
-          empty="Sin tbl_factores_lag"
-          columns={[
-            { key: "feature", label: "Feature" },
-            { key: "media_rapidas", label: "Rápidas", render: (r) => fmtNum(r.media_rapidas) },
-            { key: "media_lentas", label: "Lentas", render: (r) => fmtNum(r.media_lentas) },
-            { key: "diferencia_norm", label: "Δ norm", render: (r) => fmtNum(r.diferencia_norm) },
-          ]}
-        />
-      </section>
-
-      <section className="space-y-2">
-        <h4 className="text-sm font-medium">Juez viva — conteos y recientes</h4>
-        <DataTable
-          rows={(juez.data?.counts as Record<string, unknown>[]) || []}
-          empty="Sin conteos"
-          columns={[
-            { key: "fase", label: "Fase" },
-            { key: "resultado", label: "Resultado" },
-            { key: "n", label: "n" },
-          ]}
-        />
-        <DataTable
-          rows={juez.data?.items || []}
-          columns={[
-            { key: "timestamp", label: "Tiempo", render: (r) => fmtTs(r.timestamp) },
-            { key: "bot_name", label: "Bot" },
-            { key: "resultado", label: "Resultado" },
-            { key: "prediccion", label: "Predicción" },
-            { key: "verdad", label: "Verdad" },
-            { key: "confianza", label: "Conf", render: (r) => fmtNum(r.confianza) },
-            { key: "fase", label: "Fase" },
-          ]}
-        />
-        <Caption>Fuente: {String(juez.data?.source || "TBL_JUEZ_AUDITORIA")}. Límite 80 filas vivas.</Caption>
-      </section>
-
-      <section className="space-y-2">
-        <h4 className="text-sm font-medium">Correlaciones padre / omega (si hay filas)</h4>
-        {corrPadre?.present && (corrPadre.patrones?.length || 0) > 0 ? (
-          <Heatmap
-            rows={corrPadre.patrones}
-            cols={corrPadre.event_classes}
-            get={(r, c) => corrMap.get(`${r}|${c}`) ?? null}
-          />
-        ) : (
-          <EmptyState
-            title="tbl_correlaciones_padre vacía en DEV"
-            detail={`heatmap padre_corr present=${String(padreCorrHm.present)} · omega_corr present=${String(omegaCorrHm.present)}. Sin re-entrenar no hay celdas.`}
-          />
-        )}
-        {(corrPadre?.items || []).length ? (
-          <DataTable
-            rows={(corrPadre?.items || []).slice(0, 30)}
-            columns={[
-              { key: "patron", label: "Patrón" },
-              { key: "event_class", label: "Evento" },
-              { key: "n", label: "n" },
-              { key: "fuerza", label: "Fuerza", render: (r) => fmtNum(r.fuerza, 4) },
-            ]}
-          />
-        ) : null}
-      </section>
+          ))}
+        </div>
+      </Panel>
     </div>
   );
 }
