@@ -13,25 +13,27 @@
   }
 
   body {
-    @apply bg-surface texto-principal;
+    background-color: #0f1011;
+    color: #f7f8f8;
     font-feature-settings: "rlig" 1, "calt" 0;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply fuente-negrita texto-primer-plano;
+    font-weight: 700;
+    color: #f7f8f8;
   }
 
-  h1 { @apply texto-2xl; }
-  h2 { @apply texto-xl; }
-  h3 { @apply texto-lg; }
-  h4 { @apply texto-base fuente-negrita; }
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.25rem; }
+  h3 { font-size: 1.125rem; }
+  h4 { font-size: 1rem; font-weight: 700; }
 
   p {
     line-height: 1.6;
   }
 
   a {
-    color: var(--color-acento);
+    color: #5e6ad2;
     text-decoration: underline;
     text-decoration-offset: 4px;
   }
@@ -42,18 +44,6 @@
 }
 
 @layer components {
-  .texto-principal {
-    @apply texto-primer-plano fuente-negrita;
-  }
-
-  .texto-secundario {
-    @apply texto-secundario;
-  }
-
-  .texto-desvanecido {
-    @apply texto-desvanecido;
-  }
-
   .mono {
     font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   }
@@ -67,6 +57,10 @@
   }
 
   .texto-pequeno {
+    font-size: 0.875rem;
+  }
+
+  .texto-meta {
     font-size: 0.875rem;
   }
 
@@ -98,36 +92,76 @@
     font-size: 3rem;
   }
 
+  .texto-principal {
+    color: #f7f8f8;
+    font-weight: 600;
+  }
+
+  .texto-secundario {
+    color: #8a8f98;
+  }
+
+  .texto-desvanecido {
+    color: #6e737d;
+  }
+
   .boton {
-    @apply px-4 py-2 rounded-lg borde borde-borde texto-principal texto-micro fuente-negrita hover:bg-superficie-sunken transition-colors;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #f7f8f8;
+    font-size: 0.7rem;
+    font-weight: 700;
+    transition: background-color 0.15s;
+    cursor: pointer;
+  }
+
+  .boton:hover {
+    background-color: #191a1b;
   }
 
   .boton-secundario {
-    @apply px-4 py-2 rounded-lg borde borde-borde texto-meta texto-desvanecido hover:bg-surface-sunken;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #8a8f98;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  .boton-secundario:hover {
+    background-color: #191a1b;
   }
 
   .boton-primario {
-    @apply px-4 py-2 rounded-lg bg-indigo-500 texto-blanco fuente-negrita hover:bg-indigo-600;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    background-color: #6366f1;
+    color: #ffffff;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
   }
 
-  .boton-destacado {
-    @apply px-4 py-2 rounded-lg bg-esmeralda-500 texto-principal fuente-negrita hover:bg-esmeralda-600;
-  }
-
-  .boton-texto {
-    @apply texto-micro texto-desvanecido hover:texto-principal;
+  .boton-primario:hover {
+    background-color: #4f46e5;
   }
 
   .fondo-cuadro {
-    @apply bg-surface-sunken borde borde-borde;
+    background-color: #191a1b;
+    border: 1px solid rgba(255,255,255,0.08);
   }
 
   .fondo-contraste {
-    @apply bg-surface redondeado-xl borde borde-borde;
+    background-color: #0f1011;
+    border-radius: 1.25rem;
+    border: 1px solid rgba(255,255,255,0.08);
   }
 
   .contenedor-tarjetas {
-    @apply flex flex-col gap-4;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
 }
 

@@ -7,6 +7,20 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Clases que usa index.css con @apply
+        surface: "#0f1011",
+        "surface-sunken": "#191a1b",
+        "texto-principal": "#f7f8f8",
+        "texto-primer-plano": "#f7f8f8",
+        "texto-secundario": "#8a8f98",
+        "texto-desvanecido": "#6e737d",
+        "texto-blanco": "#ffffff",
+        "texto-calma": "#10b981",
+        "texto-critico": "#ff1744",
+        "texto-aviso": "#ff9100",
+        "texto-atencion": "#ffc107",
+        "borde": "rgba(255,255,255,0.08)",
+        "bordeHover": "rgba(255,255,255,0.15)",
         sistema: {
           oscuro: "#08090a",
           superficie: "#0f1011",
