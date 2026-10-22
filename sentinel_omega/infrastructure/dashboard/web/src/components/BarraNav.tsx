@@ -2,6 +2,7 @@
  * Barra de navegación superior para Sentinel Omega
  */
 import { NavLink } from "react-router-dom"
+import { cn } from "@/lib/utils"
 
 export function BarraNav() {
   return (

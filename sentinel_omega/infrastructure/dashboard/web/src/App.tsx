@@ -2,7 +2,7 @@
  * Sentinel Omega - Dashboard Principal
  * Aplicación principal de detección de anomalías naturales
  */
-import { Navigate, Routes, Route } from "react-router-dom"
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom"
 import { BarraNav } from "@/components/BarraNav"
 import { BarraLateral } from "@/components/BarraLateral"
 import { PresentacionTab } from "@/components/tabs/PresentacionTab"
@@ -22,37 +22,39 @@ import { WatchdogTab } from "@/components/tabs/WatchdogTab"
 
 export default function App() {
   return (
-    <div className="flex h-screen bg-surface">
-      {/* Barra lateral */}
-      <BarraLateral />
+    <BrowserRouter>
+      <div className="flex h-screen bg-surface">
+        {/* Barra lateral */}
+        <BarraLateral />
 
-      {/* Área principal */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Barra de navegación superior */}
-        <BarraNav />
+        {/* Área principal */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Barra de navegación superior */}
+          <BarraNav />
 
-        {/* Contenido principal */}
-        <main className="flex-1 overflow-y-auto p-6 bg-surface">
-          <Routes>
-            <Route path="/" element={<PresentacionTab />} />
-            <Route path="presentacion" element={<PresentacionTab />} />
-            <Route path="sintesis" element={<SintesisTab />} />
-            <Route path="principal" element={<PrincipalTab />} />
-            <Route path="loki" element={<LokiTab />} />
-            <Route path="padrejuez" element={<PadreJuezTab />} />
-            <Route path="predicciones" element={<PrediccionesTab />} />
-            <Route path="mapas" element={<MapasTab />} />
-            <Route path="senales" element={<SeñalesTab />} />
-            <Route path="modelos" element={<ModelosTab />} />
-            <Route path="reportes" element={<ReportesTab />} />
-            <Route path="cimatica" element={<CimaticaTab />} />
-            <Route path="padron" element={<PadrónTab />} />
-            <Route path="concilio" element={<ConcilioTab />} />
-            <Route path="watchdog" element={<WatchdogTab />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </main>
+          {/* Contenido principal */}
+          <main className="flex-1 overflow-y-auto p-6 bg-surface">
+            <Routes>
+              <Route path="/" element={<PresentacionTab />} />
+              <Route path="presentacion" element={<PresentacionTab />} />
+              <Route path="sintesis" element={<SintesisTab />} />
+              <Route path="principal" element={<PrincipalTab />} />
+              <Route path="loki" element={<LokiTab />} />
+              <Route path="padrejuez" element={<PadreJuezTab />} />
+              <Route path="predicciones" element={<PrediccionesTab />} />
+              <Route path="mapas" element={<MapasTab />} />
+              <Route path="senales" element={<SeñalesTab />} />
+              <Route path="modelos" element={<ModelosTab />} />
+              <Route path="reportes" element={<ReportesTab />} />
+              <Route path="cimatica" element={<CimaticaTab />} />
+              <Route path="padron" element={<PadrónTab />} />
+              <Route path="concilio" element={<ConcilioTab />} />
+              <Route path="watchdog" element={<WatchdogTab />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+        </div>
       </div>
-    </div>
+    </BrowserRouter>
   )
 }
