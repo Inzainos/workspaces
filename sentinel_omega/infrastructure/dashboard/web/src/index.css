@@ -1,13 +1,55 @@
 /**
- * Estilos globales para Sentinel Omega Dashboard
+ * Estilos globales — Sentinel Omega
+ *
+ * Sistema de diseño (v3, 2026-09-28):
+ *   1. El color saturado significa RIESGO. Nada más.
+ *   2. Número comparable = cifra tabular (tabular-nums).
+ *   3. Lo que no se midió se ve distinto de lo que midió cero.
+ *
+ * Contraste: la rampa de riesgo usa colores SATURADOS contra el fondo
+ * oscuro (#0f1011) para que un HIGH/CRITICAL sea IMPOSIBLE de pasar por
+ * alto. Los valores normales usan blanco puro (#f7f8f8) — no gris tenue.
  */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Rampa de riesgo — saturada a propósito contra el fondo oscuro */
+    --color-calma: #4fbf8f;
+    --color-calma-dim: rgba(79, 191, 143, 0.12);
+    --color-atencion: #d9b84f;
+    --color-atencion-dim: rgba(217, 184, 79, 0.12);
+    --color-aviso: #e8934f;
+    --color-aviso-dim: rgba(232, 147, 79, 0.12);
+    --color-critico: #e85d4f;
+    --color-critico-dim: rgba(232, 93, 79, 0.12);
+
+    /* Rampa de series (datos) — desaturada a propósito */
+    --color-serie-1: #6a86c8;
+    --color-serie-2: #4fa8a0;
+    --color-serie-3: #8b78c8;
+    --color-serie-4: #c8a86a;
+
+    /* Jerarquía de texto — alto contraste */
+    --color-foreground: #f7f8f8;
+    --color-muted: #b0b6bf;
+    --color-faint: #7a8088;
+
+    /* Acento de interfaz (no de dato) */
+    --color-acento: #5e6ad2;
+
+    /* Superficies */
+    --color-surface: #151618;
+    --color-surface-raised: #1a1c1e;
+    --color-surface-sunken: #0c0d0e;
+    --color-border: #2a2c2e;
+    --color-border-strong: #3a3c3e;
+  }
+
   html {
     font-family: "Inter", sans-serif;
   }
@@ -28,19 +70,15 @@
   h3 { font-size: 1.125rem; }
   h4 { font-size: 1rem; font-weight: 700; }
 
-  p {
-    line-height: 1.6;
-  }
+  p { line-height: 1.6; }
 
   a {
-    color: #5e6ad2;
+    color: var(--color-acento);
     text-decoration: underline;
     text-decoration-offset: 4px;
   }
 
-  input, textarea, select, button {
-    font-family: inherit;
-  }
+  input, textarea, select, button { font-family: inherit; }
 }
 
 @layer components {
@@ -48,114 +86,64 @@
     font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   }
 
-  .fuente-negrita {
-    font-weight: 700;
+  /* Números tabulares — comparables en columna */
+  .tnum {
+    font-variant-numeric: tabular-nums;
   }
 
-  .texto-micro {
-    font-size: 0.7rem;
-  }
+  .fuente-negrita { font-weight: 700; }
 
-  .texto-pequeno {
-    font-size: 0.875rem;
-  }
+  .texto-micro { font-size: 0.7rem; }
+  .texto-meta { font-size: 0.875rem; }
+  .texto-base { font-size: 1rem; }
+  .texto-lg { font-size: 1.125rem; }
+  .texto-xl { font-size: 1.25rem; }
+  .texto-2xl { font-size: 1.5rem; }
+  .texto-3xl { font-size: 1.875rem; }
+  .texto-4xl { font-size: 2.25rem; }
 
-  .texto-meta {
-    font-size: 0.875rem;
-  }
-
-  .texto-base {
-    font-size: 1rem;
-  }
-
-  .texto-lg {
-    font-size: 1.125rem;
-  }
-
-  .texto-xl {
-    font-size: 1.25rem;
-  }
-
-  .texto-2xl {
-    font-size: 1.5rem;
-  }
-
-  .texto-3xl {
-    font-size: 1.875rem;
-  }
-
-  .texto-4xl {
-    font-size: 2.25rem;
-  }
-
-  .texto-gigante {
-    font-size: 3rem;
-  }
-
+  /* Jerarquía con CONTRASTE: principal es BLANCO PURO */
   .texto-principal {
-    color: #f7f8f8;
+    color: var(--color-foreground);
     font-weight: 600;
   }
 
   .texto-secundario {
-    color: #8a8f98;
+    color: var(--color-muted);
   }
 
   .texto-desvanecido {
-    color: #6e737d;
+    color: var(--color-faint);
   }
 
-  .boton {
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    border: 1px solid rgba(255,255,255,0.08);
-    color: #f7f8f8;
-    font-size: 0.7rem;
-    font-weight: 700;
-    transition: background-color 0.15s;
-    cursor: pointer;
+  /* Ausencia ≠ cero — visualmente distinto de un valor medido */
+  .dato-ausente {
+    color: var(--color-faint);
+    font-style: italic;
+    letter-spacing: 0.05em;
   }
 
-  .boton:hover {
-    background-color: #191a1b;
-  }
+  /* Riesgo — el color saturado grita contra el fondo oscuro */
+  .texto-calma { color: var(--color-calma); }
+  .texto-atencion { color: var(--color-atencion); }
+  .texto-aviso { color: var(--color-aviso); }
+  .texto-critico { color: var(--color-critico); }
 
-  .boton-secundario {
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    border: 1px solid rgba(255,255,255,0.08);
-    color: #8a8f98;
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
+  .fondo-calma { background-color: var(--color-calma-dim); }
+  .fondo-atencion { background-color: var(--color-atencion-dim); }
+  .fondo-aviso { background-color: var(--color-aviso-dim); }
+  .fondo-critico { background-color: var(--color-critico-dim); }
 
-  .boton-secundario:hover {
-    background-color: #191a1b;
-  }
-
-  .boton-primario {
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    background-color: #6366f1;
-    color: #ffffff;
-    font-weight: 700;
-    border: none;
-    cursor: pointer;
-  }
-
-  .boton-primario:hover {
-    background-color: #4f46e5;
-  }
-
+  /* Panel de dato */
   .fondo-cuadro {
-    background-color: #191a1b;
-    border: 1px solid rgba(255,255,255,0.08);
+    background-color: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
   }
 
   .fondo-contraste {
-    background-color: #0f1011;
-    border-radius: 1.25rem;
-    border: 1px solid rgba(255,255,255,0.08);
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
   }
 
   .contenedor-tarjetas {
@@ -163,32 +151,38 @@
     flex-direction: column;
     gap: 1rem;
   }
-}
 
-@layer utilities {
-  .sin-borde {
-    outline: none;
-  }
-
-  .no-envolver {
-    white-space: nowrap;
-  }
-
-  .truncar {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .clickeable {
+  .boton {
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-border);
+    color: var(--color-foreground);
+    font-size: 0.7rem;
+    font-weight: 700;
+    transition: background-color 0.15s;
     cursor: pointer;
   }
 
-  .no-seleccionable {
-    user-select: none;
+  .boton:hover { background-color: var(--color-surface-raised); }
+
+  .boton-primario {
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    background-color: var(--color-acento);
+    color: #ffffff;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
   }
 
-  .sin-desplazamiento {
-    overflow: hidden;
-  }
+  .boton-primario:hover { filter: brightness(1.15); }
+}
+
+@layer utilities {
+  .sin-borde { outline: none; }
+  .no-envolver { white-space: nowrap; }
+  .truncar { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .clickeable { cursor: pointer; }
+  .no-seleccionable { user-select: none; }
+  .sin-desplazamiento { overflow: hidden; }
 }

@@ -1,55 +1,57 @@
 /**
- * Barra lateral de navegación para Sentinel Omega
+ * BarraLateral — única navegación (BarraNav era un duplicado).
+ * Sólo Sentinel Omega: Padrón/Concilio/Watchdog quitados (viven en sus
+ * propios proyectos).
  */
 import { NavLink } from "react-router-dom"
 import { cn } from "@/lib/utils"
 
-export function BarraLateral() {
-  const items = [
-    { to: "/principal", label: "Dashboard Principal" },
-    { to: "/sintesis", label: "Síntesis" },
-    { to: "/predicciones", label: "Predicciones" },
-    { to: "/mapas", label: "Mapas" },
-    { to: "/senales", label: "Señales" },
-    { to: "/cimatica", label: "Cimática" },
-    { to: "/modelos", label: "Modelos" },
-    { to: "/loki", label: "Loki" },
-    { to: "/padrejuez", label: "Padre + Juez" },
-    { to: "/reportes", label: "Reportes" },
-    { to: "/padron", label: "Padrón" },
-    { to: "/concilio", label: "Concilio" },
-    { to: "/watchdog", label: "Watchdog" },
-  ]
+const ITEMS = [
+  { to: "/principal", label: "Principal" },
+  { to: "/sintesis", label: "Síntesis" },
+  { to: "/predicciones", label: "Predicciones" },
+  { to: "/mapas", label: "Mapas" },
+  { to: "/senales", label: "Señales" },
+  { to: "/cimatica", label: "Cimática" },
+  { to: "/modelos", label: "Modelos" },
+  { to: "/loki", label: "Loki" },
+  { to: "/padrejuez", label: "Padre + Juez" },
+  { to: "/reportes", label: "Reportes" },
+]
 
+export function BarraLateral() {
   return (
-    <aside className="w-64 bg-surface-sunken border-r border-border overflow-y-auto">
-      <div className="p-4">
-        <div className="flex items-center gap-2 mb-6">
-          <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center">
-            <svg width="20" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m12.78 1.41l-1.41 1.41M12 20l-1.41-1.41L12 12l1.41 1.41" />
-            </svg>
+    <aside className="w-56 shrink-0 border-r border-border/60 bg-[#0f1011] flex flex-col">
+      <div className="px-4 py-5 border-b border-border/60">
+        <div className="flex items-center gap-2">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 2 4 6v6c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z" stroke="var(--color-acento)" strokeWidth="1.6" strokeLinejoin="round" />
+            <path d="M12 8v5M12 16v.6" stroke="var(--color-acento)" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+          <div>
+            <div className="font-bold text-sm text-foreground">Sentinel Omega</div>
+            <div className="text-[0.65rem] text-faint">precursores · lectura</div>
           </div>
-          <span className="texto-principal fuente-negrita">Sentinel Omega</span>
         </div>
-        <nav className="space-y-1">
-          {items.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center px-3 py-2 texto-micro texto-desvanecido hover:bg-surface-sunken hover:texto-principal",
-                  isActive && "texto-esmeralda-400 bg-surface/50",
-                )
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
       </div>
+      <nav className="flex-1 px-2 py-3 space-y-0.5">
+        {ITEMS.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={({ isActive }) =>
+              cn(
+                "block px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-surface-raised text-foreground border border-border"
+                  : "text-muted hover:text-foreground hover:bg-surface-raised/50"
+              )
+            }
+          >
+            {item.label}
+          </NavLink>
+        ))}
+      </nav>
     </aside>
   )
 }
