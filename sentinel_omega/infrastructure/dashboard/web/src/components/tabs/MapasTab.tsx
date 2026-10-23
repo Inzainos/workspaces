@@ -10,13 +10,11 @@
  * - Los sismos traen `depth_km` y `timestamp`: profundidad y recencia
  *   viajan al mapa en vez de descartarse.
  */
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { Mapa2D } from "@/components/maps/Map2D";
-import { Globo3D } from "@/components/maps/Globe3D";
-import { colorRiesgoSat } from "@/components/maps/shared";
-import { Panel, Metrica, esAusente } from "@/components/ui/data";
+import { MapaFractal } from "@/components/maps/MapaFractal";
+import { Panel, Metrica, Cifra, SinDatos, esAusente } from "@/components/ui/data";
 import type { NodoMapa, SismoMapa } from "@/components/maps/shared";
 
 export function MapasTab() {
@@ -26,7 +24,7 @@ export function MapasTab() {
 
   const nodos = useMemo<NodoMapa[]>(
     () =>
-      (n.data || [])
+      ((n.data as any[]) || [])
         .map((nd) => {
           const bruto = nd.saturacion ?? nd.saturation ?? nd.carga;
           const lat = nd.lat == null ? Number.NaN : Number(nd.lat);
@@ -49,7 +47,7 @@ export function MapasTab() {
 
   const sismos = useMemo<SismoMapa[]>(
     () =>
-      (s.data?.items || [])
+      ((s.data?.items as any[]) || [])
         .map((q) => {
           const lat = q.lat == null ? Number.NaN : Number(q.lat);
           const lon = q.lon == null ? Number.NaN : Number(q.lon);
@@ -58,7 +56,7 @@ export function MapasTab() {
             lon,
             mag: esAusente(q.magnitude) ? undefined : Number(q.magnitude),
             label: String(q.region || ""),
-            profundidadKm: esAusente(q.depth_km) ? undefined : Number(q.depth_km),
+            depthKm: esAusente(q.depth_km) ? undefined : Number(q.depth_km),
             ts: esAusente(q.timestamp) ? undefined : Number(q.timestamp),
           } satisfies SismoMapa;
         })
@@ -67,11 +65,11 @@ export function MapasTab() {
   );
 
   const contados = useMemo(() => {
-    const c = { reales: 0, fantasmas: 0, geoBatería: 0 };
+    const c = { reales: 0, fantasmas: 0, geoBateria: 0 };
     for (const nd of nodos) {
       const t = (nd.tipo || "").toLowerCase();
-      if (t.includes("fantasma") || t.includes("fantasma")) c.fantasmas++;
-      else if (t.includes("geo")) c.geoBatería++;
+      if (t.includes("fantasma")) c.fantasmas++;
+      else if (t.includes("geo")) c.geoBateria++;
       else c.reales++;
     }
     return c;
@@ -83,15 +81,14 @@ export function MapasTab() {
   );
   const enReposo = nodos.filter((x) => x.medido && x.sat === 0).length;
   const topSat = conCarga.slice(0, 8);
-  const totalSismos = s.data?.total_matching;
+  const totalSismos = (s.data as any)?.total_matching;
 
   return (
     <div className="space-y-5">
       <Panel
-        detalle="Malla UVG-125 y sismos recientes"
-        objetivo={sismos.length ? `${sismos.length} sismos M≥4.5` : "ningún sismo reciente"}
-        riesgo={nodos.some((n) => (n.sat ?? 0) > 0.8) ? "ALTO" : "BAJO"}
-        acción="revisar nodos críticos"
+        titulo="Malla UVG-125 y sismos recientes"
+        meta={sismos.length ? `${sismos.length} sismos M≥4.5` : "ningún sismo reciente"}
+        acento={nodos.some((x) => (x.sat ?? 0) > 0.8) ? "HIGH" : "LOW"}
       >
         <MapaFractal
           nodos={nodos}
@@ -100,73 +97,64 @@ export function MapasTab() {
           foco={focus}
           setFoco={setFocus}
         />
-        <div className="grid gap-4 md:grid-cols-[repeat(auto-fit,minmax(0,1fr))]">
+        <div className="grid gap-4 md:grid-cols-3 mt-4">
           <Metrica
-            detalle="Nodos vivos"
-            objetivo={`${nodos.length} nodos · ${contdos.reales} reales · ${contdos.fantasmas} fantasmas · ${contdos.geoBatería} geobatería`}
-            riesgo={contdos.fantasmas > 0 ? "MEDIO" : "BAJO"}
-            acción="revisar mapa"
-            sha256={undefined}
+            etiqueta="Nodos vivos"
+            valor={`${nodos.length}`}
+            contexto={`${contados.reales} reales · ${contados.fantasmas} fantasmas · ${contados.geoBateria} geobatería`}
           />
           <Metrica
-            detalle="Sismos M≥4.5"
-            objetivo={`${sismos.length} detectados · ${totalSismos ?? "?"} en ventana`}
-            riesgo={sismos.length > 5 ? "ALTO" : "BAJO"}
-            acción="revisar mapa"
-            sha256={undefined}
+            etiqueta="Sismos M≥4.5"
+            valor={`${sismos.length}`}
+            contexto={`${totalSismos != null ? Number(totalSismos).toLocaleString("es-MX") : "?"} en ventana`}
           />
           <Metrica
-            detalle="Nodos con carga"
-            objetivo={`${conCarga.length} con señal · ${enReposo} sin carga`}
-            riesgo={conCarga.length > 5 ? "MEDIO" : "BAJO"}
-            acción="inspeccionar"
-            sha256={topSat[0]?.topSat?.nodo?.substring(0,16)}
+            etiqueta="Nodos con carga"
+            valor={`${conCarga.length}`}
+            contexto={`${enReposo} sin carga · mayor: ${topSat[0]?.label ?? "—"}`}
           />
         </div>
       </Panel>
 
-      {/* ================= TOP NODOS POR CARGA ================= */}
-      <Panel
-        detalle="Top nodos por carga"
-        objetivo={`Top ${topSat.length} de ${nodos.length} nodos`}
-        riesgo={topSat[0]?.sat ?? 0 > 0.8 ? "ALTO" : "BAJO"}
-        acción="inspeccionar nodo"
-      >
+      <Panel titulo="Top nodos por carga" meta={`Top ${topSat.length} de ${nodos.length} nodos`}>
         {topSat.length ? (
           <div className="space-y-2">
-            {topSat.map((n, i) => (
+            {topSat.map((nd, i) => (
               <div
                 key={i}
                 className="flex items-center gap-3 p-2 rounded-lg border border-border bg-surface-sunken"
               >
-                <div className="mono texto-principal fuente-negrita">{n.label}</div>
+                <div className="mono texto-principal fuente-negrita">{nd.label}</div>
                 <div className="flex-1">
                   <div className="flex items-baseline gap-2">
                     <span className="mono texto-meta">Lat:</span>
-                    <span className="mono texto-principal fuente-negrita">{n.lat?.toFixed(4)}</span>
+                    <span className="mono texto-principal fuente-negrita">{nd.lat?.toFixed(4)}</span>
                     <span className="mono texto-meta">Lon:</span>
-                    <span className="mono texto-principal fuente-negrita">{n.lon?.toFixed(4)}</span>
+                    <span className="mono texto-principal fuente-negrita">{nd.lon?.toFixed(4)}</span>
                   </div>
-                  <div className="w-full h-2 bg-surface bg-fondo mt-1 rounded-full overflow-hidden">
+                  <div className="w-full h-2 bg-surface-sunken mt-1 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-gradient-to-r from-var(--color-calma) via-var(--color-aviso) to-var(--color-critico)"
-                      style={{ width: `${(n.sat ?? 0) * 100}%` }}
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${(nd.sat ?? 0) * 100}%`,
+                        background: "linear-gradient(to right, var(--color-calma), var(--color-aviso), var(--color-critico))",
+                      }}
                     ></div>
                   </div>
-                  <div className="flex items-baseline gap-2 mt-1 texto-micro texto-muteado">
-                    <span>Saturación: {(n.sat ?? 0).toFixed(2)}</span>
-                    <span>{n.medido ? "medido" : "no medido"}</span>
-                    {n.updated && <span>{new Date(n.updated).toLocaleDateString("es-MX")}</span>}
+                  <div className="flex items-baseline gap-2 mt-1 texto-micro texto-desvanecido">
+                    <span>Saturación: {(nd.sat ?? 0).toFixed(2)}</span>
+                    <span>{nd.medido ? "medido" : "no medido"}</span>
+                    {nd.updated && <span>{String(nd.updated).slice(0, 10)}</span>}
                   </div>
                 </div>
                 <div className="mono texto-principal fuente-negrita">
-                  {(n.sat ?? 0).toFixed(2)}
+                  <Cifra valor={nd.sat} digits={2} />
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <SinDatos título="Sin nodos con carga" />
+          <SinDatos titulo="Sin nodos con carga" />
         )}
       </Panel>
     </div>

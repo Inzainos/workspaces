@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   CONTINENTES,
-  colorTipo,
-  colorRiesgoSat,
-  colorSismo,
   alfaSismo,
   infoNodo,
   infoSismo,
@@ -306,7 +303,6 @@ export function Globe3D({
 
     // ── Bucle: auto-rotación en reposo, respetando reduced-motion ──────────
     let raf = 0;
-    const libre = () => idleDesde.current > 0 && Date.now() - idleDesde.current > 2500;
     if (reduceMotion) {
       draw();
     } else {

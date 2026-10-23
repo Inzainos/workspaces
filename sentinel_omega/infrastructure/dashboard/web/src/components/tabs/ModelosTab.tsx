@@ -4,7 +4,7 @@
 import { useCallback } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { Panel, Metrica, Cifra, SinDatos, BannerError } from "@/components/ui/data";
+import { Panel, SinDatos, BannerError } from "@/components/ui/data";
 import { fmtTs } from "@/lib/utils";
 
 export function ModelosTab() {
@@ -14,20 +14,17 @@ export function ModelosTab() {
   const d = ml.data as any;
 
   if (ml.error) return <BannerError mensaje={ml.error} />;
-  if (ml.loading && !ml.data) return <SinDatos título="Cargando datos de muros..." />;
+  if (ml.loading && !ml.data) return <SinDatos titulo="Cargando datos de muros..." />;
 
   const mlActivo = d?.activo ?? false;
   const rest = ml.data?.dias_restantes ?? [];
-  const activas = d?.activos ?? [];
 
   return (
     <div className="space-y-5">
       {/* Panel de estado */}
       <Panel
-        detalle="Muro de lógicas"
-        objetivo={`${mlActivo ? "Activo" : "Inactivo"}`}
-        riesgo={mlActivo ? "MEDIO" : "BAJO"}
-        acción="Ver detalle"
+        titulo="Muro de lógicas"
+        meta={`${mlActivo ? "Activo" : "Inactivo"}`}
       >
         <div className="flex items-center gap-4">
           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: mlActivo ? "var(--color-esmeralda-400)" : "var(--color-gris-medio)" }}></div>
@@ -45,10 +42,8 @@ export function ModelosTab() {
 
       {/* Tabla de nodos */}
       <Panel
-        detalle="Nodos del muro"
-        objetivo={`${d?.nodos?.length ?? 0} nodos`}
-        riesgo="BAJO"
-        acción="ver detalles"
+        titulo="Nodos del muro"
+        meta={`${d?.nodos?.length ?? 0} nodos`}
       >
         {d?.nodos?.length ? (
           <div className="overflow-x-auto">
@@ -74,27 +69,23 @@ export function ModelosTab() {
             </table>
           </div>
         ) : (
-          <SinDatos título="Sin nodos registrados" />
+          <SinDatos titulo="Sin nodos registrados" />
         )}
       </Panel>
 
       {/* Métricas adicionales */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Panel
-          detalle="Tasa de éxito"
-          objetivo={`${d?.tasa_exito ?? 0}%`}
-          riesgo={d?.tasa_exito >= 90 ? "BAJO" : d?.tasa_exito >= 70 ? "MEDIO" : "ALTO"}
-          acción="ver historial"
+          titulo="Tasa de éxito"
+          meta={`${d?.tasa_exito ?? 0}%`}
         >
           <div className="flex items-baseline gap-2">
             <span className="mono texto-principal fuente-negrita">{d?.tasa_exito?.toFixed(1) ?? "—"}%</span>
           </div>
         </Panel>
         <Panel
-          detalle="Última actualización"
-          objetivo={d?.ultima_actualizacion ? fmtTs(d.ultima_actualizacion) : "—"}
-          riesgo="BAJO"
-          acción="ver histórico"
+          titulo="Última actualización"
+          meta={d?.ultima_actualizacion ? fmtTs(d.ultima_actualizacion) : "—"}
         >
           <div className="flex items-baseline gap-2">
             <span className="mono texto-principal fuente-negrita">

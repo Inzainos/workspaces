@@ -1,118 +1,162 @@
 /**
- * CIMÁTICA — superficie MONITOR.
+ * CIMÁTICA — superficie EXPLORE. La capa cimática completa del sistema:
  *
- * Panel de vibración: visualización de la firma actual de la cimática
- * y los patrones recurrentes más frecuentes.
+ *  - LA FIGURA: la clave de telemetría actual hecha imagen determinista
+ *    (CimaticaFigura: FNV-1a → PRNG → anillos espejados tipo Chladni; la
+ *    misma clave SIEMPRE dibuja la misma figura). La clave viva viene de
+ *    /api/cimatica/ahora — NO es un placeholder.
+ *  - EL TONO: la capa espectral de la tela SNT (audit 2026-10-21): el
+ *    régimen de clima espacial de la ventana viva. Lee el tono, no la
+ *    familia del evento — la víspera sísmica es climáticamente
+ *    indistinguible del fondo quieto. Evidencia, no compuerta.
+ *  - LOS PATRONES: tbl_cimatica_patrones vía /api/estado-vivo — el conteo
+ *    de repetición. Un patrón frecuente NO es un patrón predictivo: eso
+ *    lo decide el Juez (lift contra calma).
  */
 import { useCallback } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { Panel, Metrica, Cifra, SinDatos, BannerError } from "@/components/ui/data";
+import { Panel, Metrica, SinDatos, BannerError } from "@/components/ui/data";
 import { CimaticaFigura } from "@/components/CimaticaFigura";
-import { SimpleBars } from "@/components/charts/componentes";
+import { SimpleBars } from "@/components/charts/Sparkline";
+
+const NOTA_TONO =
+  "El tono lee el RÉGIMEN de clima espacial (quietud Kp/viento), no la familia del evento. " +
+  "Las etiquetas son las vísperas del corpus; el vector de distancias es el payload. " +
+  "Medido: familia 46.8% vs placebo 32.9% en LOO; concordancia viva documentada en el audit.";
 
 export function CimaticaTab() {
+  const caF = useCallback(() => api.cimaticaAhora(), []);
   const evF = useCallback(() => api.estadoVivo(), []);
+
+  const ca = usePoll(caF, 30000);
   const ev = usePoll(evF, 30000);
 
-  const d = (ev.data as any) ?? {};
-  const cimatica = d?.cimatica_top || [];
-  const total = d?.cimatica_total ?? 0;
-  const edad = d?.edad_s != null ? Number(d.edad_s) : null;
-  const edadStr = edad != null ? `${edad} s` : "—";
+  if (ca.error && ev.error) return <BannerError mensaje={ca.error} />;
+  if (ev.loading && !ev.data) return <SinDatos titulo="Leyendo cimática…" />;
 
-  const top = cimatica.slice(0, 8);
+  const caData = (ca.data || {}) as Record<string, any>;
+  const d = (ev.data || {}) as Record<string, any>;
 
-  const notaFigura =
-    "La misma clave siempre dibuja la misma figura. Si la clave no cambia, la figura no cambia: es determinista, no aleatoria. Los anillos concéntricos y el espejo vertical imitan las placas de Chladni; el tamaño del punto y el grosor de la línea son puramente geométricos, no representan riesgo. Sin clave actual no hay firma que observar (esperando al siguiente ciclo).";
+  const clave = caData.current_clave ? String(caData.current_clave) : null;
+  const bibliotecaN = caData.biblioteca_n != null ? Number(caData.biblioteca_n) : null;
+  const total = d.cimatica_total != null ? Number(d.cimatica_total) : null;
+  const edad = d.edad_s != null ? Number(d.edad_s) : null;
+  const tono = (d.tono || {}) as Record<string, any>;
+  const top = (d.cimatica_top || []) as Array<Record<string, any>>;
 
-  const notaTop =
-    "Un patrón frecuente no es un patrón predictivo: lo que importa es si empareja eventos reales frente a calma (la vara del Padre). La frecuencia mide repetición, no anticipación.";
+  const dists = Object.entries(tono.dist || {})
+    .filter(([, v]) => v != null)
+    .sort((a, b) => Number(a[1]) - Number(b[1]));
 
   return (
     <div className="space-y-5">
       {/* KPIs */}
       <div className="grid gap-4 md:grid-cols-3">
         <Metrica
-          detalle="Patrones en DB"
-          objetivo={total.toLocaleString("es-MX")}
-          riesgo={total > 1000 ? "MEDIO" : "BAJO"}
-          acción="revisar cimática"
+          etiqueta="Patrones en DB"
+          valor={total != null ? total.toLocaleString("es-MX") : "—"}
+          contexto="tbl_cimatica_patrones · conteo de repetición"
         />
         <Metrica
-          detalle="Top hoy"
-          objetivo={top.length.toString()}
-          riesgo="BAJO"
-          acción="ver lista"
+          etiqueta="Biblioteca de figuras"
+          valor={bibliotecaN != null ? bibliotecaN.toLocaleString("es-MX") : "—"}
+          contexto="vísperas etiquetadas comparables"
+          jerarquia="compacta"
         />
         <Metrica
-          detalle="Clave actual"
-          objetivo="—"
-          riesgo="BAJO"
-          acción="esperar ciclo"
+          etiqueta="Tono espectral"
+          valor={tono.tono ? String(tono.tono) : "—"}
+          contexto={edad != null ? `ventana viva · frescura ${edad} s` : "ventana viva"}
+          jerarquia="compacta"
         />
       </div>
 
-      {/* Firma cimática */}
-      <Panel
-        detalle="Firma cimática actual"
-        objetivo={edadStr}
-        riesgo="BAJO"
-        acción="refrescar"
-      >
-        <div className="flex flex-col items-center gap-4">
-          <CimaticaFigura clave="" tamaño={260} />
-          <p className="texto-meta texto-desvanecido">
-            La clave actual no está disponible en el estado vivo. El snapshot y las frecuencias de patrones siguen mostrándose abajo.
-          </p>
-        </div>
-      </Panel>
+      {/* Figura + tono */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Panel
+          titulo="Figura cimática actual"
+          meta="clave de telemetría → imagen determinista"
+          nota="La misma clave SIEMPRE dibuja la misma figura — reconocible de reojo, como las placas de Chladni. Si la clave no cambia, la figura no cambia: es la semilla de la comparación contra la biblioteca. Color neutro a propósito: la figura es dato, no estado de riesgo."
+        >
+          <div className="flex flex-col items-center gap-4">
+            <CimaticaFigura clave={clave} size={260} />
+            {clave ? (
+              <p className="mono break-all text-micro leading-relaxed text-muted">
+                {clave.slice(0, 180)}
+                {clave.length > 180 ? "…" : ""}
+              </p>
+            ) : (
+              <p className="text-meta text-muted">
+                Sin clave en el snapshot — esperando el próximo ciclo del launcher.
+              </p>
+            )}
+          </div>
+        </Panel>
+
+        <Panel titulo="Tono espectral — la ventana viva" meta="capa espectral (tela SNT)" nota={NOTA_TONO}>
+          <div className="space-y-4">
+            <div className="flex items-baseline gap-2">
+              <span className="etiqueta">Régimen actual</span>
+              <span className="mono text-body font-semibold text-foreground">
+                {tono.tono ? String(tono.tono) : "—"}
+              </span>
+            </div>
+            {dists.length ? (
+              <ul className="space-y-2">
+                {dists.map(([f, v]) => (
+                  <li key={f} className="flex items-baseline gap-3 text-meta">
+                    <span className="mono w-24 shrink-0 text-muted">{f}</span>
+                    <span className="mono font-semibold text-foreground">{Number(v).toFixed(2)}</span>
+                    <span className="text-faint">distancia z</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-meta text-muted">Sin tono medido — centroides no construidos o ventana sin datos.</p>
+            )}
+          </div>
+        </Panel>
+      </div>
 
       {/* Top patrones */}
       <Panel
-        detalle="Top patrones (frecuencia)"
-        objetivo={`total ${total.toLocaleString("es-MX")}`}
-        riesgo="BAJO"
-        acción="revisar patrón"
+        titulo="Top patrones por frecuencia"
+        meta={total != null ? `${total.toLocaleString("es-MX")} patrones en DB` : "tbl_cimatica_patrones"}
+        nota="Un patrón frecuente NO es un patrón predictivo: la frecuencia mide repetición, no anticipación. Qué firma empareja eventos frente a calma lo mide el Juez (lift relativo), no este conteo."
       >
         {top.length ? (
-          <div className="space-y-3">
+          <>
             <SimpleBars
-              datos={top.map((p, i) => ({
-                clave: String(i),
-                valor: Number(p.frecuencia || 0),
+              data={top.slice(0, 8).map((p, i) => ({
+                key: String(i),
+                value: Number(p.frecuencia || 0),
                 color: "var(--color-serie-1)",
-                nombre: `${String(p.event_class || "—")} (${String(p.ambito || "—")})`,
+                name: `${String(p.event_class || "—")} (${String(p.ambito || "—")})`,
               }))}
-              claveClave="clave"
-              valorClave="valor"
-              altura={260}
-              tipo="barra"
+              xKey="key"
+              yKey="value"
+              bars={[{ key: "value", color: "var(--color-serie-1)", name: "frecuencia" }]}
+              height={200}
+              mostrarX
             />
-            <div className="mt-3 espacio-y-1.5">
-              {top.map((p, i) => (
-                <div key={i} className="flex items-baseline gap-2">
-                  <span className="mono texto-principal fuente-negrita">
-                    {String(p.event_class || "—")} ({String(p.ambito || "—")})
+            <ul className="mt-3 space-y-1.5">
+              {top.slice(0, 8).map((p, i) => (
+                <li key={i} className="flex items-baseline gap-2">
+                  <span className="mono truncate text-body text-foreground">
+                    {String(p.event_class || "—")} · {String(p.ambito || "—")}
                   </span>
-                  <span className="mono texto-principal fuente-negrita">
-                    {Number(p.frecuencia).toLocaleString("es-MX")}
+                  <span className="mono ml-auto font-semibold text-foreground">
+                    {Number(p.frecuencia || 0).toLocaleString("es-MX")}
                   </span>
-                </div>
+                </li>
               ))}
-            </div>
-          </div>
+            </ul>
+          </>
         ) : (
-            <SinDatos título="Sin patrones cimáticos" detalle="La tabla tbl_cimatica_patrones está vacía." />
-          )}
-        </Panel>
-
-        {/* Nota */}
-        <div className="redondeado-lg borde borde-desgastado bg-superficie-penumbra p-4">
-          <p className="texto-meta texto-desvanecido">
-            Nota: El patrón más frecuente no es necesariamente el más preditivo. Lo que importa es si empareja eventos reales frente a calma (la vara del Padre). La frecuencia mide repetición, no anticipación.
-          </p>
-        </div>
-      </div>
+          <SinDatos titulo="Sin patrones cimáticos" detalle="La tabla tbl_cimatica_patrones está vacía en este árbol." />
+        )}
+      </Panel>
+    </div>
   );
 }

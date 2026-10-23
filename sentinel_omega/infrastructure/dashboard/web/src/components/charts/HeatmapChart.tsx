@@ -6,7 +6,6 @@
  * datos, rampa neutra = riesgo). Sirve para ver patrones de recurrencia
  * sin afirmar causalidad.
  */
-import { useMemo } from "react";
 
 interface CalEvento {
   ts: number; // epoch segundos

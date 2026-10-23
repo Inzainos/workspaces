@@ -1,7 +1,6 @@
 /**
  * Mapa 2D con nodos UVG-125 y sismos
  */
-import { useCallback, useMemo } from "react"
 import { NodoMapa, SismoMapa } from "@/components/maps/shared"
 
 interface MapaFractalProps {
@@ -19,12 +18,9 @@ export function MapaFractal({
   foco,
   setFoco,
 }: MapaFractalProps) {
-  const contenedorRef = useCallback((el: HTMLDivElement | null) => {
-    // TODO: Implementar pan/zoom con D3 si es necesario
-  }, [])
 
   return (
-    <div className="relative w-full h-[altura] bg-surface rounded-lg border border-border overflow-hidden">
+    <div className="relative w-full bg-surface rounded-lg border border-border overflow-hidden" style={{ height: altura }}>
       <svg
         className="absolute inset-0 w-full h-full"
         viewBox="0 0 1000 600"
@@ -65,8 +61,9 @@ export function MapaFractal({
               stroke="white"
               strokeWidth={1}
               opacity={0.7}
-              title={`${s.label || "Sismo"} - M${s.mag?.toFixed(1)} - ${new Date(s.ts ?? 0).toLocaleDateString("es-MX")}`}
-            />
+            >
+              <title>{`${s.label || "Sismo"} — M${s.mag?.toFixed(1)} — ${new Date(s.ts ?? 0).toLocaleDateString("es-MX")}`}</title>
+            </circle>
           )
         })}
 
@@ -80,7 +77,7 @@ export function MapaFractal({
 
           return (
             <circle
-              key={nodo.label}
+              key={nodo.label ?? String(x) + String(y)}
               cx={x}
               cy={y}
               r={esFoco ? 8 : (nodo.medido ? 4 + (sat ?? 0) * 3 : 2)}
@@ -89,9 +86,10 @@ export function MapaFractal({
               strokeWidth={esFoco ? 3 : (nodo.medido ? 1 : 0.5)}
               opacity={nodo.medido ? 0.9 : 0.3}
               cursor="pointer"
-              onClick={() => setFoco?.(nodo.label)}
-              title={`${nodo.label}\nSaturación: ${(sat ?? 0).toFixed(2)}\n${nodo.tipo}\n${nodo.region || ""}`}
-            />
+              onClick={() => setFoco?.(nodo.label ?? null)}
+            >
+              <title>{`${nodo.label} — Saturación ${(sat ?? 0).toFixed(2)} — ${nodo.tipo}${nodo.region ? " — " + nodo.region : ""}`}</title>
+            </circle>
           )
         })}
       </svg>
@@ -136,7 +134,7 @@ export function Globo3D({
   setFoco: (v: string | null) => void
 }) {
   return (
-    <div className="relative w-full h-[altura] bg-surface rounded-lg border border-border overflow-hidden">
+    <div className="relative w-full bg-surface rounded-lg border border-border overflow-hidden" style={{ height: altura }}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,var(--color-superficie-sunido),var(--color-superficie))] rounded-lg" />
       <MapaFractal nodos={nodos} sismos={sismos} altura={altura} foco={foco} setFoco={setFoco} />
     </div>

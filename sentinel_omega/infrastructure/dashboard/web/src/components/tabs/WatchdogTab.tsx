@@ -1,151 +1,107 @@
 /**
- * Watchdog - Pantalla de monitoreo de seguridad
+ * VIGILANCIA — salud de las fuentes de datos del sistema.
+ *
+ * /api/health/apis expone el estado real por fuente (LIVE / LOCF_ACTIVE /
+ * STALE, edad en horas). El watchdog de SEGURIDAD es otro proyecto (/watchdog,
+ * bot propio @IngZainos_bot) y no vive en esta API: aquí se vigila que las
+ * fuentes que alimentan a Sentinel estén vivas.
  */
 import { useCallback } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { Panel, Metrica, Cifra, SinDatos, BannerError } from "@/components/ui/data";
+import {
+  Panel,
+  Metrica,
+  Cifra,
+  SinDatos,
+  BannerError,
+  TablaDatos,
+} from "@/components/ui/data";
+import { fmtTs } from "@/lib/utils";
+
+const COLOR_ESTADO: Record<string, string> = {
+  LIVE: "var(--color-calma)",
+  LOCF_ACTIVE: "var(--color-atencion)",
+  STALE: "var(--color-aviso)",
+  DEAD: "var(--color-critico)",
+};
 
 export function WatchdogTab() {
-  const estadoF = useCallback(() => api.estado(), []);
-  const estado = usePoll(estadoF, 60000);
+  const saludF = useCallback(() => api.healthApis(), []);
+  const salud = usePoll(saludF, 30000);
 
-  const d = estado.data as any;
+  if (salud.error) return <BannerError mensaje={salud.error} />;
+  if (salud.loading && !salud.data) return <SinDatos titulo="Cargando salud de las fuentes…" />;
 
-  if (estado.error) return <BannerError mensaje={estado.error} />;
-  if (estado.loading && !estado.data) return <SinDatos título="Cargando estado del watchdog..." />;
+  const d: any = salud.data ?? {};
+  const filas = Object.entries(d).map(([fuente, v]: [string, any]) => ({
+    fuente,
+    estado: String(v?.status ?? "—"),
+    edad_h: v?.age_h != null ? Number(v.age_h) : null,
+    muestras: v?.muestras != null ? Number(v.muestras) : null,
+    ultimo_ts: v?.last_data_ts != null ? Number(v.last_data_ts) : null,
+  }));
+
+  const vivas = filas.filter((f) => f.estado === "LIVE").length;
+  const locf = filas.filter((f) => f.estado === "LOCF_ACTIVE").length;
+  const stales = filas.filter((f) => f.estado === "STALE" || f.estado === "DEAD").length;
 
   return (
     <div className="space-y-5">
-      {/* Resumen general */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Panel
-          detalle="Estado del sistema"
-          objetivo={d?.estado?.estado || "desconocido"}
-          riesgo={d?.estado?.estado === "en_linea" ? "BAJO" : "ALTO"}
-          acción={d?.estado?.estado === "en_linea" ? "monitorear" : "reiniciar"}
-        >
-          <div className="flex flex-col gap-2">
-            <div className="flex items-baseline gap-2">
-              <span className="mono texto-principal fuente-negrita">Estado del sistema</span>
-              <span className="mono texto-meta texto-desvanecido">
-                {d?.estado?.estado === "en_linea" ? "en línea" : "desconectado"}
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="mono texto-principal fuente-negrita">Última sincronización:</span>
-              <span className="mono texto-meta texto-desvanecido">{fmtTs(d?.estado?.ultima_sincronizacion)}</span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="mono texto-principal fuente-negrita">Núcleos activos:</span>
-              <span className="mono texto-principal fuente-negrita">{d?.estado?.nucleos_activos ?? 0}</span>
-            </div>
-          </div>
-        </Panel>
-        <Panel
-          detalle="Votos recientes"
-          objetivo={`${d?.votaciones?.total_votos ?? 0}`}
-          riesgo="BAJO"
-          acción="ver detalle"
-        >
-          <div className="flex flex-col gap-2">
-            <div className="flex items-baseline gap-2">
-              <span className="mono texto-principal fuente-negrita">
-                <Cifra valor={d?.votaciones?.total_votos ?? 0} />
-              </span>
-              <span className="mono texto-micro texto-desvanecido">votos totales</span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="mono texto-principal fuente-negrita">
-                <Cifra valor={d?.votaciones?.votos_aprobados ?? 0} />
-              </span>
-              <span className="mono texto-micro texto-desvanecido">aprobados</span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="mono texto-principal fuente-negrita">
-                <Cifra valor={d?.votaciones?.votos_rechazados ?? 0} />
-              </span>
-              <span className="mono texto-micro texto-desvanecido">rechazados</span>
-            </div>
-          </div>
-        </Panel>
-        <Panel
-          detalle="Nodos activos"
-          objetivo={`${d?.red?.nodos_activos ?? 0}`}
-          riesgo="BAJO"
-          acción="ver detalle"
-        >
-          <div className="flex flex-col gap-2">
-            <div className="flex items-baseline gap-2">
-              <span className="mono texto-principal fuente-negrita">{d?.red?.nodos_activos ?? 0}</span>
-              <span className="mono texto-micro texto-desvanecido">nodos conectados</span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="mono texto-principal fuente-negrita">
-                <Cifra valor={d?.red?.latencia_promedio_ms?.toFixed(0) ?? "—"} />
-              </span>
-              <span className="mono texto-micro texto-desvanecido">latencia promedio (ms)</span>
-            </div>
-          </div>
-        </Panel>
-      </div>
-
-      {/* Tabla de nodos recientes */}
       <Panel
-        detalle="Nodos recientes"
-        objetivo={`${d?.red?.nodos_recientes?.length ?? 0}}`}
-        riesgo="BAJO"
-        acción="ver detalle"
+        titulo="Salud de las fuentes de datos"
+        meta={`${filas.length} fuentes`}
+        nota="LIVE = dato fresco de la API. LOCF_ACTIVE = el ciclo corre con el último valor real conocido (LOCF). STALE = la fuente lleva horas sin responder. Un dato ausente se ve como ausente, nunca como cero."
       >
-        {d?.red?.nodos_recientes?.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-meta texto-desvanecido">
-                <tr>
-                  <th className="pb-2">Nodo</th>
-                  <th className="pb-2">Estado</th>
-                  <th className="pb-2">Última actividad</th>
-                  <th className="pb-2">Latencia</th>
-                </tr>
-              </thead>
-              <tbody>
-                {d?.red?.nodos_recientes.slice(0, 10).map((nodo: any) => (
-                  <tr key={nodo.id} className="hover:bg-surface-sunken">
-                    <td className="mono texto-micro texto-desvanecido">{nodo.id}</td>
-                    <td className="mono texto-principal fuente-negrita">{nodo.estado}</td>
-                    <td className="mono texto-micro texto-desvanecido">{fmtTs(nodo.ultima_actividad)}</td>
-                    <td className="mono texto-micro texto-desvanecido">{nodo.latencia_ms}ms</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <SinDatos título="Sin nodos recientes" />
-        )}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Metrica etiqueta="Fuentes vivas" valor={`${vivas}`} contexto="dato fresco de la API" />
+          <Metrica etiqueta="Con LOCF activo" valor={`${locf}`} contexto="último valor real conocido" />
+          <Metrica
+            etiqueta="Rezagadas / muertas"
+            valor={`${stales}`}
+            contexto={stales > 0 ? "revisar conectividad de salida" : "todas responden"}
+          />
+        </div>
       </Panel>
 
-      {/* Estadísticas de votación */}
+      <Panel titulo="Detalle por fuente" meta={`${filas.length} fuentes vigiladas`}>
+        <TablaDatos
+          filas={filas}
+          densa
+          vacío="Sin datos de salud"
+          columnas={[
+            { clave: "fuente", etiqueta: "Fuente" },
+            {
+              clave: "estado",
+              etiqueta: "Estado",
+              render: (r) => (
+                <span
+                  className="mono texto-micro fuente-negrita"
+                  style={{ color: COLOR_ESTADO[r.estado] ?? "var(--color-fuente-desvanecido)" }}
+                >
+                  {r.estado}
+                </span>
+              ),
+            },
+            { clave: "edad_h", etiqueta: "Edad (h)", num: true, render: (r) => <Cifra valor={r.edad_h} digits={1} /> },
+            { clave: "muestras", etiqueta: "Muestras", num: true, render: (r) => (r.muestras != null ? String(r.muestras) : "—") },
+            {
+              clave: "ultimo_ts",
+              etiqueta: "Último dato",
+              num: true,
+              render: (r) => (r.ultimo_ts != null ? fmtTs(r.ultimo_ts) : "—"),
+            },
+          ]}
+        />
+      </Panel>
+
       <Panel
-        detalle="Estadísticas de votación"
-        objetivo={`${d?.votaciones?.total_votos ?? 0}`}
-        riesgo="BAJO"
-        acción="ver detalle"
+        titulo="El watchdog de seguridad es otro proyecto"
+        nota="La vigilancia de seguridad de la máquina (escaneos, cuarentena cifrada, red acotada) vive en /watchdog, con su propia base, su bot @IngZainos_bot y sus alertas. Este tablero solo vigila las fuentes de datos de Sentinel."
       >
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-superficie-sunken">
-            <span className="mono texto-meta texto-desvanecido">Votos aprobados</span>
-            <span className="mono texto-principal fuente-negrita texto-esmeralda-400">
-              {d?.votaciones?.votos_aprobados ?? 0}
-            </span>
-          </div>
-          <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-superficie-sunken">
-            <span className="mono texto-meta texto-desvanecido">Votos rechazados</span>
-            <span className="mono texto-principal fuente-negrita texto-rose-400">
-              {d?.votaciones?.votos_rechazados ?? 0}
-            </span>
-          </div>
-        </div>
+        <p className="texto-meta texto-desvanecido">
+          Para el estado del watchdog de seguridad: <code className="mono">sqlite3 /watchdog/data/watchdog.db "SELECT ts, finding_type, action FROM incidents ORDER BY id DESC LIMIT 5;"</code>
+        </p>
       </Panel>
     </div>
   );

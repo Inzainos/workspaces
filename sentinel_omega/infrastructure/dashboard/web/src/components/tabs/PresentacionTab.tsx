@@ -4,16 +4,15 @@
 import { useCallback } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { Panel, Metrica, Cifra, SinDatos, BannerError } from "@/components/ui/data";
+import { Panel, Metrica, SinDatos, BannerError } from "@/components/ui/data";
 
 export function PresentacionTab() {
   const datosF = useCallback(() => api.estado(), []);
   const estado = usePoll(datosF, 30000);
 
-  const d = estado.data as any;
 
   if (estado.error) return <BannerError mensaje={estado.error} />;
-  if (estado.loading && !estado.data) return <SinDatos título="Cargando estado del sistema..." />;
+  if (estado.loading && !estado.data) return <SinDatos titulo="Cargando estado del sistema..." />;
 
   return (
     <div className="space-y-5">
@@ -46,10 +45,8 @@ export function PresentacionTab() {
 
       <div className="grid gap-4 md:grid-cols-3">
         <Panel
-          detalle="Dominios Monitoreados"
-          objetivo="4"
-          riesgo="BAJO"
-          acción="ver detalle"
+          titulo="Dominios Monitoreados"
+          meta="4"
         >
           <div className="flex flex-col gap-2">
             <div className="flex items-start gap-2">
@@ -75,24 +72,9 @@ export function PresentacionTab() {
         </Panel>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
-        <Panel
-          detalle="Firmas nuevas"
-          objetivo="39,138"
-          riesgo="BAJO"
-          acción="ver detalle"
-        />
-        <Panel
-          detalle="Firmas recurrentes"
-          objetivo={985592}
-          riesgo="BAJO"
-          acción="ver detalle"
-        />
-        <Panel
-          detalle="Memoria consolidada"
-          objetivo={22963}
-          riesgo="BAJO"
-          acción="ver detalle"
-        />
+        <Metrica etiqueta="Firmas nuevas" valor="39.138" contexto="aprendidas en el último entrenamiento" />
+        <Metrica etiqueta="Firmas recurrentes" valor="985.592" contexto="incrementos de repetición" />
+        <Metrica etiqueta="Memoria consolidada" valor="22.963" contexto="patrones reconocidos" />
       </div>
     </div>
   );

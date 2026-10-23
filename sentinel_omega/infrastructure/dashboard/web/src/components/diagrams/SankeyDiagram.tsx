@@ -8,7 +8,6 @@
  * Diseño: colores neutros (no se usa el rojo de riesgo para flujo);
  * el único color de riesgo aparece si hay un veredicto FALLO.
  */
-import { useMemo } from "react";
 
 interface NodoSankey {
   id: string;

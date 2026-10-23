@@ -1,15 +1,21 @@
 /**
- * PADRE + JUEZ — superficie MONITOR.
+ * PADRE + JUEZ — el árbitro y el auditor.
  *
- * Padre es el árbitro jerárquico. Juez es el auditor que compara predicción
- * con realidad. Ambos juntos muestran si el sistema está aprendiendo o
- * si hay que desconfiar de sus predicciones.
+ * Padre: consenso jerárquico entre familias (pesos de /api/bots, incluida la
+ * fila padre). Juez: compara predicción con realidad (/api/juez fase viva).
  */
 import { useCallback } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { Panel, Metrica, Cifra, BarraVeredictos, SinDatos, BannerError } from "@/components/ui/data";
-import { fmtTs } from "@/lib/utils";
+import {
+  Panel,
+  Metrica,
+  Cifra,
+  BarraVeredictos,
+  SinDatos,
+  BannerError,
+  TablaDatos,
+} from "@/components/ui/data";
 
 export function PadreJuezTab() {
   const padreF = useCallback(() => api.bots(), []);
@@ -18,121 +24,98 @@ export function PadreJuezTab() {
   const padre = usePoll(padreF, 30000);
   const juez = usePoll(juezF, 30000);
 
-  const padreData = padre.data?.items as Record<string, unknown>[] || [];
-  const juezData = juez.data?.items as Record<string, unknown>[] || [];
-
-  const padreItems = padreData.map((b) => ({
-    nombre: String(b.bot_name || b.nombre || "Desconocido"),
-    peso: Number(b.peso_voto ?? 0),
-    features: Number(b.feature_count ?? 0),
-    fecha_ultimo: String(b.updated_at ?? ""),
-  }));
-
-  const juecesConVoto = juezData.filter((r) => r.peso_voto != null && Number(r.peso_voto) > 0).length;
-  const aciertosJ = juezData.filter((r) => String(r.resultado || "").toUpperCase() === "ACIERTO").length;
-  const fallosJ = juezData.filter((r) => String(r.resultado || "").toUpperCase() === "FALLO").length;
-  const fpJ = juezData.filter((r) => String(r.resultado || "").toUpperCase() === "FALSO_POSITIVO").length;
-
   if (padre.error) return <BannerError mensaje={padre.error} />;
-  if (padre.loading && !padre.data) return <SinDatos titulo="Cargando bots Padre..." />;
+  if (padre.loading && !padre.data) return <SinDatos titulo="Cargando bots del Padre…" />;
+
+  const B: any = padre.data ?? {};
+  const items: any[] = B.items ?? [];
+  const filaPadre: any = B.padre ?? items.find((b) => b.bot_name === "padre") ?? null;
+  const sinPadre = items.filter((b) => b.bot_name !== "padre");
+
+  const counts: any[] = juez.data?.counts ?? [];
+  const nDe = (res: string) =>
+    counts
+      .filter((c) => c.fase === "viva" && c.resultado === res)
+      .reduce((a, c) => a + Number(c.n ?? 0), 0);
+  const aciertosJ = nDe("ACIERTO");
+  const fallosJ = nDe("FALLO");
+  const fpJ = nDe("FALSO_POSITIVO");
 
   return (
     <div className="space-y-5">
-      {/* Resumen Padre */}
       <Panel
-        detalle="Padre — Consenso jerárquico"
-        objetivo={`${padreItems.length} bots · ${padreItems.length > 0 ? padreItems.reduce((a, b) => a + Number(b.peso_voto ?? 0), 0) : 0} pesos totales`}
-        riesgo="BAJO"
-        acción="verificar pesos"
+        titulo="Padre — consenso jerárquico"
+        meta={`${sinPadre.length} bots votantes`}
+        nota={B.pesos_nota ? String(B.pesos_nota) : undefined}
       >
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <Metrica
-            detalle="Bots activos"
-            objetivo={`${padreItems.length}`}
-            riesgo={padreItems.length > 0 ? "BAJO" : "ALTO"}
-            acción="revisar lista"
+            etiqueta="Voto del Padre"
+            valor={filaPadre?.peso_voto != null ? Number(filaPadre.peso_voto).toFixed(3) : "—"}
+            contexto="peso que aplica el Padre al consenso"
           />
           <Metrica
-            detalle="Peso total"
-            objetivo={padreItems.reduce((a, b) => a + Number(b.peso_voto ?? 0), 0).toFixed(2)}
-            riesgo="BAJO"
-            acción="verificar"
+            etiqueta="Asertividad viva (Padre)"
+            valor={
+              filaPadre?.asertividad_viva_individual != null
+                ? `${(Number(filaPadre.asertividad_viva_individual) * 100).toFixed(1)}%`
+                : "—"
+            }
+            contexto={filaPadre?.n != null ? `n=${Number(filaPadre.n).toLocaleString("es-MX")}` : undefined}
           />
           <Metrica
-            detalle="Pesos únicos"
-            objetivo={new Set(padreData.map((r) => r.peso_voto)).size}
-            riesgo="BAJO"
-            acción="verificar"
+            etiqueta="Firmas del Padre"
+            valor={
+              filaPadre?.firmas_consolidadas != null
+                ? `${Number(filaPadre.firmas_exigibles ?? 0).toLocaleString("es-MX")} exigibles / ${Number(filaPadre.firmas_consolidadas).toLocaleString("es-MX")}`
+                : "—"
+            }
+          />
+          <Metrica
+            etiqueta="Umbral rentable"
+            valor={B.umbral_alarma_rentable != null ? String(B.umbral_alarma_rentable) : "—"}
+            contexto={B.veredicto_ganancia != null ? `ganancia ${B.veredicto_ganancia}` : undefined}
           />
         </div>
       </Panel>
 
-      {/* Veredictos Juez */}
       <Panel
-        detalle="Juez — Real vs Predicción"
-        objetivo={`${juecesConVoto} con voto · ${aciertosJ} aciertos · ${fallosJ} fallos · ${fpJ} falsos positivos`}
-        riesgo={falsosPositivos > aciertosJ ? "ALTO" : "BAJO"}
-        acción="auditar modelo"
+        titulo="Juez — real vs predicción (fase viva)"
+        nota="El Juez nunca predice: audita. La omisión pesa 10× más que la falsa alarma."
       >
         <BarraVeredictos aciertos={aciertosJ} falsosPositivos={fpJ} fallos={fallosJ} />
       </Panel>
 
-      {/* Tabla Padre */}
-      <Panel
-        detalle="Pesos de bots (Padre)"
-        objetivo={`${padreItems.length} bots registrados`}
-        riesgo="BAJO"
-        acción="revisar pesos"
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="text-meta texto-desvanecido border-b border-border pb-2">
-                <th className="texto-izquierda pb-2">Bot</th>
-                <th className="texto-derecha pb-2">Peso</th>
-                <th className="texto-meta texto-desvanecido pb-2">Features</th>
-                <th className="texto-meta texto-desvanecido pb-2">Última actualización</th>
-              </tr>
-            </thead>
-            <tbody>
-              {padreItems.map((bot) => (
-                <tr key={bot.nombre} className="border-b border-border/50 last:border-0">
-                  <td className="texto-principal fuente-negrita">{bot.nombre}</td>
-                  <td className="mono texto-principal fuente-negrita">{bot.peso.toFixed(2)}</td>
-                  <td className="mono texto-meta texto-desvanecido">{bot.features}</td>
-                  <td className="mono texto-meta texto-desvanecido">{fmtTs(bot.fecha_ultimo)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
-
-      {/* Historial Juez reciente */}
-      <Panel
-        detalle="Últimos veredictos del Juez"
-        objetivo={`${juecesConVoto} con voto`}
-        riesgo={falsosPositivos > 0 ? "MEDIO" : "BAJO"}
-        acción="auditar resultados"
-      >
-        <div className="space-y-2">
-          {juecesData.slice(0, 10).map((j, i) => (
-            <div key={i} className="flex items-center gap-3 p-2 rounded-lg border border-border bg-surface-sunken">
-              <span className="mono texto-principal fuente-negrita">
-                {String(j.resultado || "—").toUpperCase()}
-              </span>
-              <span className="mono texto-meta texto-desvanecido">
-                {j.bot_name || "bot desconocido"}
-              </span>
-              <span className="mono texto-meta texto-desvanecido">
-                {fmtTs(j.timestamp || j.ts || j.fecha)}
-              </span>
-              <span className="mono texto-principal fuente-negrita ml-auto">
-                {j.peso_voto != null ? j.peso_voto.toFixed(2) : "—"}
-              </span>
-            </div>
-          ))}
-        </div>
+      <Panel titulo="Pesos de credibilidad por bot" meta={`total ${items.length}`}>
+        <TablaDatos
+          filas={items}
+          densa
+          vacío="Sin bots"
+          columnas={[
+            { clave: "bot_name", etiqueta: "Bot" },
+            { clave: "peso", etiqueta: "Marcador", num: true, render: (r) => <Cifra valor={r.peso} digits={3} /> },
+            { clave: "peso_voto", etiqueta: "Voto", num: true, render: (r) => <Cifra valor={r.peso_voto} digits={3} /> },
+            {
+              clave: "asertividad_viva_individual",
+              etiqueta: "Asert. viva",
+              num: true,
+              render: (r) => (
+                <Cifra
+                  valor={
+                    r.asertividad_viva_individual != null
+                      ? Number(r.asertividad_viva_individual) * 100
+                      : null
+                  }
+                  digits={1}
+                  unidad="%"
+                />
+              ),
+            },
+            { clave: "aciertos", etiqueta: "Aciertos", num: true, render: (r) => Number(r.aciertos ?? 0).toLocaleString("es-MX") },
+            { clave: "fallos", etiqueta: "Fallos", num: true, render: (r) => Number(r.fallos ?? 0).toLocaleString("es-MX") },
+            { clave: "updated_at", etiqueta: "Actualizado", render: (r) => String(r.updated_at ?? "—").slice(0, 16) },
+          ]}
+        />
       </Panel>
     </div>
   );

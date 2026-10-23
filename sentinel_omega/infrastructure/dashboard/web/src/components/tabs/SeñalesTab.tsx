@@ -7,7 +7,6 @@
 import { useCallback } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { SimpleBars, Gauge } from "@/components/charts/componentes";
 import { Panel, Cifra, SinDatos, BannerError } from "@/components/ui/data";
 
 export function SeñalesTab() {
@@ -27,7 +26,6 @@ export function SeñalesTab() {
   const bzLast = climaItems.length > 0 ? climaItems[climaItems.length - 1]?.bz_nT : null;
   const kpLast = climaItems.length > 0 ? climaItems[climaItems.length - 1]?.kp_max : null;
   const deltaItems = (deltaData.data?.delta ?? []) as any[];
-  const deltaLast = deltaItems.length > 0 ? deltaItems[deltaItems.length - 1]?.composite_score : null;
 
   if (sch.error && climaData.error && deltaData.error) {
     return <BannerError mensaje="Todas las fuentes de señales fallaron" />;
@@ -37,10 +35,8 @@ export function SeñalesTab() {
     <div className="space-y-5">
       {/* Schumann — actividad (la frecuencia no se mide desde el retiro del Hz) */}
       <Panel
-        detalle="Beta-1 — Resonancia Schumann"
-        objetivo="Tomsk · frecuencia sin medir, solo actividad"
-        riesgo={schAct != null && schAct > 15 ? "MEDIO" : "BAJO"}
-        accion="verificar fuente"
+        titulo="Beta-1 — Resonancia Schumann"
+        meta="Tomsk · frecuencia sin medir, solo actividad"
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -71,10 +67,8 @@ export function SeñalesTab() {
 
       {/* Clima espacial */}
       <Panel
-        detalle="Clima espacial"
-        objetivo={`${climaItems.length} lecturas`}
-        riesgo={kpLast != null && kpLast >= 5 ? "ALTO" : bzLast != null && Math.abs(bzLast) > 10 ? "MEDIO" : "BAJO"}
-        acción="verificar Bz"
+        titulo="Clima espacial"
+        meta={`${climaItems.length} lecturas`}
       >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex flex-col">
@@ -100,10 +94,8 @@ export function SeñalesTab() {
 
       {/* Delta (financiero) */}
       <Panel
-        detalle="Delta — Financiero"
-        objetivo={`${deltaItems.length} lecturas`}
-        riesgo={deltaLast != null && Math.abs(deltaLast) > 2 ? "MEDIO" : "BAJO"}
-        acción="verificar tendencias"
+        titulo="Delta — Financiero"
+        meta={`${deltaItems.length} lecturas`}
       >
         {deltaItems.length > 0 ? (
           <div className="flex flex-col gap-2">
@@ -123,10 +115,8 @@ export function SeñalesTab() {
 
       {/* Telemetría del ciclo */}
       <Panel
-        detalle="Telemetría del ciclo actual"
-        objetivo="Último snapshot"
-        riesgo={tel.error ? "ALTO" : "BAJO"}
-        acción="ver detalle"
+        titulo="Telemetría del ciclo actual"
+        meta="Último snapshot"
       >
         {tel.error ? (
           <BannerError mensaje="No se pudo leer la telemetría" />

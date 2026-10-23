@@ -1,97 +1,123 @@
 /**
- * Predicciones - Pantalla de predicciones del motor Sentinel
+ * PREDICCIONES — predicciones del motor contra la realidad.
+ *
+ * La superficie real de "predicciones" en este sistema es el Juez:
+ * cada bot emite una predicción con confianza, el Juez la compara con la
+ * verdad (catálogo USGS / calma) y produce un veredicto. Datos de /api/juez.
  */
 import { useCallback } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { Panel, Metrica, Cifra, SinDatos, BannerError } from "@/components/ui/data";
+import {
+  Panel,
+  Metrica,
+  Cifra,
+  BarraVeredictos,
+  SinDatos,
+  BannerError,
+  TablaDatos,
+} from "@/components/ui/data";
 
 export function PrediccionesTab() {
-  const prediccionesF = useCallback(() => api.predicciones(), []);
-  const predicciones = usePoll(predonF, 30000);
+  const juezF = useCallback(() => api.juez(80, "viva"), []);
+  const juez = usePoll(juezF, 30000);
 
-  const d = predicciones.data as any;
+  if (juez.error) return <BannerError mensaje={juez.error} />;
+  if (juez.loading && !juez.data) return <SinDatos titulo="Cargando predicciones…" />;
 
-  if (predicciones.error) return <BannerError mensaje={predicciones.error} />;
-  if (predicciones.loading && !predicciones.data) return <SinDatos título="Cargando predicciones..." />;
+  const counts: any[] = juez.data?.counts ?? [];
+  const nDe = (res: string) =>
+    counts
+      .filter((c) => c.fase === "viva" && c.resultado === res)
+      .reduce((a, c) => a + Number(c.n ?? 0), 0);
+  const aciertos = nDe("ACIERTO");
+  const fallos = nDe("FALLO");
+  const falsosPositivos = nDe("FALSO_POSITIVO");
+  const total = aciertos + fallos + falsosPositivos;
+
+  const items: any[] = juez.data?.items ?? [];
+  const conAlerta = items.filter((r) => String(r.prediccion ?? "").toLowerCase() !== "neutral");
 
   return (
     <div className="space-y-5">
-      {/* Resumen de predicciones */}
       <div className="grid gap-4 md:grid-cols-3">
         <Metrica
-          detalle="Predicciones activas"
-          objetivo={d?.total_predicciones ?? 0}
-          riesgo="BAJO"
-          acción="ver detalle"
+          etiqueta="Veredictos vivos"
+          valor={total.toLocaleString("es-MX")}
+          contexto="fase viva completa, no solo la última tanda"
         />
         <Metrica
-          detalle="Aciertos"
-          objetivo={d?.aciertos ?? 0}
-          riesgo="BAJO"
-          acción="ver detalle"
+          etiqueta="Aciertos"
+          valor={aciertos.toLocaleString("es-MX")}
+          contexto="incluye los silencios en calma"
         />
         <Metrica
-          detalle="Falsos positivos"
-          objetivo={d?.falsos_positivos ?? 0}
-          riesgo="MEDIO"
-          acción="revisar"
+          etiqueta="Falsas alarmas"
+          valor={falsosPositivos.toLocaleString("es-MX")}
+          contexto={`omisiones: ${fallos.toLocaleString("es-MX")} — pesan 10×`}
         />
       </div>
 
-      {/* Tabla de predicciones recientes */}
-      <Panel
-        detalle="Últimas predicciones"
-        objetivo={`${d?.predicciones?.length ?? 0} registros`}
-        riesgo="BAJO"
-        acción="ver detalle"
-      >
-        {d?.predicciones?.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-meta texto-desvanecido">
-                <tr>
-                  <th className="pb-2">Fecha</th>
-                  <th className="pb-2">Modelo</th>
-                  <th className="pb-2">Resultado</th>
-                  <th className="pb-2">Probabilidad</th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.cohortes.slice(0, 10).map((c: any) => (
-                  <tr key={c.id} className="hover:bg-surface-sunken">
-                    <td className="mono texto-micro texto-desvanecido">{c.fecha}</td>
-                    <td className="mono texto-principal fuente-negrita">{c.cohorte}</td>
-                    <td className="mono texto-principal fuente-negrita">{c.total.toLocaleString("es-MX")}</td>
-                    <td className="mono texto-meta texto-desvanecido">{c.tasa_participacion}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <SinDatos título="Sin predicciones recientes" />
-        )}
+      <Panel titulo="Veredictos del Juez — fase viva" nota="Predicción vs realidad. La calma es el ~97% del tiempo: un sistema que nunca alarma también «acierta» — la vara es la ganancia sobre ese bot mudo, no el porcentaje crudo.">
+        <BarraVeredictos aciertos={aciertos} falsosPositivos={falsosPositivos} fallos={fallos} />
       </Panel>
 
-      {/* Distribución por tipo */}
       <Panel
-        detalle="Distribución por tipo de predicción"
-        objetivo={`${d?.distribucion_por_tipo?.length ?? 0} tipos`}
-        riesgo="BAJO"
-        acción="ver detalle"
+        titulo="Últimas predicciones emitidas"
+        meta={`${items.length} recientes · ${conAlerta.length} con aviso (no neutral)`}
       >
-        <div className="flex flex-col gap-2">
-          {(d?.distribucion_por_tipo || []).slice(0, 6).map((c: any, i: number) => (
-            <div key={i} className="flex items-center gap-3 p-2 rounded-lg border border-border bg-superficie-sunken">
-              <span className="mono texto-micro texto-desvanecido w-20">{c.tipo}</span>
-              <div className="flex-1 h-2 bg-surface-sunken rounded-full">
-                <div className="h-full bg-indigo-500/60 rounded-lg" style={{ width: `${c.porcentaje || 0}%` }}></div>
-              </div>
-              <span className="mono texto-principal fuente-negrita">{c.cantidad?.toLocaleString("es-MX") ?? "—"}</span>
-            </div>
-          ))}
-        </div>
+        <TablaDatos
+          filas={items}
+          densa
+          vacío="Sin predicciones recientes"
+          columnas={[
+            { clave: "bot_name", etiqueta: "Bot" },
+            {
+              clave: "prediccion",
+              etiqueta: "Predicción",
+              render: (r) => (
+                <span
+                  className="mono texto-micro fuente-negrita"
+                  style={{
+                    color: String(r.prediccion ?? "").toLowerCase() !== "neutral" ? "var(--color-aviso)" : "var(--color-fuente-desvanecido)",
+                  }}
+                >
+                  {String(r.prediccion ?? "—")}
+                </span>
+              ),
+            },
+            { clave: "confianza", etiqueta: "Confianza", num: true, render: (r) => <Cifra valor={r.confianza} digits={2} /> },
+            {
+              clave: "verdad",
+              etiqueta: "Realidad",
+              render: (r) => (
+                <span className="texto-micro texto-desvanecido" title={String(r.verdad ?? "—")}>
+                  {String(r.verdad ?? "—").slice(0, 60)}
+                </span>
+              ),
+            },
+            {
+              clave: "resultado",
+              etiqueta: "Veredicto",
+              render: (r) => (
+                <span
+                  className="mono texto-micro fuente-negrita"
+                  style={{
+                    color:
+                      r.resultado === "ACIERTO"
+                        ? "var(--color-calma)"
+                        : r.resultado === "FALSO_POSITIVO"
+                          ? "var(--color-aviso)"
+                          : "var(--color-critico)",
+                  }}
+                >
+                  {String(r.resultado ?? "—")}
+                </span>
+              ),
+            },
+            { clave: "resuelto_at", etiqueta: "Resuelto", render: (r) => String(r.resuelto_at ?? "—").slice(0, 16) },
+          ]}
+        />
       </Panel>
     </div>
   );

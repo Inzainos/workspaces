@@ -1,16 +1,32 @@
 /**
- * SintesisTab - Vista ejecutiva del sistema Sentinel Omega
- * Muestra métricas clave, estado de los bots, auditoría del juez y visualizaciones clave
+ * SÍNTESIS — vista ejecutiva del sistema.
+ *
+ * Datos reales (contratos verificados contra :8787):
+ *   /api/estado-vivo → JSON unificado del launcher: ciclo, auditoria,
+ *                      senales (con lag), tono (cimático), muro_lags, GOES
+ *   /api/bots        → items por bot (voto, asertividad, firmas)
+ *   /api/juez        → items fase viva (para el flujo bot → veredicto)
+ *   /api/modelos     → habilidad MEDIDA de los ONNX (AUC vs nulo por nodo)
  */
 import { useCallback } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { Panel, Metrica, Cifra, BarraVeredictos, SinDatos, BannerError, TablaDatos, nivelDe, colorNivel, accionNivel, esAusente } from "@/components/ui/data";
-import { SeñalesVivas } from "@/components/SeñalesVivas";
+import {
+  Panel,
+  Metrica,
+  Cifra,
+  BarraVeredictos,
+  SinDatos,
+  BannerError,
+  TablaDatos,
+  EscalaRiesgo,
+  SegmentosMuro,
+  nivelDe,
+  colorNivel,
+  accionNivel,
+} from "@/components/ui/data";
 import { SankeyDiagram } from "@/components/diagrams/SankeyDiagram";
-import { HeatmapChart } from "@/components/charts/HeatmapChart";
 import { fmtTs } from "@/lib/utils";
-import { Gauge } from "@/components/charts/componentes";
 
 export function SintesisTab() {
   const evF = useCallback(() => api.estadoVivo(), []);
@@ -23,10 +39,27 @@ export function SintesisTab() {
   const juez = usePoll(juezF, 30000);
   const modelos = usePoll(modelosF, 60000);
 
-  const d = (ev.data as any) ?? {};
-  const aud = d?.auditoria || {};
-  const ciclo = d?.ciclo || {};
-  const senales = d?.senales || [];
+  if (ev.error) return <BannerError mensaje={ev.error} />;
+  if (ev.loading && !ev.data) return <SinDatos titulo="Leyendo estado vivo del sistema…" />;
+
+  const d: any = ev.data ?? {};
+  const ciclo: any = d.ciclo ?? {};
+  const aud: any = d.auditoria ?? {};
+  const tono: any = d.tono ?? {};
+  const senales: any[] = d.senales ?? [];
+  const muroLags: any = d.muro_lags ?? null;
+  const cimaticaTop: any[] = d.cimatica_top ?? [];
+
+  const fantasma = ciclo.fantasma != null ? Number(ciclo.fantasma) : null;
+  const nivel = nivelDe(ciclo.nivel_riesgo);
+  const muroActivas = ciclo.muro_walls_active != null ? Number(ciclo.muro_walls_active) : null;
+  const muroBreach = Number(ciclo.muro_breach ?? 0) > 0;
+  let tiposPrecursor: string[] = [];
+  try {
+    tiposPrecursor = ciclo.precursor_types ? JSON.parse(ciclo.precursor_types) : [];
+  } catch {
+    tiposPrecursor = [];
+  }
 
   const aciertos = Number(aud.aciertos ?? 0);
   const fallos = Number(aud.fallos ?? 0);
@@ -34,199 +67,247 @@ export function SintesisTab() {
   const ganancia = aud.ganancia != null ? Number(aud.ganancia) : null;
   const asertividad = aud.asertividad != null ? Number(aud.asertividad) : null;
   const asertividadMuda = aud.asertividad_muda != null ? Number(aud.asertividad_muda) : null;
-  const fantasma = d?.ciclo?.fantasma != null ? Number(d.ciclo.fantasma) : null;
-  const nivelRiesgo = d?.ciclo?.nivel_riesgo ?? null;
-  const muroWalls = d?.ciclo?.muro_walls_active != null ? Number(d.ciclo.muro_walls_active) : null;
-  const muroBreach = d?.ciclo?.muro_breach ?? false;
 
-  const nivel = nivelDe(nivelRiesgo);
-  const aporta = ganancia != null && ganancia > 1;
+  const B: any = bots.data ?? {};
+  const bItems: any[] = B.items ?? [];
 
-  // Preparar datos del Sankey: bots → Padre → Juez → veredicto
-  const bItems = (bots.data?.items as Record<string, unknown>[]) || [];
-  const totalBots = bItems.length;
-  const botsConVoto = bItems.filter((r) => r.peso_voto != null && Number(r.peso_voto) > 0).length;
-  const jueces = (juez.data?.items as Record<string, unknown>[]) || [];
-  const juecesConVoto = jueces.filter((r) => r.peso_voto != null && Number(r.peso_voto) > 0).length;
+  const jItems: any[] = juez.data?.items ?? [];
+  const conteo: Record<string, number> = {};
+  jItems.forEach((r) => {
+    const k = `${r.bot_name}→${r.resultado}`;
+    conteo[k] = (conteo[k] || 0) + 1;
+  });
+  const sankeyNodos = [
+    ...[...new Set(jItems.map((r) => r.bot_name))].map((b) => ({
+      id: b,
+      label: b,
+      valor: jItems.filter((r) => r.bot_name === b).length,
+    })),
+    ...[...new Set(jItems.map((r) => r.resultado))].map((rr) => ({
+      id: rr,
+      label: rr,
+      valor: jItems.filter((r) => r.resultado === rr).length,
+    })),
+  ];
+  const sankeyEnlaces = Object.entries(conteo).map(([k, v]) => {
+    const [origen, destino] = k.split("→");
+    return { origen, destino, valor: v };
+  });
 
-  const aciertosJ = jueces.filter((r) => String(r.resultado || "").toUpperCase() === "ACIERTO").length;
-  const fallosJ = jueces.filter((r) => String(r.resultado || "").toUpperCase() === "FALLO").length;
-  const fpJ = jueces.filter((r) => String(r.resultado || "").toUpperCase() === "FALSO_POSITIVO").length;
+  const m: any = modelos.data ?? {};
+  const mItems: any[] = m.modelos ?? [];
 
-  if (ev.error) return <BannerError mensaje={ev.error} />;
-  if (ev.loading && !ev.data) return <SinDatos título="Leyendo estado vivo del sistema…" />;
+  const lagTxt = muroLags?.dias_restante
+    ? `${muroLags.dias_restante[0]}–${muroLags.dias_restante[1]} d (${muroLags.fecha_inicio} → ${muroLags.fecha_fin})`
+    : null;
 
   return (
     <div className="space-y-5">
-      {/* ================= HEADER: estado ahora ================= */}
-      <section className="rounded-lg border border-border bg-surface p-4">
-        <div className="flex flex-col lg:flex-row items-start justify-between gap-4">
-          <div className="flex-1">
+      <Panel
+        titulo="Estado ahora"
+        meta={
+          ciclo.timestamp
+            ? `ciclo ${fmtTs(Number(ciclo.timestamp))}${d.edad_s != null ? ` · edad ${Math.round(Number(d.edad_s) / 60)} min` : ""}`
+            : "sin ciclo"
+        }
+        acento={nivel}
+      >
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+          <div className="flex flex-col gap-3">
             <div className="flex items-baseline gap-2">
-              <span className="mono texto-principal fuente-negrita">
-                <Cifra valor={fantasma} />
+              <span className="etiqueta">Fantasma</span>
+              <span className="mono texto-principal fuente-negrita text-xl">
+                <Cifra valor={fantasma} digits={2} />
               </span>
-              <span
-                className={`mono texto-micro fuente-negrita ${nivel === "CRITICAL" ? "texto-critico" : nivel === "HIGH" ? "texto-aviso" : nivel === "MODERATE" ? "texto-amarillo-400" : "texto-calma"}`}
-              >
-                {nivel === "DESCONOCIDO" ? "sin lectura" : nivel === "LOW" ? "calma" : nivel === "MODERATE" ? "atención" : nivel === "HIGH" ? "avisar" : "protocolo"}
+              <span className="mono texto-micro fuente-negrita" style={{ color: colorNivel(nivel) }}>
+                {accionNivel(nivel)}
               </span>
+              {d.goes_clase && (
+                <span className="mono texto-micro texto-desvanecido">· GOES clase {d.goes_clase}</span>
+              )}
             </div>
-            <p className="mt-2 texto-meta texto-desvanecido">
-              {d.ciclo?.geo_signal || "Sin datos de telemetría"} · {d.ciclo?.geo_confidence ? `confianza ${Math.round(d.ciclo.geo_confidence * 100)}%` : ""}
+            <EscalaRiesgo valor={fantasma} max={50} umbrales={[15, 30]} />
+            <p className="texto-meta texto-desvanecido">
+              {ciclo.geo_signal
+                ? `Señal geodinámica: ${ciclo.geo_signal}${ciclo.geo_confidence != null ? ` · confianza ${(Number(ciclo.geo_confidence) * 100).toFixed(0)}%` : ""}`
+                : "Sin datos de telemetría"}
+              {tiposPrecursor.length > 0 ? ` · precursores: ${tiposPrecursor.join(", ")}` : ""}
             </p>
-          </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <Metrica
-              detalle="Riesgo"
-              riesgo={nivel === "ALTO" ? "ALTO" : nivel === "MEDIO" ? "MEDIO" : "BAJO"}
-              acción="revisar"
-            />
-            <Metrica
-              detalle="Ganancia"
-              objetivo={ganancia != null ? `${ganancia.toFixed(2)}×` : "—"}
-              riesgo={aporta ? "MEDIO" : "BAJO"}
-              acción="quedarse"
-            />
-            <Metrica
-              detalle="Asertividad viva"
-              objetivo={asertividad != null ? `${(asertividad * 100).toFixed(1)}%` : "—"}
-              riesgo="MEDIO"
-              acción="revisar"
-            />
-            <Metrica
-              detalle="Veredictos (vivo)"
-              objetivo={juecesConVoto.toString()}
-              riesgo={juecesConVoto > jueces.length / 2 ? "ALTO" : "BAJO"}
-              acción="ver detalle"
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* ================= BARRA DE VEREDICTOS ================= */}
-      <Panel
-        detalle="Veredictos del Juez — fase viva"
-        objetivo={`${aciertosJ} aciertos · ${fpJ} falsos positivos · ${fallosJ} fallos`}
-        riesgo={falsosPositivos > aciertosJ ? "ALTO" : "BAJO"}
-        acción="revisar modelos"
-      >
-        <BarraVeredictos aciertos={aciertosJ} falsosPositivos={fpJ} fallos={fallosJ} />
-      </Panel>
-
-      {/* ================= TONO CIMÁTICO ================= */}
-      <Panel
-        detalle="Cimática espectral — tono de la ventana viva"
-        objetivo={d?.auditoria ? "últimos ciclos" : "sin datos"}
-        riesgo={d?.tono?.tono === "sísmico" ? "MEDIO" : "BAJO"}
-        acción="revisar patrón"
-      >
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-          <div className="espacio-y-4">
-            <div className="flex items-baseline gap-2">
-              <span className="etiqueta">Tono actual</span>
-              <span className={`mono texto-principal fuente-negrita ${d?.tono?.tono === "sísmico" ? "texto-aviso" : d?.tono?.tono === "volcánico" ? "texto-critico" : "texto-atencion"}`}>
-                {d?.tono?.tono === "sísmico" ? "sísmica" : d?.tono?.tono === "volcánico" ? "volcánica" : d?.tono?.tono === "solar" ? "solar" : "—"}
+            <div className="flex items-center gap-2">
+              <span className="etiqueta">Muro</span>
+              <div className="w-40">
+                <SegmentosMuro activos={muroActivas} total={5} breach={muroBreach} />
+              </div>
+              <span className="mono texto-micro texto-desvanecido">
+                {muroActivas ?? "—"} de 5{muroBreach ? " · BREACH" : ""}{lagTxt ? ` · convergencia en ${lagTxt}` : ""}
               </span>
             </div>
-            <div className="espacio-y-2">
-              {Object.entries(d?.tono?.patrones || {}).map(([f, v]) => (
-                <div key={f} className="flex items-básica gap-2 texto-meta">
-                  <span className="mono encogido-0">{capitalizar(f)}:</span>
-                  <span className="mono texto-principal fuente-negrita">{v != null ? v.toFixed(2) : "—"}</span>
-                </div>
-              ))}
-              <p className="mt-2 texto-meta texto-desvanecido" style={{ fontSize: 12 }}>
-                El tono lee el ritmo de clima espacial (fase y envolvente solar), no la fase lunar.
-              </p>
-            </div>
           </div>
-
-          <div className="h-full">
-            <SankeyDiagram
-              nodos={[
-                { nombre: "Omega", voto: d?.omega?.voto ?? 0 },
-                { nombre: "Padre", valor: d?.padre?.pesos?.padre ?? 0 },
-                { nombre: "Juez", valor: d?.juez?.aciertos ?? 0 },
-                { nombre: "Córum", valor: juecesConVoto },
-              ]}
-              valores={[d?.omega?.peso ?? 0, d?.padre?.pesos?.padre ?? 0, d?.juez?.aciertos ?? 0, juecesConVoto]}
+          <div className="grid grid-cols-2 gap-4">
+            <Metrica
+              etiqueta="Ganancia (1× = no aporta)"
+              valor={ganancia != null ? `${ganancia.toFixed(2)}×` : "—"}
+              nivel={ganancia != null && ganancia > 1 ? "MODERATE" : "LOW"}
+              contexto="del Juez, fase viva"
+            />
+            <Metrica
+              etiqueta="Asertividad viva"
+              valor={asertividad != null ? `${(asertividad * 100).toFixed(1)}%` : "—"}
+              contexto={asertividadMuda != null ? `bot mudo: ${(asertividadMuda * 100).toFixed(1)}%` : undefined}
+            />
+            <Metrica etiqueta="Veredictos viva" valor={(aciertos + fallos + falsosPositivos).toLocaleString("es-MX")} />
+            <Metrica
+              etiqueta="GOES flux 24h"
+              valor={d.goes_flux_max_24h != null ? Number(d.goes_flux_max_24h).toExponential(2) : "—"}
+              contexto="rayos X máximos del día (W/m²)"
             />
           </div>
         </div>
       </Panel>
 
-      {/* ================= SEÑALES VIVAS ================= */}
-      {senales.length > 0 && (
-        <Panel
-          detalle="Señales activas"
-          objetivo={`${senales.length} activas`}
-          riesgo={senales.some((s) => s.nivel === "ALTO" || s.nivel === "CRITICAL") ? "ALTO" : "MEDIO"}
-          acción="revisar señales activas"
-        >
-          <SeñalesVivas señales={senales as SeñalViva[]} tsSnapshot={Number(d.ts)} edadS={d.edad_s} />
-        </Panel>
-      )}
-
-      {/* ================= TABLA DE BOTS ================= */}
       <Panel
-        detalle="Estado de los bots (voto)"
-        objetivo={`Total ${totalBots} · con voto ${botsConVoto}`}
+        titulo="Veredictos del Juez — fase viva"
+        meta={`${aciertos.toLocaleString("es-MX")} aciertos · ${falsosPositivos.toLocaleString("es-MX")} falsas alarmas · ${fallos.toLocaleString("es-MX")} omisiones`}
+        nota="La omisión pesa 10× más que la falsa alarma (pérdida asimétrica). El bot que nunca alarma también acierta la calma — lee la asertividad junto a su ganancia."
       >
+        <BarraVeredictos aciertos={aciertos} falsosPositivos={falsosPositivos} fallos={fallos} />
+      </Panel>
+
+      <Panel
+        titulo="Tono cimático de la ventana viva"
+        meta={tono.ancla ? `ancla ${tono.ancla}` : "sin ancla"}
+        nota={tono.construido_at ? `construido: ${tono.construido_at}` : undefined}
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex items-baseline gap-2">
+            <span className="etiqueta">Tono</span>
+            <span className="mono texto-principal fuente-negrita text-xl">{tono.tono ?? "—"}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {Object.entries(tono.dist ?? {}).map(([k, v]) => (
+              <Metrica
+                key={k}
+                etiqueta={k}
+                valor={<Cifra valor={v} digits={2} />}
+                jerarquia="compacta"
+                contexto="distancia al patrón"
+              />
+            ))}
+          </div>
+        </div>
+      </Panel>
+
+      <Panel titulo="Señales activas" meta={`${senales.length} con ancla vigente`}>
+        <TablaDatos
+          filas={senales}
+          densa
+          vacío="Sin señales activas"
+          columnas={[
+            { clave: "sitio", etiqueta: "Sitio" },
+            { clave: "evento", etiqueta: "Evento" },
+            { clave: "similitud", etiqueta: "Similitud", num: true, render: (r) => <Cifra valor={r.similitud} digits={3} /> },
+            { clave: "recurrencia", etiqueta: "Recurrencia", num: true, render: (r) => (r.recurrencia != null ? String(r.recurrencia) : "—") },
+            {
+              clave: "lag_restante_h",
+              etiqueta: "Lag restante (h)",
+              num: true,
+              render: (r) => <Cifra valor={r.lag_restante_h} digits={1} />,
+            },
+          ]}
+        />
+      </Panel>
+
+      <Panel titulo="Flujo de consenso — bot → veredicto" meta={`últimos ${jItems.length} veredictos vivos`}>
+        {jItems.length === 0 ? (
+          <SinDatos titulo="Sin veredictos vivos recientes" />
+        ) : (
+          <SankeyDiagram nodos={sankeyNodos} enlaces={sankeyEnlaces} alto={240} />
+        )}
+      </Panel>
+
+      <Panel titulo="Cimática — patrones más frecuentes" meta={`total ${d.cimatica_total ?? "—"}`}>
+        <TablaDatos
+          filas={cimaticaTop.slice(0, 8)}
+          densa
+          vacío="Sin patrones"
+          columnas={[
+            { clave: "event_class", etiqueta: "Clase" },
+            { clave: "ambito", etiqueta: "Ámbito" },
+            { clave: "frecuencia", etiqueta: "Frecuencia", num: true },
+          ]}
+        />
+      </Panel>
+
+      <Panel titulo="Estado de los bots (voto)" meta={`total ${bItems.length}`}>
         <TablaDatos
           filas={bItems}
           densa
           vacío="Sin datos de bots"
           columnas={[
-            { clave: "bot_nombre", nombre: "Bot" },
-            { clave: "peso_voto", etiqueta: "Voto", num: true, render: (r) => <Cifra valor={r.peso_voto} dígitos={3} /> },
-            { clave: "individual", etiqueta: "Individual", num: true, render: (r) => pct(r.individual) },
-            { clave: "asertividad_viva_individual", etiqueta: "Viva", num: true, render: (r) => pct(r.asertividad_viva_individual) },
-            { clave: "firmas_exigibles", etiqueta: "Exigibles", num: true, render: (r) => {
-              const tot = Number(r.firmas_consolidadas ?? 0);
-              const ex = Number(r.firmas_exigibles ?? 0);
-              return tot > 0 ? `${ex} / ${tot} (${((ex / tot) * 100).toFixed(0)}%)` : "—";
-            }},
+            { clave: "bot_name", etiqueta: "Bot" },
+            { clave: "peso_voto", etiqueta: "Voto", num: true, render: (r) => <Cifra valor={r.peso_voto} digits={3} /> },
+            {
+              clave: "asertividad_viva_individual",
+              etiqueta: "Asert. viva",
+              num: true,
+              render: (r) => (
+                <Cifra
+                  valor={r.asertividad_viva_individual != null ? Number(r.asertividad_viva_individual) * 100 : null}
+                  digits={1}
+                  unidad="%"
+                />
+              ),
+            },
+            {
+              clave: "firmas_exigibles",
+              etiqueta: "Exigibles",
+              num: true,
+              render: (r) => {
+                const tot = Number(r.firmas_consolidadas ?? 0);
+                const ex = Number(r.firmas_exigibles ?? 0);
+                return tot > 0 ? `${ex} / ${tot} (${((ex / tot) * 100).toFixed(0)}%)` : "—";
+              },
+            },
           ]}
-          páginaTamaño={12}
         />
       </Panel>
 
-      {/* ================= MODELOS ================= */}
       <Panel
-        detalle="Cimática (Omega)"
-        objetivo={modelos.data?.medido_at ? `medido ${String(modelos.data.medido_at).slice(0, 10)}` : "sin medir"}
-        riesgo="BAJO"
+        titulo="Modelos ONNX — habilidad medida"
+        meta={m.medido_at ? `medido ${String(m.medido_at).slice(0, 10)}` : "sin medir"}
+        nota="AUC contra el nulo por nodo, no contra 0.5: el nodo solo predice distinto cuando hay evento, y su tasa base ya es alta. Ningún modelo ha pasado la compuerta."
       >
-        <div className="flex flex-col gap-4">
-          {modelos.data?.modelos?.map((m: any) => (
-            <div key={m.nombre} className="flex items-center gap-3 p-2 rounded-lg border border-border bg-surface-sunken">
-              <span className="mono texto-principal fuente-negrita">{m.nombre}</span>
-              <div className="flex items-center gap-2">
-                <span className={`mono texto-micro ${m.aprobado ? "texto-esmeralda-400" : d?.firmas?.consolidadas?.value === 0 ? "texto-orange-400" : "texto-rose-400"}`}>
-                  {m.aprobado ? "Aprobado" : m.jupiter?.fase_viva === "rechazado" ? "Rechazado" : "No verificado"}
-                </span>
-                <span className="mono texto-micro texto-desvanecido">
-                  {m.asertividad_promedio?.toFixed(2) ?? "—"}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+        <TablaDatos
+          filas={mItems}
+          densa
+          vacío="Sin modelos"
+          columnas={[
+            { clave: "bot", etiqueta: "Bot" },
+            { clave: "kb", etiqueta: "Tamaño", num: true, render: (r) => (r.kb != null ? `${r.kb} KB` : "—") },
+            { clave: "medido", etiqueta: "Medido", render: (r) => (r.medido ? "sí" : "sin medir") },
+            { clave: "auc", etiqueta: "AUC", num: true, render: (r) => <Cifra valor={r.medido ? r.auc : null} digits={3} /> },
+            { clave: "auc_nulo_por_nodo", etiqueta: "Nulo nodo", num: true, render: (r) => <Cifra valor={r.auc_nulo_por_nodo} digits={3} /> },
+            {
+              clave: "ganancia_sobre_nulo",
+              etiqueta: "Ganancia",
+              num: true,
+              render: (r) => {
+                if (!r.medido || r.ganancia_sobre_nulo == null) return "—";
+                const g = Number(r.ganancia_sobre_nulo);
+                return (
+                  <span
+                    className="mono texto-micro fuente-negrita"
+                    style={{ color: g > 0 ? "var(--color-calma)" : "var(--color-critico)" }}
+                  >
+                    {g >= 0 ? "+" : ""}
+                    {(g * 100).toFixed(1)}%
+                  </span>
+                );
+              },
+            },
+          ]}
+        />
       </Panel>
     </div>
   );
-}
-
-function pct(v: unknown, dig = 1): string {
-  if (v == null || Number.isNaN(Number(v))) return "—";
-  return `${(Number(v) * 100).toFixed(dig)}%`;
-}
-
-function capitalizar(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function hayVeredictosJueces(jueces: Record<string, unknown>[]): boolean {
-  return jueces.some((j) => String(j.resultado || "").toUpperCase() !== "PENDIENTE");
 }
