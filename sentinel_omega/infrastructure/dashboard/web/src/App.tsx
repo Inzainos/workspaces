@@ -11,6 +11,7 @@
 import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { BarraLateral } from "@/components/BarraLateral"
+import { PresentacionTab } from "@/components/tabs/PresentacionTab"
 import { PrincipalTab } from "@/components/tabs/PrincipalTab"
 import { SintesisTab } from "@/components/tabs/SintesisTab"
 import { PrediccionesTab } from "@/components/tabs/PrediccionesTab"
@@ -31,6 +32,7 @@ export default function App() {
           <ErrorBoundary>
             <Routes>
               <Route path="/" element={<PrincipalTab />} />
+              <Route path="presentacion" element={<PresentacionTab />} />
               <Route path="principal" element={<PrincipalTab />} />
               <Route path="sintesis" element={<SintesisTab />} />
               <Route path="predicciones" element={<PrediccionesTab />} />

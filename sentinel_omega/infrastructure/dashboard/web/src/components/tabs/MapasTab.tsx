@@ -10,18 +10,17 @@
  * - Los sismos traen `depth_km` y `timestamp`: profundidad y recencia
  *   viajan al mapa en vez de descartarse.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
-import { MapaFractal } from "@/components/maps/MapaFractal";
+import { Map2D } from "@/components/maps/Map2D";
 import { Panel, Metrica, Cifra, SinDatos, esAusente } from "@/components/ui/data";
 import type { NodoMapa, SismoMapa } from "@/components/maps/shared";
 
 export function MapasTab() {
   const n = usePoll(useCallback(() => api.nodos(), []), 30000);
   const s = usePoll(useCallback(() => api.sismos(4.5, 60), []), 30000);
-  const [focus, setFocus] = useState<string | null>(null);
-
+  
   const nodos = useMemo<NodoMapa[]>(
     () =>
       ((n.data as any[]) || [])
@@ -90,13 +89,7 @@ export function MapasTab() {
         meta={sismos.length ? `${sismos.length} sismos M≥4.5` : "ningún sismo reciente"}
         acento={nodos.some((x) => (x.sat ?? 0) > 0.8) ? "HIGH" : "LOW"}
       >
-        <MapaFractal
-          nodos={nodos}
-          sismos={sismos}
-          altura={520}
-          foco={focus}
-          setFoco={setFocus}
-        />
+        <Map2D nodes={nodos} quakes={sismos} highlight={{ lat: 19.31, lon: -98.23, label: "Tlaxcala" }} />
         <div className="grid gap-4 md:grid-cols-3 mt-4">
           <Metrica
             etiqueta="Nodos vivos"

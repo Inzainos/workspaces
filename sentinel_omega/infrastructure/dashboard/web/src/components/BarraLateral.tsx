@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 const ITEMS = [
   { to: "/principal", label: "Principal" },
   { to: "/sintesis", label: "Síntesis" },
+  { to: "/presentacion", label: "Presentación" },
   { to: "/predicciones", label: "Predicciones" },
   { to: "/mapas", label: "Mapas" },
   { to: "/senales", label: "Señales" },
