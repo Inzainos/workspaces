@@ -1,16 +1,16 @@
 # 📅 Reporte semanal — Sentinel Omega
-*Generado 2026-10-18 12:28 hora MX — ventana 7 días*
+*Generado 2026-10-25 12:29 hora MX — ventana 7 días*
 
 ## Resumen
-- Ciclos corridos: **94**
-- Fantasma medio del periodo: **15.1**
-- Fantasma máximo: **41.8**
-- Breaches del Muro: **51**
-- Asertividad viva del periodo: **100%** (n=16 resueltas)
+- Ciclos corridos: **55**
+- Fantasma medio del periodo: **10.7**
+- Fantasma máximo: **14.9**
+- Breaches del Muro: **22**
+- Asertividad viva del periodo: **—** (n=0 resueltas)
 
 ## Cimática
-- Patrones `general`: 591 (frecuencia máx 10)
-- Patrones `nodo`: 1715 (frecuencia máx 15)
+- Patrones `general`: 622 (frecuencia máx 10)
+- Patrones `nodo`: 1808 (frecuencia máx 15)
 
 | Patrón | Ámbito | Evento asociado | Frecuencia |
 |---|---|---|---:|
@@ -29,11 +29,11 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Aciertos** | 2766 |
-| **Fallos** | 9850 |
+| **Aciertos** | 1065 |
+| **Fallos** | 4335 |
 | **Falsos positivos** | 0 |
-| **Tasa de acierto** | 21.9% `▓▓▓░░░░░░░░░` |
-| **Total predicciones** | 12616 |
+| **Tasa de acierto** | 19.7% `▓▓░░░░░░░░░░` |
+| **Total predicciones** | 5400 |
 
 ![Distribución de veredictos](graficas/aciertos_7d_pastel.png)
 
@@ -41,14 +41,12 @@
 
 | Bot | Aciertos | Tasa | Confianza | Ventana declarada |
 |-----|----------|------|-----------|--------------------|
-| omega | 819/2102 | 39% `▓▓▓░░░░░` | 0.39 | 0.0h |
-| beta1 | 658/2102 | 31% `▓▓▓░░░░░` | 0.31 | 0.0h |
-| padre | 462/2102 | 22% `▓▓░░░░░░` | 0.22 | 0.0h |
-| alfa1 | 431/2102 | 21% `▓▓░░░░░░` | 0.20 | 0.0h |
-| delta | 270/2102 | 13% `▓░░░░░░░` | 0.13 | 0.0h |
-| beta2 | 122/2102 | 6% `░░░░░░░░` | 0.06 | 0.0h |
-| alfa2 | 2/2 | 100% `▓▓▓▓▓▓▓▓` | 0.30 | 2.0h |
-| jupiter | 2/2 | 100% `▓▓▓▓▓▓▓▓` | 0.20 | 2.0h |
+| omega | 328/900 | 36% `▓▓▓░░░░░` | 0.36 | 0.0h |
+| beta1 | 247/900 | 27% `▓▓░░░░░░` | 0.27 | 0.0h |
+| alfa1 | 182/900 | 20% `▓▓░░░░░░` | 0.20 | 0.0h |
+| padre | 178/900 | 20% `▓▓░░░░░░` | 0.20 | 0.0h |
+| delta | 90/900 | 10% `▓░░░░░░░` | 0.10 | 0.0h |
+| beta2 | 40/900 | 4% `░░░░░░░░` | 0.04 | 0.0h |
 
 ![Desempeño por bot](graficas/aciertos_7d_barras.png)
 
