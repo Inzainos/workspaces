@@ -5,9 +5,9 @@
 **Sistema:** Sentinel Omega  
 **Versión del modelo:** 2.5.0-shadow-node  
 **Versión del reporte:** 1.0-omega  
-**Ciclo total:** 294  
-**Fecha de generación:** 2026-10-25 13:07 UTC / 2026-10-25 07:07 UTC-6  
-**Ventana analizada:** 2026-10-11 a 2026-10-25  
+**Ciclo total:** 297  
+**Fecha de generación:** 2026-10-26 00:01 UTC / 2026-10-25 18:01 UTC-6  
+**Ventana analizada:** 2026-10-12 a 2026-10-26  
 **Fuentes activas:** NOAA / USGS / NASA / ESA / Tomsk / IERS / OpenWeatherMap / Yahoo Finance  
 **Estado ejecutivo del sistema:** NARANJA  
 **Clasificación operativa:** PRE-ESCALAMIENTO  
@@ -18,20 +18,20 @@
 
 ## 1. Lectura en 60 segundos
 
-**Estado actual:** Fantasma en 7.4 (actividad moderada), 3/5 frentes del Muro activos con BREACH. La memoria reconoce el momento con hasta 94% de parecido a vísperas de SISMO_M5.  
+**Estado actual:** Fantasma en 7.2 (actividad moderada), 3/5 frentes del Muro activos con BREACH. La memoria reconoce el momento con hasta 96% de parecido a vísperas de SISMO_M5.  
 **Nivel de riesgo operativo:** NARANJA porque convergencia multi-dominio (breach), firma consolidada con parecido alto.  
-**Ventana de atención sugerida:** 2026-10-29 a 2026-11-06.  
+**Ventana de atención sugerida:** 2026-10-30 a 2026-11-07.  
 **Acción recomendada:** REVISAR.
 
 ### Indicadores clave
 
 | Indicador | Valor | Umbral | Estado | Lectura rápida |
 |---|---:|---:|---|---|
-| Fantasma | 7.4 | 30 (CRITICAL) | NARANJA | actividad moderada |
+| Fantasma | 7.2 | 30 (CRITICAL) | NARANJA | actividad moderada |
 | Consenso de bots | 20% | 60% | sin consenso | NEUTRAL |
 | Muro de los 5 | 3/5 | 3/5 | 🚨 BREACH | convergencia multi-dominio |
 | Precursores activos | 3 | 2 | elevado | señales individuales del escáner |
-| Auditoría pendiente | 608 | — | ventanas de 72h abiertas | el Juez las resuelve contra USGS |
+| Auditoría pendiente | 552 | — | ventanas de 72h abiertas | el Juez las resuelve contra USGS |
 
 ---
 
@@ -59,11 +59,11 @@ El sistema está en FASE DE CARGA: actividad por encima del fondo sin convergenc
 
 | Variable | Ciclo actual | Ciclo previo | Cambio absoluto | Cambio relativo | Lectura |
 |---|---:|---:|---:|---:|---|
-| Fantasma | 7.4 | 8.1 | -0.7 | -9% | baja |
+| Fantasma | 7.2 | 7.2 | -0.0 | -1% | baja |
 | Consenso | 0.20 | 0.20 | +0.00 | +0% | estable |
 | Muro de los 5 | 3 | 3 | +0 | +0% | estable |
 | Precursores | 3 | 3 | +0 | +0% | estable |
-| Asertividad viva | 25.7% | — | — | — | acumulándose |
+| Asertividad viva | 25.5% | — | — | — | acumulándose |
 
 ### Cambio cualitativo
 
@@ -77,15 +77,15 @@ El sistema está CONSISTENTE con el corte previo.
 
 | Métrica | Actual | Promedio 7d | Promedio 30d | Máximo 30d | Mínimo 30d | Percentil actual |
 |---|---:|---:|---:|---:|---:|---:|
-| Fantasma | 7.4 | 10.9 | 14.1 | 41.8 | 7.4 | P2 |
+| Fantasma | 7.2 | 10.7 | 13.9 | 41.8 | 7.2 | P1 |
 | Muro de los 5 | 3 | — | 2.5 | 3 | 1 | P100 |
 | Silent Trigger | activo | — | — | — | — | — |
 | Consenso | 20% | — | — | — | — | — |
 
 ### Ventana de atención sugerida
 
-**Ventana primaria:** 2026-10-29 a 2026-11-06  
-**Ventana extendida:** hasta 2026-11-10  
+**Ventana primaria:** 2026-10-30 a 2026-11-07  
+**Ventana extendida:** hasta 2026-11-11  
 **Base de la estimación:** MURO DE LAGS (SISMO_M5)
 
 La ventana viene del lag histórico de las firmas coincidentes (cuánto suelen tardar los eventos tras verse el patrón). La lectura se invalida si las firmas dejan de coincidir en los próximos ciclos o si el fantasma regresa a fondo sostenido.
@@ -98,20 +98,20 @@ La ventana viene del lag histórico de las firmas coincidentes (cuánto suelen t
 
 | Prioridad | Nodo / Zona | Tipo de evento | Parecido | Veces vista | Aviso típico | Estado del nodo |
 |---|---|---|---:|---:|---|---|
-| 1 | Kamchatka (53.0, 159.0) | SISMO_M5 | 94% | 45 | ~8 días | real |
+| 1 | Baja California Sur (24.1, -110.0) | SISMO_M5 | 96% | 18 | ~8 días | real |
 | 2 | Ghost Mariana (15.0, 147.0) | SISMO_M5 | 91% | 58 | ~8 días | ghost |
-| 3 | Baja California Sur (24.1, -110.0) | SISMO_M5 | 88% | 18 | ~8 días | real |
-| 4 | Guerrero Interior (17.8, -99.5) | SISMO_M5 | 86% | 14 | ~8 días | real |
-| 5 | Grecia Helénica (37.0, 22.0) | SISMO_M6 | 85% | 24 | ~9 días | real |
+| 3 | Kamchatka (53.0, 159.0) | SISMO_M5 | 88% | 45 | ~8 días | real |
+| 4 | Baja California Sur (24.1, -110.0) | SISMO_M5 | 87% | 177 | ~8 días | real |
+| 5 | Grecia Helénica (37.0, 22.0) | SISMO_M6 | 83% | 24 | ~9 días | real |
 
 ### Lectura regional
 
 | Región | Nodos activos o coincidentes | Intensidad relativa | Comentario operativo |
 |---|---|---|---|
-| Russia | 1 | ALTA | parecido máx 94% |
+| Mexico | 2 | ALTA | parecido máx 96% |
 | Pacific | 1 | ALTA | parecido máx 91% |
-| Mexico | 2 | ALTA | parecido máx 88% |
-| Europe | 1 | ALTA | parecido máx 85% |
+| Russia | 1 | ALTA | parecido máx 88% |
+| Europe | 1 | MEDIA | parecido máx 83% |
 
 ---
 
@@ -123,7 +123,7 @@ La ventana viene del lag histórico de las firmas coincidentes (cuánto suelen t
 |---|---|---:|---|---|---|---|
 | Tsunami / Maremoto | — | 70% | regional | recurrente | MEDIA | señal del escáner de precursores |
 | Enjambre Sísmico Local | — | 95% | regional | recurrente | ALTA | señal del escáner de precursores |
-| Patrón Silent Trigger (Calma) | — | 90% | global | recurrente | ALTA | señal del escáner de precursores |
+| Patrón Silent Trigger (Calma) | — | 80% | global | recurrente | MEDIA | señal del escáner de precursores |
 
 ### Convergencia entre dominios
 
@@ -147,15 +147,15 @@ Las señales apuntan a CARGA SILENCIOSA: calma geomagnética sostenida con activ
 
 | Ranking | Firma | Evento | Nodo | Parecido | Veces vista | Lead time | Fortaleza |
 |---|---|---|---|---:|---:|---|---|
-| 1 | #2320 | SISMO_M5 | Kamchatka | 94% | 45 | ~8d | MEDIA |
+| 1 | #3507 | SISMO_M5 | Baja California Sur | 96% | 18 | ~8d | MEDIA |
 | 2 | #3308 | SISMO_M5 | Ghost Mariana | 91% | 58 | ~8d | MEDIA |
-| 3 | #3507 | SISMO_M5 | Baja California Sur | 88% | 18 | ~8d | MEDIA |
-| 4 | #2465 | SISMO_M5 | Guerrero Interior | 86% | 14 | — | MEDIA |
-| 5 | #2422 | SISMO_M6 | Grecia Helénica | 85% | 24 | — | MEDIA |
+| 3 | #2320 | SISMO_M5 | Kamchatka | 88% | 45 | ~8d | MEDIA |
+| 4 | #2321 | SISMO_M5 | Baja California Sur | 87% | 177 | — | ALTA |
+| 5 | #2422 | SISMO_M6 | Grecia Helénica | 83% | 24 | — | MEDIA |
 
 ### Lectura de memoria
 
-La memoria reconoce un patrón con RESPALDO MODERADO: las firmas coincidentes tienen pocas repeticiones históricas — tratar como indicio, no como confirmación.
+La memoria reconoce un patrón ROBUSTO: al menos una firma consolidada con cientos de repeticiones históricas respalda la coincidencia. Las firmas con pocas repeticiones se listan como contexto, no como base de la lectura.
 
 ---
 
@@ -166,21 +166,21 @@ La memoria reconoce un patrón con RESPALDO MODERADO: las firmas coincidentes ti
 | Métrica | Valor | Meta interna | Estado |
 |---|---:|---:|---|
 | Histórica | 98.4% | ≥95% | en meta |
-| Viva | 25.7% | ≥70% | bajo meta |
+| Viva | 25.5% | ≥70% | bajo meta |
 | Viva 7d | — | ≥70% | acumulando |
-| Recall operativo | 25.7% | ≥90% | bajo meta |
+| Recall operativo | 25.5% | ≥90% | bajo meta |
 | Precisión operativa | 99.9% | ≥50% | en meta |
 
 ### Desempeño por bot
 
 | Bot | Histórica | Causal (real) | Sesgo | Credibilidad | Firmas | Comentario |
 |---|---:|---:|---:|---:|---:|---|
-| alfa1 | 98.7% | 99.8% | +0.2% | 0.30 | 114 | clima espacial — generaliza |
+| alfa1 | 98.6% | 99.8% | +0.2% | 0.30 | 114 | clima espacial — generaliza |
 | beta1 | 98.6% | 99.5% | +0.5% | 0.30 | 494 | el latido Schumann — generaliza |
-| alfa2 | 4.0% | — | — | 0.30 | 0 | memoria satelital acumulándose en vivo |
-| beta2 | 96.3% | 49.9% | +48.1% | 0.30 | 467 | desgasificación — sesgo alto, en disciplina |
+| alfa2 | 3.9% | — | — | 0.30 | 0 | memoria satelital acumulándose en vivo |
+| beta2 | 96.2% | 49.9% | +48.1% | 0.30 | 467 | desgasificación — sesgo alto, en disciplina |
 | delta | 95.4% | 88.3% | +11.7% | 0.30 | 380 | humor de los mercados |
-| jupiter | 14.4% | — | — | 0.30 | 0 | atención colectiva sobre tormentas solares — en vivo |
+| jupiter | 14.1% | — | — | 0.30 | 0 | atención colectiva sobre tormentas solares — en vivo |
 | omega | 99.6% | 99.8% | +0.2% | 0.30 | 360 | ritmo cósmico — recién mapeado, memoria creciendo |
 | padre | 97.9% | 99.5% | +0.5% | 0.30 | 2,249 | árbitro — decisión real sólida |
 
@@ -189,8 +189,8 @@ La memoria reconoce un patrón con RESPALDO MODERADO: las firmas coincidentes ti
 | Tipo | Conteo | Variación vs ciclo previo | Impacto |
 |---|---:|---:|---|
 | Aciertos | 2,515 | — | asertividad viva |
-| Fallos | 7,264 | — | castigo asimétrico aplicado |
-| Pendientes | 608 | — | ventanas de 72h abiertas |
+| Fallos | 7,344 | — | castigo asimétrico aplicado |
+| Pendientes | 552 | — | ventanas de 72h abiertas |
 
 El patrón de fallos sugiere revisar la sensibilidad del consenso (posible sub-alerta) y el sesgo de nodos con poca memoria.
 
@@ -265,7 +265,7 @@ Sentinel Omega trabaja en ventanas de DÍAS (anticipación estadística de precu
 
 ## 12. Cierre ejecutivo
 
-El sistema opera en estado NARANJA (pre-escalamiento). El sistema está en FASE DE CARGA: actividad por encima del fondo sin convergencia crítica completa. La ventana de atención sugerida va del 2026-10-29 al 2026-11-06, basada en MURO DE LAGS (SISMO_M5). La memoria total es de 4,064 firmas en 6 bots (Omega ya integrado al entrenamiento con su dominio de ritmo cósmico), con 608 avisos pendientes de auditoría. La decisión operativa actual es REVISAR: elevar la revisión manual de los nodos coincidentes y vigilar la ventana señalada.
+El sistema opera en estado NARANJA (pre-escalamiento). El sistema está en FASE DE CARGA: actividad por encima del fondo sin convergencia crítica completa. La ventana de atención sugerida va del 2026-10-30 al 2026-11-07, basada en MURO DE LAGS (SISMO_M5). La memoria total es de 4,064 firmas en 6 bots (Omega ya integrado al entrenamiento con su dominio de ritmo cósmico), con 552 avisos pendientes de auditoría. La decisión operativa actual es REVISAR: elevar la revisión manual de los nodos coincidentes y vigilar la ventana señalada.
 
 ---
 
@@ -274,15 +274,15 @@ El sistema opera en estado NARANJA (pre-escalamiento). El sistema está en FASE 
 | Métrica | Valor |
 |---------|-------|
 | Aciertos | 37897 |
-| Fallos | 94585 |
+| Fallos | 94660 |
 | Tasa de acierto | 28.6% |
-| Total predicciones auditadas | 132484 |
+| Total predicciones auditadas | 132559 |
 
-- **omega**: 10494/21856 aciertos (48%)
-- **beta1**: 8423/21856 aciertos (39%)
-- **padre**: 6541/22092 aciertos (30%)
-- **alfa1**: 5786/21856 aciertos (26%)
-- **delta**: 3539/21856 aciertos (16%)
+- **omega**: 10494/21866 aciertos (48%)
+- **beta1**: 8423/21866 aciertos (39%)
+- **padre**: 6541/22097 aciertos (30%)
+- **alfa1**: 5786/21866 aciertos (26%)
+- **delta**: 3539/21866 aciertos (16%)
 
 ---
 
@@ -303,7 +303,7 @@ El sistema opera en estado NARANJA (pre-escalamiento). El sistema está en FASE 
 
 ### Checklist de publicación
 
-- [x] Datos ingestados completos (294 ciclos)
+- [x] Datos ingestados completos (297 ciclos)
 - [x] Ciclo validado
 - [x] Auditoría sincronizada
 - [x] Cálculo de percentiles actualizado
@@ -313,4 +313,4 @@ El sistema opera en estado NARANJA (pre-escalamiento). El sistema está en FASE 
 - [x] Nota metodológica incluida
 
 ---
-*Sentinel Omega · Fractal Core Research · reporte ejecutivo 1.0-omega · generado 2026-10-25 13:07 UTC*
+*Sentinel Omega · Fractal Core Research · reporte ejecutivo 1.0-omega · generado 2026-10-26 00:01 UTC*
