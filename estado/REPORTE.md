@@ -1,6 +1,6 @@
 # 🌍 Sentinel Omega — Estado del Sistema
 
-**Generado:** 2026-10-29 19:31 UTC (13:31 UTC-6)
+**Generado:** 2026-10-29 22:53 UTC (16:53 UTC-6)
 
 > **¿Qué es esto?** Sentinel Omega es un sistema que vigila señales físicas del planeta (campo magnético solar, resonancia de la Tierra, actividad sísmica, gases volcánicos, incluso el nerviosismo de los mercados) buscando *precursores*: condiciones que en 32 años de historia han aparecido **antes** de eventos naturales fuertes. No predice con certeza — reconoce parecidos con el pasado y avisa cuando el presente se parece demasiado a los días previos a un evento. Este reporte es una foto de lo que el sistema ve ahora.
 
@@ -36,9 +36,9 @@
 
 | Métrica | Actual | Prom. 7d | Prom. 30d | Máx 30d | Percentil |
 |---|---:|---:|---:|---:|---:|
-| Fantasma | 9.2 | 9.0 | 13.2 | 41.8 | P24 |
+| Fantasma | 9.2 | 8.8 | 13.2 | 41.8 | P24 |
 | Muro de los 5 | 3 | 2.8 | 2.7 | 3 | P100 |
-| Silent Trigger | activo | 75% ciclos | 74% ciclos | — | — |
+| Silent Trigger | activo | 77% ciclos | 74% ciclos | — | — |
 | Asertividad viva | 25% | — | — | — | — |
 
 *Los promedios de 30 días combinan los ciclos conservados y el resumen diario del barrido (lo compactado no se pierde, se resume).*
@@ -337,11 +337,11 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Aciertos** | 8974 |
+| **Aciertos** | 8958 |
 | **Fallos** | 34418 |
 | **Falsos positivos** | 0 |
 | **Tasa de acierto** | 20.7% `▓▓░░░░░░░░░░` |
-| **Predicciones auditadas** | 43392 |
+| **Predicciones auditadas** | 43376 |
 | **Pendientes (ventana abierta)** | 320 |
 
 _La tasa se calcula solo sobre lo que el Juez ya resolvió; las pendientes aún no se sabe si aciertan._
@@ -350,14 +350,14 @@ _La tasa se calcula solo sobre lo que el Juez ya resolvió; las pendientes aún 
 
 | Bot | Aciertos | Tasa | Confianza | Ventana declarada (h) |
 |-----|----------|------|-----------|------------------------|
-| omega | 2661/7149 | 37% `▓▓▓░░░░░` | 0.39 | 7.4 |
-| beta1 | 2137/7149 | 30% `▓▓░░░░░░` | 0.31 | 7.4 |
-| padre | 1491/7149 | 21% `▓▓░░░░░░` | 0.21 | 7.4 |
-| alfa1 | 1418/7149 | 20% `▓▓░░░░░░` | 0.21 | 7.4 |
-| delta | 853/7149 | 12% `▓░░░░░░░` | 0.13 | 7.4 |
-| beta2 | 381/7149 | 5% `░░░░░░░░` | 0.05 | 7.4 |
-| jupiter | 29/249 | 12% `▓░░░░░░░` | 0.22 | 211.5 |
-| alfa2 | 4/249 | 2% `░░░░░░░░` | 0.30 | 211.5 |
+| omega | 2659/7147 | 37% `▓▓▓░░░░░` | 0.39 | 7.3 |
+| beta1 | 2135/7147 | 30% `▓▓░░░░░░` | 0.31 | 7.3 |
+| padre | 1489/7147 | 21% `▓▓░░░░░░` | 0.21 | 7.3 |
+| alfa1 | 1416/7147 | 20% `▓▓░░░░░░` | 0.21 | 7.3 |
+| delta | 851/7147 | 12% `▓░░░░░░░` | 0.13 | 7.3 |
+| beta2 | 379/7147 | 5% `░░░░░░░░` | 0.05 | 7.3 |
+| jupiter | 27/247 | 11% `▓░░░░░░░` | 0.22 | 211.4 |
+| alfa2 | 2/247 | 1% `░░░░░░░░` | 0.30 | 211.4 |
 
 ### 🎯 Eventos Predichos Correctamente (más recientes primero)
 
@@ -451,7 +451,7 @@ _La tasa se calcula solo sobre lo que el Juez ya resolvió; las pendientes aún 
 - **Confianza:** 100.0% `▓▓▓▓▓▓▓▓▓▓`
 - **Fase:** trasfondo
 
-_... y 8964 aciertos más en los últimos 30 días_
+_... y 8948 aciertos más en los últimos 30 días_
 
 ---
 *Todos los datos provienen de fuentes públicas oficiales (NOAA, USGS, NASA, ESA). Nada aquí es un pronóstico oficial de protección civil: es investigación de precursores en curso.*
