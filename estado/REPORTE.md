@@ -1,6 +1,6 @@
 # 🌍 Sentinel Omega — Estado del Sistema
 
-**Generado:** 2026-10-30 19:07 UTC (13:07 UTC-6)
+**Generado:** 2026-10-30 22:31 UTC (16:31 UTC-6)
 
 > **¿Qué es esto?** Sentinel Omega es un sistema que vigila señales físicas del planeta (campo magnético solar, resonancia de la Tierra, actividad sísmica, gases volcánicos, incluso el nerviosismo de los mercados) buscando *precursores*: condiciones que en 32 años de historia han aparecido **antes** de eventos naturales fuertes. No predice con certeza — reconoce parecidos con el pasado y avisa cuando el presente se parece demasiado a los días previos a un evento. Este reporte es una foto de lo que el sistema ve ahora.
 
@@ -338,10 +338,10 @@
 | Métrica | Valor |
 |---------|-------|
 | **Aciertos** | 8563 |
-| **Fallos** | 32973 |
+| **Fallos** | 32957 |
 | **Falsos positivos** | 0 |
 | **Tasa de acierto** | 20.6% `▓▓░░░░░░░░░░` |
-| **Predicciones auditadas** | 41536 |
+| **Predicciones auditadas** | 41520 |
 | **Pendientes (ventana abierta)** | 312 |
 
 _La tasa se calcula solo sobre lo que el Juez ya resolvió; las pendientes aún no se sabe si aciertan._
@@ -350,14 +350,14 @@ _La tasa se calcula solo sobre lo que el Juez ya resolvió; las pendientes aún 
 
 | Bot | Aciertos | Tasa | Confianza | Ventana declarada (h) |
 |-----|----------|------|-----------|------------------------|
-| omega | 2542/6842 | 37% `▓▓▓░░░░░` | 0.39 | 7.5 |
-| beta1 | 2040/6842 | 30% `▓▓░░░░░░` | 0.31 | 7.5 |
-| padre | 1423/6842 | 21% `▓▓░░░░░░` | 0.21 | 7.5 |
-| alfa1 | 1355/6842 | 20% `▓▓░░░░░░` | 0.21 | 7.5 |
-| delta | 813/6842 | 12% `▓░░░░░░░` | 0.13 | 7.5 |
-| beta2 | 362/6842 | 5% `░░░░░░░░` | 0.05 | 7.5 |
-| jupiter | 26/242 | 11% `▓░░░░░░░` | 0.22 | 211.1 |
-| alfa2 | 2/242 | 1% `░░░░░░░░` | 0.30 | 211.1 |
+| omega | 2542/6840 | 37% `▓▓▓░░░░░` | 0.39 | 7.4 |
+| beta1 | 2040/6840 | 30% `▓▓░░░░░░` | 0.31 | 7.4 |
+| padre | 1423/6840 | 21% `▓▓░░░░░░` | 0.21 | 7.4 |
+| alfa1 | 1355/6840 | 20% `▓▓░░░░░░` | 0.21 | 7.4 |
+| delta | 813/6840 | 12% `▓░░░░░░░` | 0.13 | 7.4 |
+| beta2 | 362/6840 | 5% `░░░░░░░░` | 0.05 | 7.4 |
+| jupiter | 26/240 | 11% `▓░░░░░░░` | 0.22 | 211.1 |
+| alfa2 | 2/240 | 1% `░░░░░░░░` | 0.30 | 211.1 |
 
 ### 🎯 Eventos Predichos Correctamente (más recientes primero)
 
