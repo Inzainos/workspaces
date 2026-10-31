@@ -1,16 +1,16 @@
 # 🗓️ Reporte mensual — Sentinel Omega
-*Generado 2026-09-30 12:41 hora MX — ventana 31 días*
+*Generado 2026-10-31 15:46 hora MX — ventana 31 días*
 
 ## Resumen
-- Ciclos corridos: **283**
-- Fantasma medio del periodo: **10.3**
-- Fantasma máximo: **61.2**
-- Breaches del Muro: **0**
-- Asertividad viva del periodo: **11%** (n=1336 resueltas)
+- Ciclos corridos: **296**
+- Fantasma medio del periodo: **10.9**
+- Fantasma máximo: **41.8**
+- Breaches del Muro: **89**
+- Asertividad viva del periodo: **2%** (n=1968 resueltas)
 
 ## Cimática
-- Patrones `general`: 458 (frecuencia máx 10)
-- Patrones `nodo`: 1294 (frecuencia máx 15)
+- Patrones `general`: 646 (frecuencia máx 10)
+- Patrones `nodo`: 1883 (frecuencia máx 15)
 
 | Patrón | Ámbito | Evento asociado | Frecuencia |
 |---|---|---|---:|
@@ -29,11 +29,11 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Aciertos** | 11110 |
-| **Fallos** | 42425 |
-| **Falsos positivos** | 1 |
-| **Tasa de acierto** | 20.8% `▓▓░░░░░░░░░░` |
-| **Total predicciones** | 53536 |
+| **Aciertos** | 8563 |
+| **Fallos** | 33005 |
+| **Falsos positivos** | 0 |
+| **Tasa de acierto** | 20.6% `▓▓░░░░░░░░░░` |
+| **Total predicciones** | 41568 |
 
 ![Distribución de veredictos](graficas/aciertos_31d_pastel.png)
 
@@ -41,14 +41,14 @@
 
 | Bot | Aciertos | Tasa | Confianza | Ventana declarada |
 |-----|----------|------|-----------|--------------------|
-| omega | 3380/8867 | 38% `▓▓▓░░░░░` | 0.39 | 4.4h |
-| beta1 | 2609/8867 | 29% `▓▓░░░░░░` | 0.30 | 4.4h |
-| padre | 1892/8867 | 21% `▓▓░░░░░░` | 0.21 | 4.4h |
-| alfa1 | 1712/8867 | 19% `▓▓░░░░░░` | 0.20 | 4.4h |
-| delta | 948/8867 | 11% `▓░░░░░░░` | 0.11 | 4.4h |
-| beta2 | 515/8867 | 6% `░░░░░░░░` | 0.06 | 4.4h |
-| jupiter | 38/167 | 23% `▓▓░░░░░░` | 0.26 | 231.3h |
-| alfa2 | 16/167 | 10% `▓░░░░░░░` | 0.30 | 231.3h |
+| omega | 2542/6846 | 37% `▓▓▓░░░░░` | 0.39 | 7.6h |
+| beta1 | 2040/6846 | 30% `▓▓░░░░░░` | 0.31 | 7.6h |
+| padre | 1423/6846 | 21% `▓▓░░░░░░` | 0.21 | 7.6h |
+| alfa1 | 1355/6846 | 20% `▓▓░░░░░░` | 0.21 | 7.6h |
+| delta | 813/6846 | 12% `▓░░░░░░░` | 0.13 | 7.6h |
+| beta2 | 362/6846 | 5% `░░░░░░░░` | 0.05 | 7.6h |
+| jupiter | 26/246 | 11% `▓░░░░░░░` | 0.22 | 210.9h |
+| alfa2 | 2/246 | 1% `░░░░░░░░` | 0.30 | 210.9h |
 
 ![Desempeño por bot](graficas/aciertos_31d_barras.png)
 
