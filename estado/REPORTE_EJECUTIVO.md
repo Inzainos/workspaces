@@ -5,8 +5,8 @@
 **Sistema:** Sentinel Omega  
 **Versión del modelo:** 2.5.0-shadow-node  
 **Versión del reporte:** 1.0-omega  
-**Ciclo total:** 307  
-**Fecha de generación:** 2026-11-07 12:47 UTC / 2026-11-07 06:47 UTC-6  
+**Ciclo total:** 308  
+**Fecha de generación:** 2026-11-07 18:36 UTC / 2026-11-07 12:36 UTC-6  
 **Ventana analizada:** 2026-10-24 a 2026-11-07  
 **Fuentes activas:** NOAA / USGS / NASA / ESA / Tomsk / IERS / OpenWeatherMap / Yahoo Finance  
 **Estado ejecutivo del sistema:** AMARILLO  
@@ -18,7 +18,7 @@
 
 ## 1. Lectura en 60 segundos
 
-**Estado actual:** Fantasma en 12.6 (actividad moderada), 2/5 frentes del Muro activos. La memoria reconoce el momento con hasta 94% de parecido a vísperas de SISMO_M5.  
+**Estado actual:** Fantasma en 12.9 (actividad moderada), 1/5 frentes del Muro activos. La memoria reconoce el momento con hasta 94% de parecido a vísperas de SISMO_M5.  
 **Nivel de riesgo operativo:** AMARILLO porque firma consolidada con parecido alto.  
 **Ventana de atención sugerida:** 2026-11-13 a 2026-11-19.  
 **Acción recomendada:** REVISAR.
@@ -27,10 +27,10 @@
 
 | Indicador | Valor | Umbral | Estado | Lectura rápida |
 |---|---:|---:|---|---|
-| Fantasma | 12.6 | 30 (CRITICAL) | AMARILLO | actividad moderada |
+| Fantasma | 12.9 | 30 (CRITICAL) | AMARILLO | actividad moderada |
 | Consenso de bots | 20% | 60% | sin consenso | NEUTRAL |
-| Muro de los 5 | 2/5 | 3/5 | estable | sin convergencia crítica |
-| Precursores activos | 2 | 2 | elevado | señales individuales del escáner |
+| Muro de los 5 | 1/5 | 3/5 | estable | sin convergencia crítica |
+| Precursores activos | 1 | 2 | base | señales individuales del escáner |
 | Auditoría pendiente | 272 | — | ventanas de 72h abiertas | el Juez las resuelve contra USGS |
 
 ---
@@ -59,15 +59,15 @@ El sistema está en FASE DE CARGA: actividad por encima del fondo sin convergenc
 
 | Variable | Ciclo actual | Ciclo previo | Cambio absoluto | Cambio relativo | Lectura |
 |---|---:|---:|---:|---:|---|
-| Fantasma | 12.6 | 9.5 | +3.2 | +34% | sube |
+| Fantasma | 12.9 | 12.6 | +0.3 | +2% | sube |
 | Consenso | 0.20 | 0.20 | +0.00 | +0% | estable |
-| Muro de los 5 | 2 | 1 | +1 | +100% | sube |
-| Precursores | 2 | 1 | +1 | +100% | sube |
+| Muro de los 5 | 1 | 2 | -1 | -50% | baja |
+| Precursores | 1 | 2 | -1 | -50% | baja |
 | Asertividad viva | 23.9% | — | — | — | acumulándose |
 
 ### Cambio cualitativo
 
-El sistema está MÁS CARGADO que en el corte previo.
+El sistema está CONSISTENTE con el corte previo.
 
 ---
 
@@ -77,8 +77,8 @@ El sistema está MÁS CARGADO que en el corte previo.
 
 | Métrica | Actual | Promedio 7d | Promedio 30d | Máximo 30d | Mínimo 30d | Percentil actual |
 |---|---:|---:|---:|---:|---:|---:|
-| Fantasma | 12.6 | 10.5 | 13.1 | 41.8 | 6.9 | P70 |
-| Muro de los 5 | 2 | — | 2.6 | 3 | 1 | P34 |
+| Fantasma | 12.9 | 10.3 | 13.1 | 41.8 | 6.9 | P73 |
+| Muro de los 5 | 1 | — | 2.6 | 3 | 1 | P8 |
 | Silent Trigger | activo | — | — | — | — | — |
 | Consenso | 20% | — | — | — | — | — |
 
@@ -187,7 +187,7 @@ La memoria reconoce un patrón ROBUSTO: al menos una firma consolidada con cient
 | Tipo | Conteo | Variación vs ciclo previo | Impacto |
 |---|---:|---:|---|
 | Aciertos | 2,515 | — | asertividad viva |
-| Fallos | 8,000 | — | castigo asimétrico aplicado |
+| Fallos | 8,008 | — | castigo asimétrico aplicado |
 | Pendientes | 272 | — | ventanas de 72h abiertas |
 
 El patrón de fallos sugiere revisar la sensibilidad del consenso (posible sub-alerta) y el sesgo de nodos con poca memoria.
@@ -271,16 +271,16 @@ El sistema opera en estado AMARILLO (vigilancia reforzada). El sistema está en 
 
 | Métrica | Valor |
 |---------|-------|
-| Aciertos | 36170 |
-| Fallos | 98735 |
+| Aciertos | 36168 |
+| Fallos | 98742 |
 | Tasa de acierto | 26.8% |
-| Total predicciones auditadas | 134906 |
+| Total predicciones auditadas | 134911 |
 
-- **omega**: 10154/22248 aciertos (46%)
-- **beta1**: 8121/22248 aciertos (37%)
-- **padre**: 6209/22370 aciertos (28%)
-- **alfa1**: 5565/22248 aciertos (25%)
-- **delta**: 3353/22248 aciertos (15%)
+- **omega**: 10154/22249 aciertos (46%)
+- **beta1**: 8121/22249 aciertos (37%)
+- **padre**: 6207/22368 aciertos (28%)
+- **alfa1**: 5565/22249 aciertos (25%)
+- **delta**: 3353/22249 aciertos (15%)
 
 ---
 
@@ -301,7 +301,7 @@ El sistema opera en estado AMARILLO (vigilancia reforzada). El sistema está en 
 
 ### Checklist de publicación
 
-- [x] Datos ingestados completos (307 ciclos)
+- [x] Datos ingestados completos (308 ciclos)
 - [x] Ciclo validado
 - [x] Auditoría sincronizada
 - [x] Cálculo de percentiles actualizado
@@ -311,4 +311,4 @@ El sistema opera en estado AMARILLO (vigilancia reforzada). El sistema está en 
 - [x] Nota metodológica incluida
 
 ---
-*Sentinel Omega · Fractal Core Research · reporte ejecutivo 1.0-omega · generado 2026-11-07 12:47 UTC*
+*Sentinel Omega · Fractal Core Research · reporte ejecutivo 1.0-omega · generado 2026-11-07 18:36 UTC*
