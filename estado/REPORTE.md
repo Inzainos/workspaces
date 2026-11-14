@@ -1,6 +1,6 @@
 # 🌍 Sentinel Omega — Estado del Sistema
 
-**Generado:** 2026-11-14 08:51 UTC (02:51 UTC-6)
+**Generado:** 2026-11-14 16:30 UTC (10:30 UTC-6)
 
 > **¿Qué es esto?** Sentinel Omega es un sistema que vigila señales físicas del planeta (campo magnético solar, resonancia de la Tierra, actividad sísmica, gases volcánicos, incluso el nerviosismo de los mercados) buscando *precursores*: condiciones que en 32 años de historia han aparecido **antes** de eventos naturales fuertes. No predice con certeza — reconoce parecidos con el pasado y avisa cuando el presente se parece demasiado a los días previos a un evento. Este reporte es una foto de lo que el sistema ve ahora.
 
@@ -10,11 +10,11 @@
 
 | Métrica | Valor | Lectura |
 |---|---|---|
-| Fantasma | 🟡 **9.0** `▓▓░░░░░░░░` | actividad moderada |
+| Fantasma | 🟡 **8.7** `▓░░░░░░░░░` | actividad moderada |
 | Consenso de los 6 bots | NO_SIGNAL (0%) | evaluando |
 | Muro de los 5 frentes | 2/5 activos | estable — sin convergencia crítica |
 | Precursores detectados | 2 | ["SILENT_TRIGGER", "SEISMIC_CLUSTER"] |
-| Hora de la medición | 2026-11-14 08:49 UTC | |
+| Hora de la medición | 2026-11-14 16:30 UTC | |
 
 ## 🚦 Semáforo — reglas fijas del nivel de riesgo
 
@@ -28,7 +28,7 @@
 | 🔵 AZUL | Fantasma <5 con detecciones o muros 1–2 | Seguimiento ampliado |
 | 🟢 VERDE | Fantasma <5, muro 0/5, sin firmas ≥80% | Monitoreo base |
 
-**Nivel del corte: 🟡 AMARILLO** — con Fantasma 9.0, muro 2/5 y firma máxima 93%.
+**Nivel del corte: 🟡 AMARILLO** — con Fantasma 8.7, muro 2/5 y firma máxima 90%.
 
 ## 📈 Operación reciente — hoy vs cómo solía estar
 
@@ -36,9 +36,9 @@
 
 | Métrica | Actual | Prom. 7d | Prom. 30d | Máx 30d | Percentil |
 |---|---:|---:|---:|---:|---:|
-| Fantasma | 9.0 | 12.6 | 10.5 | 17.4 | P26 |
-| Muro de los 5 | 2 | 1.5 | 2.5 | 3 | P33 |
-| Silent Trigger | activo | 54% ciclos | 83% ciclos | — | — |
+| Fantasma | 8.7 | 12.5 | 10.5 | 17.4 | P19 |
+| Muro de los 5 | 2 | 1.5 | 2.5 | 3 | P35 |
+| Silent Trigger | activo | 54% ciclos | 82% ciclos | — | — |
 | Asertividad viva | 24% | — | — | — | — |
 
 *Los promedios de 30 días combinan los ciclos conservados y el resumen diario del barrido (lo compactado no se pierde, se resume).*
@@ -49,10 +49,10 @@
 
 | Métrica | Valor |
 |---|---:|
-| Ventanas evaluadas (viva) | 10677 |
+| Ventanas evaluadas (viva) | 10685 |
 | Ventanas con evento real (tasa base) | 97% |
 | Asertividad del sistema | 24% |
-| **Ganancia** (sistema ÷ tasa base) | 0.25× |
+| **Ganancia** (sistema ÷ tasa base) | 0.24× |
 
 **Veredicto:** 🔴 SIN ganancia: alertar SIEMPRE habría rendido igual o mejor — la asertividad de arriba aún no es habilidad
 
@@ -70,8 +70,8 @@
 | Patrón Silent Trigger (Calma) | 90% `▓▓▓▓░` | global |
 | Enjambre Sísmico Local | 95% `▓▓▓▓▓` | regional |
 | Patrón Silent Trigger (Calma) | 90% `▓▓▓▓░` | global |
-| Patrón Silent Trigger (Calma) | 90% `▓▓▓▓░` | global |
 | Enjambre Sísmico Local | 95% `▓▓▓▓▓` | regional |
+| Patrón Silent Trigger (Calma) | 90% `▓▓▓▓░` | global |
 
 ## 🎯 Firma Match — la memoria reconoce el momento actual
 
@@ -79,11 +79,11 @@
 
 | Parecido | Precedió a | Zona (nodo de la malla) | Veces vista | Suele avisar con |
 |---|---|---|---|---|
-| **93%** `▓▓▓▓▓` | SISMO_M5 | **Baja California Sur** (24.1, -110.0) · nodo 14 | 460 | ~8 días |
-| **93%** `▓▓▓▓▓` | SISMO_M6 | **Chiapas Subducción** (14.8, -92.5) · nodo 3 | 25 | ~9 días |
-| **91%** `▓▓▓▓▓` | SISMO_M5 | **Baja California Sur** (24.1, -110.0) · nodo 14 | 30 | ~8 días |
 | **90%** `▓▓▓▓░` | SISMO_M6 | **GeoBat Yellowstone Geyser** (44.5, -110.5) · nodo 111 | 15 | ~9 días |
+| **90%** `▓▓▓▓░` | SISMO_M5 | **Baja California Sur** (24.1, -110.0) · nodo 14 | 460 | ~8 días |
+| **89%** `▓▓▓▓░` | SISMO_M5 | **GeoBat Sumatra Hidrotermal** (1.0, 98.0) · nodo 109 | 182 | ~8 días |
 | **88%** `▓▓▓▓░` | SISMO_M5 | **Baja California Sur** (24.1, -110.0) · nodo 14 | 53 | ~8 días |
+| **88%** `▓▓▓▓░` | SISMO_M6 | **Chiapas Subducción** (14.8, -92.5) · nodo 3 | 25 | ~9 días |
 
 *SISMO_M5 / M6 / M7 = sismo de magnitud 5+, 6+ o 7+. La zona es el punto de la malla global UVG-125 donde se aprendió la firma (nombre y coordenadas lat, lon); los nodos 'Ghost' son puntos teóricos de la malla sin estación física encima.*
 
@@ -120,13 +120,13 @@
 
 | Bot | Firmas aprendidas | Veces confirmadas | Credibilidad |
 |---|---|---|---|
-| alfa1 | 114 | 49,001 | 0.31 `▓░░░░░` |
-| beta1 | 494 | 49,001 | 0.31 `▓░░░░░` |
+| alfa1 | 114 | 49,001 | 0.30 `▓░░░░░` |
+| beta1 | 494 | 49,001 | 0.30 `▓░░░░░` |
 | beta2 | 467 | 21,720 | 0.30 `▓░░░░░` |
 | delta | 380 | 15,727 | 0.30 `▓░░░░░` |
-| omega | 360 | 179,235 | 0.31 `▓░░░░░` |
-| padre | 2,249 | 49,001 | 0.31 `▓░░░░░` |
-| alfa2 | _en vivo · 4 ciclos · 748 pases observados_ | — | 0.30 `▓░░░░░` |
+| omega | 360 | 179,235 | 0.30 `▓░░░░░` |
+| padre | 2,249 | 49,001 | 0.30 `▓░░░░░` |
+| alfa2 | _en vivo · 5 ciclos · 937 pases observados_ | — | 0.30 `▓░░░░░` |
 | jupiter | _en vivo · atención colectiva_ | — | 0.30 `▓░░░░░` |
 
 ## 🎯 Asertividad — ¿qué tan bien le ha ido?
@@ -143,14 +143,14 @@
 
 | Bot | Histórica | Viva | Viva 7d | Credibilidad |
 |---|---|---|---|---|
-| alfa1 | 98.4% | 24.0% | — | 0.31 |
+| alfa1 | 98.4% | 24.0% | — | 0.30 |
 | alfa2 | 3.4% | 3.4% | — | 0.30 |
-| beta1 | 98.3% | 39.6% | — | 0.31 |
+| beta1 | 98.3% | 39.6% | — | 0.30 |
 | beta2 | 95.7% | 14.9% | — | 0.30 |
-| delta | 94.7% | 17.2% | — | 0.30 |
+| delta | 94.7% | 17.1% | — | 0.30 |
 | jupiter | 12.9% | 12.9% | — | 0.30 |
-| omega | 99.5% | 26.1% | — | 0.31 |
-| padre | 97.7% | 31.7% | — | 0.31 |
+| omega | 99.5% | 26.1% | — | 0.30 |
+| padre | 97.7% | 31.7% | — | 0.30 |
 
 *La histórica mide reconocimiento de patrones dentro de los mismos datos con que se entrenó (por eso es tan alta). La viva es la prueba honesta: predicciones a futuro calificadas contra la realidad.*
 
@@ -308,7 +308,7 @@
 
 **Operación viva (lo que cuenta):**
 - ACIERTO — avisó y el evento ocurrió: 2,528
-- FALLO — el evento ocurrió sin aviso (lo más castigado): 8,147
+- FALLO — el evento ocurrió sin aviso (lo más castigado): 8,155
 - FALSO POSITIVO — avisó y no pasó nada: 2
 - PENDIENTE — ventana de 72h aún abierta: 296
 
@@ -324,9 +324,9 @@
 |---|---|---|---|
 | Versión del modelo | 2.5.0-shadow-node | — | — |
 | Asertividad viva | 23.7% | — | — |
-| Aciertos / Fallos (vivos) | 2,528 / 8,147 | — | — aciertos |
+| Aciertos / Fallos (vivos) | 2,528 / 8,155 | — | — aciertos |
 | Pendientes de auditoría | 296 | — | — |
-| Pesos de bots | alfa1 0.31, alfa2 0.30, beta1 0.31, beta2 0.30, delta 0.30, jupiter 0.30, omega 0.31, padre 0.31 | — | primera bitácora |
+| Pesos de bots | alfa1 0.30, alfa2 0.30, beta1 0.30, beta2 0.30, delta 0.30, jupiter 0.30, omega 0.30, padre 0.30 | — | primera bitácora |
 
 
 ## ✅ Aciertos y Predicciones Correctas
@@ -338,10 +338,10 @@
 | Métrica | Valor |
 |---------|-------|
 | **Aciertos** | 4022 |
-| **Fallos** | 16746 |
+| **Fallos** | 16722 |
 | **Falsos positivos** | 0 |
 | **Tasa de acierto** | 19.4% `▓▓░░░░░░░░░░` |
-| **Predicciones auditadas** | 20768 |
+| **Predicciones auditadas** | 20744 |
 | **Pendientes (ventana abierta)** | 296 |
 
 _La tasa se calcula solo sobre lo que el Juez ya resolvió; las pendientes aún no se sabe si aciertan._
@@ -350,14 +350,14 @@ _La tasa se calcula solo sobre lo que el Juez ya resolvió; las pendientes aún 
 
 | Bot | Aciertos | Tasa | Confianza | Ventana declarada (h) |
 |-----|----------|------|-----------|------------------------|
-| omega | 1215/3421 | 36% `▓▓▓░░░░░` | 0.37 | 7.4 |
-| beta1 | 949/3421 | 28% `▓▓░░░░░░` | 0.29 | 7.4 |
-| alfa1 | 675/3421 | 20% `▓▓░░░░░░` | 0.21 | 7.4 |
-| padre | 670/3421 | 20% `▓▓░░░░░░` | 0.20 | 7.4 |
-| delta | 362/3421 | 11% `▓░░░░░░░` | 0.12 | 7.4 |
-| beta2 | 144/3421 | 4% `░░░░░░░░` | 0.04 | 7.4 |
-| jupiter | 6/121 | 5% `░░░░░░░░` | 0.21 | 210.5 |
-| alfa2 | 1/121 | 1% `░░░░░░░░` | 0.30 | 210.5 |
+| omega | 1215/3418 | 36% `▓▓▓░░░░░` | 0.37 | 7.2 |
+| beta1 | 949/3418 | 28% `▓▓░░░░░░` | 0.29 | 7.2 |
+| alfa1 | 675/3418 | 20% `▓▓░░░░░░` | 0.21 | 7.2 |
+| padre | 670/3418 | 20% `▓▓░░░░░░` | 0.20 | 7.2 |
+| delta | 362/3418 | 11% `▓░░░░░░░` | 0.12 | 7.2 |
+| beta2 | 144/3418 | 4% `░░░░░░░░` | 0.04 | 7.2 |
+| jupiter | 6/118 | 5% `░░░░░░░░` | 0.21 | 208.7 |
+| alfa2 | 1/118 | 1% `░░░░░░░░` | 0.30 | 208.7 |
 
 ### 🎯 Eventos Predichos Correctamente (más recientes primero)
 
@@ -456,4 +456,4 @@ _... y 4012 aciertos más en los últimos 30 días_
 ---
 *Todos los datos provienen de fuentes públicas oficiales (NOAA, USGS, NASA, ESA). Nada aquí es un pronóstico oficial de protección civil: es investigación de precursores en curso.*
 
-*Ciclos totales: 304 · Sentinel Omega · Fractal Core Research*
+*Ciclos totales: 305 · Sentinel Omega · Fractal Core Research*
