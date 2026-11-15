@@ -1,16 +1,16 @@
 # 📅 Reporte semanal — Sentinel Omega
-*Generado 2026-11-08 16:06 hora MX — ventana 7 días*
+*Generado 2026-11-15 16:49 hora MX — ventana 7 días*
 
 ## Resumen
-- Ciclos corridos: **28**
-- Fantasma medio del periodo: **10.7**
+- Ciclos corridos: **26**
+- Fantasma medio del periodo: **11.8**
 - Fantasma máximo: **15.6**
 - Breaches del Muro: **0**
 - Asertividad viva del periodo: **—** (n=0 resueltas)
 
 ## Cimática
-- Patrones `general`: 671 (frecuencia máx 10)
-- Patrones `nodo`: 1953 (frecuencia máx 15)
+- Patrones `general`: 690 (frecuencia máx 10)
+- Patrones `nodo`: 2008 (frecuencia máx 15)
 
 | Patrón | Ámbito | Evento asociado | Frecuencia |
 |---|---|---|---:|
@@ -29,11 +29,11 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Aciertos** | 694 |
-| **Fallos** | 2906 |
+| **Aciertos** | 352 |
+| **Fallos** | 1448 |
 | **Falsos positivos** | 0 |
-| **Tasa de acierto** | 19.3% `▓▓░░░░░░░░░░` |
-| **Total predicciones** | 3600 |
+| **Tasa de acierto** | 19.6% `▓▓░░░░░░░░░░` |
+| **Total predicciones** | 1800 |
 
 ![Distribución de veredictos](graficas/aciertos_7d_pastel.png)
 
@@ -41,12 +41,12 @@
 
 | Bot | Aciertos | Tasa | Confianza | Ventana declarada |
 |-----|----------|------|-----------|--------------------|
-| omega | 214/600 | 36% `▓▓▓░░░░░` | 0.36 | 0.0h |
-| beta1 | 168/600 | 28% `▓▓░░░░░░` | 0.28 | 0.0h |
-| padre | 124/600 | 21% `▓▓░░░░░░` | 0.21 | 0.0h |
-| alfa1 | 114/600 | 19% `▓▓░░░░░░` | 0.19 | 0.0h |
-| delta | 60/600 | 10% `▓░░░░░░░` | 0.10 | 0.0h |
-| beta2 | 14/600 | 2% `░░░░░░░░` | 0.02 | 0.0h |
+| omega | 109/300 | 36% `▓▓▓░░░░░` | 0.36 | 0.0h |
+| beta1 | 85/300 | 28% `▓▓░░░░░░` | 0.28 | 0.0h |
+| alfa1 | 60/300 | 20% `▓▓░░░░░░` | 0.20 | 0.0h |
+| padre | 59/300 | 20% `▓▓░░░░░░` | 0.20 | 0.0h |
+| delta | 29/300 | 10% `▓░░░░░░░` | 0.10 | 0.0h |
+| beta2 | 10/300 | 3% `░░░░░░░░` | 0.03 | 0.0h |
 
 ![Desempeño por bot](graficas/aciertos_7d_barras.png)
 
