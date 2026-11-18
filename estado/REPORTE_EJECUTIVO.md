@@ -5,9 +5,9 @@
 **Sistema:** Sentinel Omega  
 **Versión del modelo:** 2.5.0-shadow-node  
 **Versión del reporte:** 1.0-omega  
-**Ciclo total:** 314  
-**Fecha de generación:** 2026-11-17 07:46 UTC / 2026-11-17 01:46 UTC-6  
-**Ventana analizada:** 2026-11-03 a 2026-11-17  
+**Ciclo total:** 316  
+**Fecha de generación:** 2026-11-18 00:50 UTC / 2026-11-17 18:50 UTC-6  
+**Ventana analizada:** 2026-11-04 a 2026-11-18  
 **Fuentes activas:** NOAA / USGS / NASA / ESA / Tomsk / IERS / OpenWeatherMap / Yahoo Finance  
 **Estado ejecutivo del sistema:** AMARILLO  
 **Clasificación operativa:** VIGILANCIA REFORZADA  
@@ -18,20 +18,20 @@
 
 ## 1. Lectura en 60 segundos
 
-**Estado actual:** Fantasma en 7.7 (actividad moderada), 2/5 frentes del Muro activos. La memoria reconoce el momento con hasta 96% de parecido a vísperas de SISMO_M6.  
+**Estado actual:** Fantasma en 7.5 (actividad moderada), 2/5 frentes del Muro activos. La memoria reconoce el momento con hasta 95% de parecido a vísperas de SISMO_M6.  
 **Nivel de riesgo operativo:** AMARILLO porque firma consolidada con parecido alto.  
-**Ventana de atención sugerida:** 2026-11-21 a 2026-11-29.  
+**Ventana de atención sugerida:** 2026-11-22 a 2026-11-30.  
 **Acción recomendada:** REVISAR.
 
 ### Indicadores clave
 
 | Indicador | Valor | Umbral | Estado | Lectura rápida |
 |---|---:|---:|---|---|
-| Fantasma | 7.7 | 30 (CRITICAL) | AMARILLO | actividad moderada |
+| Fantasma | 7.5 | 30 (CRITICAL) | AMARILLO | actividad moderada |
 | Consenso de bots | 0% | 60% | sin consenso | NO_SIGNAL |
 | Muro de los 5 | 2/5 | 3/5 | estable | sin convergencia crítica |
 | Precursores activos | 2 | 2 | elevado | señales individuales del escáner |
-| Auditoría pendiente | 248 | — | ventanas de 72h abiertas | el Juez las resuelve contra USGS |
+| Auditoría pendiente | 264 | — | ventanas de 72h abiertas | el Juez las resuelve contra USGS |
 
 ---
 
@@ -59,10 +59,10 @@ El sistema está en FASE DE CARGA: actividad por encima del fondo sin convergenc
 
 | Variable | Ciclo actual | Ciclo previo | Cambio absoluto | Cambio relativo | Lectura |
 |---|---:|---:|---:|---:|---|
-| Fantasma | 7.7 | 6.8 | +0.9 | +13% | sube |
+| Fantasma | 7.5 | 6.6 | +0.9 | +13% | sube |
 | Consenso | 0.00 | 0.00 | +0.00 | — | estable |
-| Muro de los 5 | 2 | 2 | +0 | +0% | estable |
-| Precursores | 2 | 2 | +0 | +0% | estable |
+| Muro de los 5 | 2 | 1 | +1 | +100% | sube |
+| Precursores | 2 | 1 | +1 | +100% | sube |
 | Asertividad viva | 23.4% | — | — | — | acumulándose |
 
 ### Cambio cualitativo
@@ -77,15 +77,15 @@ El sistema está CONSISTENTE con el corte previo.
 
 | Métrica | Actual | Promedio 7d | Promedio 30d | Máximo 30d | Mínimo 30d | Percentil actual |
 |---|---:|---:|---:|---:|---:|---:|
-| Fantasma | 7.7 | 9.6 | 10.3 | 17.4 | 6.8 | P20 |
-| Muro de los 5 | 2 | — | 2.3 | 3 | 1 | P51 |
+| Fantasma | 7.5 | 9.0 | 10.2 | 17.4 | 6.6 | P22 |
+| Muro de los 5 | 2 | — | 2.2 | 3 | 1 | P56 |
 | Silent Trigger | activo | — | — | — | — | — |
 | Consenso | 0% | — | — | — | — | — |
 
 ### Ventana de atención sugerida
 
-**Ventana primaria:** 2026-11-21 a 2026-11-29  
-**Ventana extendida:** hasta 2026-12-05  
+**Ventana primaria:** 2026-11-22 a 2026-11-30  
+**Ventana extendida:** hasta 2026-12-06  
 **Base de la estimación:** MURO DE LAGS (SISMO_M5, SISMO_M6)
 
 La ventana viene del lag histórico de las firmas coincidentes (cuánto suelen tardar los eventos tras verse el patrón). La lectura se invalida si las firmas dejan de coincidir en los próximos ciclos o si el fantasma regresa a fondo sostenido.
@@ -98,21 +98,21 @@ La ventana viene del lag histórico de las firmas coincidentes (cuánto suelen t
 
 | Prioridad | Nodo / Zona | Tipo de evento | Parecido | Veces vista | Aviso típico | Estado del nodo |
 |---|---|---|---:|---:|---|---|
-| 1 | GeoBat Sumatra Hidrotermal (1.0, 98.0) | SISMO_M6 | 96% | 7 | ~9 días | real |
-| 2 | Perú Subducción (-12.0, -77.0) | SISMO_M5 | 93% | 134 | ~8 días | real |
+| 1 | GeoBat Sumatra Hidrotermal (1.0, 98.0) | SISMO_M6 | 95% | 7 | ~9 días | real |
+| 2 | Perú Subducción (-12.0, -77.0) | SISMO_M5 | 92% | 134 | ~8 días | real |
 | 3 | GeoBat San Andreas Creep (36.0, -120.5) | SISMO_M6 | 87% | 8 | ~9 días | real |
 | 4 | Ghost Scotia Arc (-57.0, -30.0) | SISMO_M5 | 85% | 63 | ~8 días | ghost |
-| 5 | Baja California Sur (24.1, -110.0) | SISMO_M5 | 85% | 460 | ~8 días | real |
+| 5 | GeoBat Yellowstone Geyser (44.5, -110.5) | SISMO_M6 | 84% | 15 | ~9 días | real |
 
 ### Lectura regional
 
 | Región | Nodos activos o coincidentes | Intensidad relativa | Comentario operativo |
 |---|---|---|---|
-| Indonesia | 1 | ALTA | parecido máx 96% |
-| Peru | 1 | ALTA | parecido máx 93% |
+| Indonesia | 1 | ALTA | parecido máx 95% |
+| Peru | 1 | ALTA | parecido máx 92% |
 | California | 1 | ALTA | parecido máx 87% |
 | Antarctic | 1 | ALTA | parecido máx 85% |
-| Mexico | 1 | MEDIA | parecido máx 85% |
+| USA | 1 | MEDIA | parecido máx 84% |
 
 ---
 
@@ -147,11 +147,11 @@ Las señales apuntan a CARGA SILENCIOSA: calma geomagnética sostenida con activ
 
 | Ranking | Firma | Evento | Nodo | Parecido | Veces vista | Lead time | Fortaleza |
 |---|---|---|---|---:|---:|---|---|
-| 1 | #2760 | SISMO_M6 | GeoBat Sumatra Hidrotermal | 96% | 7 | ~9d | BAJA |
-| 2 | #2743 | SISMO_M5 | Perú Subducción | 93% | 134 | ~8d | ALTA |
+| 1 | #2760 | SISMO_M6 | GeoBat Sumatra Hidrotermal | 95% | 7 | ~9d | BAJA |
+| 2 | #2743 | SISMO_M5 | Perú Subducción | 92% | 134 | ~8d | ALTA |
 | 3 | #2817 | SISMO_M6 | GeoBat San Andreas Creep | 87% | 8 | ~9d | BAJA |
 | 4 | #2922 | SISMO_M5 | Ghost Scotia Arc | 85% | 63 | — | MEDIA |
-| 5 | #2592 | SISMO_M5 | Baja California Sur | 85% | 460 | — | ALTA |
+| 5 | #2593 | SISMO_M6 | GeoBat Yellowstone Geyser | 84% | 15 | — | MEDIA |
 
 ### Lectura de memoria
 
@@ -190,7 +190,7 @@ La memoria reconoce un patrón ROBUSTO: al menos una firma consolidada con cient
 |---|---:|---:|---|
 | Aciertos | 2,528 | — | asertividad viva |
 | Fallos | 8,275 | — | castigo asimétrico aplicado |
-| Pendientes | 248 | — | ventanas de 72h abiertas |
+| Pendientes | 264 | — | ventanas de 72h abiertas |
 
 El patrón de fallos sugiere revisar la sensibilidad del consenso (posible sub-alerta) y el sesgo de nodos con poca memoria.
 
@@ -265,7 +265,7 @@ Sentinel Omega trabaja en ventanas de DÍAS (anticipación estadística de precu
 
 ## 12. Cierre ejecutivo
 
-El sistema opera en estado AMARILLO (vigilancia reforzada). El sistema está en FASE DE CARGA: actividad por encima del fondo sin convergencia crítica completa. La ventana de atención sugerida va del 2026-11-21 al 2026-11-29, basada en MURO DE LAGS (SISMO_M5, SISMO_M6). La memoria total es de 4,064 firmas en 6 bots (Omega ya integrado al entrenamiento con su dominio de ritmo cósmico), con 248 avisos pendientes de auditoría. La decisión operativa actual es REVISAR: elevar la revisión manual de los nodos coincidentes y vigilar la ventana señalada.
+El sistema opera en estado AMARILLO (vigilancia reforzada). El sistema está en FASE DE CARGA: actividad por encima del fondo sin convergencia crítica completa. La ventana de atención sugerida va del 2026-11-22 al 2026-11-30, basada en MURO DE LAGS (SISMO_M5, SISMO_M6). La memoria total es de 4,064 firmas en 6 bots (Omega ya integrado al entrenamiento con su dominio de ritmo cósmico), con 264 avisos pendientes de auditoría. La decisión operativa actual es REVISAR: elevar la revisión manual de los nodos coincidentes y vigilar la ventana señalada.
 
 ---
 
@@ -273,16 +273,16 @@ El sistema opera en estado AMARILLO (vigilancia reforzada). El sistema está en 
 
 | Métrica | Valor |
 |---------|-------|
-| Aciertos | 27131 |
-| Fallos | 93548 |
-| Tasa de acierto | 22.5% |
-| Total predicciones auditadas | 120680 |
+| Aciertos | 26090 |
+| Fallos | 92781 |
+| Tasa de acierto | 21.9% |
+| Total predicciones auditadas | 118872 |
 
-- **omega**: 7960/19884 aciertos (40%)
-- **beta1**: 6281/19884 aciertos (32%)
-- **padre**: 4596/19892 aciertos (23%)
-- **alfa1**: 4222/19884 aciertos (21%)
-- **delta**: 2447/19884 aciertos (12%)
+- **omega**: 7704/19584 aciertos (39%)
+- **beta1**: 6067/19584 aciertos (31%)
+- **padre**: 4414/19584 aciertos (23%)
+- **alfa1**: 4066/19584 aciertos (21%)
+- **delta**: 2343/19584 aciertos (12%)
 
 ---
 
@@ -303,7 +303,7 @@ El sistema opera en estado AMARILLO (vigilancia reforzada). El sistema está en 
 
 ### Checklist de publicación
 
-- [x] Datos ingestados completos (314 ciclos)
+- [x] Datos ingestados completos (316 ciclos)
 - [x] Ciclo validado
 - [x] Auditoría sincronizada
 - [x] Cálculo de percentiles actualizado
@@ -313,4 +313,4 @@ El sistema opera en estado AMARILLO (vigilancia reforzada). El sistema está en 
 - [x] Nota metodológica incluida
 
 ---
-*Sentinel Omega · Fractal Core Research · reporte ejecutivo 1.0-omega · generado 2026-11-17 07:46 UTC*
+*Sentinel Omega · Fractal Core Research · reporte ejecutivo 1.0-omega · generado 2026-11-18 00:50 UTC*
