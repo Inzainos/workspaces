@@ -5,9 +5,9 @@
 **Sistema:** Sentinel Omega  
 **Versión del modelo:** 2.5.0-shadow-node  
 **Versión del reporte:** 1.0-omega  
-**Ciclo total:** 324  
-**Fecha de generación:** 2026-11-27 18:01 UTC / 2026-11-27 12:01 UTC-6  
-**Ventana analizada:** 2026-11-13 a 2026-11-27  
+**Ciclo total:** 325  
+**Fecha de generación:** 2026-11-28 01:18 UTC / 2026-11-27 19:18 UTC-6  
+**Ventana analizada:** 2026-11-14 a 2026-11-28  
 **Fuentes activas:** NOAA / USGS / NASA / ESA / Tomsk / IERS / OpenWeatherMap / Yahoo Finance  
 **Estado ejecutivo del sistema:** NARANJA  
 **Clasificación operativa:** PRE-ESCALAMIENTO  
@@ -18,19 +18,19 @@
 
 ## 1. Lectura en 60 segundos
 
-**Estado actual:** Fantasma en 15.7 (actividad alta), 2/5 frentes del Muro activos. La memoria reconoce el momento con hasta 93% de parecido a vísperas de SISMO_M6.  
+**Estado actual:** Fantasma en 21.4 (actividad alta), 1/5 frentes del Muro activos. La memoria reconoce el momento con hasta 91% de parecido a vísperas de SISMO_M5.  
 **Nivel de riesgo operativo:** NARANJA porque fantasma elevado, firma consolidada con parecido alto.  
-**Ventana de atención sugerida:** 2026-12-02 a 2026-12-09.  
+**Ventana de atención sugerida:** 2026-12-02 a 2026-12-10.  
 **Acción recomendada:** REVISAR.
 
 ### Indicadores clave
 
 | Indicador | Valor | Umbral | Estado | Lectura rápida |
 |---|---:|---:|---|---|
-| Fantasma | 15.7 | 30 (CRITICAL) | NARANJA | actividad alta |
+| Fantasma | 21.4 | 30 (CRITICAL) | NARANJA | actividad alta |
 | Consenso de bots | 0% | 60% | sin consenso | NO_SIGNAL |
-| Muro de los 5 | 2/5 | 3/5 | estable | sin convergencia crítica |
-| Precursores activos | 2 | 2 | elevado | señales individuales del escáner |
+| Muro de los 5 | 1/5 | 3/5 | estable | sin convergencia crítica |
+| Precursores activos | 1 | 2 | base | señales individuales del escáner |
 | Auditoría pendiente | 208 | — | ventanas de 72h abiertas | el Juez las resuelve contra USGS |
 
 ---
@@ -59,10 +59,10 @@ El sistema está en FASE DE CARGA: actividad por encima del fondo sin convergenc
 
 | Variable | Ciclo actual | Ciclo previo | Cambio absoluto | Cambio relativo | Lectura |
 |---|---:|---:|---:|---:|---|
-| Fantasma | 15.7 | 7.6 | +8.1 | +107% | sube |
+| Fantasma | 21.4 | 15.7 | +5.6 | +36% | sube |
 | Consenso | 0.00 | 0.00 | +0.00 | — | estable |
-| Muro de los 5 | 2 | 2 | +0 | +0% | estable |
-| Precursores | 2 | 2 | +0 | +0% | estable |
+| Muro de los 5 | 1 | 2 | -1 | -50% | baja |
+| Precursores | 1 | 2 | -1 | -50% | baja |
 | Asertividad viva | 23.0% | — | — | — | acumulándose |
 
 ### Cambio cualitativo
@@ -77,16 +77,16 @@ El sistema está MÁS CARGADO que en el corte previo.
 
 | Métrica | Actual | Promedio 7d | Promedio 30d | Máximo 30d | Mínimo 30d | Percentil actual |
 |---|---:|---:|---:|---:|---:|---:|
-| Fantasma | 15.7 | 8.5 | 9.6 | 17.4 | 6.6 | P96 |
-| Muro de los 5 | 2 | — | 2.1 | 3 | 1 | P74 |
+| Fantasma | 21.4 | 9.1 | 9.8 | 21.4 | 6.6 | P100 |
+| Muro de los 5 | 1 | — | 2.1 | 3 | 1 | P15 |
 | Silent Trigger | activo | — | — | — | — | — |
 | Consenso | 0% | — | — | — | — | — |
 
 ### Ventana de atención sugerida
 
-**Ventana primaria:** 2026-12-02 a 2026-12-09  
-**Ventana extendida:** hasta 2026-12-15  
-**Base de la estimación:** MURO DE LAGS (SISMO_M5, SISMO_M6)
+**Ventana primaria:** 2026-12-02 a 2026-12-10  
+**Ventana extendida:** hasta 2026-12-14  
+**Base de la estimación:** MURO DE LAGS (SISMO_M5)
 
 La ventana viene del lag histórico de las firmas coincidentes (cuánto suelen tardar los eventos tras verse el patrón). La lectura se invalida si las firmas dejan de coincidir en los próximos ciclos o si el fantasma regresa a fondo sostenido.
 
@@ -98,21 +98,21 @@ La ventana viene del lag histórico de las firmas coincidentes (cuánto suelen t
 
 | Prioridad | Nodo / Zona | Tipo de evento | Parecido | Veces vista | Aviso típico | Estado del nodo |
 |---|---|---|---:|---:|---|---|
-| 1 | GeoBat Sumatra Hidrotermal (1.0, 98.0) | SISMO_M6 | 93% | 7 | ~9 días | real |
-| 2 | Perú Subducción (-12.0, -77.0) | SISMO_M5 | 90% | 134 | ~8 días | real |
-| 3 | GeoBat San Andreas Creep (36.0, -120.5) | SISMO_M6 | 87% | 8 | ~9 días | real |
-| 4 | Ghost Scotia Arc (-57.0, -30.0) | SISMO_M5 | 86% | 126 | ~8 días | ghost |
-| 5 | Baja California Sur (24.1, -110.0) | SISMO_M5 | 85% | 81 | ~8 días | real |
+| 1 | Ghost Scotia Arc (-57.0, -30.0) | SISMO_M5 | 91% | 126 | ~8 días | ghost |
+| 2 | Colombia-Ecuador (2.0, -78.0) | SISMO_M5 | 90% | 16 | ~8 días | real |
+| 3 | Perú Subducción (-12.0, -77.0) | SISMO_M5 | 89% | 134 | ~8 días | real |
+| 4 | GeoBat Sumatra Hidrotermal (1.0, 98.0) | SISMO_M6 | 88% | 7 | ~9 días | real |
+| 5 | GeoBat San Andreas Creep (36.0, -120.5) | SISMO_M6 | 88% | 8 | ~9 días | real |
 
 ### Lectura regional
 
 | Región | Nodos activos o coincidentes | Intensidad relativa | Comentario operativo |
 |---|---|---|---|
-| Indonesia | 1 | ALTA | parecido máx 93% |
-| Peru | 1 | ALTA | parecido máx 90% |
-| California | 1 | ALTA | parecido máx 87% |
-| Antarctic | 1 | ALTA | parecido máx 86% |
-| Mexico | 1 | MEDIA | parecido máx 85% |
+| Antarctic | 1 | ALTA | parecido máx 91% |
+| South America | 1 | ALTA | parecido máx 90% |
+| Peru | 1 | ALTA | parecido máx 89% |
+| Indonesia | 1 | ALTA | parecido máx 88% |
+| California | 1 | ALTA | parecido máx 88% |
 
 ---
 
@@ -147,11 +147,11 @@ Las señales apuntan a CARGA SILENCIOSA: calma geomagnética sostenida con activ
 
 | Ranking | Firma | Evento | Nodo | Parecido | Veces vista | Lead time | Fortaleza |
 |---|---|---|---|---:|---:|---|---|
-| 1 | #2760 | SISMO_M6 | GeoBat Sumatra Hidrotermal | 93% | 7 | ~9d | BAJA |
-| 2 | #2743 | SISMO_M5 | Perú Subducción | 90% | 134 | ~8d | ALTA |
-| 3 | #2817 | SISMO_M6 | GeoBat San Andreas Creep | 87% | 8 | ~9d | BAJA |
-| 4 | #2245 | SISMO_M5 | Ghost Scotia Arc | 86% | 126 | — | ALTA |
-| 5 | #3130 | SISMO_M5 | Baja California Sur | 85% | 81 | — | MEDIA |
+| 1 | #2245 | SISMO_M5 | Ghost Scotia Arc | 91% | 126 | ~8d | ALTA |
+| 2 | #3191 | SISMO_M5 | Colombia-Ecuador | 90% | 16 | ~8d | MEDIA |
+| 3 | #2743 | SISMO_M5 | Perú Subducción | 89% | 134 | ~8d | ALTA |
+| 4 | #2760 | SISMO_M6 | GeoBat Sumatra Hidrotermal | 88% | 7 | — | BAJA |
+| 5 | #2817 | SISMO_M6 | GeoBat San Andreas Creep | 88% | 8 | — | BAJA |
 
 ### Lectura de memoria
 
@@ -179,7 +179,7 @@ La memoria reconoce un patrón ROBUSTO: al menos una firma consolidada con cient
 | beta1 | 98.2% | 99.5% | +0.5% | 0.30 | 494 | el latido Schumann — generaliza |
 | alfa2 | 3.2% | — | — | 0.30 | 0 | memoria satelital acumulándose en vivo |
 | beta2 | 95.5% | 49.9% | +48.1% | 0.30 | 467 | desgasificación — sesgo alto, en disciplina |
-| delta | 94.4% | 88.3% | +11.7% | 0.39 | 380 | humor de los mercados |
+| delta | 94.4% | 88.3% | +11.7% | 0.40 | 380 | humor de los mercados |
 | jupiter | 12.1% | — | — | 0.30 | 0 | atención colectiva sobre tormentas solares — en vivo |
 | omega | 99.5% | 99.8% | +0.2% | 0.30 | 360 | ritmo cósmico — recién mapeado, memoria creciendo |
 | padre | 97.5% | 99.5% | +0.5% | 0.30 | 2,249 | árbitro — decisión real sólida |
@@ -188,8 +188,8 @@ La memoria reconoce un patrón ROBUSTO: al menos una firma consolidada con cient
 
 | Tipo | Conteo | Variación vs ciclo previo | Impacto |
 |---|---:|---:|---|
-| Aciertos | 2,544 | — | asertividad viva |
-| Fallos | 8,531 | — | castigo asimétrico aplicado |
+| Aciertos | 2,545 | — | asertividad viva |
+| Fallos | 8,538 | — | castigo asimétrico aplicado |
 | Pendientes | 208 | — | ventanas de 72h abiertas |
 
 El patrón de fallos sugiere revisar la sensibilidad del consenso (posible sub-alerta) y el sesgo de nodos con poca memoria.
@@ -265,7 +265,7 @@ Sentinel Omega trabaja en ventanas de DÍAS (anticipación estadística de precu
 
 ## 12. Cierre ejecutivo
 
-El sistema opera en estado NARANJA (pre-escalamiento). El sistema está en FASE DE CARGA: actividad por encima del fondo sin convergencia crítica completa. La ventana de atención sugerida va del 2026-12-02 al 2026-12-09, basada en MURO DE LAGS (SISMO_M5, SISMO_M6). La memoria total es de 4,064 firmas en 6 bots (Omega ya integrado al entrenamiento con su dominio de ritmo cósmico), con 208 avisos pendientes de auditoría. La decisión operativa actual es REVISAR: elevar la revisión manual de los nodos coincidentes y vigilar la ventana señalada.
+El sistema opera en estado NARANJA (pre-escalamiento). El sistema está en FASE DE CARGA: actividad por encima del fondo sin convergencia crítica completa. La ventana de atención sugerida va del 2026-12-02 al 2026-12-10, basada en MURO DE LAGS (SISMO_M5). La memoria total es de 4,064 firmas en 6 bots (Omega ya integrado al entrenamiento con su dominio de ritmo cósmico), con 208 avisos pendientes de auditoría. La decisión operativa actual es REVISAR: elevar la revisión manual de los nodos coincidentes y vigilar la ventana señalada.
 
 ---
 
@@ -273,16 +273,16 @@ El sistema opera en estado NARANJA (pre-escalamiento). El sistema está en FASE 
 
 | Métrica | Valor |
 |---------|-------|
-| Aciertos | 22302 |
-| Fallos | 87129 |
+| Aciertos | 22303 |
+| Fallos | 87120 |
 | Tasa de acierto | 20.4% |
-| Total predicciones auditadas | 109432 |
+| Total predicciones auditadas | 109424 |
 
-- **omega**: 6692/18029 aciertos (37%)
-- **beta1**: 5271/18029 aciertos (29%)
-- **padre**: 3780/18029 aciertos (21%)
-- **alfa1**: 3500/18029 aciertos (19%)
-- **delta**: 2006/18029 aciertos (11%)
+- **omega**: 6692/18028 aciertos (37%)
+- **beta1**: 5271/18028 aciertos (29%)
+- **padre**: 3780/18028 aciertos (21%)
+- **alfa1**: 3500/18028 aciertos (19%)
+- **delta**: 2007/18028 aciertos (11%)
 
 ---
 
@@ -303,7 +303,7 @@ El sistema opera en estado NARANJA (pre-escalamiento). El sistema está en FASE 
 
 ### Checklist de publicación
 
-- [x] Datos ingestados completos (324 ciclos)
+- [x] Datos ingestados completos (325 ciclos)
 - [x] Ciclo validado
 - [x] Auditoría sincronizada
 - [x] Cálculo de percentiles actualizado
@@ -313,4 +313,4 @@ El sistema opera en estado NARANJA (pre-escalamiento). El sistema está en FASE 
 - [x] Nota metodológica incluida
 
 ---
-*Sentinel Omega · Fractal Core Research · reporte ejecutivo 1.0-omega · generado 2026-11-27 18:01 UTC*
+*Sentinel Omega · Fractal Core Research · reporte ejecutivo 1.0-omega · generado 2026-11-28 01:18 UTC*
